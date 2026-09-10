@@ -1,0 +1,123 @@
+use rustfft::{num_complex::Complex32, Fft, FftPlanner};
+use std::sync::Arc;
+
+const FLOOR_DB: f32 = -120.0;
+
+pub struct SpectrumAnalyzer {
+    size: usize,
+    windows_per_average: u32,
+    averaged_windows: u32,
+    input_i: Vec<f32>,
+    input_q: Vec<f32>,
+    fft_buffer: Vec<Complex32>,
+    window: Vec<f32>,
+    power_sum: Vec<f64>,
+    output: Vec<f32>,
+    normalization: f64,
+    fft: Arc<dyn Fft<f32>>,
+}
+
+impl SpectrumAnalyzer {
+    fn new(size: usize, windows_per_average: u32) -> Option<Self> {
+        if size < 2 || !size.is_power_of_two() || windows_per_average == 0 {
+            return None;
+        }
+        let window: Vec<f32> = (0..size)
+            .map(|index| {
+                0.5 * (1.0
+                    - ((2.0 * std::f32::consts::PI * index as f32) / (size - 1) as f32).cos())
+            })
+            .collect();
+        let coherent_gain: f64 = window.iter().map(|value| *value as f64).sum();
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(size);
+        Some(Self {
+            size,
+            windows_per_average,
+            averaged_windows: 0,
+            input_i: vec![0.0; size],
+            input_q: vec![0.0; size],
+            fft_buffer: vec![Complex32::new(0.0, 0.0); size],
+            window,
+            power_sum: vec![0.0; size],
+            output: vec![FLOOR_DB; size],
+            normalization: coherent_gain * coherent_gain,
+            fft,
+        })
+    }
+
+    fn reset(&mut self) {
+        self.averaged_windows = 0;
+        self.power_sum.fill(0.0);
+    }
+
+    fn process(&mut self) -> bool {
+        for index in 0..self.size {
+            let coefficient = self.window[index];
+            self.fft_buffer[index] =
+                Complex32::new(self.input_i[index] * coefficient, self.input_q[index] * coefficient);
+        }
+        self.fft.process(&mut self.fft_buffer);
+        for index in 0..self.size {
+            let value = self.fft_buffer[index];
+            self.power_sum[index] += (value.re as f64 * value.re as f64
+                + value.im as f64 * value.im as f64)
+                / self.normalization;
+        }
+        self.averaged_windows += 1;
+        if self.averaged_windows < self.windows_per_average {
+            return false;
+        }
+
+        let half = self.size / 2;
+        for shifted in 0..self.size {
+            let source = (shifted + half) % self.size;
+            let mean_power = self.power_sum[source] / self.averaged_windows as f64;
+            self.output[shifted] = (10.0 * mean_power.max(1e-12).log10())
+                .max(FLOOR_DB as f64) as f32;
+        }
+        self.reset();
+        true
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn spectrum_create(size: u32, windows_per_average: u32) -> *mut SpectrumAnalyzer {
+    SpectrumAnalyzer::new(size as usize, windows_per_average)
+        .map(|analyzer| Box::into_raw(Box::new(analyzer)))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_destroy(analyzer: *mut SpectrumAnalyzer) {
+    if !analyzer.is_null() {
+        drop(Box::from_raw(analyzer));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_reset(analyzer: *mut SpectrumAnalyzer) {
+    if let Some(analyzer) = analyzer.as_mut() {
+        analyzer.reset();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_input_i(analyzer: *mut SpectrumAnalyzer) -> *mut f32 {
+    analyzer.as_mut().map(|value| value.input_i.as_mut_ptr()).unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_input_q(analyzer: *mut SpectrumAnalyzer) -> *mut f32 {
+    analyzer.as_mut().map(|value| value.input_q.as_mut_ptr()).unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_output(analyzer: *mut SpectrumAnalyzer) -> *const f32 {
+    analyzer.as_ref().map(|value| value.output.as_ptr()).unwrap_or(std::ptr::null())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_process(analyzer: *mut SpectrumAnalyzer) -> u32 {
+    analyzer.as_mut().map(|value| u32::from(value.process())).unwrap_or(0)
+}

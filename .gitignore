@@ -1,0 +1,11 @@
+node_modules/
+dist/
+wasm/spectrum-analysis/target/
+.vite/
+coverage/
+*.local
+.agents/
+.codex/
+.env
+.env.*
+!.env.example
