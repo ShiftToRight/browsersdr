@@ -206,6 +206,35 @@ describe("ReceiverController", () => {
     });
   });
 
+  it("uses an explicit acquisition-center retune for spectrum scanning", async () => {
+    const fixture = createDeterministicRecordingFixture(16);
+    const scanCenters: number[] = [];
+    const recordingStops: string[] = [];
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, () => Promise.resolve(METADATA), () => undefined),
+      scanTune: async (centerFrequencyHz) => {
+        scanCenters.push(centerFrequencyHz);
+        return { ...METADATA, hardwareCenterFrequencyHz: centerFrequencyHz, selectedChannelFrequencyHz: centerFrequencyHz };
+      },
+      stopRecording: (reason = "user") => {
+        recordingStops.push(reason);
+        return { ...fixture, metadata: { ...fixture.metadata, stopReason: reason } };
+      },
+    }));
+    await controller.start(OPTIONS);
+    const initialGeneration = controller.getSnapshot().sessionGeneration;
+    const session = await controller.scanTune(102_400_000);
+    expect(scanCenters).toEqual([102_400_000]);
+    expect(recordingStops).toEqual(["metadata-change"]);
+    expect(session).toMatchObject({
+      hardwareCenterFrequencyHz: 102_400_000,
+      selectedChannelFrequencyHz: 102_400_000,
+      sessionGeneration: expect.any(Number),
+    });
+    expect(session!.sessionGeneration).toBeGreaterThan(initialGeneration);
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", session });
+  });
+
   it("publishes changed mode metadata and a serialized gain result", async () => {
     const controller = new ReceiverController((events) => ({
       ...fakeBackend(events, () => Promise.resolve(METADATA), () => undefined),
@@ -244,6 +273,31 @@ describe("ReceiverController", () => {
     expect(stops).toBe(10);
   });
 
+  it("stops and restarts a persistent RTL connection without reconnecting hardware", async () => {
+    let creations = 0, connects = 0, starts = 0, stops = 0, disconnects = 0;
+    const controller = new ReceiverController((events) => {
+      creations += 1;
+      return {
+        ...fakeBackend(events, async () => { starts += 1; return METADATA; }, () => undefined),
+        connect: async () => { connects += 1; events.permissionGranted(); return METADATA; },
+        stop: async () => { stops += 1; },
+        disconnect: async () => { disconnects += 1; },
+      };
+    });
+
+    await controller.connect(OPTIONS);
+    expect(controller.getSnapshot().lifecycle).toBe("connected");
+    await controller.start(OPTIONS);
+    await controller.stop();
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "connected", message: expect.stringContaining("remains connected") });
+    await controller.start(OPTIONS);
+    await controller.stop();
+    await controller.disconnect();
+
+    expect({ creations, connects, starts, stops, disconnects }).toEqual({ creations: 1, connects: 1, starts: 2, stops: 2, disconnects: 1 });
+    expect(controller.getSnapshot().lifecycle).toBe("idle");
+  });
+
   it("rejects a non-positive running retune without losing the active session", async () => {
     let tunes = 0;
     const controller = new ReceiverController((events) => ({
@@ -276,5 +330,27 @@ describe("ReceiverController", () => {
     await controller.tune(101_000_000);
     expect(reasons).toEqual(["metadata-change"]);
     expect(controller.takeCompletedRecording()?.metadata.stopReason).toBe("metadata-change");
+  });
+
+  it("finalizes a capacity-reached recording only once for automatic export", async () => {
+    const fixture = createDeterministicRecordingFixture(32);
+    let stops = 0;
+    let recordingActive = true;
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, () => Promise.resolve(METADATA), () => undefined),
+      getRecordingStatus: () => recordingActive
+        ? { state: "capacity-reached", bytes: 64, maxBytes: 64, sampleCount: 32 }
+        : undefined,
+      stopRecording: () => {
+        stops += 1;
+        recordingActive = false;
+        return { ...fixture, metadata: { ...fixture.metadata, stopReason: "capacity" } };
+      },
+    }));
+    await controller.start(OPTIONS);
+    expect(controller.finalizeCapacityRecording()?.metadata.stopReason).toBe("capacity");
+    expect(controller.finalizeCapacityRecording()).toBeUndefined();
+    expect(controller.takeCompletedRecording()?.metadata.sampleCount).toBe(32);
+    expect(stops).toBe(1);
   });
 });

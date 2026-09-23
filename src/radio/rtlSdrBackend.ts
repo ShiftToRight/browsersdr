@@ -1,11 +1,10 @@
 import { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
 import { AudioPlayer } from "@jtarrio/signals/players/audioplayer.js";
 import type { SignalSource } from "@jtarrio/signals/radio/signal_source.js";
-import { Radio, RtlProvider, type RadioEvent } from "@jtarrio/webrtlsdr/radio.js";
 import { RTL2832U_Provider } from "@jtarrio/webrtlsdr/rtlsdr.js";
-import { AcknowledgedRtlSource } from "./acknowledgedRtlSource";
 import type { DirectSampling, RtlDevice } from "@jtarrio/webrtlsdr/rtlsdr/rtldevice.js";
 import { RadioError, RadioErrorType } from "@jtarrio/webrtlsdr/errors.js";
+import { AcknowledgedRtlSource } from "./acknowledgedRtlSource";
 import {
   RTL_SAMPLE_RATE_HZ,
   type ReceiverBackend,
@@ -24,18 +23,22 @@ import {
   type ReceiverModeSettings,
 } from "./receiverConfig";
 import { AudioFirstRdsReceiver, RdsMultiplexReceiver } from "../rds/rdsMultiplexReceiver";
+import { DabReceiver, validateDabSampleRate } from "../dab/dabReceiver";
+import { AdsbReceiver, validateAdsbSampleRate } from "../adsb/adsbReceiver";
+import { AisReceiver } from "../ais/aisReceiver";
+import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
+
+const PARALLEL_TRANSFERS = 2;
+const BUFFERS_PER_SECOND = 20;
 
 class IdempotentSource implements SignalSource {
   private closed = false;
-
   constructor(private readonly source: SignalSource) {}
-
   setSampleRate(sampleRate: number) { return this.source.setSampleRate(sampleRate); }
   setCenterFrequency(frequency: number) { return this.source.setCenterFrequency(frequency); }
   setParameter<V>(parameter: string, value: V) { return this.source.setParameter(parameter, value); }
   startReceiving() { return this.source.startReceiving(); }
   readSamples(length: number) { return this.source.readSamples(length); }
-
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -43,11 +46,9 @@ class IdempotentSource implements SignalSource {
   }
 }
 
-class TrackedRtlProvider extends RtlProvider {
-  private source?: IdempotentSource;
-
+class TrackedRtlProvider {
+  private readonly deviceProvider: RTL2832U_Provider;
   constructor(
-    private readonly selectedDevice: (device: USBDevice) => void,
     private readonly permissionGranted: () => void,
     private readonly capture: (data: ArrayBuffer) => void,
   ) {
@@ -55,28 +56,17 @@ class TrackedRtlProvider extends RtlProvider {
     const trackedUsb = {
       requestDevice: async (options: USBDeviceRequestOptions) => {
         if (!nativeUsb) throw new DOMException("WebUSB is unavailable", "NotSupportedError");
-        const device = await nativeUsb.requestDevice(options);
-        selectedDevice(device);
-        return device;
+        return nativeUsb.requestDevice(options);
       },
     } as USB;
-    const deviceProvider = new RTL2832U_Provider({ webusb: trackedUsb });
-    super(deviceProvider);
-    this.deviceProvider = deviceProvider;
+    this.deviceProvider = new RTL2832U_Provider({ webusb: trackedUsb });
   }
 
-  private readonly deviceProvider: RTL2832U_Provider;
-
-  override async get(): Promise<SignalSource> {
+  async get(): Promise<IdempotentSource> {
     const device = new RecordingRtlDevice(await this.deviceProvider.get(), this.capture);
     const source = new IdempotentSource(new AcknowledgedRtlSource(device));
-    this.source = source;
     this.permissionGranted();
     return source;
-  }
-
-  closeCurrent(): Promise<void> {
-    return this.source?.close() ?? Promise.resolve();
   }
 }
 
@@ -101,21 +91,24 @@ class RecordingRtlDevice implements RtlDevice {
   close() { return this.device.close(); }
 }
 
+/** RTL backend whose USB source remains open while reception is stopped. */
 export class RtlSdrBackend implements ReceiverBackend {
   private readonly audioContext: AudioContext;
-  private readonly audioResume: Promise<void>;
   private readonly demodulator: Demodulator;
   private readonly provider: TrackedRtlProvider;
-  private readonly radio: Radio;
-  private selectedUsbDevice?: USBDevice;
-  private stopTask?: Promise<void>;
-  private startSettled = false;
-  private rejectStart?: (error: unknown) => void;
-  private startedListener?: (event: Event) => void;
+  private readonly rds: RdsMultiplexReceiver;
+  private readonly sampleReceiver: AudioFirstRdsReceiver;
+  private readonly dab: DabReceiver;
+  private readonly adsb: AdsbReceiver;
+  private readonly ais: AisReceiver;
+  private source?: IdempotentSource;
   private metadata?: Omit<SourceSessionMetadata, "sessionGeneration">;
   private modeSettings = defaultModeSettings("WBFM");
   private recorder?: IqRecorder;
-  private readonly rds: RdsMultiplexReceiver;
+  private receiving = false;
+  private disconnected = false;
+  private streamTasks: Promise<void>[] = [];
+  private streamFailureReported = false;
 
   constructor(
     private readonly events: ReceiverBackendEvents,
@@ -123,24 +116,19 @@ export class RtlSdrBackend implements ReceiverBackend {
     private sessionGeneration = 0,
     initialChannelFrequencyHz = 100_000_000,
   ) {
-    if (!navigator.usb) {
-      throw new RadioError("This browser does not support the WebUSB API", RadioErrorType.NoUsbSupport);
-    }
+    if (!navigator.usb) throw new RadioError("This browser does not support the WebUSB API", RadioErrorType.NoUsbSupport);
     this.audioContext = new AudioContext();
     this.audioContext.addEventListener("statechange", this.onAudioStateChange);
-    this.audioResume = this.audioContext.resume();
     const player = new AudioPlayer({ newAudioContext: () => this.audioContext });
     this.demodulator = new Demodulator({ player });
-    this.demodulator.setMode(createSignalsMode(this.modeSettings));
-    this.provider = new TrackedRtlProvider(
-      (device) => { this.selectedUsbDevice = device; },
-      events.permissionGranted,
-      (data) => this.recorder?.appendCu8(data),
-    );
     this.rds = new RdsMultiplexReceiver((state) => this.events.rdsChanged(state));
-    const analysisReceiver = analysis?.begin({
+    this.dab = new DabReceiver((state) => this.events.dabChanged?.(state));
+    this.adsb = new AdsbReceiver((state) => this.events.adsbChanged?.(state));
+    this.ais = new AisReceiver((state) => this.events.aisChanged?.(state));
+    this.sampleReceiver = new AudioFirstRdsReceiver(this.demodulator, this.rds);
+    this.provider = new TrackedRtlProvider(events.permissionGranted, (data) => this.recorder?.appendCu8(data));
+    this.metadata = {
       source: "rtl-sdr",
-      sessionGeneration,
       requestedSampleRateHz: RTL_SAMPLE_RATE_HZ,
       actualSampleRateHz: RTL_SAMPLE_RATE_HZ,
       hardwareCenterFrequencyHz: initialChannelFrequencyHz,
@@ -150,189 +138,204 @@ export class RtlSdrBackend implements ReceiverBackend {
       squelch: this.modeSettings.squelch,
       gainDb: null,
       sampleFormat: "planar-f32-iq-normalized",
-    });
-    this.radio = new Radio(this.provider, new AudioFirstRdsReceiver(this.demodulator, this.rds, analysisReceiver));
-    this.radio.addEventListener("radio", this.onRadioEvent);
+    };
   }
 
-  async start(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+  async connect(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (this.disconnected) throw new DOMException("The RTL-SDR backend was disconnected", "InvalidStateError");
+    if (this.source) return this.configureConnectedSource(options);
+    this.source = await this.provider.get();
+    try { return await this.configureConnectedSource(options); }
+    catch (error) { await this.source.close().catch(() => undefined); this.source = undefined; throw error; }
+  }
+
+  async start(options: ReceiverStartOptions, sessionGeneration = this.sessionGeneration): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (this.receiving) return this.metadata!;
+    this.sessionGeneration = sessionGeneration;
+    // Invoke resume before the first await so the Start button's user activation
+    // is still available to Web Audio.
+    const audioResume = this.audioContext.resume();
+    const [metadata] = await Promise.all([this.connect(options), audioResume]);
     this.modeSettings = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
-    const gainDb = normalizeGain(options.gainDb ?? null);
-    this.demodulator.setMode(createSignalsMode(this.modeSettings));
+    if (this.modeSettings.mode === "DAB") validateDabSampleRate(metadata.actualSampleRateHz);
+    else if (this.modeSettings.mode === "ADS-B") validateAdsbSampleRate(metadata.actualSampleRateHz);
+    else if (this.modeSettings.mode !== "AIS") this.demodulator.setMode(createSignalsMode(this.modeSettings));
     this.demodulator.setVolume(options.volume);
-    this.demodulator.setFrequencyOffset(0);
+    this.demodulator.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
     this.rds.setEnabled(this.modeSettings.mode === "WBFM");
-    this.rds.setFrequencyOffset(0);
-
-    // Queue configuration and start without awaiting anything first, preserving
-    // the transient user activation needed by WebUSB and Web Audio.
-    void this.radio.setSampleRate(RTL_SAMPLE_RATE_HZ);
-    void this.radio.setFrequency(options.channelFrequencyHz);
-    void this.radio.setGain(gainDb);
-    const outcome = new Promise<void>((resolve, reject) => {
-      this.rejectStart = reject;
-      const started = (event: Event) => {
-        const radioEvent = event as RadioEvent;
-        if (radioEvent.detail.type !== "started") return;
-        this.radio.removeEventListener("radio", started);
-        this.startedListener = undefined;
-        resolve();
-      };
-      this.startedListener = started;
-      this.radio.addEventListener("radio", started);
-    });
-
-    await Promise.all([this.radio.start(), outcome, this.audioResume]);
-    if (this.audioContext.state !== "running") {
-      throw new DOMException(`Audio context remained ${this.audioContext.state}`, "NotAllowedError");
-    }
-    this.startSettled = true;
-    this.rejectStart = undefined;
-    const actualFrequencyHz = this.radio.getFrequency();
-    this.demodulator.setFrequencyOffset(options.channelFrequencyHz - actualFrequencyHz);
-    this.rds.setFrequencyOffset(options.channelFrequencyHz - actualFrequencyHz);
-    const metadata = {
-      source: "rtl-sdr",
-      requestedSampleRateHz: RTL_SAMPLE_RATE_HZ,
-      actualSampleRateHz: this.radio.getSampleRate(),
-      hardwareCenterFrequencyHz: actualFrequencyHz,
-      selectedChannelFrequencyHz: options.channelFrequencyHz,
-      mode: this.modeSettings.mode,
-      channelBandwidthHz: this.modeSettings.bandwidthHz,
-      squelch: this.modeSettings.squelch,
-      gainDb: this.radio.getGain(),
-      sampleFormat: "planar-f32-iq-normalized",
-    } satisfies Omit<SourceSessionMetadata, "sessionGeneration">;
-    this.analysis?.updateMetadata({ ...metadata, sessionGeneration: this.sessionGeneration });
-    this.metadata = metadata;
+    this.sampleReceiver.setDigitalReceiver(this.digitalReceiver());
+    this.rds.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
+    this.dab.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
+    this.ais.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
+    this.sampleReceiver.setAnalysis(this.analysis?.begin({ ...metadata, sessionGeneration }));
+    this.sampleReceiver.setSampleRate(metadata.actualSampleRateHz);
+    if (this.audioContext.state !== "running") throw new DOMException(`Audio context remained ${this.audioContext.state}`, "NotAllowedError");
+    await this.source!.startReceiving();
+    this.receiving = true;
+    this.streamFailureReported = false;
+    const samplesPerBuffer = 512 * Math.ceil(metadata.actualSampleRateHz / BUFFERS_PER_SECOND / 512);
+    this.streamTasks = Array.from({ length: PARALLEL_TRANSFERS }, () => this.pump(samplesPerBuffer));
     return metadata;
   }
 
-  stop(): Promise<void> {
-    if (this.stopTask) return this.stopTask;
-    if (!this.startSettled && this.rejectStart) {
-      this.rejectStart(new DOMException("Receiver start was stopped", "AbortError"));
-      this.rejectStart = undefined;
-    }
-    this.stopTask = this.stopInternal();
-    return this.stopTask;
+  async stop(): Promise<void> {
+    if (!this.receiving) return;
+    this.receiving = false;
+    await Promise.allSettled(this.streamTasks);
+    this.streamTasks = [];
+    this.sampleReceiver.setAnalysis(undefined);
+    this.analysis?.stop(this.sessionGeneration);
+    this.rds.reset();
+    this.dab.reset();
+    this.adsb.reset();
+    this.ais.reset();
+    if (this.audioContext.state === "running") await this.audioContext.suspend().catch(() => undefined);
   }
 
-  setVolume(volume: number): void {
-    this.demodulator.setVolume(volume);
+  async disconnect(): Promise<void> {
+    if (this.disconnected) return;
+    await this.stop();
+    this.disconnected = true;
+    this.audioContext.removeEventListener("statechange", this.onAudioStateChange);
+    const source = this.source;
+    this.source = undefined;
+    await source?.close();
+    if (this.audioContext.state !== "closed") await this.audioContext.close().catch(() => undefined);
   }
+
+  setVolume(volume: number): void { this.demodulator.setVolume(volume); }
 
   async tune(channelFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    if (!this.metadata) throw new Error("RTL-SDR source is not running");
+    const source = this.source;
+    if (!this.metadata || !source) throw new Error("RTL-SDR source is not connected");
     this.sessionGeneration = sessionGeneration;
-    const plan = planChannelTune(
-      this.metadata.hardwareCenterFrequencyHz,
-      channelFrequencyHz,
-      this.metadata.actualSampleRateHz,
-      this.modeSettings.bandwidthHz,
-    );
-    const provisional: SourceSessionMetadata = { ...this.metadata, sessionGeneration, selectedChannelFrequencyHz: channelFrequencyHz };
-    this.analysis?.retune(provisional);
+    const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.modeSettings.bandwidthHz);
+    const provisional = { ...this.metadata, selectedChannelFrequencyHz: channelFrequencyHz };
+    this.analysis?.retune({ ...provisional, sessionGeneration });
     if (plan.hardwareRetuneRequired) {
-      // Incoming reads already in flight may still use the old center. Signals
-      // changes offset only when a block tagged with the requested center arrives.
       this.demodulator.expectFrequencyAndSetOffset(plan.hardwareCenterFrequencyHz, plan.frequencyOffsetHz);
-      await this.radio.setFrequency(plan.hardwareCenterFrequencyHz);
-      const actualFrequencyHz = this.radio.getFrequency();
-      // Reapplying the actual rate uses Demodulator's public reconstruction
-      // path, clearing shifter/resampler/filter/demodulator history after a
-      // discontinuous RF-center change.
-      this.demodulator.setSampleRate(this.radio.getSampleRate());
+      const actualFrequencyHz = await source.setCenterFrequency(plan.hardwareCenterFrequencyHz);
+      this.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
       this.demodulator.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
       this.rds.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
+      this.dab.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
+      this.ais.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
+      this.adsb.reset();
       provisional.hardwareCenterFrequencyHz = actualFrequencyHz;
     } else {
       this.demodulator.setFrequencyOffset(plan.frequencyOffsetHz);
       this.rds.setFrequencyOffset(plan.frequencyOffsetHz);
+      this.dab.setFrequencyOffset(plan.frequencyOffsetHz);
+      this.ais.setFrequencyOffset(plan.frequencyOffsetHz);
+      this.adsb.reset();
     }
-    const { sessionGeneration: _generation, ...metadata } = provisional;
-    this.metadata = metadata;
-    this.analysis?.updateMetadata({ ...metadata, sessionGeneration });
-    return metadata;
+    this.metadata = provisional;
+    this.analysis?.updateMetadata({ ...provisional, sessionGeneration });
+    return provisional;
+  }
+
+  async scanTune(centerFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    const source = this.source;
+    if (!this.metadata || !source || !this.receiving) throw new Error("RTL-SDR reception must be running before scanning");
+    this.sessionGeneration = sessionGeneration;
+    const provisional = {
+      ...this.metadata,
+      hardwareCenterFrequencyHz: centerFrequencyHz,
+      selectedChannelFrequencyHz: centerFrequencyHz,
+    };
+    this.analysis?.retune({ ...provisional, sessionGeneration });
+    this.demodulator.expectFrequencyAndSetOffset(centerFrequencyHz, 0);
+    const actualFrequencyHz = await source.setCenterFrequency(centerFrequencyHz);
+    this.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
+    this.demodulator.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
+    this.rds.reset();
+    this.rds.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
+    this.dab.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
+    this.ais.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
+    this.adsb.reset();
+    this.metadata = {
+      ...provisional,
+      hardwareCenterFrequencyHz: actualFrequencyHz,
+    };
+    this.analysis?.updateMetadata({ ...this.metadata, sessionGeneration });
+    return this.metadata;
   }
 
   async configureMode(settings: ReceiverModeSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     this.modeSettings = normalizeModeSettings(settings);
-    this.demodulator.setMode(createSignalsMode(this.modeSettings));
+    if (this.modeSettings.mode === "DAB") validateDabSampleRate(this.metadata?.actualSampleRateHz ?? 0);
+    else if (this.modeSettings.mode === "ADS-B") validateAdsbSampleRate(this.metadata?.actualSampleRateHz ?? 0);
+    else if (this.modeSettings.mode !== "AIS") this.demodulator.setMode(createSignalsMode(this.modeSettings));
     this.rds.setEnabled(this.modeSettings.mode === "WBFM");
-    if (!this.metadata) throw new Error("RTL-SDR source is not running");
-    this.metadata = {
-      ...this.metadata,
-      mode: this.modeSettings.mode,
-      channelBandwidthHz: this.modeSettings.bandwidthHz,
-      squelch: this.modeSettings.squelch,
-    };
+    this.sampleReceiver.setDigitalReceiver(this.digitalReceiver());
+    if (!this.metadata) throw new Error("RTL-SDR source is not connected");
+    this.metadata = { ...this.metadata, mode: this.modeSettings.mode, channelBandwidthHz: this.modeSettings.bandwidthHz, squelch: this.modeSettings.squelch };
     return this.tune(this.metadata.selectedChannelFrequencyHz, sessionGeneration);
   }
 
   async setGain(gainDb: number | null): Promise<number | null> {
-    await this.radio.setGain(normalizeGain(gainDb));
-    const configured = this.radio.getGain();
+    if (!this.source) throw new Error("RTL-SDR source is not connected");
+    const configured = await this.source.setParameter("gain", normalizeGain(gainDb)) as number | null;
     if (this.metadata) this.metadata = { ...this.metadata, gainDb: configured };
     return configured;
   }
 
-  startRecording(): RecordingStatus {
-    if (!this.metadata) throw new Error("RTL-SDR source is not running");
-    this.recorder = new IqRecorder({ ...this.metadata, sessionGeneration: this.sessionGeneration });
+  startRecording(survey?: import("./fieldSurvey").SurveyCaptureContext): RecordingStatus {
+    if (!this.receiving || !this.metadata) throw new Error("RTL-SDR source is not receiving");
+    this.recorder = new IqRecorder({ ...this.metadata, sessionGeneration: this.sessionGeneration }, undefined, undefined, undefined, survey);
     return this.recorder.status();
   }
-
   stopRecording(reason: "user" | "source-stop" | "metadata-change" = "user"): IqRecording | undefined {
     const recorder = this.recorder;
     this.recorder = undefined;
     return recorder?.finish(reason);
   }
-
   getRecordingStatus(): RecordingStatus | undefined { return this.recorder?.status(); }
 
-  private readonly onRadioEvent = (event: Event): void => {
-    const radioEvent = event as RadioEvent;
-    if (radioEvent.detail.type !== "error") return;
-    if (!this.startSettled && this.rejectStart) {
-      if (this.startedListener) this.radio.removeEventListener("radio", this.startedListener);
-      this.startedListener = undefined;
-      this.rejectStart(radioEvent.detail.exception);
-      this.rejectStart = undefined;
-    } else if (this.startSettled) {
-      this.events.runtimeError(radioEvent.detail.exception);
-    }
-  };
+  private digitalReceiver(): SampleReceiver | undefined {
+    if (this.modeSettings.mode === "DAB") return this.dab;
+    if (this.modeSettings.mode === "ADS-B") return this.adsb;
+    if (this.modeSettings.mode === "AIS") return this.ais;
+    return undefined;
+  }
 
-  private readonly onAudioStateChange = (): void => {
-    this.events.audioStateChanged(this.audioContext.state);
-  };
+  private async configureConnectedSource(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    const source = this.source!;
+    this.modeSettings = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
+    const requestedSampleRateHz = options.sampleRateHz ?? RTL_SAMPLE_RATE_HZ;
+    const actualSampleRateHz = await source.setSampleRate(requestedSampleRateHz);
+    const hardwareCenterFrequencyHz = await source.setCenterFrequency(options.channelFrequencyHz);
+    const gainDb = await source.setParameter("gain", normalizeGain(options.gainDb ?? null)) as number | null;
+    await source.setParameter("frequency_correction", 0);
+    await source.setParameter("direct_sampling_method", 0);
+    await source.setParameter("bias_tee", false);
+    this.metadata = {
+      source: "rtl-sdr", requestedSampleRateHz, actualSampleRateHz,
+      hardwareCenterFrequencyHz, selectedChannelFrequencyHz: options.channelFrequencyHz,
+      mode: this.modeSettings.mode, channelBandwidthHz: this.modeSettings.bandwidthHz,
+      squelch: this.modeSettings.squelch, gainDb, sampleFormat: "planar-f32-iq-normalized",
+    };
+    return this.metadata;
+  }
 
-  private async stopInternal(): Promise<void> {
-    this.radio.removeEventListener("radio", this.onRadioEvent);
-    if (this.startedListener) this.radio.removeEventListener("radio", this.startedListener);
-    this.startedListener = undefined;
-    this.audioContext.removeEventListener("statechange", this.onAudioStateChange);
-    try {
-      await this.radio.stop();
-    } finally {
-      this.analysis?.stop(this.sessionGeneration);
-      await this.provider.closeCurrent().catch(() => undefined);
-      if (this.selectedUsbDevice?.opened) {
-        await this.selectedUsbDevice.close().catch(() => undefined);
-      }
-      if (this.audioContext.state !== "closed") {
-        await this.audioContext.close().catch(() => undefined);
+  private async pump(samplesPerBuffer: number): Promise<void> {
+    while (this.receiving) {
+      try {
+        const block = await this.source!.readSamples(samplesPerBuffer);
+        if (this.receiving) this.sampleReceiver.receiveSamples(block);
+      } catch (error) {
+        if (this.receiving && !this.streamFailureReported) {
+          this.streamFailureReported = true;
+          this.events.runtimeError(error);
+        }
+        return;
       }
     }
   }
+
+  private readonly onAudioStateChange = (): void => this.events.audioStateChanged(this.audioContext.state);
 }
 
-export function createRtlSdrBackend(
-  events: ReceiverBackendEvents,
-  analysis?: AnalysisPipeline,
-  sessionGeneration = 0,
-  initialChannelFrequencyHz = 100_000_000,
-): ReceiverBackend {
+export function createRtlSdrBackend(events: ReceiverBackendEvents, analysis?: AnalysisPipeline, sessionGeneration = 0, initialChannelFrequencyHz = 100_000_000): ReceiverBackend {
   return new RtlSdrBackend(events, analysis, sessionGeneration, initialChannelFrequencyHz);
 }

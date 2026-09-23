@@ -12,6 +12,9 @@ import {
 import type { ReceiverBackend, ReceiverBackendEvents, ReceiverStartOptions } from "./receiverController";
 import type { SourceSessionMetadata } from "./types";
 import { AudioFirstRdsReceiver, RdsMultiplexReceiver } from "../rds/rdsMultiplexReceiver";
+import { DabReceiver, validateDabSampleRate } from "../dab/dabReceiver";
+import { AdsbReceiver, validateAdsbSampleRate } from "../adsb/adsbReceiver";
+import { AisReceiver } from "../ais/aisReceiver";
 
 const REPLAY_CHUNK_SAMPLES = 8192;
 
@@ -29,6 +32,9 @@ export class ReplayBackend implements ReceiverBackend {
   private nextGap = 0;
   private elapsedGapSamples = 0;
   private readonly rds: RdsMultiplexReceiver;
+  private readonly dab: DabReceiver;
+  private readonly adsb: AdsbReceiver;
+  private readonly ais: AisReceiver;
 
   constructor(
     private readonly events: ReceiverBackendEvents,
@@ -41,6 +47,9 @@ export class ReplayBackend implements ReceiverBackend {
     this.audioResume = this.audioContext.resume();
     this.demodulator = new Demodulator({ player: new AudioPlayer({ newAudioContext: () => this.audioContext }) });
     this.rds = new RdsMultiplexReceiver((state) => this.events.rdsChanged(state));
+    this.dab = new DabReceiver((state) => this.events.dabChanged?.(state));
+    this.adsb = new AdsbReceiver((state) => this.events.adsbChanged?.(state));
+    this.ais = new AisReceiver((state) => this.events.aisChanged?.(state));
   }
 
   async start(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
@@ -65,13 +74,17 @@ export class ReplayBackend implements ReceiverBackend {
     };
     this.metadata = metadata;
     this.demodulator.setSampleRate(metadata.actualSampleRateHz);
-    this.demodulator.setMode(createSignalsMode(mode));
+    if (mode.mode === "DAB") validateDabSampleRate(metadata.actualSampleRateHz);
+    else if (mode.mode === "ADS-B") validateAdsbSampleRate(metadata.actualSampleRateHz);
+    else if (mode.mode !== "AIS") this.demodulator.setMode(createSignalsMode(mode));
     this.demodulator.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
     this.demodulator.setVolume(options.volume);
     this.rds.setEnabled(mode.mode === "WBFM");
     this.rds.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
+    this.dab.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
+    this.ais.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
     const analysisReceiver = this.analysis.begin(metadata);
-    this.receiver = new AudioFirstRdsReceiver(this.demodulator, this.rds, analysisReceiver);
+    this.receiver = new AudioFirstRdsReceiver(this.demodulator, this.rds, analysisReceiver, this.digitalReceiver(mode.mode));
     this.receiver.setSampleRate(metadata.actualSampleRateHz);
     await this.audioResume;
     if (this.stopped) throw new DOMException("Replay start was stopped", "AbortError");
@@ -101,6 +114,9 @@ export class ReplayBackend implements ReceiverBackend {
     this.sessionGeneration = sessionGeneration;
     this.demodulator.setFrequencyOffset(plan.frequencyOffsetHz);
     this.rds.setFrequencyOffset(plan.frequencyOffsetHz);
+    this.dab.setFrequencyOffset(plan.frequencyOffsetHz);
+    this.ais.setFrequencyOffset(plan.frequencyOffsetHz);
+    this.adsb.reset();
     this.metadata = { ...this.metadata, sessionGeneration, selectedChannelFrequencyHz: channelFrequencyHz };
     this.analysis.retune(this.metadata);
     const { sessionGeneration: _generation, ...result } = this.metadata;
@@ -112,17 +128,20 @@ export class ReplayBackend implements ReceiverBackend {
     const mode = normalizeModeSettings(settings);
     const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, this.metadata.selectedChannelFrequencyHz, this.metadata.actualSampleRateHz, mode.bandwidthHz);
     if (plan.hardwareRetuneRequired) throw new Error("That channel bandwidth lies outside the recorded capture span.");
-    this.demodulator.setMode(createSignalsMode(mode));
+    if (mode.mode === "DAB") validateDabSampleRate(this.metadata.actualSampleRateHz);
+    else if (mode.mode === "ADS-B") validateAdsbSampleRate(this.metadata.actualSampleRateHz);
+    else if (mode.mode !== "AIS") this.demodulator.setMode(createSignalsMode(mode));
     this.rds.setEnabled(mode.mode === "WBFM");
+    if (this.receiver instanceof AudioFirstRdsReceiver) this.receiver.setDigitalReceiver(this.digitalReceiver(mode.mode));
     this.metadata = { ...this.metadata, mode: mode.mode, channelBandwidthHz: mode.bandwidthHz, squelch: mode.squelch };
     return this.tune(this.metadata.selectedChannelFrequencyHz, sessionGeneration);
   }
 
   setGain(_gainDb: number | null): Promise<number | null> { return Promise.resolve(this.metadata?.gainDb ?? null); }
 
-  startRecording(): RecordingStatus {
+  startRecording(survey?: import("./fieldSurvey").SurveyCaptureContext): RecordingStatus {
     if (!this.metadata) throw new Error("Replay source is not running");
-    this.recorder = new IqRecorder(this.metadata);
+    this.recorder = new IqRecorder(this.metadata, undefined, undefined, undefined, survey);
     return this.recorder.status();
   }
 
@@ -134,6 +153,13 @@ export class ReplayBackend implements ReceiverBackend {
 
   getRecordingStatus(): RecordingStatus | undefined { return this.recorder?.status(); }
 
+  private digitalReceiver(mode: ReceiverModeSettings["mode"]): SampleReceiver | undefined {
+    if (mode === "DAB") return this.dab;
+    if (mode === "ADS-B") return this.adsb;
+    if (mode === "AIS") return this.ais;
+    return undefined;
+  }
+
   private scheduleNext(): void {
     if (this.stopped) return;
     try { this.readNext(); } catch (error) { this.events.runtimeError(error); }
@@ -144,6 +170,9 @@ export class ReplayBackend implements ReceiverBackend {
       const gap = this.recording.metadata.knownGaps[this.nextGap]!;
       this.demodulator.setSampleRate(this.recording.metadata.sampleRateHz);
       this.rds.setSampleRate(this.recording.metadata.sampleRateHz);
+      if (this.metadata?.mode === "DAB") this.dab.setSampleRate(this.recording.metadata.sampleRateHz);
+      if (this.metadata?.mode === "ADS-B") this.adsb.setSampleRate(this.recording.metadata.sampleRateHz);
+      if (this.metadata?.mode === "AIS") this.ais.setSampleRate(this.recording.metadata.sampleRateHz);
       this.analysis.markDiscontinuity(gap.missingSamples ?? 0);
       this.recorder?.addGap(gap.missingSamples, `Replayed source gap: ${gap.reason}`);
       this.elapsedGapSamples += gap.missingSamples ?? 0;

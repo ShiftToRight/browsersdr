@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>GPU FFT validation</title><link rel="icon" href="data:,"></head>
+<body><h1>GPU FFT validation</h1><p>Explicit validation readback and wall-clock upload–compute–render benchmark. Uses synthetic I/Q only.</p>
+<button id="run">Run validation</button><pre id="result"></pre>
+<script type="module">
+import { validateGpuFft } from "./gpuFftValidation.ts";
+document.querySelector("#run").onclick = async () => {
+  document.querySelector("#run").disabled = true;
+  try { document.querySelector("#result").textContent = JSON.stringify(await validateGpuFft(), null, 2); }
+  catch (error) { document.querySelector("#result").textContent = String(error); }
+  finally { document.querySelector("#run").disabled = false; }
+};
+</script></body></html>

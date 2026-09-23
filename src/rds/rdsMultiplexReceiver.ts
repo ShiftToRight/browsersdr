@@ -73,19 +73,28 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
   constructor(
     private readonly primary: SampleReceiver,
     private readonly rds: RdsMultiplexReceiver,
-    private readonly analysis?: SampleReceiver,
+    private analysis?: SampleReceiver,
+    private digital?: SampleReceiver,
   ) {}
+
+  setAnalysis(analysis?: SampleReceiver): void { this.analysis = analysis; }
+  setDigitalReceiver(digital?: SampleReceiver): void { this.digital = digital; }
 
   setSampleRate(sampleRate: number): void {
     this.primary.setSampleRate(sampleRate);
     this.rds.setSampleRate(sampleRate);
     this.analysis?.setSampleRate(sampleRate);
+    this.digital?.setSampleRate(sampleRate);
   }
 
   receiveSamples(block: SampleBlock): void {
     // AnalysisPipeline synchronously copies into its bounded transferable slot.
     // It must run before the demodulator's in-place frequency shift/filtering.
     this.analysis?.receiveSamples(block);
+    if (this.digital) {
+      this.digital.receiveSamples(block);
+      return;
+    }
     if (!this.rds.isEnabled) {
       this.primary.receiveSamples(block);
       return;

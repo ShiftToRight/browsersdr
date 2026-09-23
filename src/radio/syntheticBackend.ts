@@ -98,6 +98,20 @@ export class SyntheticBackend implements ReceiverBackend {
     return Promise.resolve(metadata);
   }
 
+  scanTune(centerFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (!this.metadata) return Promise.reject(new Error("Synthetic source is not running"));
+    this.sessionGeneration = sessionGeneration;
+    this.metadata = {
+      ...this.metadata,
+      sessionGeneration,
+      hardwareCenterFrequencyHz: centerFrequencyHz,
+      selectedChannelFrequencyHz: centerFrequencyHz,
+    };
+    this.analysis.retune(this.metadata);
+    const { sessionGeneration: _generation, ...metadata } = this.metadata;
+    return Promise.resolve(metadata);
+  }
+
   configureMode(settings: ReceiverModeSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     if (!this.metadata) return Promise.reject(new Error("Synthetic source is not running"));
     const mode = normalizeModeSettings(settings);
@@ -114,9 +128,9 @@ export class SyntheticBackend implements ReceiverBackend {
     return Promise.resolve(null);
   }
 
-  startRecording(): RecordingStatus {
+  startRecording(survey?: import("./fieldSurvey").SurveyCaptureContext): RecordingStatus {
     if (!this.metadata) throw new Error("Synthetic source is not running");
-    this.recorder = new IqRecorder(this.metadata, undefined, undefined, "BrowserSDR deterministic synthetic spectrum generator; quantized to CU8 for replay.");
+    this.recorder = new IqRecorder(this.metadata, undefined, undefined, "BrowserSDR deterministic synthetic spectrum generator; quantized to CU8 for replay.", survey);
     return this.recorder.status();
   }
 

@@ -11,7 +11,7 @@ export class WaterfallHistory {
   private lastSequence = -1;
   private lastSampleIndex?: number;
 
-  constructor(readonly capacity: number) {
+  constructor(readonly capacity: number, private readonly fftSize = FFT_SIZE) {
     if (!Number.isSafeInteger(capacity) || capacity <= 0) throw new RangeError("capacity must be positive");
   }
 
@@ -27,7 +27,7 @@ export class WaterfallHistory {
     if (frame.sessionGeneration !== this.generation || frame.sequence <= this.lastSequence) return [];
     const rows: WaterfallRow[] = [];
     if (this.lastSampleIndex !== undefined) {
-      const averagedFrameSamples = FFT_SIZE * 4;
+      const averagedFrameSamples = this.fftSize * 4;
       const missingByClock = Math.max(0, Math.round((frame.sampleIndex - this.lastSampleIndex) / averagedFrameSamples) - 1);
       const missing = Math.min(this.capacity - 1, Math.max(missingByClock, frame.droppedFramesBefore > 0 ? 1 : 0));
       for (let index = 0; index < missing; index += 1) rows.push(this.push("gap"));

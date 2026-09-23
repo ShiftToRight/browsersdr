@@ -10,9 +10,12 @@ import {
 
 describe("receiver mode configuration", () => {
   it("uses the constraints exposed by every installed Signals mode", () => {
-    expect(RECEIVER_MODES).toEqual(["WBFM", "NBFM", "AM", "USB", "LSB"]);
+    expect(RECEIVER_MODES).toEqual(["WBFM", "NBFM", "AM", "USB", "LSB", "DAB", "ADS-B", "AIS"]);
     expect(defaultModeSettings("WBFM")).toEqual({ mode: "WBFM", bandwidthHz: 150_000, squelch: 0 });
     expect(defaultModeSettings("NBFM").bandwidthHz).toBe(10_000);
+    expect(defaultModeSettings("DAB")).toEqual({ mode: "DAB", bandwidthHz: 1_536_000, squelch: 0 });
+    expect(defaultModeSettings("ADS-B").bandwidthHz).toBe(2_000_000);
+    expect(defaultModeSettings("AIS").bandwidthHz).toBe(100_000);
     expect(defaultModeSettings("AM").bandwidthHz).toBe(15_000);
     expect(defaultModeSettings("USB").bandwidthHz).toBe(2_800);
     expect(modeCapabilities("WBFM").squelchSettable).toBe(false);

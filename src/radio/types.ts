@@ -1,18 +1,26 @@
 export type SourceKind = "synthetic" | "rtl-sdr" | "replay";
 import type { ReceiverMode } from "./receiverConfig";
+export type { DabSnapshot } from "../dab/dabReceiver";
+export type { AdsbSnapshot, AdsbTarget } from "../adsb/adsbReceiver";
+export type { AisSnapshot, AisTarget } from "../ais/aisReceiver";
 
 export type ReceiverLifecycle =
   | "idle"
+  | "connecting"
+  | "connected"
   | "requesting-permission"
   | "starting"
   | "tuning"
   | "running"
   | "stopping"
+  | "disconnecting"
   | "error";
 
 export type ReceiverCommand =
+  | { type: "connect"; source: SourceKind }
   | { type: "start"; source: SourceKind }
   | { type: "stop" }
+  | { type: "disconnect" }
   | { type: "tune"; channelFrequencyHz: number }
   | { type: "set-gain"; gainDb: number | null };
 

@@ -1,4 +1,4 @@
-import type { RdsSnapshot, ReceiverLifecycle, SourceKind, SourceSessionMetadata } from "./types";
+import type { AdsbSnapshot, AisSnapshot, DabSnapshot, RdsSnapshot, ReceiverLifecycle, SourceKind, SourceSessionMetadata } from "./types";
 import {
   defaultModeSettings,
   normalizeGain,
@@ -6,10 +6,14 @@ import {
   type ReceiverModeSettings,
 } from "./receiverConfig";
 import type { IqRecording, RecordingStatus } from "./iqRecording";
+import type { SurveyCaptureContext } from "./fieldSurvey";
+import { validateDabSampleRate } from "../dab/dabReceiver";
+import { validateAdsbSampleRate } from "../adsb/adsbReceiver";
 
 export const FM_MIN_HZ = 87_500_000;
 export const FM_MAX_HZ = 108_000_000;
 export const RTL_SAMPLE_RATE_HZ = 1_024_000;
+export const RTL_SAMPLE_RATE_OPTIONS_HZ = [1_024_000, 2_400_000] as const;
 
 export interface ReceiverStartOptions {
   source?: SourceKind;
@@ -17,6 +21,7 @@ export interface ReceiverStartOptions {
   volume: number;
   modeSettings?: ReceiverModeSettings;
   gainDb?: number | null;
+  sampleRateHz?: number;
 }
 
 export interface ReceiverBackendEvents {
@@ -25,16 +30,25 @@ export interface ReceiverBackendEvents {
   audioStateChanged(state: AudioContextState): void;
   sourceEnded(): void;
   rdsChanged(state: RdsSnapshot): void;
+  dabChanged?(state: DabSnapshot): void;
+  adsbChanged?(state: AdsbSnapshot): void;
+  aisChanged?(state: AisSnapshot): void;
 }
 
 export interface ReceiverBackend {
-  start(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  /** Optional persistent hardware connection used by RTL-SDR. */
+  connect?(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  start(options: ReceiverStartOptions, sessionGeneration?: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   stop(): Promise<void>;
+  /** Final teardown for a persistent backend. */
+  disconnect?(): Promise<void>;
   setVolume(volume: number): void;
   tune(channelFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  /** Explicit acquisition-center retune used by bounded spectrum scans. */
+  scanTune?(centerFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   configureMode(settings: ReceiverModeSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   setGain(gainDb: number | null): Promise<number | null>;
-  startRecording?(): RecordingStatus;
+  startRecording?(survey?: SurveyCaptureContext): RecordingStatus;
   stopRecording?(reason?: "user" | "source-stop" | "metadata-change"): IqRecording | undefined;
   getRecordingStatus?(): RecordingStatus | undefined;
 }
@@ -52,6 +66,9 @@ export interface ReceiverSnapshot {
   session?: SourceSessionMetadata;
   audioState?: AudioContextState;
   rds?: RdsSnapshot;
+  dab?: DabSnapshot;
+  adsb?: AdsbSnapshot;
+  ais?: AisSnapshot;
   /** A failed close retains ownership; only Stop/retry is safe until it closes. */
   cleanupRequired?: boolean;
 }
@@ -83,10 +100,11 @@ export class ReceiverController {
   };
 
   start(options: ReceiverStartOptions): Promise<void> {
-    if (this.snapshot.lifecycle !== "idle" && this.snapshot.lifecycle !== "error") {
+    const restartingConnectedBackend = this.snapshot.lifecycle === "connected" && Boolean(this.backend?.connect);
+    if (!restartingConnectedBackend && this.snapshot.lifecycle !== "idle" && this.snapshot.lifecycle !== "error") {
       return this.startTask ?? Promise.resolve();
     }
-    if (this.backend) return Promise.resolve();
+    if (this.backend && !restartingConnectedBackend) return Promise.resolve();
 
     const generation = ++this.generation;
     try {
@@ -100,38 +118,17 @@ export class ReceiverController {
       lifecycle: source === "rtl-sdr" ? "requesting-permission" : "starting",
       message: source === "synthetic" ? "Starting the synthetic RF spectrum demo…" : source === "replay" ? "Starting paced I/Q replay and audio…" : "Choose an RTL-SDR device in the browser prompt…",
       sessionGeneration: generation,
+      session: this.snapshot.session,
+      audioState: this.snapshot.audioState,
     });
 
-    let backend: ReceiverBackend;
-    try {
-      backend = this.createBackend({
-        permissionGranted: () => {
-          if (this.isCurrent(generation, "requesting-permission")) {
-            this.publish({
-              lifecycle: "starting",
-              message: `Configuring the tuner and starting ${options.modeSettings?.mode ?? "WBFM"} audio…`,
-              sessionGeneration: generation,
-              audioState: this.snapshot.audioState,
-            });
-          }
-        },
-        runtimeError: (error) => void this.handleRuntimeError(backend, error),
-        audioStateChanged: (audioState) => {
-          if (!backend || this.backend !== backend || this.snapshot.lifecycle === "stopping") return;
-          this.publish({ ...this.snapshot, audioState });
-        },
-        sourceEnded: () => void this.handleSourceEnded(backend),
-        rdsChanged: (rds) => {
-          if (!backend || this.backend !== backend || this.snapshot.lifecycle === "stopping") return;
-          this.publish({ ...this.snapshot, rds });
-        },
-      }, options, generation);
-    } catch (error) {
-      this.publishFailure(generation, error);
-      return Promise.resolve();
+    let backend = this.backend;
+    if (!backend) {
+      try { backend = this.createAndAttachBackend(options, generation); }
+      catch (error) { this.publishFailure(generation, error); return Promise.resolve(); }
+    } else {
+      this.publish({ ...this.snapshot, lifecycle: "starting", message: `Starting ${options.modeSettings?.mode ?? "WBFM"} reception…`, sessionGeneration: generation });
     }
-
-    this.backend = backend;
     const task = this.runStart(backend, options, generation);
     this.startTask = task;
     void task.finally(() => {
@@ -140,8 +137,33 @@ export class ReceiverController {
     return task;
   }
 
+  async connect(options: ReceiverStartOptions): Promise<void> {
+    if (this.snapshot.lifecycle !== "idle" && this.snapshot.lifecycle !== "error") return;
+    if (this.backend) return;
+    const generation = ++this.generation;
+    try { validateOptions(options); }
+    catch (error) { this.publishFailure(generation, error); return; }
+    let backend: ReceiverBackend;
+    try { backend = this.createAndAttachBackend(options, generation); }
+    catch (error) { this.publishFailure(generation, error); return; }
+    if (!backend.connect) {
+      await this.runStart(backend, options, generation);
+      return;
+    }
+    this.publish({ lifecycle: "requesting-permission", message: "Choose an RTL-SDR device in the browser prompt…", sessionGeneration: generation });
+    try {
+      const metadata = await backend.connect(options);
+      if (generation !== this.generation || this.backend !== backend) return;
+      this.publishConnected(metadata, generation, "RTL-SDR connected. Start reception when ready.");
+    } catch (error) {
+      try { await this.cleanupBackend(backend); } catch { /* Retain ownership for cleanup retry. */ }
+      if (generation === this.generation) this.publishFailure(generation, error);
+    }
+  }
+
   async stop(): Promise<void> {
     if (this.snapshot.lifecycle === "idle") return;
+    if (this.snapshot.lifecycle === "connected") return;
     if (this.snapshot.lifecycle === "stopping") {
       await this.cleanupTasks.get(this.backend!);
       return;
@@ -150,24 +172,42 @@ export class ReceiverController {
     const generation = ++this.generation;
     const backend = this.backend;
     this.captureCompletedRecording(backend?.stopRecording?.("source-stop"));
+    const persistent = Boolean(backend?.disconnect);
+    const preserveConnection = persistent && ["running", "tuning"].includes(this.snapshot.lifecycle);
     this.publish({
       lifecycle: "stopping",
-      message: "Stopping sample transfers and closing the device…",
+      message: preserveConnection ? "Stopping sample transfers; keeping the device connected…" : "Stopping sample transfers and closing the source…",
       sessionGeneration: generation,
+      session: this.snapshot.session,
+      audioState: this.snapshot.audioState,
     });
 
     try {
-      await this.cleanupBackend(backend);
+      if (preserveConnection && backend) await backend.stop();
+      else await this.cleanupBackend(backend);
       if (generation === this.generation) {
-        this.backend = undefined;
-        this.publish({
-          lifecycle: "idle",
-          message: "Receiver stopped. The device can be selected again when you start.",
-          sessionGeneration: generation,
-        });
+        if (preserveConnection && this.snapshot.session) this.publishConnected(this.snapshot.session, generation, "Reception stopped. RTL-SDR remains connected.");
+        else this.publish({ lifecycle: "idle", message: "Receiver stopped.", sessionGeneration: generation });
       }
     } catch (error) {
       this.publishFailure(generation, error);
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    const backend = this.backend;
+    if (!backend) {
+      if (this.snapshot.lifecycle !== "idle") this.publish({ lifecycle: "idle", message: "Receiver disconnected.", sessionGeneration: ++this.generation });
+      return;
+    }
+    const generation = ++this.generation;
+    this.captureCompletedRecording(backend.stopRecording?.("source-stop"));
+    this.publish({ ...this.snapshot, lifecycle: "disconnecting", message: "Releasing the signal source…", sessionGeneration: generation });
+    try {
+      await this.cleanupBackend(backend);
+      if (generation === this.generation) this.publish({ lifecycle: "idle", message: "Receiver disconnected.", sessionGeneration: generation });
+    } catch (error) {
+      if (generation === this.generation) this.publishFailure(generation, error);
     }
   }
 
@@ -176,9 +216,9 @@ export class ReceiverController {
     this.backend?.setVolume(safeVolume);
   }
 
-  startRecording(): RecordingStatus | undefined {
+  startRecording(survey?: SurveyCaptureContext): RecordingStatus | undefined {
     if (this.snapshot.lifecycle !== "running" || !this.backend) return undefined;
-    return this.backend.startRecording?.();
+    return this.backend.startRecording?.(survey);
   }
 
   stopRecording(): IqRecording | undefined {
@@ -188,6 +228,13 @@ export class ReceiverController {
   }
 
   getRecordingStatus(): RecordingStatus | undefined { return this.backend?.getRecordingStatus?.(); }
+
+  finalizeCapacityRecording(): IqRecording | undefined {
+    if (this.backend?.getRecordingStatus?.()?.state !== "capacity-reached") return undefined;
+    const recording = this.backend.stopRecording?.("user");
+    this.captureCompletedRecording(recording);
+    return recording;
+  }
 
   takeCompletedRecording(): IqRecording | undefined {
     const recording = this.completedRecording;
@@ -222,6 +269,41 @@ export class ReceiverController {
       this.publishRunning(metadata, generation);
     } catch (error) {
       if (generation === this.generation && this.backend === backend) await this.failBackend(backend, error);
+    }
+  }
+
+  async scanTune(centerFrequencyHz: number): Promise<SourceSessionMetadata | undefined> {
+    const backend = this.backend;
+    const scanTune = backend?.scanTune;
+    if (this.snapshot.lifecycle !== "running" || !this.snapshot.session || !backend || !scanTune) return undefined;
+    try { validateOptions({ channelFrequencyHz: centerFrequencyHz, volume: 0 }); }
+    catch (error) {
+      this.publish({ ...this.snapshot, message: error instanceof Error ? error.message : "Enter a valid scan frequency." });
+      return undefined;
+    }
+    this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
+    const generation = ++this.generation;
+    this.publish({
+      ...this.snapshot,
+      lifecycle: "tuning",
+      message: `Scanning ${(centerFrequencyHz / 1_000_000).toFixed(3)} MHz…`,
+      sessionGeneration: generation,
+      session: {
+        ...this.snapshot.session,
+        sessionGeneration: generation,
+        hardwareCenterFrequencyHz: centerFrequencyHz,
+        selectedChannelFrequencyHz: centerFrequencyHz,
+      },
+      rds: undefined,
+    });
+    try {
+      const metadata = await scanTune.call(backend, centerFrequencyHz, generation);
+      if (generation !== this.generation || this.backend !== backend) return undefined;
+      this.publishRunning(metadata, generation);
+      return { ...metadata, sessionGeneration: generation };
+    } catch (error) {
+      if (generation === this.generation && this.backend === backend) await this.failBackend(backend, error);
+      return undefined;
     }
   }
 
@@ -260,7 +342,7 @@ export class ReceiverController {
   }
 
   async setGain(gainDb: number | null): Promise<void> {
-    if (this.snapshot.lifecycle !== "running" || !this.snapshot.session || !this.backend) return;
+    if (!["connected", "running"].includes(this.snapshot.lifecycle) || !this.snapshot.session || !this.backend) return;
     const backend = this.backend;
     this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
     const generation = this.generation;
@@ -285,8 +367,8 @@ export class ReceiverController {
     generation: number,
   ): Promise<void> {
     try {
-      const metadata = await backend.start({ ...options, volume: clampVolume(options.volume) });
-      if (!this.isCurrent(generation, "starting") && !this.isCurrent(generation, "requesting-permission")) {
+      const metadata = await backend.start({ ...options, volume: clampVolume(options.volume) }, generation);
+      if (!this.isCurrent(generation, "starting") && !this.isCurrent(generation, "requesting-permission") && !this.isCurrent(generation, "connecting")) {
         await backend.stop();
         return;
       }
@@ -359,14 +441,60 @@ export class ReceiverController {
       rds: metadata.mode === "WBFM"
         ? (this.snapshot.sessionGeneration === generation ? this.snapshot.rds : undefined) ?? { pi: null, programmeService: null, radioText: null, validGroups: 0 }
         : undefined,
+      dab: metadata.mode === "DAB" ? this.snapshot.dab : undefined,
+      adsb: metadata.mode === "ADS-B" ? this.snapshot.adsb : undefined,
+      ais: metadata.mode === "AIS" ? this.snapshot.ais : undefined,
     });
+  }
+
+  private publishConnected(metadata: Omit<SourceSessionMetadata, "sessionGeneration"> | SourceSessionMetadata, generation: number, message: string): void {
+    this.publish({
+      lifecycle: "connected",
+      message,
+      sessionGeneration: generation,
+      session: { ...metadata, sessionGeneration: generation },
+      audioState: "suspended",
+    });
+  }
+
+  private createAndAttachBackend(options: ReceiverStartOptions, generation: number): ReceiverBackend {
+    let backend!: ReceiverBackend;
+    backend = this.createBackend({
+      permissionGranted: () => {
+        if (this.isCurrent(generation, "requesting-permission")) this.publish({ ...this.snapshot, lifecycle: "connecting", message: "Opening and configuring the RTL-SDR…" });
+      },
+      runtimeError: (error) => void this.handleRuntimeError(backend, error),
+      audioStateChanged: (audioState) => {
+        if (this.backend !== backend || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+        this.publish({ ...this.snapshot, audioState });
+      },
+      sourceEnded: () => void this.handleSourceEnded(backend),
+      rdsChanged: (rds) => {
+        if (this.backend !== backend || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+        this.publish({ ...this.snapshot, rds });
+      },
+      dabChanged: (dab) => {
+        if (this.backend !== backend || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+        this.publish({ ...this.snapshot, dab });
+      },
+      adsbChanged: (adsb) => {
+        if (this.backend !== backend || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+        this.publish({ ...this.snapshot, adsb });
+      },
+      aisChanged: (ais) => {
+        if (this.backend !== backend || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+        this.publish({ ...this.snapshot, ais });
+      },
+    }, options, generation);
+    this.backend = backend;
+    return backend;
   }
 
   private cleanupBackend(backend?: ReceiverBackend): Promise<void> {
     if (!backend) return Promise.resolve();
     const existing = this.cleanupTasks.get(backend);
     if (existing) return existing;
-    const task = Promise.resolve().then(() => backend.stop()).then(() => {
+    const task = Promise.resolve().then(() => backend.disconnect?.() ?? backend.stop()).then(() => {
       if (this.backend === backend) this.backend = undefined;
     }).finally(() => { this.cleanupTasks.delete(backend); });
     this.cleanupTasks.set(backend, task);
@@ -407,8 +535,14 @@ export function validateOptions(options: ReceiverStartOptions): void {
   if (!Number.isSafeInteger(Math.round(options.channelFrequencyHz))) {
     throw new Error("Choose a channel frequency that can be represented safely in integer Hz.");
   }
-  normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
+  const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
   normalizeGain(options.gainDb ?? null);
+  if (options.sampleRateHz !== undefined && !RTL_SAMPLE_RATE_OPTIONS_HZ.includes(options.sampleRateHz as typeof RTL_SAMPLE_RATE_OPTIONS_HZ[number])) {
+    throw new Error(`Choose a supported RTL-SDR sample rate (${RTL_SAMPLE_RATE_OPTIONS_HZ.join(" or ")} samples/s).`);
+  }
+  if ((options.source ?? "rtl-sdr") === "rtl-sdr" && mode.mode === "DAB") validateDabSampleRate(options.sampleRateHz ?? RTL_SAMPLE_RATE_HZ);
+  if ((options.source ?? "rtl-sdr") === "rtl-sdr" && mode.mode === "ADS-B") validateAdsbSampleRate(options.sampleRateHz ?? RTL_SAMPLE_RATE_HZ);
+  if (options.source === "synthetic" && ["DAB", "ADS-B", "AIS"].includes(mode.mode)) throw new Error(`${mode.mode} is available with RTL-SDR or replay, not the spectrum demo.`);
 }
 
 export function describeReceiverError(error: unknown): string {
@@ -434,7 +568,7 @@ export function describeReceiverError(error: unknown): string {
     return "The sample transfer stopped. Reconnect the dongle, then start again.";
   }
   if (name === "NotAllowedError" || message.toLowerCase().includes("audio")) {
-    return "Audio could not start. Click Connect & start again and allow this page to play audio.";
+    return "Audio could not start. Click Start receiving again and allow this page to play audio.";
   }
   return `Receiver failed: ${message || "Unknown error"}`;
 }

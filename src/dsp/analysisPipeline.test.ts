@@ -27,6 +27,27 @@ const METADATA = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AnalysisPipeline credits", () => {
+  it("feeds the GPU tap independently of worker credits and forwards only source gaps", () => {
+    const worker = new FakeWorker();
+    const pipeline = new AnalysisPipeline(worker as unknown as Worker);
+    const received: { discontinuity: boolean; missingSamples: number }[] = [];
+    const detach = pipeline.attachGpuTap(block => received.push({ discontinuity: block.discontinuity, missingSamples: block.missingSamples }));
+    const receiver = pipeline.begin(METADATA);
+    const block = { I: new Float32Array(8), Q: new Float32Array(8), frequency: 100_000_000 };
+    receiver.receiveSamples(block);
+    receiver.receiveSamples(block);
+    pipeline.markDiscontinuity(123);
+    receiver.receiveSamples(block);
+    receiver.receiveSamples(block);
+    expect(received).toEqual([
+      { discontinuity: false, missingSamples: 0 }, { discontinuity: false, missingSamples: 0 },
+      { discontinuity: true, missingSamples: 123 }, { discontinuity: false, missingSamples: 0 },
+    ]);
+    expect(worker.sent.filter(message => message.type === "samples")).toHaveLength(1);
+    detach();
+    receiver.receiveSamples(block);
+    expect(received).toHaveLength(4);
+  });
   it("rejects old source callbacks even after a new source begins", () => {
     const worker = new FakeWorker();
     const pipeline = new AnalysisPipeline(worker as unknown as Worker);

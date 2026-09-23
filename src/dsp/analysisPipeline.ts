@@ -4,6 +4,8 @@ import type { SourceSessionMetadata, SpectrumFrame } from "../radio/types";
 import type { AnalysisWorkerInput, AnalysisWorkerOutput } from "./spectrumProtocol";
 import { analysisBackendPreference, type AnalysisBackendName, type AnalysisBackendPreference } from "./spectrumBackend";
 
+import type { GpuInputBlock } from "./gpuAnalysisTap";
+
 type FrameListener = (frame: SpectrumFrame) => void;
 
 export interface AnalysisDiagnostics {
@@ -61,6 +63,15 @@ export class AnalysisPipeline {
   private diagnostics: AnalysisDiagnostics = { ...EMPTY_DIAGNOSTICS };
   private totalProcessingTimeMs = 0;
   private sourceToken?: symbol;
+  private gpuTap?: (block: GpuInputBlock) => void;
+  private gpuMissingSamples = 0;
+  private gpuSourceSamples = 0;
+  private gpuDiscontinuity = false;
+
+  attachGpuTap(tap: (block: GpuInputBlock) => void): () => void {
+    this.gpuTap = tap;
+    return () => { if (this.gpuTap === tap) this.gpuTap = undefined; };
+  }
 
   constructor(
     worker = new Worker(new URL("../workers/spectrum.worker.ts", import.meta.url), { type: "module" }),
@@ -139,6 +150,9 @@ export class AnalysisPipeline {
 
   /** Preserve the source clock while resetting analysis across a recorded gap. */
   markDiscontinuity(missingSamples = 0): void {
+    this.gpuDiscontinuity = true;
+    this.gpuMissingSamples += missingSamples;
+    this.gpuSourceSamples += missingSamples;
     this.droppedInputBlocks += 1;
     this.droppedInputSamples += missingSamples;
     this.diagnostics.knownApplicationDiscontinuities += 1;
@@ -146,6 +160,7 @@ export class AnalysisPipeline {
 
   dispose(): void {
     this.stop();
+    this.gpuTap = undefined;
     this.worker.terminate();
     this.listeners.clear();
   }
@@ -158,6 +173,13 @@ export class AnalysisPipeline {
   private receiveSamples(block: SampleBlock, generation: number): void {
     if (generation !== this.generation) return;
     const length = Math.min(block.I.length, block.Q.length);
+    const gpuSampleIndex = this.gpuSourceSamples;
+    this.gpuSourceSamples += length;
+    this.gpuTap?.({ sampleIndex: gpuSampleIndex, I: block.I, Q: block.Q, sessionGeneration: generation,
+      centerFrequencyHz: block.frequency, sampleRateHz: this.sampleRateHz,
+      discontinuity: this.gpuDiscontinuity, missingSamples: this.gpuMissingSamples });
+    this.gpuDiscontinuity = false;
+    this.gpuMissingSamples = 0;
     this.diagnostics.receivedComplexSamples += length;
     if (this.diagnostics.receivedBytes !== null) this.diagnostics.receivedBytes += length * 2;
     if (this.inputBusy) {
@@ -246,6 +268,9 @@ export class AnalysisPipeline {
 
   private resetDiagnostics(metadata: SourceSessionMetadata): void {
     this.totalProcessingTimeMs = 0;
+    this.gpuSourceSamples = 0;
+    this.gpuMissingSamples = 0;
+    this.gpuDiscontinuity = false;
     this.diagnostics = {
       ...EMPTY_DIAGNOSTICS,
       sessionGeneration: metadata.sessionGeneration,

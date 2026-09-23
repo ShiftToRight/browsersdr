@@ -1,6 +1,7 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import type { SourceSessionMetadata } from "./types";
 import { normalizeGain, normalizeModeSettings, planChannelTune, RECEIVER_MODES, type ReceiverMode } from "./receiverConfig";
+import { validateSurveyCaptureContext, type SurveyCaptureContext } from "./fieldSurvey";
 
 export const RECORDING_FORMAT = "browsersdr-cu8-v1" as const;
 export const RECORDING_MAX_BYTES = 32 * 1024 * 1024;
@@ -35,6 +36,7 @@ export interface IqRecordingMetadata {
   knownGaps: RecordingGap[];
   stopReason: "user" | "capacity" | "source-stop" | "metadata-change";
   provenance?: string;
+  survey?: SurveyCaptureContext;
 }
 
 export interface IqRecording {
@@ -86,6 +88,7 @@ export class IqRecorder {
     private readonly captureStartedAt = new Date().toISOString(),
     private readonly maxBytes = RECORDING_MAX_BYTES,
     private readonly provenance?: string,
+    private readonly survey?: SurveyCaptureContext,
   ) {
     if (maxBytes < 2) throw new Error("Recording capacity must hold at least one complex sample.");
   }
@@ -158,6 +161,7 @@ export class IqRecorder {
         knownGaps: this.gaps.map((gap) => ({ ...gap })),
         stopReason: this.capacityReached ? "capacity" : reason,
         ...(this.provenance ? { provenance: this.provenance } : {}),
+        ...(this.survey ? { survey: structuredClone(this.survey) } : {}),
       },
     };
   }
@@ -205,6 +209,7 @@ export function validateRecordingMetadata(value: unknown, byteLength: number): I
   if (!["rtl-sdr", "synthetic", "replay"].includes(metadata.source!)) throw new Error("Recording has an invalid source.");
   if (!["user", "capacity", "source-stop", "metadata-change"].includes(metadata.stopReason!)) throw new Error("Recording has an invalid stop reason.");
   if (metadata.provenance !== undefined && (typeof metadata.provenance !== "string" || metadata.provenance.length > 4096)) throw new Error("Recording has invalid provenance.");
+  const survey = metadata.survey === undefined ? undefined : validateSurveyCaptureContext(metadata.survey);
   if (typeof metadata.captureStartedAt !== "string" || !Number.isFinite(Date.parse(metadata.captureStartedAt))) throw new Error("Recording metadata has an invalid capture start time.");
   if (!Number.isSafeInteger(metadata.sampleCount) || metadata.sampleCount !== byteLength / 2) {
     throw new Error("Recording is truncated or mismatched: metadata sample count does not match the binary file.");
@@ -225,7 +230,7 @@ export function validateRecordingMetadata(value: unknown, byteLength: number): I
     if (typeof gap.reason !== "string" || gap.reason.length > 1024) throw new Error("Recording metadata contains an invalid gap reason.");
   }
   if ((metadata.sampleCount! + missingSamples) / metadata.sampleRateHz > 3600) throw new Error("Replay duration including known gaps exceeds one hour.");
-  return { ...metadata, knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) } as IqRecordingMetadata;
+  return { ...metadata, ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) } as IqRecordingMetadata;
 }
 
 export function recordingMetadataJson(recording: IqRecording): string {

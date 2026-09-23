@@ -1,7 +1,10 @@
 import "@jtarrio/signals/demod/demodulator.js";
 import { getMode, modeParameters, type Mode } from "@jtarrio/signals/demod/modes.js";
+import { DAB_OCCUPIED_BANDWIDTH_HZ } from "../dab/dabReceiver";
+import { ADSB_BANDWIDTH_HZ } from "../adsb/adsbReceiver";
+import { AIS_BANDWIDTH_HZ } from "../ais/aisReceiver";
 
-export type ReceiverMode = "WBFM" | "NBFM" | "AM" | "USB" | "LSB";
+export type ReceiverMode = "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "DAB" | "ADS-B" | "AIS";
 
 export interface ReceiverModeSettings {
   mode: ReceiverMode;
@@ -16,7 +19,7 @@ export interface ModeCapabilities {
   squelchSettable: boolean;
 }
 
-export const RECEIVER_MODES: readonly ReceiverMode[] = ["WBFM", "NBFM", "AM", "USB", "LSB"];
+export const RECEIVER_MODES: readonly ReceiverMode[] = ["WBFM", "NBFM", "AM", "USB", "LSB", "DAB", "ADS-B", "AIS"];
 export const SQUELCH_MIN = 0;
 export const SQUELCH_MAX = 6;
 export const MANUAL_GAIN_MIN_DB = 0;
@@ -40,6 +43,9 @@ const MODE_CAPABILITIES: Record<ReceiverMode, ModeCapabilities> = {
   AM: { bandwidthSettable: true, minimumBandwidthHz: 250, maximumBandwidthHz: 30_000, squelchSettable: true },
   USB: { bandwidthSettable: true, minimumBandwidthHz: 10, maximumBandwidthHz: 15_000, squelchSettable: true },
   LSB: { bandwidthSettable: true, minimumBandwidthHz: 10, maximumBandwidthHz: 15_000, squelchSettable: true },
+  DAB: { bandwidthSettable: false, minimumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, maximumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelchSettable: false },
+  "ADS-B": { bandwidthSettable: false, minimumBandwidthHz: ADSB_BANDWIDTH_HZ, maximumBandwidthHz: ADSB_BANDWIDTH_HZ, squelchSettable: false },
+  AIS: { bandwidthSettable: false, minimumBandwidthHz: AIS_BANDWIDTH_HZ, maximumBandwidthHz: AIS_BANDWIDTH_HZ, squelchSettable: false },
 };
 
 export function modeCapabilities(mode: ReceiverMode): ModeCapabilities {
@@ -47,6 +53,9 @@ export function modeCapabilities(mode: ReceiverMode): ModeCapabilities {
 }
 
 export function defaultModeSettings(mode: ReceiverMode): ReceiverModeSettings {
+  if (mode === "DAB") return { mode, bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
+  if (mode === "ADS-B") return { mode, bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
+  if (mode === "AIS") return { mode, bandwidthHz: AIS_BANDWIDTH_HZ, squelch: 0 };
   const parameters = modeParameters(getMode(mode));
   return {
     mode,
@@ -59,6 +68,9 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
   if (!RECEIVER_MODES.includes(settings.mode)) throw new Error(`Unsupported receiver mode: ${String(settings.mode)}`);
   if (!Number.isFinite(settings.bandwidthHz)) throw new Error("Enter a valid channel bandwidth.");
   if (!Number.isFinite(settings.squelch)) throw new Error("Enter a valid squelch level.");
+  if (settings.mode === "DAB") return { mode: "DAB", bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
+  if (settings.mode === "ADS-B") return { mode: "ADS-B", bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
+  if (settings.mode === "AIS") return { mode: "AIS", bandwidthHz: AIS_BANDWIDTH_HZ, squelch: 0 };
   const parameters = modeParameters(getMode(settings.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(settings.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(settings.squelch);
@@ -71,6 +83,7 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
 
 export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   const normalized = normalizeModeSettings(settings);
+  if (["DAB", "ADS-B", "AIS"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
   const parameters = modeParameters(getMode(normalized.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(normalized.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);

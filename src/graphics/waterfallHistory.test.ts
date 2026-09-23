@@ -18,6 +18,13 @@ function frame(sequence: number, generation = 4, sampleIndex = (sequence + 1) * 
 }
 
 describe("waterfall history", () => {
+  it("uses the experimental FFT size for the sample clock", () => {
+    const history = new WaterfallHistory(8, 16384);
+    history.reset(4);
+    history.append(frame(0, 4, 65536));
+    expect(history.append(frame(1, 4, 131072)).map(row => row.kind)).toEqual(["spectrum"]);
+    expect(history.append(frame(2, 4, 262144)).map(row => row.kind)).toEqual(["gap", "spectrum"]);
+  });
   it("keeps newest-to-oldest circular ordering without moving prior rows", () => {
     const history = new WaterfallHistory(3);
     history.reset(4);
