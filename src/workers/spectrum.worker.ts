@@ -1,7 +1,7 @@
 import type { AnalysisWorkerInput, AnalysisWorkerOutput } from "../dsp/spectrumProtocol";
 import { createAnalysisBackend, type AnalysisBackendSelection } from "../dsp/spectrumBackend";
 import { FFT_SIZE } from "../dsp/spectrumMath";
-import { SpectrumProcessor } from "../dsp/spectrumProcessor";
+import { SpectrumProcessor, spectrumWindowsPerAverage } from "../dsp/spectrumProcessor";
 
 const workerScope = self as unknown as {
   onmessage: ((event: MessageEvent<AnalysisWorkerInput>) => void) | null;
@@ -21,8 +21,8 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
     centerFrequencyHz = message.centerFrequencyHz;
     sampleRateHz = message.sampleRateHz;
     sequence = 0;
-    processorPromise = createAnalysisBackend(message.backendPreference, FFT_SIZE)
-      .then((selection) => ({ processor: new SpectrumProcessor(selection.kernel), selection }));
+    processorPromise = createAnalysisBackend(message.backendPreference, FFT_SIZE, spectrumWindowsPerAverage(message.sampleRateHz))
+      .then((selection) => ({ processor: new SpectrumProcessor(selection.kernel, true), selection }));
     return;
   }
   if (message.sessionGeneration !== generation) return;
@@ -74,9 +74,11 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
       sampleIndex: frame.sampleIndex,
       centerFrequencyHz,
       sampleRateHz,
+      hopSamples: spectrumWindowsPerAverage(sampleRateHz) * FFT_SIZE,
       bins: frame.bins.buffer as ArrayBuffer,
       droppedFramesBefore: frame.droppedBefore,
       skippedSpectrumFramesBefore: frame.skippedSpectrumFramesBefore,
+      missingSamplesBefore: frame.missingSamplesBefore,
     };
     workerScope.postMessage(frameMessage, [frame.bins.buffer]);
   }

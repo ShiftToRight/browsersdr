@@ -1,5 +1,5 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
-import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
+import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
 
 export const AIS_CENTER_FREQUENCY_HZ = 162_000_000;
 export const AIS_BANDWIDTH_HZ = 100_000;
@@ -31,7 +31,7 @@ export interface AisSnapshot {
   message: string;
 }
 
-interface MutableTarget extends AisTarget {}
+type MutableTarget = AisTarget;
 
 const AIS_CHARS = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./0123456789:;<=>?";
 
@@ -140,7 +140,7 @@ export class AisChannelDemodulator {
 }
 
 /** Dual-channel AIS 1/AIS 2 GMSK receiver and message decoder. */
-export class AisReceiver implements SampleReceiver {
+export class AisReceiver implements DigitalSampleReceiver {
   private sampleRateHz = 1_024_000;
   private centerOffsetHz = 0;
   private frames = 0;
@@ -153,8 +153,15 @@ export class AisReceiver implements SampleReceiver {
   private readonly channel1 = new AisChannelDemodulator(-25_000, (bytes) => this.frame(bytes, "AIS 1"));
   private readonly channel2 = new AisChannelDemodulator(25_000, (bytes) => this.frame(bytes, "AIS 2"));
   constructor(private readonly onUpdate: (snapshot: AisSnapshot) => void, private readonly now = () => performance.now()) {}
-  setSampleRate(sampleRateHz: number): void { if (sampleRateHz < 192_000) throw new Error("Dual-channel AIS requires at least 192 ksample/s."); this.sampleRateHz = sampleRateHz; this.reset(); }
+  setSampleRate(sampleRateHz: number): void { validateAisSampleRate(sampleRateHz); this.sampleRateHz = sampleRateHz; this.reset(); }
   setFrequencyOffset(offsetHz: number): void { this.centerOffsetHz = offsetHz; this.reset(); }
+  configure(sampleRateHz: number, frequencyOffsetHz: number): void {
+    validateAisSampleRate(sampleRateHz);
+    if (!Number.isFinite(frequencyOffsetHz)) throw new Error("AIS frequency offset must be finite.");
+    this.sampleRateHz = sampleRateHz;
+    this.centerOffsetHz = frequencyOffsetHz;
+    this.reset();
+  }
   reset(): void {
     this.frames = 0; this.validFrames = 0; this.rejectedFrames = 0; this.channel1Frames = 0; this.channel2Frames = 0;
     this.lastPublishMs = Number.NEGATIVE_INFINITY;
@@ -207,6 +214,10 @@ export class AisReceiver implements SampleReceiver {
       channel1Frames: this.channel1Frames, channel2Frames: this.channel2Frames, targets,
       message: this.validFrames ? `Tracking ${targets.length} AIS target${targets.length === 1 ? "" : "s"}.` : "Waiting for valid AIS frames on both channels…" });
   }
+}
+
+export function validateAisSampleRate(sampleRateHz: number): void {
+  if (!Number.isFinite(sampleRateHz) || sampleRateHz < 192_000) throw new Error("Dual-channel AIS requires at least 192 ksample/s.");
 }
 
 export function crc16X25(bytes: Uint8Array): number {

@@ -353,4 +353,41 @@ describe("ReceiverController", () => {
     expect(controller.takeCompletedRecording()?.metadata.sampleCount).toBe(32);
     expect(stops).toBe(1);
   });
+
+  it("does not start or overwrite another segment while completion ownership is pending", async () => {
+    const first = createDeterministicRecordingFixture(32);
+    const second = createDeterministicRecordingFixture(16);
+    let starts = 0;
+    let completion = first;
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, () => Promise.resolve(METADATA), () => undefined),
+      startRecording: () => { starts += 1; return { state: "recording", bytes: 0, maxBytes: 64, sampleCount: 0 }; },
+      stopRecording: () => completion,
+    }));
+    await controller.start(OPTIONS);
+    expect(controller.startRecording()).toBeDefined();
+    controller.stopRecording();
+    completion = second;
+    expect(controller.startRecording()).toBeUndefined();
+    controller.stopRecording();
+    expect(controller.takeCompletedRecording()?.metadata.sampleCount).toBe(first.metadata.sampleCount);
+    expect(starts).toBe(1);
+  });
+
+  it("retains a source-failure segment until the completion owner takes it", async () => {
+    const fixture = createDeterministicRecordingFixture(24);
+    let backendEvents!: ReceiverBackendEvents;
+    const controller = new ReceiverController((events) => {
+      backendEvents = events;
+      return {
+        ...fakeBackend(events, () => Promise.resolve(METADATA), () => undefined),
+        stopRecording: (reason = "user") => ({ ...fixture, metadata: { ...fixture.metadata, stopReason: reason } }),
+      };
+    });
+    await controller.start(OPTIONS);
+    backendEvents.runtimeError(new Error("USB read failed"));
+    await vi.waitFor(() => expect(controller.getSnapshot().lifecycle).toBe("error"));
+    expect(controller.takeCompletedRecording()?.metadata).toMatchObject({ sampleCount: 24, stopReason: "source-stop" });
+    expect(controller.takeCompletedRecording()).toBeUndefined();
+  });
 });

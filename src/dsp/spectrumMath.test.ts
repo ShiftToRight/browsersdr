@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SyntheticComplexTone } from "../testing/syntheticTone";
 import { shiftedBinForOffset, spectrumEdges } from "./frequencyScale";
 import { FFT_SIZE, SPECTRUM_FLOOR_DB, SpectrumAccumulator } from "./spectrumMath";
-import { SpectrumProcessor } from "./spectrumProcessor";
+import { SpectrumProcessor, spectrumWindowsPerAverage } from "./spectrumProcessor";
 
 const SAMPLE_RATE = 1_024_000;
 
@@ -27,6 +27,21 @@ function peakBin(bins: Float32Array): number {
 }
 
 describe("RF spectrum analysis", () => {
+  it.each([1_024_000, 2_400_000, 4_800_000])("averages continuous %d Hz input at a bounded source-clock display cadence", rate => {
+    const windows = spectrumWindowsPerAverage(rate);
+    const processor = new SpectrumProcessor(new SpectrumAccumulator(FFT_SIZE, windows), true);
+    const tone = new SyntheticComplexTone({ sampleRateHz: rate, toneOffsetHz: rate / 16, amplitude: 0.5 });
+    for (let row = 0; row < 3; row++) {
+      const data = tone.generate(windows * FFT_SIZE);
+      const frames = processor.accept(data.I, data.Q, 0);
+      expect(frames).toHaveLength(1);
+      expect(frames[0]).toMatchObject({ sampleIndex: (row + 1) * windows * FFT_SIZE, droppedBefore: 0, skippedSpectrumFramesBefore: 0, missingSamplesBefore: 0 });
+      expect(frames[0]!.bins[FFT_SIZE / 2 + FFT_SIZE / 16]).toBeCloseTo(-6.0206, 2);
+      processor.grantPublicationCredit();
+    }
+    expect(windows * FFT_SIZE / rate).toBeGreaterThanOrEqual(0.04);
+    expect(windows * FFT_SIZE / rate).toBeLessThan(0.045);
+  });
   it.each([128_000, -192_000])("places a %d Hz complex tone in its shifted bin", (offsetHz) => {
     const bins = spectrumForTone(offsetHz, 0.5);
     expect(Math.abs(peakBin(bins) - shiftedBinForOffset(offsetHz, SAMPLE_RATE, FFT_SIZE))).toBeLessThanOrEqual(1);
@@ -76,8 +91,17 @@ describe("RF spectrum analysis", () => {
     expect(resumed[0]?.droppedBefore).toBe(1);
   });
 
+  it("reports exact missing source samples separately from skipped publications", () => {
+    const tone = new SyntheticComplexTone({ sampleRateHz: SAMPLE_RATE, toneOffsetHz: 32_000 });
+    const processor = new SpectrumProcessor();
+    const first = tone.generate(FFT_SIZE * 4);
+    processor.accept(first.I, first.Q, 0);
+    processor.grantPublicationCredit();
+    const resumed = processor.accept(first.I, first.Q, 100, true, 2, 2_000);
+    expect(resumed[0]).toMatchObject({ droppedBefore: 2, missingSamplesBefore: 2_000 });
+  });
+
   it("derives axis edges from the frame center and actual sample rate", () => {
     expect(spectrumEdges(100_000_000, 1_024_000)).toEqual([99_488_000, 100_000_000, 100_512_000]);
   });
 });
-

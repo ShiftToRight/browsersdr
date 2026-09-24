@@ -46,6 +46,9 @@ export interface AnalysisFrameMessage {
   bins: ArrayBuffer;
   droppedFramesBefore: number;
   skippedSpectrumFramesBefore: number;
+  missingSamplesBefore?: number;
+  /** Expected samples per averaged display row; absent for legacy four-window frames. */
+  hopSamples?: number;
 }
 
 export type AnalysisWorkerOutput = AnalysisAckMessage | AnalysisFrameMessage;

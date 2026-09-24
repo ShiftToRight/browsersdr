@@ -12,7 +12,7 @@ export interface AnalysisDiagnostics {
   sessionGeneration: number;
   source: SourceSessionMetadata["source"] | null;
   receivedComplexSamples: number;
-  /** RTL-SDR's verified U8 I,Q transport is two bytes per complex sample. */
+  /** Bytes represented by retained 8-bit I/Q samples, excluding transport settling/discards. */
   receivedBytes: number | null;
   processedBlocks: number;
   processingTimeLastMs: number | null;
@@ -47,17 +47,20 @@ const EMPTY_DIAGNOSTICS: AnalysisDiagnostics = {
   backendFallbackReason: null,
 };
 
-/** Owns the analysis worker and the two one-slot queues around it. */
+/** Four bounded input credits absorb worker/main-thread scheduling jitter. */
+export const ANALYSIS_INPUT_SLOTS = 4;
+export const ANALYSIS_MAX_BLOCK_SAMPLES = 262_144;
 export class AnalysisPipeline {
   private readonly worker: Worker;
   private readonly listeners = new Set<FrameListener>();
+  private readonly measurementListeners = new Set<FrameListener>();
   private generation = 0;
   private sampleRateHz = 0;
   private centerFrequencyHz = 0;
-  private inputBusy = false;
+  private inputsInFlight = 0;
   private droppedInputBlocks = 0;
   private droppedInputSamples = 0;
-  private returnedBuffers?: [ArrayBuffer, ArrayBuffer];
+  private returnedBuffers: [ArrayBuffer, ArrayBuffer][] = [];
   private pendingFrame?: SpectrumFrame;
   private animationFrame?: number;
   private diagnostics: AnalysisDiagnostics = { ...EMPTY_DIAGNOSTICS };
@@ -87,7 +90,8 @@ export class AnalysisPipeline {
     this.generation = metadata.sessionGeneration;
     this.sampleRateHz = metadata.actualSampleRateHz;
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
-    this.inputBusy = false;
+    this.inputsInFlight = 0;
+    this.returnedBuffers = [];
     this.droppedInputBlocks = 0;
     this.droppedInputSamples = 0;
     this.pendingFrame = undefined;
@@ -110,10 +114,10 @@ export class AnalysisPipeline {
     this.generation = metadata.sessionGeneration;
     this.sampleRateHz = metadata.actualSampleRateHz;
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
-    this.inputBusy = false;
+    this.inputsInFlight = 0;
+    this.returnedBuffers = [];
     this.droppedInputBlocks = 0;
     this.droppedInputSamples = 0;
-    this.returnedBuffers = undefined;
     this.pendingFrame = undefined;
     this.resetDiagnostics(metadata);
     if (this.animationFrame !== undefined) cancelAnimationFrame(this.animationFrame);
@@ -138,7 +142,8 @@ export class AnalysisPipeline {
     this.post({ type: "stop", sessionGeneration });
     this.generation = 0;
     this.sourceToken = undefined;
-    this.inputBusy = false;
+    this.inputsInFlight = 0;
+    this.returnedBuffers = [];
     this.pendingFrame = undefined;
     if (this.animationFrame !== undefined) cancelAnimationFrame(this.animationFrame);
     this.animationFrame = undefined;
@@ -163,11 +168,18 @@ export class AnalysisPipeline {
     this.gpuTap = undefined;
     this.worker.terminate();
     this.listeners.clear();
+    this.measurementListeners.clear();
   }
 
   subscribe(listener: FrameListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Receives every published worker measurement without waiting for display rendering. */
+  subscribeMeasurements(listener: FrameListener): () => void {
+    this.measurementListeners.add(listener);
+    return () => this.measurementListeners.delete(listener);
   }
 
   private receiveSamples(block: SampleBlock, generation: number): void {
@@ -182,7 +194,7 @@ export class AnalysisPipeline {
     this.gpuMissingSamples = 0;
     this.diagnostics.receivedComplexSamples += length;
     if (this.diagnostics.receivedBytes !== null) this.diagnostics.receivedBytes += length * 2;
-    if (this.inputBusy) {
+    if (this.inputsInFlight >= ANALYSIS_INPUT_SLOTS || length > ANALYSIS_MAX_BLOCK_SAMPLES) {
       this.droppedInputBlocks += 1;
       this.droppedInputSamples += length;
       this.diagnostics.skippedInputBlocks += 1;
@@ -192,11 +204,10 @@ export class AnalysisPipeline {
     }
     let I: Float32Array;
     let Q: Float32Array;
-    const returned = this.returnedBuffers;
+    const returned = this.returnedBuffers.pop();
     if (returned && returned[0].byteLength === length * Float32Array.BYTES_PER_ELEMENT && returned[1].byteLength === length * Float32Array.BYTES_PER_ELEMENT) {
       I = new Float32Array(returned[0]);
       Q = new Float32Array(returned[1]);
-      this.returnedBuffers = undefined;
     } else {
       I = new Float32Array(length);
       Q = new Float32Array(length);
@@ -207,7 +218,7 @@ export class AnalysisPipeline {
     const droppedInputSamples = this.droppedInputSamples;
     this.droppedInputBlocks = 0;
     this.droppedInputSamples = 0;
-    this.inputBusy = true;
+    this.inputsInFlight += 1;
     const message: AnalysisWorkerInput = {
       type: "samples",
       sessionGeneration: generation,
@@ -225,8 +236,8 @@ export class AnalysisPipeline {
   private onWorkerMessage(message: AnalysisWorkerOutput): void {
     if (message.sessionGeneration !== this.generation) return;
     if (message.type === "samples-ack") {
-      this.returnedBuffers = [message.I, message.Q];
-      this.inputBusy = false;
+      if (this.returnedBuffers.length < ANALYSIS_INPUT_SLOTS) this.returnedBuffers.push([message.I, message.Q]);
+      this.inputsInFlight = Math.max(0, this.inputsInFlight - 1);
       this.diagnostics.processedBlocks += 1;
       this.totalProcessingTimeMs += message.processingTimeMs;
       this.diagnostics.processingTimeLastMs = message.processingTimeMs;
@@ -238,7 +249,7 @@ export class AnalysisPipeline {
       return;
     }
     this.diagnostics.skippedSpectrumFrames += message.skippedSpectrumFramesBefore;
-    this.pendingFrame = {
+    const frame: SpectrumFrame = {
       sessionGeneration: message.sessionGeneration,
       sequence: message.sequence,
       timestampMs: message.timestampMs,
@@ -248,7 +259,16 @@ export class AnalysisPipeline {
       units: "relative-dB",
       bins: new Float32Array(message.bins),
       droppedFramesBefore: message.droppedFramesBefore,
+      missingSamplesBefore: message.missingSamplesBefore ?? 0,
+      ...(message.hopSamples ? { hopSamples: message.hopSamples } : {}),
     };
+    this.post({ type: "spectrum-credit", sessionGeneration: this.generation });
+    for (const listener of this.measurementListeners) listener(frame);
+    this.pendingFrame = this.pendingFrame ? {
+      ...frame,
+      missingSamplesBefore: (frame.missingSamplesBefore ?? 0) + (this.pendingFrame.missingSamplesBefore ?? 0),
+      droppedFramesBefore: frame.droppedFramesBefore + this.pendingFrame.droppedFramesBefore,
+    } : frame;
     if (this.animationFrame === undefined) {
       this.animationFrame = requestAnimationFrame(() => this.publishPendingFrame());
     }
@@ -261,7 +281,6 @@ export class AnalysisPipeline {
     if (!frame || frame.sessionGeneration !== this.generation) return;
     this.diagnostics.deliveredDisplayFrames += 1;
     for (const listener of this.listeners) listener(frame);
-    this.post({ type: "spectrum-credit", sessionGeneration: this.generation });
   }
 
   private post(message: AnalysisWorkerInput): void { this.worker.postMessage(message); }
@@ -275,7 +294,7 @@ export class AnalysisPipeline {
       ...EMPTY_DIAGNOSTICS,
       sessionGeneration: metadata.sessionGeneration,
       source: metadata.source,
-      receivedBytes: metadata.source === "rtl-sdr" || metadata.source === "replay" ? 0 : null,
+      receivedBytes: metadata.source === "rtl-sdr" || metadata.source === "hackrf" || metadata.source === "replay" ? 0 : null,
     };
   }
 }

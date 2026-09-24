@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BrowserSDR spectrum and star">
+  <rect x="4" y="4" width="56" height="56" rx="13" fill="#061331" stroke="#56dcff" stroke-width="5"/>
+  <path d="M12 44h7l4-7 6 11 7-26 7 26 5-11 4 7h1" fill="none" stroke="#56dcff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 10l1.8 4.2L42 16l-4.2 1.8L36 22l-1.8-4.2L30 16l4.2-1.8z" fill="#ead9ff"/>
+</svg>

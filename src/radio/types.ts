@@ -1,4 +1,5 @@
-export type SourceKind = "synthetic" | "rtl-sdr" | "replay";
+export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "replay";
+import type { HackrfRxSettings, HackrfSessionDetails } from "./sourceCapabilities";
 import type { ReceiverMode } from "./receiverConfig";
 export type { DabSnapshot } from "../dab/dabReceiver";
 export type { AdsbSnapshot, AdsbTarget } from "../adsb/adsbReceiver";
@@ -22,7 +23,8 @@ export type ReceiverCommand =
   | { type: "stop" }
   | { type: "disconnect" }
   | { type: "tune"; channelFrequencyHz: number }
-  | { type: "set-gain"; gainDb: number | null };
+  | { type: "set-gain"; gainDb: number | null }
+  | { type: "configure-hardware"; settings: HackrfRxSettings };
 
 export interface ReceiverStatus {
   lifecycle: ReceiverLifecycle;
@@ -42,14 +44,25 @@ export interface SourceSessionMetadata {
   source: SourceKind;
   sessionGeneration: number;
   requestedSampleRateHz: number;
+  /** Acquisition/analysis rate. HackRF channel DSP rate is hackrf.effectiveSampleRateHz. */
   actualSampleRateHz: number;
   hardwareCenterFrequencyHz: number;
   selectedChannelFrequencyHz: number;
   mode: ReceiverMode;
   channelBandwidthHz: number;
   squelch: number;
+  /** Legacy RTL scalar. HackRF keeps null for compatibility; this is NOT AGC. */
   gainDb: number | null;
+  /** Required by the HackRF backend; legacy constructors need no new fields. */
+  hackrf?: HackrfSessionDetails;
   sampleFormat: "planar-f32-iq-normalized";
+}
+
+/** Stronger construction contract for step 04; common legacy fixtures stay compatible. */
+export interface HackrfSourceSessionMetadata extends SourceSessionMetadata {
+  source: "hackrf";
+  gainDb: null;
+  hackrf: HackrfSessionDetails;
 }
 
 /**
@@ -67,4 +80,8 @@ export interface SpectrumFrame {
   units: "relative-dB";
   bins: Float32Array;
   droppedFramesBefore: number;
+  /** Source samples absent from analysis since the preceding published frame. */
+  missingSamplesBefore?: number;
+  /** Expected samples per averaged display row; absent for legacy four-window frames. */
+  hopSamples?: number;
 }

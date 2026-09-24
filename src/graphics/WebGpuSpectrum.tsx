@@ -30,6 +30,8 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
   const [fftSize, setFftSize] = useState<number>(requestedFftSize ?? FFT_SIZE);
   const [fftMessage, setFftMessage] = useState(requestedFftSize ? "Experimental GPU FFT initializing; WASM remains active." : "");
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const renderRef = useRef<() => void>(() => undefined);
   const pausedRef = useRef(false);
   const floorRef = useRef(-105);
@@ -65,16 +67,17 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     let gpuFailed = false;
     const renderWhenVisible = () => { if (document.visibilityState === "visible") renderRef.current(); };
     const history = new WaterfallHistory(HISTORY_ROWS, size);
-    history.reset(session?.sessionGeneration ?? 0);
+    history.reset(sessionRef.current?.sessionGeneration ?? 0);
     const gapRow = new Float32Array(size).fill(GAP_LEVEL_DB);
 
     const writeDisplay = () => {
       if (!device || !displayBuffer) return;
       const data = new ArrayBuffer(32);
       const view = new DataView(data);
-      const selected = session?.selectedChannelFrequencyHz ?? latestFrame?.centerFrequencyHz ?? 0;
-      const center = latestFrame?.centerFrequencyHz ?? session?.hardwareCenterFrequencyHz ?? selected;
-      const rate = latestFrame?.sampleRateHz ?? session?.actualSampleRateHz ?? 1;
+      const currentSession = sessionRef.current;
+      const selected = currentSession?.selectedChannelFrequencyHz ?? latestFrame?.centerFrequencyHz ?? 0;
+      const center = latestFrame?.centerFrequencyHz ?? currentSession?.hardwareCenterFrequencyHz ?? selected;
+      const rate = latestFrame?.sampleRateHz ?? currentSession?.actualSampleRateHz ?? 1;
       view.setFloat32(0, Math.max(-1, Math.min(1, 2 * (selected - center) / rate)), true);
       view.setFloat32(4, floorRef.current, true);
       view.setFloat32(8, rangeRef.current, true);
@@ -139,7 +142,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
         device = await adapter.requestDevice();
         if (disposed) { device.destroy(); return; }
         const requestedDevice = device;
-        requestedDevice.lost.then((info) => {
+        void requestedDevice.lost.then((info) => {
           if (disposed || device !== requestedDevice) return;
           releaseGpuResources(false);
           setState({ kind: "error", message: `The GPU device was lost (${info.reason || "unknown"}). Select Retry graphics; if loss repeats, check browser GPU settings and drivers.` });
@@ -174,7 +177,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
             if (disposed || gpuFailed) { fft.dispose(); return; }
             const startupMs = performance.now() - initializationStarted;
             setFftMessage(`Experimental GPU FFT · ${size} bins · ${startupMs.toFixed(2)} ms startup · wall-clock timing (no GPU timestamps)`);
-            gpuTap = new GpuAnalysisTap(size, session?.sessionGeneration ?? 0, async (input, frame) => {
+            gpuTap = new GpuAnalysisTap(size, sessionRef.current?.sessionGeneration ?? 0, async (input, frame) => {
               if (pausedRef.current || disposed || gpuFailed || !device || !fft || !spectrumBuffer || !historyBuffer) return;
               const started = performance.now();
               const currentDevice = device;
@@ -220,7 +223,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     function disableFft(error: unknown): void {
       if (disposed || gpuFailed) return;
       gpuTap?.dispose(); detachGpuTap?.(); fft?.dispose(); fft = undefined;
-      history.reset(session?.sessionGeneration ?? 0);
+      history.reset(sessionRef.current?.sessionGeneration ?? 0);
       latestFrame = undefined;
       setFftMessage(`Experimental GPU FFT disabled: ${error instanceof Error ? error.message : String(error)}. Using CPU/WASM spectrum.`);
       if (size !== FFT_SIZE) setFftSize(FFT_SIZE);
@@ -255,7 +258,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
       context = null;
       device = undefined;
     }
-  }, [gpuAttempt, pipeline, session?.sessionGeneration, fftSize]);
+  }, [gpuAttempt, pipeline, requestedFftSize, session?.sessionGeneration, fftSize]);
 
   const tuneFromClick = (event: MouseEvent<HTMLCanvasElement>) => {
     if (!session || !onTune) return;
@@ -288,7 +291,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
       <p className="diagnostic-message" role="status">{state.message}</p>
       {state.kind === "error" ? <button type="button" className="secondary retry-graphics" onClick={() => { setState({ kind: "checking", message: "Recreating the GPU device and bounded display resources…" }); setFftSize(requestedFftSize ?? FFT_SIZE); setGpuAttempt((attempt) => attempt + 1); }}>Retry graphics</button> : null}
       <p className="display-note">{fftMessage}</p>
-      <p className="display-note">{fftSize}-point Hann FFT · 4-frame power average · circular 240-row sample-clock history · relative dB (not dBm) · click plot to retune · background tabs may resume with marked gaps</p>
+      <p className="display-note">{fftSize}-point Hann FFT · {requestedFftSize ? "4-frame power average" : "~40 ms power average"} · circular 240-row sample-clock history · relative dB (not dBm) · click plot to retune · background tabs may resume with marked gaps</p>
     </section>
   );
 }

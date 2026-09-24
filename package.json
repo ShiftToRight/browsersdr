@@ -6,28 +6,43 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "lint": "eslint . --max-warnings=0",
+    "format:check": "prettier --check eslint.config.js playwright.config.ts \"e2e/**/*.ts\" .github/workflows/ci.yml package.json .prettierrc.json",
     "wasm:build": "./scripts/build-wasm.sh",
     "test:wasm": "vitest run src/dsp/spectrumBackend.test.ts --reporter=verbose",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc -b --pretty false"
+    "test:e2e": "playwright test",
+    "test:e2e:dev": "playwright test --project=chromium-dev",
+    "test:e2e:production": "playwright test --project=chromium-production",
+    "typecheck": "tsc -b --pretty false",
+    "check": "npm run lint && npm run format:check && npm run test:wasm && npm test && npm run build && npm run test:e2e"
   },
   "dependencies": {
     "@jtarrio/signals": "0.10.1",
     "@jtarrio/webrtlsdr": "3.0.6",
+    "fflate": "0.8.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
     "@types/node": "26.5.0",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.1.1",
     "@webgpu/types": "0.1.72",
     "ajv": "8.17.1",
     "ajv-formats": "3.0.1",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.4.0",
     "jsdom": "30.0.1",
-    "typescript": "7.0.2",
+    "prettier": "3.9.9",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.70.1",
     "vite": "8.2.2",
     "vitest": "5.0.0"
   }

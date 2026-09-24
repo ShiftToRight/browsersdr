@@ -1,5 +1,4 @@
-import { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
-import { AudioPlayer } from "@jtarrio/signals/players/audioplayer.js";
+import { LiveReceiverPipeline, type LiveReceiverDependencies } from "./liveReceiverPipeline";
 import type { SignalSource } from "@jtarrio/signals/radio/signal_source.js";
 import { RTL2832U_Provider } from "@jtarrio/webrtlsdr/rtlsdr.js";
 import type { DirectSampling, RtlDevice } from "@jtarrio/webrtlsdr/rtlsdr/rtldevice.js";
@@ -15,35 +14,46 @@ import type { SourceSessionMetadata } from "./types";
 import { IqRecorder, type IqRecording, type RecordingStatus } from "./iqRecording";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import {
-  createSignalsMode,
   defaultModeSettings,
   normalizeGain,
   normalizeModeSettings,
   planChannelTune,
+  validateModeSampleRate,
   type ReceiverModeSettings,
 } from "./receiverConfig";
-import { AudioFirstRdsReceiver, RdsMultiplexReceiver } from "../rds/rdsMultiplexReceiver";
-import { DabReceiver, validateDabSampleRate } from "../dab/dabReceiver";
-import { AdsbReceiver, validateAdsbSampleRate } from "../adsb/adsbReceiver";
-import { AisReceiver } from "../ais/aisReceiver";
-import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 
 const PARALLEL_TRANSFERS = 2;
 const BUFFERS_PER_SECOND = 20;
 
 class IdempotentSource implements SignalSource {
   private closed = false;
+  private closeTask?: Promise<void>;
   constructor(private readonly source: SignalSource) {}
   setSampleRate(sampleRate: number) { return this.source.setSampleRate(sampleRate); }
   setCenterFrequency(frequency: number) { return this.source.setCenterFrequency(frequency); }
   setParameter<V>(parameter: string, value: V) { return this.source.setParameter(parameter, value); }
   startReceiving() { return this.source.startReceiving(); }
   readSamples(length: number) { return this.source.readSamples(length); }
-  async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    await this.source.close();
+  close(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    if (this.closeTask) return this.closeTask;
+    const task = Promise.resolve().then(() => this.source.close()).then(() => {
+      this.closed = true;
+    }).finally(() => {
+      if (this.closeTask === task) this.closeTask = undefined;
+    });
+    this.closeTask = task;
+    return task;
   }
+}
+
+interface RtlSourceProvider { get(): Promise<SignalSource> }
+
+export interface RtlSdrBackendDependencies extends LiveReceiverDependencies {
+  createSourceProvider?: (
+    permissionGranted: () => void,
+    capture: (data: ArrayBuffer) => void,
+  ) => RtlSourceProvider;
 }
 
 class TrackedRtlProvider {
@@ -62,9 +72,9 @@ class TrackedRtlProvider {
     this.deviceProvider = new RTL2832U_Provider({ webusb: trackedUsb });
   }
 
-  async get(): Promise<IdempotentSource> {
+  async get(): Promise<SignalSource> {
     const device = new RecordingRtlDevice(await this.deviceProvider.get(), this.capture);
-    const source = new IdempotentSource(new AcknowledgedRtlSource(device));
+    const source = new AcknowledgedRtlSource(device);
     this.permissionGranted();
     return source;
   }
@@ -93,40 +103,32 @@ class RecordingRtlDevice implements RtlDevice {
 
 /** RTL backend whose USB source remains open while reception is stopped. */
 export class RtlSdrBackend implements ReceiverBackend {
-  private readonly audioContext: AudioContext;
-  private readonly demodulator: Demodulator;
-  private readonly provider: TrackedRtlProvider;
-  private readonly rds: RdsMultiplexReceiver;
-  private readonly sampleReceiver: AudioFirstRdsReceiver;
-  private readonly dab: DabReceiver;
-  private readonly adsb: AdsbReceiver;
-  private readonly ais: AisReceiver;
+  private readonly pipeline: LiveReceiverPipeline;
+  private readonly provider: RtlSourceProvider;
   private source?: IdempotentSource;
   private metadata?: Omit<SourceSessionMetadata, "sessionGeneration">;
   private modeSettings = defaultModeSettings("WBFM");
   private recorder?: IqRecorder;
   private receiving = false;
   private disconnected = false;
+  private disconnectRequested = false;
+  private connectTask?: Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  private startTask?: Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  private disconnectTask?: Promise<void>;
   private streamTasks: Promise<void>[] = [];
   private streamFailureReported = false;
 
   constructor(
     private readonly events: ReceiverBackendEvents,
-    private readonly analysis?: AnalysisPipeline,
+    analysis?: AnalysisPipeline,
     private sessionGeneration = 0,
     initialChannelFrequencyHz = 100_000_000,
+    dependencies: RtlSdrBackendDependencies = {},
   ) {
     if (!navigator.usb) throw new RadioError("This browser does not support the WebUSB API", RadioErrorType.NoUsbSupport);
-    this.audioContext = new AudioContext();
-    this.audioContext.addEventListener("statechange", this.onAudioStateChange);
-    const player = new AudioPlayer({ newAudioContext: () => this.audioContext });
-    this.demodulator = new Demodulator({ player });
-    this.rds = new RdsMultiplexReceiver((state) => this.events.rdsChanged(state));
-    this.dab = new DabReceiver((state) => this.events.dabChanged?.(state));
-    this.adsb = new AdsbReceiver((state) => this.events.adsbChanged?.(state));
-    this.ais = new AisReceiver((state) => this.events.aisChanged?.(state));
-    this.sampleReceiver = new AudioFirstRdsReceiver(this.demodulator, this.rds);
-    this.provider = new TrackedRtlProvider(events.permissionGranted, (data) => this.recorder?.appendCu8(data));
+    this.pipeline = new LiveReceiverPipeline(events, analysis, dependencies);
+    this.provider = dependencies.createSourceProvider?.(events.permissionGranted, (data) => this.recorder?.appendCu8(data))
+      ?? new TrackedRtlProvider(events.permissionGranted, (data) => this.recorder?.appendCu8(data));
     this.metadata = {
       source: "rtl-sdr",
       requestedSampleRateHz: RTL_SAMPLE_RATE_HZ,
@@ -142,35 +144,41 @@ export class RtlSdrBackend implements ReceiverBackend {
   }
 
   async connect(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    if (this.disconnected) throw new DOMException("The RTL-SDR backend was disconnected", "InvalidStateError");
+    if (this.disconnectRequested || this.disconnected) throw new DOMException("The RTL-SDR backend was disconnected", "InvalidStateError");
     if (this.source) return this.configureConnectedSource(options);
-    this.source = await this.provider.get();
-    try { return await this.configureConnectedSource(options); }
-    catch (error) { await this.source.close().catch(() => undefined); this.source = undefined; throw error; }
+    if (this.connectTask) return this.connectTask;
+    const task = this.acquireAndConfigure(options).finally(() => {
+      if (this.connectTask === task) this.connectTask = undefined;
+    });
+    this.connectTask = task;
+    return task;
   }
 
-  async start(options: ReceiverStartOptions, sessionGeneration = this.sessionGeneration): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    if (this.receiving) return this.metadata!;
+  start(options: ReceiverStartOptions, sessionGeneration = this.sessionGeneration): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (this.receiving) return Promise.resolve(this.metadata!);
+    if (this.startTask) return this.startTask;
+    const task = this.startReception(options, sessionGeneration).finally(() => {
+      if (this.startTask === task) this.startTask = undefined;
+    });
+    this.startTask = task;
+    return task;
+  }
+
+  private async startReception(options: ReceiverStartOptions, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (this.disconnectRequested) throw new DOMException("The RTL-SDR backend was disconnected", "InvalidStateError");
     this.sessionGeneration = sessionGeneration;
     // Invoke resume before the first await so the Start button's user activation
     // is still available to Web Audio.
-    const audioResume = this.audioContext.resume();
+    const audioResume = this.pipeline.resume();
     const [metadata] = await Promise.all([this.connect(options), audioResume]);
-    this.modeSettings = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
-    if (this.modeSettings.mode === "DAB") validateDabSampleRate(metadata.actualSampleRateHz);
-    else if (this.modeSettings.mode === "ADS-B") validateAdsbSampleRate(metadata.actualSampleRateHz);
-    else if (this.modeSettings.mode !== "AIS") this.demodulator.setMode(createSignalsMode(this.modeSettings));
-    this.demodulator.setVolume(options.volume);
-    this.demodulator.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
-    this.rds.setEnabled(this.modeSettings.mode === "WBFM");
-    this.sampleReceiver.setDigitalReceiver(this.digitalReceiver());
-    this.rds.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
-    this.dab.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
-    this.ais.setFrequencyOffset(metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz);
-    this.sampleReceiver.setAnalysis(this.analysis?.begin({ ...metadata, sessionGeneration }));
-    this.sampleReceiver.setSampleRate(metadata.actualSampleRateHz);
-    if (this.audioContext.state !== "running") throw new DOMException(`Audio context remained ${this.audioContext.state}`, "NotAllowedError");
+    this.throwIfDisconnectRequested();
+    const modeSettings = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
+    validateModeSampleRate(modeSettings.mode, metadata.actualSampleRateHz);
+    this.modeSettings = modeSettings;
+    this.pipeline.begin({ ...metadata, sessionGeneration }, options.volume);
+    this.pipeline.requireRunning();
     await this.source!.startReceiving();
+    this.throwIfDisconnectRequested();
     this.receiving = true;
     this.streamFailureReported = false;
     const samplesPerBuffer = 512 * Math.ceil(metadata.actualSampleRateHz / BUFFERS_PER_SECOND / 512);
@@ -183,27 +191,22 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.receiving = false;
     await Promise.allSettled(this.streamTasks);
     this.streamTasks = [];
-    this.sampleReceiver.setAnalysis(undefined);
-    this.analysis?.stop(this.sessionGeneration);
-    this.rds.reset();
-    this.dab.reset();
-    this.adsb.reset();
-    this.ais.reset();
-    if (this.audioContext.state === "running") await this.audioContext.suspend().catch(() => undefined);
+    this.pipeline.reset();
+    await this.pipeline.suspend().catch(() => undefined);
   }
 
   async disconnect(): Promise<void> {
     if (this.disconnected) return;
-    await this.stop();
-    this.disconnected = true;
-    this.audioContext.removeEventListener("statechange", this.onAudioStateChange);
-    const source = this.source;
-    this.source = undefined;
-    await source?.close();
-    if (this.audioContext.state !== "closed") await this.audioContext.close().catch(() => undefined);
+    this.disconnectRequested = true;
+    if (this.disconnectTask) return this.disconnectTask;
+    const task = this.releaseResources().finally(() => {
+      if (this.disconnectTask === task) this.disconnectTask = undefined;
+    });
+    this.disconnectTask = task;
+    return task;
   }
 
-  setVolume(volume: number): void { this.demodulator.setVolume(volume); }
+  setVolume(volume: number): void { this.pipeline.setVolume(volume); }
 
   async tune(channelFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     const source = this.source;
@@ -211,26 +214,18 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.sessionGeneration = sessionGeneration;
     const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.modeSettings.bandwidthHz);
     const provisional = { ...this.metadata, selectedChannelFrequencyHz: channelFrequencyHz };
-    this.analysis?.retune({ ...provisional, sessionGeneration });
+    this.pipeline.reset();
     if (plan.hardwareRetuneRequired) {
-      this.demodulator.expectFrequencyAndSetOffset(plan.hardwareCenterFrequencyHz, plan.frequencyOffsetHz);
+      this.pipeline.demodulator.expectFrequencyAndSetOffset(plan.hardwareCenterFrequencyHz, plan.frequencyOffsetHz);
       const actualFrequencyHz = await source.setCenterFrequency(plan.hardwareCenterFrequencyHz);
-      this.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
-      this.demodulator.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
-      this.rds.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
-      this.dab.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
-      this.ais.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
-      this.adsb.reset();
+      this.pipeline.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
+      this.pipeline.demodulator.setFrequencyOffset(channelFrequencyHz - actualFrequencyHz);
       provisional.hardwareCenterFrequencyHz = actualFrequencyHz;
     } else {
-      this.demodulator.setFrequencyOffset(plan.frequencyOffsetHz);
-      this.rds.setFrequencyOffset(plan.frequencyOffsetHz);
-      this.dab.setFrequencyOffset(plan.frequencyOffsetHz);
-      this.ais.setFrequencyOffset(plan.frequencyOffsetHz);
-      this.adsb.reset();
+      this.pipeline.demodulator.setFrequencyOffset(plan.frequencyOffsetHz);
     }
     this.metadata = provisional;
-    this.analysis?.updateMetadata({ ...provisional, sessionGeneration });
+    this.pipeline.retune({ ...provisional, sessionGeneration });
     return provisional;
   }
 
@@ -243,33 +238,25 @@ export class RtlSdrBackend implements ReceiverBackend {
       hardwareCenterFrequencyHz: centerFrequencyHz,
       selectedChannelFrequencyHz: centerFrequencyHz,
     };
-    this.analysis?.retune({ ...provisional, sessionGeneration });
-    this.demodulator.expectFrequencyAndSetOffset(centerFrequencyHz, 0);
+    this.pipeline.reset();
+    this.pipeline.demodulator.expectFrequencyAndSetOffset(centerFrequencyHz, 0);
     const actualFrequencyHz = await source.setCenterFrequency(centerFrequencyHz);
-    this.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
-    this.demodulator.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
-    this.rds.reset();
-    this.rds.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
-    this.dab.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
-    this.ais.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
-    this.adsb.reset();
+    this.pipeline.demodulator.setSampleRate(this.metadata.actualSampleRateHz);
+    this.pipeline.demodulator.setFrequencyOffset(centerFrequencyHz - actualFrequencyHz);
     this.metadata = {
       ...provisional,
       hardwareCenterFrequencyHz: actualFrequencyHz,
     };
-    this.analysis?.updateMetadata({ ...this.metadata, sessionGeneration });
+    this.pipeline.retune({ ...this.metadata, sessionGeneration });
     return this.metadata;
   }
 
   async configureMode(settings: ReceiverModeSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    this.modeSettings = normalizeModeSettings(settings);
-    if (this.modeSettings.mode === "DAB") validateDabSampleRate(this.metadata?.actualSampleRateHz ?? 0);
-    else if (this.modeSettings.mode === "ADS-B") validateAdsbSampleRate(this.metadata?.actualSampleRateHz ?? 0);
-    else if (this.modeSettings.mode !== "AIS") this.demodulator.setMode(createSignalsMode(this.modeSettings));
-    this.rds.setEnabled(this.modeSettings.mode === "WBFM");
-    this.sampleReceiver.setDigitalReceiver(this.digitalReceiver());
     if (!this.metadata) throw new Error("RTL-SDR source is not connected");
-    this.metadata = { ...this.metadata, mode: this.modeSettings.mode, channelBandwidthHz: this.modeSettings.bandwidthHz, squelch: this.modeSettings.squelch };
+    const modeSettings = normalizeModeSettings(settings);
+    validateModeSampleRate(modeSettings.mode, this.metadata.actualSampleRateHz);
+    this.modeSettings = modeSettings;
+    this.metadata = { ...this.metadata, mode: modeSettings.mode, channelBandwidthHz: modeSettings.bandwidthHz, squelch: modeSettings.squelch };
     return this.tune(this.metadata.selectedChannelFrequencyHz, sessionGeneration);
   }
 
@@ -292,13 +279,6 @@ export class RtlSdrBackend implements ReceiverBackend {
   }
   getRecordingStatus(): RecordingStatus | undefined { return this.recorder?.status(); }
 
-  private digitalReceiver(): SampleReceiver | undefined {
-    if (this.modeSettings.mode === "DAB") return this.dab;
-    if (this.modeSettings.mode === "ADS-B") return this.adsb;
-    if (this.modeSettings.mode === "AIS") return this.ais;
-    return undefined;
-  }
-
   private async configureConnectedSource(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     const source = this.source!;
     this.modeSettings = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
@@ -318,11 +298,48 @@ export class RtlSdrBackend implements ReceiverBackend {
     return this.metadata;
   }
 
+  private async acquireAndConfigure(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    const source = new IdempotentSource(await this.provider.get());
+    this.source = source;
+    this.throwIfDisconnectRequested();
+    const metadata = await this.configureConnectedSource(options);
+    this.throwIfDisconnectRequested();
+    return metadata;
+  }
+
+  private throwIfDisconnectRequested(): void {
+    if (this.disconnectRequested) throw new DOMException("RTL-SDR startup was cancelled", "AbortError");
+  }
+
+  private async releaseResources(): Promise<void> {
+    // Audio ownership is independent of a device chooser or source startup that
+    // may still be pending, so begin releasing it immediately.
+    const audioResult = Promise.allSettled([this.pipeline.close()]);
+    const stopResultTask = Promise.allSettled([this.stop()]);
+    const pendingStartup: Promise<unknown>[] = [];
+    if (this.connectTask) pendingStartup.push(this.connectTask);
+    if (this.startTask) pendingStartup.push(this.startTask);
+    await Promise.allSettled(pendingStartup);
+    const stopResult = await stopResultTask;
+
+    const source = this.source;
+    const sourceRelease = source
+      ? source.close().then(() => {
+        if (this.source === source) this.source = undefined;
+      })
+      : Promise.resolve();
+    const [sourceResult, settledAudioResult] = await Promise.all([Promise.allSettled([sourceRelease]), audioResult]);
+    const failures = [...stopResult, ...sourceResult, ...settledAudioResult]
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length > 0) throw failures[0]!.reason;
+    this.disconnected = true;
+  }
+
   private async pump(samplesPerBuffer: number): Promise<void> {
     while (this.receiving) {
       try {
         const block = await this.source!.readSamples(samplesPerBuffer);
-        if (this.receiving) this.sampleReceiver.receiveSamples(block);
+        if (this.receiving) this.pipeline.receiveSamples(block);
       } catch (error) {
         if (this.receiving && !this.streamFailureReported) {
           this.streamFailureReported = true;
@@ -333,9 +350,14 @@ export class RtlSdrBackend implements ReceiverBackend {
     }
   }
 
-  private readonly onAudioStateChange = (): void => this.events.audioStateChanged(this.audioContext.state);
 }
 
-export function createRtlSdrBackend(events: ReceiverBackendEvents, analysis?: AnalysisPipeline, sessionGeneration = 0, initialChannelFrequencyHz = 100_000_000): ReceiverBackend {
-  return new RtlSdrBackend(events, analysis, sessionGeneration, initialChannelFrequencyHz);
+export function createRtlSdrBackend(
+  events: ReceiverBackendEvents,
+  analysis?: AnalysisPipeline,
+  sessionGeneration = 0,
+  initialChannelFrequencyHz = 100_000_000,
+  dependencies?: RtlSdrBackendDependencies,
+): ReceiverBackend {
+  return new RtlSdrBackend(events, analysis, sessionGeneration, initialChannelFrequencyHz, dependencies);
 }

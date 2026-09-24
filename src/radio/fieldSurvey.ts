@@ -1,4 +1,5 @@
 import type { SignalCandidate } from "./spectrumScan";
+import type { SourceSessionMetadata } from "./types";
 
 export const FIELD_SURVEY_VERSION = 1 as const;
 
@@ -60,13 +61,62 @@ export interface SurveyManifest {
   sessionId: string;
   startedAt: string;
   completedAt: string;
+  status: SurveyRunStatus;
   profile: SurveyProfile;
   receiver: {
     sampleRateHz: number;
     source: string;
     levels: "relative-dB-uncalibrated";
+    metadata: SourceSessionMetadata;
   };
   candidates: SurveyCandidateRecord[];
+}
+
+export type SurveyRunStatus = "completed" | "cancelled" | "failed" | "insufficient";
+
+export interface SurveyRunSnapshot {
+  sessionId: string;
+  startedAt: string;
+  profile: SurveyProfile;
+  receiver: SourceSessionMetadata;
+}
+
+export function createSurveyRunSnapshot(
+  profile: SurveyProfile,
+  effectiveBands: readonly SurveyBand[],
+  receiver: SourceSessionMetadata,
+  startedAt = new Date().toISOString(),
+  sessionId = createSurveySessionId(new Date(startedAt)),
+): SurveyRunSnapshot {
+  return {
+    sessionId,
+    startedAt,
+    profile: validateSurveyProfile({ ...profile, site: { ...profile.site }, bands: effectiveBands.map((band) => ({ ...band })) }),
+    receiver: structuredClone(receiver),
+  };
+}
+
+export function createSurveyManifest(
+  snapshot: SurveyRunSnapshot,
+  status: SurveyRunStatus,
+  candidates: readonly SurveyCandidateRecord[],
+  completedAt = new Date().toISOString(),
+): SurveyManifest {
+  return {
+    version: FIELD_SURVEY_VERSION,
+    sessionId: snapshot.sessionId,
+    startedAt: snapshot.startedAt,
+    completedAt,
+    status,
+    profile: validateSurveyProfile(snapshot.profile),
+    receiver: {
+      sampleRateHz: snapshot.receiver.actualSampleRateHz,
+      source: snapshot.receiver.source,
+      levels: "relative-dB-uncalibrated",
+      metadata: structuredClone(snapshot.receiver),
+    },
+    candidates: candidates.map((candidate) => ({ ...candidate, annotation: { ...candidate.annotation } })),
+  };
 }
 
 export const DEFAULT_SURVEY_PROFILE: SurveyProfile = {
@@ -204,10 +254,15 @@ function csvCell(value: unknown): string {
 }
 
 export function surveyManifestCsv(manifest: SurveyManifest): string {
-  const headers = ["session_id", "site", "band", "frequency_hz", "peak_relative_db", "above_floor_db", "bandwidth_hz", "occupancy", "detector", "selected", "captured", "label", "modulation", "encoding", "confidence"];
+  const headers = ["session_id", "run_status", "started_at", "completed_at", "site", "source", "sample_rate_hz", "band", "frequency_hz", "peak_relative_db", "above_floor_db", "bandwidth_hz", "occupancy", "detector", "selected", "captured", "label", "modulation", "encoding", "confidence"];
   const rows = manifest.candidates.map((candidate) => [
     manifest.sessionId,
+    manifest.status,
+    manifest.startedAt,
+    manifest.completedAt,
     manifest.profile.site.label,
+    manifest.receiver.source,
+    manifest.receiver.sampleRateHz,
     candidate.bandName,
     candidate.frequencyHz,
     candidate.peakDb,

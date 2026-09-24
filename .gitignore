@@ -3,6 +3,8 @@ dist/
 wasm/spectrum-analysis/target/
 .vite/
 coverage/
+playwright-report/
+test-results/
 *.local
 .agents/
 .codex/

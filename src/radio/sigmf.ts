@@ -1,3 +1,4 @@
+import { validateRecordingMetadata, recordingSampleFormat, RECORDING_FORMAT, RECORDING_METADATA_MAX_BYTES } from "./iqRecording";
 import type { IqRecording, RecordingGap } from "./iqRecording";
 import { safeSurveySlug } from "./fieldSurvey";
 
@@ -5,7 +6,7 @@ export const SIGMF_VERSION = "1.2.6" as const;
 export const SIGMF_RECORDER = "BrowserSDR" as const;
 
 export interface SigmfGlobal {
-  "core:datatype": "cu8";
+  "core:datatype": "cu8" | "ci8";
   "core:version": typeof SIGMF_VERSION;
   "core:sample_rate": number;
   "core:recorder": typeof SIGMF_RECORDER;
@@ -71,11 +72,15 @@ function consolidateGaps(gaps: readonly RecordingGap[]): ConsolidatedGap[] {
 
 function describeRecording(recording: IqRecording): string {
   const { metadata } = recording;
+  if (metadata.format !== RECORDING_FORMAT) {
+    const origin = metadata.provenanceDetails.originalSource === "hackrf" ? "HackRF Pro native USB bytes unchanged" : "imported CI8 bytes of unknown hardware origin";
+    return `BrowserSDR CI8 I/Q capture: ${origin}. Amplitude is not calibrated. Dataset rate is native; stored bytes are unchanged. Playback channel processing is recorded in the format provenance. ${metadata.rateEvidence === "requested-and-acknowledged" ? "Rate and RF center are nominal USB-acknowledged requests, not firmware readbacks or physical measurements." : ""} Adapter reference commit is not an authenticated firmware hash. Capture format/provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. ${metadata.provenance ?? ""}${metadata.survey ? ` Survey context: ${JSON.stringify(metadata.survey)}.` : ""}`;
+  }
   let description = "BrowserSDR CU8 I/Q capture.";
   if (metadata.source === "synthetic") {
     description += " Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round((float + 0.995) * 128), 0, 255).";
   } else if (metadata.source === "replay") {
-    description += " Existing BrowserSDR replay CU8 bytes were copied unchanged; replay normalization is float = byte / 128 - 0.995.";
+    description += ` Existing replay CU8 bytes were copied unchanged; replay normalization is ${metadata.normalization}.`;
   } else {
     description += " The dataset contains the captured interleaved unsigned 8-bit RTL-SDR I/Q transport bytes unchanged.";
   }
@@ -92,6 +97,9 @@ function describeRecording(recording: IqRecording): string {
 
 function receiverSettingsComment(recording: IqRecording): string {
   const { metadata } = recording;
+  if (metadata.format !== RECORDING_FORMAT) {
+    return `Receiver settings: selected channel ${metadata.selectedChannelFrequencyHz} Hz; bandwidth ${metadata.channelBandwidthHz} Hz; source ${metadata.source}; mode ${metadata.mode}; squelch ${metadata.squelch}; stop reason ${metadata.stopReason}. Accepted settings and provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. Not measured or calibrated RF gain.`;
+  }
   const gain = metadata.gainDb === null
     ? "automatic RF gain"
     : `requested manual RF gain ${metadata.gainDb} dB`;
@@ -133,14 +141,14 @@ export function createSurveyRecordingBasename(recording: IqRecording): string {
 }
 
 export async function sha512Hex(data: Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("SHA-512 export requires the Web Crypto API in a secure browser context.");
+  if (!globalThis.crypto?.subtle) throw new Error("SHA-512 processing requires the Web Crypto API in a secure browser context.");
   const stableCopy = new Uint8Array(data);
   const digest = await globalThis.crypto.subtle.digest("SHA-512", stableCopy);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfMetadata> {
-  const { metadata } = recording;
+  const metadata = validateRecordingMetadata(recording.metadata, recording.data.byteLength);
   const gaps = consolidateGaps(metadata.knownGaps);
   const captures: SigmfCapture[] = [{
     "core:sample_start": 0,
@@ -159,7 +167,7 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
     if (gap.sampleStart === 0) {
       if (globalIndexKnown) captures[0]!["core:global_index"] = cumulativeKnownMissingSamples;
       else delete captures[0]!["core:global_index"];
-    } else if (gap.knownMissingSamples > 0) {
+    } else if (globalIndexKnown && gap.knownMissingSamples > 0) {
       captures.push({
         "core:sample_start": gap.sampleStart,
         "core:frequency": metadata.centerFrequencyHz,
@@ -208,19 +216,22 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
 
   captures.sort((left, right) => left["core:sample_start"] - right["core:sample_start"]);
   annotations.sort((left, right) => left["core:sample_start"] - right["core:sample_start"]);
-  return {
+  const result: SigmfMetadata = {
     global: {
-      "core:datatype": "cu8",
+      "core:datatype": metadata.sampleEncoding === "signed-8-bit" ? "ci8" : "cu8",
       "core:version": SIGMF_VERSION,
       "core:sample_rate": metadata.sampleRateHz,
       "core:recorder": SIGMF_RECORDER,
       "core:sha512": await sha512Hex(recording.data),
       "core:description": describeRecording(recording),
+      ...(metadata.format !== RECORDING_FORMAT && metadata.hardware ? { "core:hw": `HackRF Pro via WebUSB; board ${metadata.hardware.boardId}; revision ${metadata.hardware.boardRevisionRaw}; API ${metadata.hardware.usbApiVersion}; firmware ${metadata.hardware.firmwareVersion}; serial ${metadata.hardware.serialWords.map(word => word.toString(16).padStart(8, "0")).join("")}` } : {}),
       ...(metadata.source === "rtl-sdr" ? { "core:hw": "RTL-SDR via WebUSB" } : {}),
     },
     captures,
     annotations,
   };
+  if (new TextEncoder().encode(JSON.stringify(result, null, 2)).byteLength + 1 > RECORDING_METADATA_MAX_BYTES) throw new Error("SigMF metadata exceeds the 1 MiB limit.");
+  return result;
 }
 
 export async function createSigmfExport(recording: IqRecording): Promise<SigmfExport> {

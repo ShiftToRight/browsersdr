@@ -3,6 +3,12 @@ import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import { RdsDecoder, type RdsState } from "./rdsDecoder";
 
+/** Digital decoders are configured atomically before the fan-out routes samples to them. */
+export interface DigitalSampleReceiver extends SampleReceiver {
+  configure(sampleRateHz: number, frequencyOffsetHz: number): void;
+  reset(): void;
+}
+
 /** WBFM-only tap that derives a 336 ksample/s (or input-rate) raw multiplex. */
 export class RdsMultiplexReceiver implements SampleReceiver {
   private sampleRate = 1_024_000;
@@ -74,17 +80,23 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
     private readonly primary: SampleReceiver,
     private readonly rds: RdsMultiplexReceiver,
     private analysis?: SampleReceiver,
-    private digital?: SampleReceiver,
+    private digital?: DigitalSampleReceiver,
   ) {}
 
   setAnalysis(analysis?: SampleReceiver): void { this.analysis = analysis; }
-  setDigitalReceiver(digital?: SampleReceiver): void { this.digital = digital; }
+  setDigitalReceiver(digital: DigitalSampleReceiver | undefined, sampleRateHz: number, frequencyOffsetHz: number): void {
+    // Configure first so a rejected rate cannot replace the active route.
+    digital?.configure(sampleRateHz, frequencyOffsetHz);
+    if (this.digital && this.digital !== digital) this.digital.reset();
+    this.digital = digital;
+  }
+
+  resetDigitalReceiver(): void { this.digital?.reset(); }
 
   setSampleRate(sampleRate: number): void {
     this.primary.setSampleRate(sampleRate);
     this.rds.setSampleRate(sampleRate);
     this.analysis?.setSampleRate(sampleRate);
-    this.digital?.setSampleRate(sampleRate);
   }
 
   receiveSamples(block: SampleBlock): void {

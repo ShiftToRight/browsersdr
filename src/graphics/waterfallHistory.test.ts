@@ -18,6 +18,16 @@ function frame(sequence: number, generation = 4, sampleIndex = (sequence + 1) * 
 }
 
 describe("waterfall history", () => {
+  it("uses the declared wideband cadence without inventing gaps, retaining real skips", () => {
+    const history = new WaterfallHistory(8);
+    history.reset(4);
+    const hopSamples = 47 * 4096;
+    const wide = (sequence: number) => ({ ...frame(sequence, 4, (sequence + 1) * hopSamples), sampleRateHz: 4_800_000, hopSamples });
+    history.append(wide(0));
+    expect(history.append(wide(1)).map(row => row.kind)).toEqual(["spectrum"]);
+    expect(history.append({ ...wide(2), missingSamplesBefore: 32768 }).map(row => row.kind)).toEqual(["gap", "spectrum"]);
+    expect(history.append(wide(5)).map(row => row.kind)).toEqual(["gap", "gap", "spectrum"]);
+  });
   it("uses the experimental FFT size for the sample clock", () => {
     const history = new WaterfallHistory(8, 16384);
     history.reset(4);

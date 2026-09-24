@@ -1,5 +1,5 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
-import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
+import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
 
 export const ADSB_FREQUENCY_HZ = 1_090_000_000;
 export const ADSB_MIN_SAMPLE_RATE_HZ = 2_000_000;
@@ -31,10 +31,8 @@ interface CprFrame { lat: number; lon: number; time: number }
 interface MutableTarget extends AdsbTarget { even?: CprFrame; odd?: CprFrame }
 
 const CALLSIGN_CHARS = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ#####_###############0123456789######";
-const INITIAL: AdsbSnapshot = { frames: 0, validFrames: 0, rejectedFrames: 0, targets: [], message: "Waiting for 1090 MHz extended squitters…" };
-
 /** Dependency-free Mode S / 1090ES pulse receiver. */
-export class AdsbReceiver implements SampleReceiver {
+export class AdsbReceiver implements DigitalSampleReceiver {
   private sampleRateHz = 2_400_000;
   private resampleAccumulator = 0;
   private resampleWeight = 0;
@@ -50,6 +48,14 @@ export class AdsbReceiver implements SampleReceiver {
 
   setSampleRate(sampleRateHz: number): void {
     validateAdsbSampleRate(sampleRateHz);
+    this.sampleRateHz = sampleRateHz;
+    this.reset();
+  }
+
+  configure(sampleRateHz: number, frequencyOffsetHz: number): void {
+    validateAdsbSampleRate(sampleRateHz);
+    if (!Number.isFinite(frequencyOffsetHz)) throw new Error("ADS-B frequency offset must be finite.");
+    // Pulse decoding uses complex magnitude and is invariant to channel rotation.
     this.sampleRateHz = sampleRateHz;
     this.reset();
   }
@@ -166,7 +172,7 @@ export class AdsbReceiver implements SampleReceiver {
 }
 
 export function validateAdsbSampleRate(sampleRateHz: number): void {
-  if (sampleRateHz < ADSB_MIN_SAMPLE_RATE_HZ) throw new Error("ADS-B requires at least 2.0 MS/s; select 2.4 MS/s.");
+  if (!Number.isFinite(sampleRateHz) || sampleRateHz < ADSB_MIN_SAMPLE_RATE_HZ) throw new Error("ADS-B requires at least 2.0 MS/s; select 2.4 MS/s.");
 }
 
 export function modeSCrc(bytes: Uint8Array): number {

@@ -1,5 +1,6 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
+import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
 
 export const DAB_NOMINAL_SAMPLE_RATE_HZ = 2_048_000;
 export const DAB_OCCUPIED_BANDWIDTH_HZ = 1_536_000;
@@ -29,7 +30,7 @@ const INITIAL: DabSnapshot = {
 };
 
 /** Streaming mode-I null-symbol acquisition and cyclic-prefix frequency estimator. */
-export class DabReceiver implements SampleReceiver {
+export class DabReceiver implements DigitalSampleReceiver {
   private sampleRateHz = DAB_NOMINAL_SAMPLE_RATE_HZ;
   private snapshot: DabSnapshot = { ...INITIAL };
   private averagePower = 0;
@@ -54,6 +55,15 @@ export class DabReceiver implements SampleReceiver {
     if (!Number.isFinite(offsetHz)) throw new Error("DAB frequency offset must be finite.");
     this.frequencyOffsetHz = offsetHz;
     this.oscillatorPhase = 0;
+    this.reset();
+  }
+
+  configure(sampleRateHz: number, frequencyOffsetHz: number): void {
+    validateDabSampleRate(sampleRateHz);
+    if (!Number.isFinite(frequencyOffsetHz)) throw new Error("DAB frequency offset must be finite.");
+    this.sampleRateHz = sampleRateHz;
+    this.frequencyOffsetHz = frequencyOffsetHz;
+    this.decoder?.setSampleRate(sampleRateHz);
     this.reset();
   }
 
@@ -148,5 +158,5 @@ export class DabReceiver implements SampleReceiver {
 }
 
 export function validateDabSampleRate(sampleRateHz: number): void {
-  if (sampleRateHz < DAB_NOMINAL_SAMPLE_RATE_HZ) throw new Error("DAB mode I requires a sample rate of at least 2.048 MS/s; select 2.4 MS/s.");
+  if (!Number.isFinite(sampleRateHz) || sampleRateHz < DAB_NOMINAL_SAMPLE_RATE_HZ) throw new Error("DAB mode I requires a sample rate of at least 2.048 MS/s; select 2.4 MS/s.");
 }

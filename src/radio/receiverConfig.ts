@@ -1,8 +1,8 @@
 import "@jtarrio/signals/demod/demodulator.js";
 import { getMode, modeParameters, type Mode } from "@jtarrio/signals/demod/modes.js";
-import { DAB_OCCUPIED_BANDWIDTH_HZ } from "../dab/dabReceiver";
-import { ADSB_BANDWIDTH_HZ } from "../adsb/adsbReceiver";
-import { AIS_BANDWIDTH_HZ } from "../ais/aisReceiver";
+import { DAB_OCCUPIED_BANDWIDTH_HZ, validateDabSampleRate } from "../dab/dabReceiver";
+import { ADSB_BANDWIDTH_HZ, validateAdsbSampleRate } from "../adsb/adsbReceiver";
+import { AIS_BANDWIDTH_HZ, validateAisSampleRate } from "../ais/aisReceiver";
 
 export type ReceiverMode = "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "DAB" | "ADS-B" | "AIS";
 
@@ -89,6 +89,13 @@ export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);
   if (normalized.mode === "WBFM" && parameters.hasStereo()) parameters.setStereo(false);
   return parameters.mode;
+}
+
+/** Validate a decoder before changing the active fan-out route. */
+export function validateModeSampleRate(mode: ReceiverMode, sampleRateHz: number): void {
+  if (mode === "DAB") validateDabSampleRate(sampleRateHz);
+  else if (mode === "ADS-B") validateAdsbSampleRate(sampleRateHz);
+  else if (mode === "AIS") validateAisSampleRate(sampleRateHz);
 }
 
 export interface TuningPlan {

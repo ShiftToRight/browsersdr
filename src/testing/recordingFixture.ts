@@ -1,5 +1,5 @@
 import { defaultModeSettings } from "../radio/receiverConfig";
-import { IqRecorder, type IqRecording } from "../radio/iqRecording";
+import { IqRecorder, type IqRecording, type IqRecordingMetadata } from "../radio/iqRecording";
 import type { SourceSessionMetadata } from "../radio/types";
 import { syntheticAm } from "./syntheticModulation";
 
@@ -7,7 +7,7 @@ import { syntheticAm } from "./syntheticModulation";
  * Generated, deterministic AM fixture: 48 kHz CU8 I/Q, carrier at +6 kHz,
  * modulated by a 1 kHz tone. Provenance lives in the exported metadata.
  */
-export function createDeterministicRecordingFixture(sampleCount = 24_000): IqRecording {
+export function createDeterministicRecordingFixture(sampleCount = 24_000): IqRecording & { metadata: Extract<IqRecordingMetadata, { format: "browsersdr-cu8-v1" }> } {
   const mode = defaultModeSettings("AM");
   const session: SourceSessionMetadata = {
     source: "synthetic",
@@ -33,5 +33,5 @@ export function createDeterministicRecordingFixture(sampleCount = 24_000): IqRec
   const Q = new Float32Array(sampleCount);
   generator(0, session.actualSampleRateHz, session.hardwareCenterFrequencyHz, I, Q);
   recorder.appendNormalized({ I, Q });
-  return recorder.finish("user");
+  return recorder.finish("user") as IqRecording & { metadata: Extract<IqRecordingMetadata, { format: "browsersdr-cu8-v1" }> };
 }

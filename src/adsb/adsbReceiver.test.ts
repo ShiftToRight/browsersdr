@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AdsbReceiver, modeSCrc, validateAdsbSampleRate } from "./adsbReceiver";
+import { AdsbReceiver, modeSCrc, validateAdsbSampleRate, type AdsbSnapshot } from "./adsbReceiver";
 
 function fromHex(hex: string): Uint8Array { return Uint8Array.from(hex.match(/../g)!.map((part) => Number.parseInt(part, 16))); }
 function pulseFrame(bytes: Uint8Array) {
@@ -19,7 +19,7 @@ describe("AdsbReceiver", () => {
   it("validates and decodes a real 1090ES identification frame", () => {
     const bytes = fromHex("8D4840D6202CC371C32CE0576098");
     expect(modeSCrc(bytes)).toBe(0);
-    let latest: ReturnType<typeof snapshot> | undefined;
+    let latest: AdsbSnapshot | undefined;
     const receiver = new AdsbReceiver((value) => { latest = value; }, () => 1_000);
     receiver.setSampleRate(2_000_000);
     receiver.receiveSamples(pulseFrame(bytes));
@@ -47,5 +47,3 @@ describe("AdsbReceiver", () => {
     expect(latest?.targets[0]?.longitude).toBeCloseTo(3.9194, 3);
   });
 });
-
-function snapshot(value: import("./adsbReceiver").AdsbSnapshot) { return value; }

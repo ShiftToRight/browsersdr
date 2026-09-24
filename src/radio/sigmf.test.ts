@@ -60,7 +60,6 @@ describe("SigMF v1.2.6 export", () => {
       expect.objectContaining({ "core:sample_start": 0, "core:global_index": 0 }),
       expect.objectContaining({ "core:sample_start": 10, "core:global_index": 18 }),
       expect.objectContaining({ "core:sample_start": 20, "core:global_index": 30 }),
-      { "core:sample_start": 40, "core:frequency": 10_000_000 },
     ]);
     const gaps = metadata.annotations.filter((entry) => entry["core:label"] === "gap");
     expect(gaps.map((entry) => entry["core:sample_start"])).toEqual([10, 20, 30, 40]);

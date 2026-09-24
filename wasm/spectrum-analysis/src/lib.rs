@@ -121,3 +121,5 @@ pub unsafe extern "C" fn spectrum_output(analyzer: *mut SpectrumAnalyzer) -> *co
 pub unsafe extern "C" fn spectrum_process(analyzer: *mut SpectrumAnalyzer) -> u32 {
     analyzer.as_mut().map(|value| u32::from(value.process())).unwrap_or(0)
 }
+
+mod channel;

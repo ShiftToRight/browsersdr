@@ -1,9 +1,13 @@
+import { sourceCapabilities, validateSourceFrequency } from "./sourceCapabilities";
 import type { ReceiverLifecycle, SourceKind, SpectrumFrame } from "./types";
 import type { SurveyDetectorMode } from "./fieldSurvey";
 
 export const SCAN_USABLE_FRACTION = 0.75;
 export const MAX_SCAN_WINDOWS = 256;
 export const MAX_EXPLORER_POINTS = 1_600;
+export const MAX_RETAINED_MEASUREMENT_FRAMES = 256;
+export const MIN_MEASUREMENT_COVERAGE = 0.9;
+const SPECTRUM_FRAME_SOURCE_SAMPLES = 4096 * 4;
 
 export interface ScanWindowPlan {
   index: number;
@@ -33,6 +37,89 @@ export interface ScanWindowResult {
   candidates: SignalCandidate[];
   noiseFloorDb: number;
   frameCount: number;
+  coverage: number;
+  missingSamples: number;
+  status: "complete" | "insufficient";
+}
+
+export interface SpectrumMeasurementSource {
+  subscribeMeasurements(listener: (frame: SpectrumFrame) => void): () => void;
+}
+
+export interface SpectrumMeasurement {
+  frames: SpectrumFrame[];
+  targetSamples: number;
+  sourceSamples: number;
+  missingSamples: number;
+  coverage: number;
+  status: "complete" | "insufficient";
+}
+
+export class SpectrumMeasurementTimeoutError extends Error {
+  constructor() { super("Spectrum input stopped before the requested source-sample dwell completed; the window is incomplete."); }
+}
+
+export function collectSpectrumMeasurement(
+  source: SpectrumMeasurementSource,
+  options: { generation: number; centerFrequencyHz: number; sampleRateHz: number; dwellMs: number; signal: AbortSignal; noDataTimeoutMs?: number },
+): Promise<SpectrumMeasurement> {
+  const targetSamples = Math.max(1, Math.ceil(options.sampleRateHz * options.dwellMs / 1_000));
+  const timeoutMs = options.noDataTimeoutMs ?? 1_500;
+  return new Promise((resolve, reject) => {
+    const frames: SpectrumFrame[] = [];
+    let firstSampleIndex: number | undefined;
+    let missingSamples = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    let unsubscribe: () => void = () => undefined;
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      unsubscribe();
+      options.signal.removeEventListener("abort", abort);
+    };
+    const failForNoData = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new SpectrumMeasurementTimeoutError());
+    };
+    const armTimeout = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(failForNoData, timeoutMs);
+    };
+    const abort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new DOMException("Spectrum scan cancelled", "AbortError"));
+    };
+    unsubscribe = source.subscribeMeasurements((frame) => {
+      if (settled || frame.sessionGeneration !== options.generation) return;
+      if (frame.centerFrequencyHz !== options.centerFrequencyHz) return;
+      if (frame.sampleRateHz !== options.sampleRateHz) return;
+      if (firstSampleIndex === undefined) firstSampleIndex = frame.sampleIndex - (frame.hopSamples ?? SPECTRUM_FRAME_SOURCE_SAMPLES);
+      else missingSamples += frame.missingSamplesBefore ?? 0;
+      if (frames.length >= MAX_RETAINED_MEASUREMENT_FRAMES) {
+        settled = true;
+        cleanup();
+        reject(new Error("Spectrum dwell exceeded the bounded measurement buffer."));
+        return;
+      }
+      frames.push({ ...frame, bins: new Float32Array(frame.bins) });
+      const sourceSamples = Math.max(0, frame.sampleIndex - firstSampleIndex);
+      if (sourceSamples >= targetSamples) {
+        settled = true;
+        const coverage = Math.max(0, Math.min(1, (targetSamples - Math.min(targetSamples, missingSamples)) / targetSamples));
+        cleanup();
+        resolve({ frames, targetSamples, sourceSamples, missingSamples, coverage, status: coverage >= MIN_MEASUREMENT_COVERAGE ? "complete" : "insufficient" });
+      } else armTimeout();
+    });
+    if (options.signal.aborted) abort();
+    else {
+      options.signal.addEventListener("abort", abort, { once: true });
+      armTimeout();
+    }
+  });
 }
 
 export function canStartSpectrumScan(
@@ -50,10 +137,13 @@ export function planSpectrumScan(
   lowerFrequencyHz: number,
   upperFrequencyHz: number,
   sampleRateHz: number,
+  source: SourceKind = "rtl-sdr",
 ): ScanWindowPlan[] {
   if (!Number.isFinite(lowerFrequencyHz) || lowerFrequencyHz <= 0) throw new Error("Scan start must be above 0 Hz.");
   if (!Number.isFinite(upperFrequencyHz) || upperFrequencyHz <= lowerFrequencyHz) throw new Error("Scan end must be above the start frequency.");
   if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) throw new Error("A positive receiver sample rate is required.");
+  validateSourceFrequency(source, lowerFrequencyHz);
+  validateSourceFrequency(source, upperFrequencyHz);
   const rangeHz = upperFrequencyHz - lowerFrequencyHz;
   const usableWindowHz = sampleRateHz * SCAN_USABLE_FRACTION;
   const count = Math.max(1, Math.ceil(rangeHz / usableWindowHz));
@@ -64,9 +154,11 @@ export function planSpectrumScan(
   return Array.from({ length: count }, (_, index) => {
     const lower = lowerFrequencyHz + index * coveredPerWindowHz;
     const upper = index === count - 1 ? upperFrequencyHz : lowerFrequencyHz + (index + 1) * coveredPerWindowHz;
+    const centerFrequencyHz = sourceCapabilities(source).frequency.integerHz ? Math.round((lower + upper) / 2) : (lower + upper) / 2;
+    validateSourceFrequency(source, centerFrequencyHz, sampleRateHz);
     return {
       index,
-      centerFrequencyHz: (lower + upper) / 2,
+      centerFrequencyHz,
       lowerFrequencyHz: lower,
       upperFrequencyHz: upper,
     };
@@ -87,6 +179,7 @@ export function analyzeScanWindow(
   frames: readonly SpectrumFrame[],
   thresholdAboveNoiseDb: number,
   detector: SurveyDetectorMode = "average",
+  measurement?: Pick<SpectrumMeasurement, "coverage" | "missingSamples" | "status">,
 ): ScanWindowResult {
   if (frames.length === 0) throw new Error("No spectrum frames arrived for this tuning window.");
   const first = frames[0]!;
@@ -176,7 +269,11 @@ export function analyzeScanWindow(
       occupancy: 1,
     });
   }
-  return { plan, points, candidates, noiseFloorDb, frameCount: acceptedFrames };
+  const status = measurement?.status ?? "complete";
+  return {
+    plan, points, candidates: status === "complete" ? candidates : [], noiseFloorDb, frameCount: acceptedFrames,
+    coverage: measurement?.coverage ?? 1, missingSamples: measurement?.missingSamples ?? 0, status,
+  };
 }
 
 export function mergeSignalCandidates(candidates: readonly SignalCandidate[]): SignalCandidate[] {
