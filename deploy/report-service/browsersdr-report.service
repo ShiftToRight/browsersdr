@@ -10,7 +10,7 @@ Environment=BROWSERSDR_REPORT_PORT=8787
 Environment=BROWSERSDR_REPORT_ORIGIN=https://browsersdr.com
 Environment=BROWSERSDR_REPORT_DB=/var/lib/browsersdr-reports/reports.sqlite
 EnvironmentFile=-/etc/browsersdr-report.env
-ExecStart=/usr/bin/node /opt/browsersdr-report/report-service.mjs
+ExecStart=/opt/browsersdr-report/node/bin/node /opt/browsersdr-report/report-service.mjs
 Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true
