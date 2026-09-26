@@ -16,7 +16,7 @@ interface Ci8Format {
 export interface HackrfRecordingFormat extends Ci8Format {
   rateEvidence: HackrfSessionDetails["rateEvidence"];
   adcSampleRateHz: number;
-  fpgaDecimationFactor: 4 | 8 | 16 | 32;
+  fpgaDecimationFactor: 2 | 4 | 8 | 16 | 32;
   hardware: Omit<HackrfIdentity, "platformSupport"> & {
     platformSupport?: number;
     protocolProfile: HackrfProtocolProfile;

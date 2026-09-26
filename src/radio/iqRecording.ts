@@ -7,6 +7,7 @@ import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import type { SourceSessionMetadata } from "./types";
 import { normalizeGain, normalizeModeSettings, planChannelTune, RECEIVER_MODES, type ReceiverMode } from "./receiverConfig";
 import { validateSurveyCaptureContext, type SurveyCaptureContext } from "./fieldSurvey";
+import type { SrdModeSettings } from "../srd/settings";
 
 export const RECORDING_FORMAT = "browsersdr-cu8-v1" as const;
 export const RECORDING_MAX_BYTES = 32 * 1024 * 1024;
@@ -43,6 +44,10 @@ interface CommonRecordingMetadata {
   mode: ReceiverMode;
   channelBandwidthHz: number;
   squelch: number;
+  /** Optional for backwards compatibility with recordings created before CW. */
+  beatToneHz?: number;
+  /** Optional for backwards compatibility with recordings created before SRD. */
+  srd?: SrdModeSettings;
   knownGaps: RecordingGap[];
   stopReason: "user" | "capacity" | "source-stop" | "metadata-change" | "import";
   provenance?: string;
@@ -132,9 +137,8 @@ export function validateSampleEncoding(format: RecordingSampleFormat): void {
 export class IqRecorder {
   private readonly recordingSource: IqRecordingMetadata["source"];
   private finished?: IqRecording;
-  private readonly chunks: Uint8Array[] = [];
+  private storage?: Uint8Array<ArrayBuffer>;
   private bytes = 0;
-  private tailUsed = 0;
   private gapMetadataBytes = 0;
   private capacityReached = false;
   private gaps: RecordingGap[] = [];
@@ -148,6 +152,7 @@ export class IqRecorder {
     private readonly encoding: RecordingSampleFormat = LEGACY_CU8_FORMAT,
   ) {
     validateSampleEncoding(encoding);
+    if (session.source === "bladerf") throw new Error("Native bladeRF SC16 Q11 recording is not available in the first xA4 release.");
     if (session.source === "hackrf" && encoding.format !== CI8_RECORDING_FORMAT) throw new Error("HackRF requires the native signed-I/Q recording path.");
     this.recordingSource = session.source;
     this.session = structuredClone(session); this.encoding = structuredClone(encoding); this.survey = survey ? structuredClone(survey) : undefined;
@@ -177,17 +182,9 @@ export class IqRecorder {
     if (source.byteLength % this.encoding.bytesPerComplexSample) throw new Error("Native recording bytes must contain complete I/Q pairs.");
     const available = Math.max(0, this.maxBytes - this.bytes);
     const length = Math.floor(Math.min(source.byteLength, available) / this.encoding.bytesPerComplexSample) * this.encoding.bytesPerComplexSample;
-    let offset = 0;
-    while (offset < length) {
-      let tail = this.chunks.at(-1);
-      if (!tail || this.tailUsed === tail.length) {
-        tail = new Uint8Array(Math.min(65_536, this.maxBytes - this.bytes));
-        this.chunks.push(tail); this.tailUsed = 0;
-      }
-      const count = Math.min(length - offset, tail.length - this.tailUsed);
-      tail.set(source.subarray(offset, offset + count), this.tailUsed);
-      this.tailUsed += count; this.bytes += count; offset += count;
-    }
+    this.storage ??= new Uint8Array(this.maxBytes);
+    this.storage.set(source.subarray(0, length), this.bytes);
+    this.bytes += length;
     if (length < source.byteLength || this.bytes + 2 > this.maxBytes) this.capacityReached = true;
   }
 
@@ -225,14 +222,14 @@ export class IqRecorder {
 
   finish(reason: IqRecordingMetadata["stopReason"] = "user"): IqRecording {
     if (this.finished) return this.finished;
-    const data = new Uint8Array(this.bytes);
-    let offset = 0;
-    for (const chunk of this.chunks) {
-      const count = Math.min(chunk.byteLength, data.length - offset);
-      data.set(chunk.subarray(0, count), offset);
-      offset += count;
-    }
-    this.chunks.length = 0;
+    // Full captures need no consolidation. Shrink short captures with the native
+    // transfer API where available, preserving the exact-buffer legacy contract.
+    const storage = this.storage;
+    const buffer = storage?.buffer as (ArrayBuffer & { transferToFixedLength?(length: number): ArrayBuffer }) | undefined;
+    const data = !storage ? new Uint8Array(0) : storage.length === this.bytes ? storage
+      : typeof buffer?.transferToFixedLength === "function"
+        ? new Uint8Array(buffer.transferToFixedLength(this.bytes)) : storage.slice(0, this.bytes);
+    this.storage = undefined;
     const sampleCount = data.byteLength / this.encoding.bytesPerComplexSample;
     this.finished = {
       data,
@@ -248,6 +245,8 @@ export class IqRecorder {
         mode: this.session.mode,
         channelBandwidthHz: this.session.channelBandwidthHz,
         squelch: this.session.squelch,
+        ...(this.session.beatToneHz !== undefined ? { beatToneHz: this.session.beatToneHz } : {}),
+        ...(this.session.srd !== undefined ? { srd: structuredClone(this.session.srd) } : {}),
         ...(this.encoding.format === RECORDING_FORMAT ? { gainDb: this.session.gainDb } : {}),
         knownGaps: this.gaps.map((gap) => ({ ...gap })),
         stopReason: this.capacityReached ? "capacity" : reason,
@@ -282,14 +281,14 @@ export function validateRecordingMetadata(value: unknown, byteLength: number): I
   assertFinitePositive(metadata.selectedChannelFrequencyHz, "selected channel frequency");
   assertFinitePositive(metadata.channelBandwidthHz, "channel bandwidth");
   if (metadata.sampleRateHz < REPLAY_MIN_SAMPLE_RATE_HZ || (metadata.sampleRateHz > REPLAY_MAX_SAMPLE_RATE_HZ && !(metadata.format === CI8_RECORDING_FORMAT && isWidebandRate(metadata.sampleRateHz)))) {
-    throw new Error("Replay supports sample rates from 8,000 to 3,200,000 samples/s, plus CI8 at 4,800,000 or 9,600,000 samples/s.");
+    throw new Error("Replay supports sample rates from 8,000 to 3,200,000 samples/s, plus CI8 at 4,800,000, 9,600,000 or 19,200,000 samples/s.");
   }
   if (metadata.centerFrequencyHz > Number.MAX_SAFE_INTEGER || metadata.selectedChannelFrequencyHz > Number.MAX_SAFE_INTEGER) {
     throw new Error("Recording frequency exceeds the supported numeric range.");
   }
   if (!RECEIVER_MODES.includes(metadata.mode as ReceiverMode)) throw new Error("Recording metadata has an unsupported receiver mode.");
-  const settings = normalizeModeSettings({ mode: metadata.mode as ReceiverMode, bandwidthHz: metadata.channelBandwidthHz, squelch: metadata.squelch! });
-  if (settings.bandwidthHz !== metadata.channelBandwidthHz || settings.squelch !== metadata.squelch) throw new Error("Recording has out-of-range mode settings.");
+  const settings = normalizeModeSettings({ mode: metadata.mode as ReceiverMode, bandwidthHz: metadata.channelBandwidthHz, squelch: metadata.squelch!, beatToneHz: metadata.beatToneHz, srd: metadata.srd });
+  if (settings.bandwidthHz !== metadata.channelBandwidthHz || settings.squelch !== metadata.squelch || (metadata.beatToneHz !== undefined && settings.beatToneHz !== metadata.beatToneHz)) throw new Error("Recording has out-of-range mode settings.");
   if (metadata.format === CI8_RECORDING_FORMAT) {
     if ("gainDb" in metadata) throw new Error("CI8 metadata must not contain RTL gainDb.");
     validateCi8Format(metadata as Ci8RecordingFormat, metadata.source!, metadata.sampleRateHz, metadata.centerFrequencyHz);
@@ -325,7 +324,7 @@ export function validateRecordingMetadata(value: unknown, byteLength: number): I
     if (typeof gap.reason !== "string" || gap.reason.length > 1024) throw new Error("Recording metadata contains an invalid gap reason.");
   }
   if ((metadata.sampleCount! + missingSamples) / metadata.sampleRateHz > 3600) throw new Error("Replay duration including known gaps exceeds one hour.");
-  return structuredClone({ ...metadata, ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
+  return structuredClone({ ...metadata, ...(settings.srd ? { srd: settings.srd } : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
 }
 
 export function recordingMetadataJson(recording: IqRecording): string {

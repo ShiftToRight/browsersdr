@@ -43,6 +43,7 @@ export class SyntheticBackend implements ReceiverBackend {
       mode: mode.mode,
       channelBandwidthHz: mode.bandwidthHz,
       squelch: mode.squelch,
+      beatToneHz: mode.beatToneHz,
       gainDb: null,
     };
     this.metadata = metadata;
@@ -120,8 +121,24 @@ export class SyntheticBackend implements ReceiverBackend {
       mode: mode.mode,
       channelBandwidthHz: mode.bandwidthHz,
       squelch: mode.squelch,
+      beatToneHz: mode.beatToneHz,
     };
     return this.tune(this.metadata.selectedChannelFrequencyHz, sessionGeneration);
+  }
+
+  updateAnalogMode(settings: ReceiverModeSettings): Omit<SourceSessionMetadata, "sessionGeneration"> {
+    if (!this.metadata) throw new Error("Synthetic source is not running");
+    const mode = normalizeModeSettings(settings);
+    if (mode.mode !== this.metadata.mode)
+      throw new Error("Live analog settings cannot change receiver mode.");
+    this.metadata = {
+      ...this.metadata,
+      channelBandwidthHz: mode.bandwidthHz,
+      squelch: mode.squelch,
+      beatToneHz: mode.beatToneHz,
+    };
+    const { sessionGeneration: _generation, ...metadata } = this.metadata;
+    return metadata;
   }
 
   setGain(_gainDb: number | null): Promise<number | null> {

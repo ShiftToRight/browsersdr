@@ -10,6 +10,8 @@ interface USBDevice {
 
 interface USB {
   requestDevice(options: USBDeviceRequestOptions): Promise<USBDevice>;
+  /** Devices for which this origin already has permission. Does not show a chooser. */
+  getDevices?(): Promise<USBDevice[]>;
 }
 
 interface Navigator {
@@ -56,6 +58,7 @@ interface USBConfiguration {
 interface USBDevice {
   readonly vendorId: number;
   readonly productId: number;
+  readonly serialNumber?: string | null;
   readonly deviceVersionMajor: number;
   readonly deviceVersionMinor: number;
   readonly deviceVersionSubminor: number;
@@ -63,7 +66,24 @@ interface USBDevice {
   open(): Promise<void>;
   selectConfiguration(configurationValue: number): Promise<void>;
   claimInterface(interfaceNumber: number): Promise<void>;
-  controlTransferIn(setup: USBControlTransferParameters, length: number): Promise<USBInTransferResult>;
-  controlTransferOut(setup: USBControlTransferParameters, data?: BufferSource): Promise<USBOutTransferResult>;
-  transferIn(endpointNumber: number, length: number): Promise<USBInTransferResult>;
+  selectAlternateInterface(
+    interfaceNumber: number,
+    alternateSetting: number,
+  ): Promise<void>;
+  controlTransferIn(
+    setup: USBControlTransferParameters,
+    length: number,
+  ): Promise<USBInTransferResult>;
+  controlTransferOut(
+    setup: USBControlTransferParameters,
+    data?: BufferSource,
+  ): Promise<USBOutTransferResult>;
+  transferIn(
+    endpointNumber: number,
+    length: number,
+  ): Promise<USBInTransferResult>;
+  transferOut(
+    endpointNumber: number,
+    data: BufferSource,
+  ): Promise<USBOutTransferResult>;
 }

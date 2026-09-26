@@ -1,3 +1,5 @@
+import { decodeCi8Into } from "../radio/ci8Samples";
+import { decodeSc16Q11Into } from "../radio/sc16Samples";
 import { WidebandChannelFilter, type ChannelWorkerInput, type ChannelWorkerOutput, type ChannelWorkerPort } from "../radio/widebandChannel";
 /** Runs the actual filter with transfer/detachment and asynchronous delivery. */
 export class ChannelWorkerFixture {
@@ -17,6 +19,12 @@ export class ChannelWorkerFixture {
     const input = this.pending.shift(); if (!input) return;
     let output: ChannelWorkerOutput;
     if (input.type === "configure") { this.generation = input.generation; this.filter = new WidebandChannelFilter(input.offsetHz, input.sampleRateHz); output = { type: "ready", generation: input.generation }; }
+    else if (input.type === "ci8" || input.type === "sc16") {
+      const I = new Float32Array(input.inputCount), Q = new Float32Array(input.inputCount);
+      if (input.type === "ci8") decodeCi8Into(input.bytes, I, Q); else decodeSc16Q11Into(input.bytes, I, Q);
+      const count = input.generation === this.generation ? this.filter.process(I, Q) : 0;
+      input.I.set(I.subarray(0, count)); input.Q.set(Q.subarray(0, count)); output = { ...input, count };
+    }
     else output = { ...input, count: input.generation === this.generation ? this.filter.process(input.I, input.Q) : 0 };
     this.onmessage?.call(this as unknown as Worker, new MessageEvent("message", { data: output }));
   }

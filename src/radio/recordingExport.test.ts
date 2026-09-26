@@ -82,8 +82,8 @@ describe("recording export lifecycle", () => {
     const recording = createDeterministicRecordingFixture(64);
     await coordinator.retain(recording, "browsersdr");
     const download = vi.fn();
-    expect(coordinator.requestDownload("archive", download)).toMatchObject({ status: "download-requested", kind: "archive" });
-    expect(coordinator.requestDownload("archive", download)).toMatchObject({ status: "download-requested" });
+    expect(await coordinator.requestDownload("archive", download)).toMatchObject({ status: "download-requested", kind: "archive" });
+    expect(await coordinator.requestDownload("archive", download)).toMatchObject({ status: "download-requested" });
     expect(download).toHaveBeenCalledTimes(2);
     expect(coordinator.getSnapshot()).toMatchObject({ status: "download-requested", downloadRequests: 2, sampleCount: recording.metadata.sampleCount });
     expect(coordinator.getSnapshot().retainedBytes).toBeGreaterThan(recording.data.byteLength);
@@ -92,7 +92,7 @@ describe("recording export lifecycle", () => {
   it("allows disclosed replacement only after a download was requested, and supports discard", async () => {
     const coordinator = new RecordingExportCoordinator();
     await coordinator.retain(createDeterministicRecordingFixture(64), "browsersdr");
-    coordinator.requestDownload("separate", undefined, vi.fn());
+    await coordinator.requestDownload("separate", undefined, vi.fn());
     expect((await coordinator.retain(createDeterministicRecordingFixture(32), "sigmf")).status).toBe("prepared");
     coordinator.discard();
     expect(coordinator.getSnapshot()).toEqual({ status: "discarded", retainedBytes: 0, downloadRequests: 0 });
@@ -113,4 +113,13 @@ describe("recording export lifecycle", () => {
     expect(revokeObjectURL).toHaveBeenCalledTimes(2);
     vi.restoreAllMocks(); vi.useRealTimers();
   });
+});
+
+it("does not publish a completed preparation after discard", async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof prepareRecordingExport>>) => void;
+  const coordinator = new RecordingExportCoordinator(() => new Promise(r => { resolve = r; }));
+  const recording = createDeterministicRecordingFixture(64);
+  const task = coordinator.retain(recording, "browsersdr"); coordinator.discard();
+  resolve(await prepareRecordingExport(recording, "browsersdr"));
+  expect((await task).status).toBe("duplicate"); expect(coordinator.getSnapshot().status).toBe("discarded");
 });

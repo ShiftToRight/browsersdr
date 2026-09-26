@@ -7,6 +7,8 @@ export interface GpuInputBlock {
   centerFrequencyHz: number; sampleRateHz: number; discontinuity: boolean; missingSamples: number;
 }
 
+export type GpuCi8InputBlock = Omit<GpuInputBlock, "I" | "Q"> & { bytes: Uint8Array };
+
 /** Fixed four-window staging and at most one upload/compute/render submission in flight.
  * Copies borrowed raw samples synchronously before the audio demodulator mutates them.
  */
@@ -25,7 +27,7 @@ export class GpuAnalysisTap {
     private readonly fail: (error: unknown) => void) {
     this.input = new Float32Array(size * 8);
   }
-  accept(block: GpuInputBlock, now = performance.now()): void {
+  accept(block: GpuInputBlock | GpuCi8InputBlock, now = performance.now()): void {
     if (this.disposed || block.sessionGeneration !== this.generation) return;
     if (block.sampleIndex !== undefined && block.sampleIndex !== this.sampleIndex) {
       this.length = 0; this.dropped++;
@@ -36,13 +38,15 @@ export class GpuAnalysisTap {
       if (block.sampleIndex === undefined) this.sampleIndex += block.missingSamples;
       this.dropped++;
     }
-    const count = Math.min(block.I.length, block.Q.length);
+    const count = "bytes" in block ? block.bytes.length / 2 : Math.min(block.I.length, block.Q.length);
+    if (!Number.isInteger(count)) throw new Error("Incomplete GPU CI8 pair.");
     if (this.busy || now - this.lastMs < 40) {
       this.sampleIndex += count; this.length = 0; this.dropped++; return;
     }
+    const signed = "bytes" in block ? new Int8Array(block.bytes.buffer, block.bytes.byteOffset, block.bytes.byteLength) : undefined;
     for (let k = 0; k < count; k++) {
-      this.input[2 * this.length] = block.I[k]!;
-      this.input[2 * this.length + 1] = block.Q[k]!;
+      this.input[2 * this.length] = signed ? signed[2 * k]! / 128 : (block as GpuInputBlock).I[k]!;
+      this.input[2 * this.length + 1] = signed ? signed[2 * k + 1]! / 128 : (block as GpuInputBlock).Q[k]!;
       this.length++; this.sampleIndex++;
       if (this.length !== this.size * 4) continue;
       this.length = 0; this.busy = true; this.lastMs = now;

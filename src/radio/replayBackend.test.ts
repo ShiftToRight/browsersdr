@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { WasmChannelFilter, type ChannelExports } from "./wasmChannel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplayBackend } from "./replayBackend";
 import { ReceiverController, type ReceiverBackendEvents } from "./receiverController";
@@ -37,7 +39,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-function setupRecording(recording: IqRecording) {
+function setupRecording(recording: IqRecording, compiledChannel?: (rate: number) => Promise<WasmChannelFilter>) {
   const samples: SampleBlock[] = [];
   const analysis = {
     begin: vi.fn(() => ({ setSampleRate() {}, receiveSamples: (block: SampleBlock) => samples.push({ ...block, I: block.I.slice(), Q: block.Q.slice() }) })),
@@ -47,7 +49,10 @@ function setupRecording(recording: IqRecording) {
     permissionGranted: vi.fn(), runtimeError: vi.fn(), audioStateChanged: vi.fn(), sourceEnded: vi.fn(), rdsChanged: vi.fn(),
     dabChanged: vi.fn(), adsbChanged: vi.fn(), aisChanged: vi.fn(),
   };
-  const backend = new ReplayBackend(events, analysis as unknown as AnalysisPipeline, recording, 1);
+  const backend = new ReplayBackend(events, analysis as unknown as AnalysisPipeline, recording, 1, compiledChannel ?? (async rate => {
+    const { instance } = await WebAssembly.instantiate(await readFile(new URL("../wasm/pkg/spectrum_analysis.wasm", import.meta.url)), {});
+    return new WasmChannelFilter(instance.exports as ChannelExports, rate);
+  }));
   const options = { source: "replay" as const, channelFrequencyHz: recording.metadata.selectedChannelFrequencyHz, volume: 0 };
   return { recording, samples, analysis, events, backend, options };
 }
@@ -167,6 +172,24 @@ describe("real replay backend integration", () => {
     expect(analysis.stop).toHaveBeenLastCalledWith(3);
   });
 
+  it("changes a persisted CW beat tone without moving the selected RF frequency", async () => {
+    const fixture = createDeterministicRecordingFixture(8_192);
+    fixture.metadata.mode = "CW";
+    fixture.metadata.channelBandwidthHz = 500;
+    fixture.metadata.squelch = 0;
+    fixture.metadata.beatToneHz = 600;
+    const { backend, options } = setupRecording(fixture);
+    const started = await backend.start(options);
+    const changed = await backend.configureMode({ mode: "CW", bandwidthHz: 250, squelch: 0, beatToneHz: 900 }, 2);
+    expect(changed).toMatchObject({
+      selectedChannelFrequencyHz: started.selectedChannelFrequencyHz,
+      mode: "CW",
+      channelBandwidthHz: 250,
+      beatToneHz: 900,
+    });
+    await backend.stop();
+  });
+
   it("configures every supported analog/digital route transition at the captured rate", async () => {
     const I = new Float32Array(32), Q = new Float32Array(32);
     const { backend, options } = setupRecording(recordingAt(2_400_000, 162_000_000, I, Q));
@@ -176,6 +199,24 @@ describe("real replay backend integration", () => {
     expect((await backend.configureMode(defaultModeSettings("DAB"), 3)).mode).toBe("DAB");
     expect((await backend.configureMode(defaultModeSettings("AM"), 4)).mode).toBe("AM");
     expect((await backend.configureMode(defaultModeSettings("DAB"), 5)).mode).toBe("DAB");
+    expect((await backend.configureMode(defaultModeSettings("SRD"), 6)).mode).toBe("SRD");
+    expect((await backend.configureMode(defaultModeSettings("AM"), 7)).mode).toBe("AM");
+    await backend.stop();
+  });
+
+  it("attaches SRD at a nonzero selected-channel offset and preserves its settings", async () => {
+    const { backend, options } = setupRecording(
+      recordingAt(1_024_000, 433_920_000, new Float32Array(64), new Float32Array(64), 433_932_000),
+    );
+    await backend.start(options);
+    const settings = defaultModeSettings("SRD");
+    settings.srd = { ...settings.srd!, modulation: "2fsk", protocol: "fineoffset-wh51" };
+    const configured = await backend.configureMode(settings, 2);
+    expect(configured).toMatchObject({
+      mode: "SRD",
+      selectedChannelFrequencyHz: 433_932_000,
+      srd: { modulation: "2fsk", protocol: "fineoffset-wh51" },
+    });
     await backend.stop();
   });
 
@@ -270,7 +311,7 @@ describe("real replay backend integration", () => {
   });
 });
 
-it.each([0x0109, 0x0110, 0x0113].flatMap(api => ([1_024_000, 2_400_000, 4_800_000, 9_600_000] as const).flatMap(rate => [48_000, 44_100].map(audioRate => ({ api, rate, audioRate })))))("replays and re-records native CI8 $api at $rate samples/s with $audioRate Hz audio", async ({ api, rate, audioRate }) => {
+it.each([0x0109, 0x0110, 0x0113].flatMap(api => ([1_024_000, 2_400_000, 4_800_000, 9_600_000, 19_200_000] as const).flatMap(rate => [48_000, 44_100].map(audioRate => ({ api, rate, audioRate })))))("replays and re-records native CI8 $api at $rate samples/s with $audioRate Hz audio", async ({ api, rate, audioRate }) => {
   TestAudioContext.rate = audioRate;
   const { hackrfRecordingFixture } = await import("../testing/hackrfRecordingFixture");
   const { decodeRecordingSamples, RECORDING_FORMAT } = await import("./iqRecording");
@@ -310,4 +351,38 @@ it("keeps external CI8 origin unknown when re-recorded, and rejects invalid enco
   const before = TestAudioContext.instances.length;
   expect(() => setupRecording({ ...recording, metadata: { ...recording.metadata, sampleEncoding: "ci16" } as unknown as IqRecording["metadata"] })).toThrow();
   expect(TestAudioContext.instances).toHaveLength(before);
+});
+
+it("releases a compiled replay filter when stop wins asynchronous initialization", async () => {
+  const { hackrfRecordingFixture } = await import("../testing/hackrfRecordingFixture");
+  const { recording } = await hackrfRecordingFixture(new Uint8Array(4096), 19_200_000, 0x0110);
+  let resolve!: (filter: WasmChannelFilter) => void;
+  const pending = new Promise<WasmChannelFilter>(done => { resolve = done; });
+  const f = setupRecording(recording, () => pending);
+  const start = f.backend.start(f.options);
+  const rejection = expect(start).rejects.toMatchObject({ name: "AbortError" });
+  await f.backend.stop();
+  const dispose = vi.fn();
+  resolve({ dispose } as unknown as WasmChannelFilter);
+  await rejection;
+  expect(dispose).toHaveBeenCalledOnce();
+  expect(f.analysis.begin).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("catches up 19.2 MS/s replay under 4 ms timer clamping with bounded blocks", async () => {
+  const { hackrfRecordingFixture } = await import("../testing/hackrfRecordingFixture");
+  const { recording } = await hackrfRecordingFixture(new Uint8Array(2 * 384_000), 19_200_000, 0x0110);
+  const original = window.setTimeout;
+  const timer = vi.spyOn(window, "setTimeout").mockImplementation(((callback: TimerHandler, delay?: number) => original(callback, Math.max(4, delay ?? 0))) as typeof window.setTimeout);
+  try {
+    const f = setupRecording(recording);
+    await f.backend.start(f.options);
+    await vi.advanceTimersByTimeAsync(28);
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+    expect(f.samples.reduce((sum, block) => sum + block.I.length, 0)).toBe(384_000);
+    expect(f.samples.every(block => block.I.length <= 8192)).toBe(true);
+    await f.backend.stop();
+  } finally { timer.mockRestore(); }
 });

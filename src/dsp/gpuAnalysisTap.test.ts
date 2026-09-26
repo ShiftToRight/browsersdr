@@ -61,3 +61,17 @@ describe("experimental GPU analysis ownership", () => {
     expect(() => checkGpuFftLimits({ limits: { maxBufferSize: 1024 } as GPUSupportedLimits }, 4096)).toThrow(/limits/);
   });
 });
+
+it("normalizes compact offset CI8 only for accepted GPU windows and retains sample clocks", async () => {
+  const results: { samples: Float32Array; index: number }[] = [];
+  const tap = new GpuAnalysisTap(4096, 2, async (samples, frame) => { results.push({ samples: samples.slice(), index: frame.sampleIndex }); }, () => {});
+  const backing = new Uint8Array(32768 + 7), bytes = backing.subarray(7);
+  for (let n = 0; n < bytes.length; n += 4) bytes.set([128, 255, 0, 127], n);
+  const context = { sessionGeneration: 2, centerFrequencyHz: 100e6, sampleRateHz: 19_200_000, discontinuity: false, missingSamples: 0 };
+  tap.accept({ ...context, bytes: bytes.subarray(0, 1000) }, 0);
+  tap.accept({ ...context, bytes: bytes.subarray(1000) }, 0);
+  expect([...results[0]!.samples.subarray(0, 4)]).toEqual([-1, -1 / 128, 0, 127 / 128]);
+  expect(results[0]!.index).toBe(16384);
+  tap.accept({ ...context, bytes }, 1); await Promise.resolve(); tap.accept({ ...context, bytes }, 50);
+  expect(results[1]!.index).toBe(49152); expect(bytes[0]).toBe(128); tap.dispose();
+});

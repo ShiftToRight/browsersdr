@@ -58,6 +58,11 @@ export class FakeHackrfUsb implements USBDevice {
   async open() { this.lifecycle.push("open"); await this.openGate; this.opened = true; }
   async selectConfiguration(value: number) { this.lifecycle.push(`configuration:${value}`); this.configuration = this.layout; }
   async claimInterface(value: number) { this.lifecycle.push(`claim:${value}`); if (this.claimFailure) throw new Error("claim failed"); }
+  async selectAlternateInterface(_interfaceNumber: number, _alternateSetting: number) {}
+  async transferOut(_endpointNumber: number, data: BufferSource): Promise<USBOutTransferResult> {
+    const length = ArrayBuffer.isView(data) ? data.byteLength : data.byteLength;
+    return { status: "ok", bytesWritten: length };
+  }
   async close() {
     this.lifecycle.push("close");
     if (this.closeFailures-- > 0) throw new Error("close failed");

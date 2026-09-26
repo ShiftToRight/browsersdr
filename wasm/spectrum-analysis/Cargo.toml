@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-rustfft = { version = "=6.4.1", default-features = false }
+rustfft = { version = "=6.4.1", default-features = false, features = ["wasm_simd"] }
 
 [profile.release]
 codegen-units = 1

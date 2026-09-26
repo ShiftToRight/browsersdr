@@ -97,6 +97,23 @@ describe("BrowserSDR CU8 recording format", () => {
     expect(parsed.metadata.provenance).toContain("deterministic generator");
   });
 
+  it("keeps legacy metadata compatible and supplies validated SRD defaults", () => {
+    const fixture = createDeterministicRecordingFixture(4096);
+    expect(parseRecording(recordingMetadataJson(fixture), fixture.data).metadata.srd).toBeUndefined();
+    const metadata = {
+      ...fixture.metadata,
+      mode: "SRD" as const,
+      channelBandwidthHz: 32_000,
+      squelch: 0,
+    };
+    // Avoid duplicating defaults in the fixture: the normalized recording path
+    // supplies them when older SRD metadata omits the decoder-specific object.
+    expect(validateRecordingMetadata(metadata, fixture.data.byteLength)).toMatchObject({
+      mode: "SRD",
+      srd: { modulation: "ook", protocol: "none" },
+    });
+  });
+
   it("stops exactly on an even bounded capacity without accepting more data", () => {
     const fixture = createDeterministicRecordingFixture(64);
     const recorder = new IqRecorder({

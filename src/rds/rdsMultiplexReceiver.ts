@@ -16,7 +16,7 @@ export class RdsMultiplexReceiver implements SampleReceiver {
   private frequencyOffset = 0;
   private enabled = true;
   private modeEnabled = true;
-  private stage1 = this.createStage();
+  private stage1?: DemodWBFMStage1;
   private readonly decoder: RdsDecoder;
 
   constructor(onUpdate: (state: RdsState) => void) {
@@ -27,7 +27,7 @@ export class RdsMultiplexReceiver implements SampleReceiver {
   setSampleRate(sampleRate: number): void {
     this.sampleRate = sampleRate;
     this.outputRate = Math.min(sampleRate, 336_000);
-    this.stage1 = this.createStage();
+    this.stage1 = undefined;
     this.enabled = this.modeEnabled && this.outputRate > 2 * 57_000;
     if (this.enabled) this.decoder.configure(this.outputRate);
     else this.decoder.reset();
@@ -47,7 +47,7 @@ export class RdsMultiplexReceiver implements SampleReceiver {
   get isEnabled(): boolean { return this.enabled; }
 
   reset(): void {
-    this.stage1 = this.createStage();
+    this.stage1 = undefined;
     this.decoder.reset();
   }
 
@@ -62,9 +62,11 @@ export class RdsMultiplexReceiver implements SampleReceiver {
 
   receiveOwnedSamples(block: SampleBlock): void {
     if (!this.enabled) return;
-    const multiplex = this.stage1.demodulate(block.I, block.Q, this.frequencyOffset).left;
+    const multiplex = (this.stage1 ??= this.createStage()).demodulate(block.I, block.Q, this.frequencyOffset).left;
     this.decoder.process(multiplex);
   }
+
+  receiveMultiplex(samples: Float32Array): void { if (this.enabled) this.decoder.process(samples); }
 
   private createStage(): DemodWBFMStage1 {
     return new DemodWBFMStage1(this.sampleRate, this.outputRate, { scheme: "WBFM", stereo: false });
@@ -77,7 +79,7 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
   private Q = new Float32Array(0);
 
   constructor(
-    private readonly primary: SampleReceiver,
+    private readonly primary: SampleReceiver & { readonly sharesWbfmMultiplex?: boolean },
     private readonly rds: RdsMultiplexReceiver,
     private analysis?: SampleReceiver,
     private digital?: DigitalSampleReceiver,
@@ -107,7 +109,7 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
       this.digital.receiveSamples(block);
       return;
     }
-    if (!this.rds.isEnabled) {
+    if (!this.rds.isEnabled || this.primary.sharesWbfmMultiplex) {
       this.primary.receiveSamples(block);
       return;
     }

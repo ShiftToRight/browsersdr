@@ -1,0 +1,21 @@
+import { prepareRecordingExport, createRecordingArchive, RETAINED_CAPTURE_MAX_BYTES } from "../radio/recordingExportFormat";
+import { validateRecordingMetadata, RECORDING_MAX_BYTES } from "../radio/iqRecording";
+import type { RecordingJob, RecordingJobReply } from "../radio/recordingJobs";
+
+self.onmessage = async (event: MessageEvent<RecordingJob>) => {
+  try {
+    const job = event.data;
+    if (job.type === "prepare") {
+      if (job.data.size > RECORDING_MAX_BYTES) throw new Error("Recording exceeds capacity.");
+      validateRecordingMetadata(job.metadata, job.data.size);
+      const recording = { data: new Uint8Array(await job.data.arrayBuffer()), metadata: job.metadata };
+      const { files, ...prepared } = await prepareRecordingExport(recording, job.format);
+      self.postMessage({ ok: true, prepared, files: files.map(file => ({ ...file, contents: typeof file.contents === "string" ? file.contents : undefined })) } satisfies RecordingJobReply);
+    } else {
+      if (job.files.length !== 2 || job.files.reduce((sum, file) => sum + file.data.size, 0) > RETAINED_CAPTURE_MAX_BYTES) throw new Error("Archive exceeds capacity.");
+      const files = await Promise.all(job.files.map(async file => ({ name: file.name, type: file.type, contents: new Uint8Array(await file.data.arrayBuffer()) })));
+      const archive = createRecordingArchive({ ...job.prepared, files: files as [typeof files[number], typeof files[number]] });
+      self.postMessage({ ok: true, archive } satisfies RecordingJobReply, { transfer: [(archive.contents as Uint8Array<ArrayBuffer>).buffer] });
+    }
+  } catch (error) { self.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) } satisfies RecordingJobReply); }
+};

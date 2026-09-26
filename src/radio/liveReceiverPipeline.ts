@@ -1,25 +1,60 @@
+import type { IngressTimings } from "./ingressTimings";
+import { SharedWbfmDemodulator } from "./sharedWbfmDemodulator";
+import { PcmBatchPlayer } from "./pcmBatchPlayer";
 import { isWidebandRate } from "./sourceCapabilities";
-import { WidebandChannelWorker, type ChannelWorkerPort } from "./widebandChannel";
+import {
+  WidebandChannelWorker,
+  type ChannelWorkerPort,
+} from "./widebandChannel";
 import { channelSampleRate } from "./sourceCapabilities";
 import { validateLiveRateBudget } from "./liveRateBudget";
-import { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
+import type { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
 import { AudioPlayer } from "@jtarrio/signals/players/audioplayer.js";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
-import { AudioFirstRdsReceiver, RdsMultiplexReceiver } from "../rds/rdsMultiplexReceiver";
-import { DabReceiver } from "../dab/dabReceiver";
+import {
+  AudioFirstRdsReceiver,
+  RdsMultiplexReceiver,
+} from "../rds/rdsMultiplexReceiver";
+import { DabReceiver, type DabEnsembleDecoder } from "../dab/dabReceiver";
+import {
+  DabAudioPlayer,
+  DabPcmPlayer,
+  WebCodecsDabAudioDecoder,
+} from "../dab/dabAudio";
+import { DabPlusProgrammeDecoder } from "../dab/dabPlusSuperframe";
+import { DabEnsembleWorkerDecoder } from "../dab/dabEnsembleWorker";
 import { AdsbReceiver } from "../adsb/adsbReceiver";
 import { AisReceiver } from "../ais/aisReceiver";
-import { createSignalsMode, validateModeSampleRate } from "./receiverConfig";
+import { SrdDigitalReceiver } from "../srd/srdDigitalReceiver";
+import { srdConfigurationForRoute } from "../srd/settings";
+import {
+  createSignalsMode,
+  validateModeSampleRate,
+  type ReceiverModeSettings,
+} from "./receiverConfig";
 import type { SourceSessionMetadata } from "./types";
 import type { ReceiverBackendEvents } from "./receiverController";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 
-export type LiveDemodulator = Pick<Demodulator, "setMode" | "setVolume" | "setFrequencyOffset" | "setSampleRate" | "receiveSamples" | "expectFrequencyAndSetOffset">;
+export type LiveDemodulator = Pick<
+  Demodulator,
+  | "setMode"
+  | "setVolume"
+  | "setFrequencyOffset"
+  | "setSampleRate"
+  | "receiveSamples"
+  | "expectFrequencyAndSetOffset"
+> & { setCwToneFrequency?(frequencyHz: number): void; };
 export interface LiveReceiverDependencies {
   createChannelWorker?: () => ChannelWorkerPort;
   createAudioContext?: () => AudioContext;
   createDemodulator?: (context: AudioContext) => LiveDemodulator;
+  /** Permissively licensed OFDM/FIC/MSC stage. Its selected DAB+ service sends
+   * each decoded 24 ms logical frame to the supplied programme endpoint. */
+  createDabEnsembleDecoder?: (
+    programme: DabPlusProgrammeDecoder,
+  ) => DabEnsembleDecoder;
 }
 
 /** Shared DSP/audio owner only. Hardware acquisition and native recording stay in
@@ -27,37 +62,122 @@ export interface LiveReceiverDependencies {
 export class LiveReceiverPipeline implements SampleReceiver {
   readonly audioContext: AudioContext;
   readonly demodulator: LiveDemodulator;
+  private readonly player: PcmBatchPlayer;
   private readonly rds: RdsMultiplexReceiver;
-  private readonly dab: DabReceiver;
+  private dabResources?: ReturnType<LiveReceiverPipeline["createDabResources"]>;
+  private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
+  private srd?: SrdDigitalReceiver;
   private readonly receiver: AudioFirstRdsReceiver;
   private generation?: number;
   private rawAnalysis?: SampleReceiver;
   private channel?: WidebandChannelWorker;
   private selectedFrequency = 0;
   private enabled = false;
+  private outputEnabled = true;
   private centerFrequencyHz = 0;
   private closeTask?: Promise<void>;
   private closed = false;
   private closing = false;
 
-  constructor(private readonly events: ReceiverBackendEvents, private readonly analysis?: AnalysisPipeline, private readonly dependencies: LiveReceiverDependencies = {}) {
-    this.audioContext = dependencies.createAudioContext?.() ?? new AudioContext();
+  constructor(
+    private readonly events: ReceiverBackendEvents,
+    private readonly analysis?: AnalysisPipeline,
+    private readonly dependencies: LiveReceiverDependencies = {},
+    private readonly timings?: IngressTimings,
+  ) {
+    this.audioContext =
+      dependencies.createAudioContext?.() ?? new AudioContext();
     this.audioContext.addEventListener("statechange", this.audioChanged);
-    this.demodulator = dependencies.createDemodulator?.(this.audioContext)
-      ?? new Demodulator({ player: new AudioPlayer({ newAudioContext: () => this.audioContext }) });
+    this.player = new PcmBatchPlayer(
+      new AudioPlayer({ newAudioContext: () => this.audioContext }),
+    );
     this.rds = new RdsMultiplexReceiver((value) => events.rdsChanged(value));
-    this.dab = new DabReceiver((value) => events.dabChanged?.(value));
+    this.demodulator =
+      dependencies.createDemodulator?.(this.audioContext) ??
+      new SharedWbfmDemodulator(
+        this.player,
+        (samples) => this.rds.receiveMultiplex(samples),
+        (state) => this.events.squelchChanged?.(state),
+      );
     this.adsb = new AdsbReceiver((value) => events.adsbChanged?.(value));
     this.ais = new AisReceiver((value) => events.aisChanged?.(value));
     this.receiver = new AudioFirstRdsReceiver(this.demodulator, this.rds);
   }
-  resume(): Promise<void> { return this.audioContext.resume(); }
-  requireRunning(): void {
-    if (this.audioContext.state !== "running") throw new DOMException(`Audio context remained ${this.audioContext.state}`, "NotAllowedError");
+  private ensureDabResources() {
+    return this.dabResources ??= this.createDabResources();
   }
-  setVolume(volume: number): void { this.demodulator.setVolume(volume); }
+
+  private createDabResources() {
+    const output = new DabAudioPlayer(this.audioContext);
+    output.setVolume(this.volume);
+    const pcm = new DabPcmPlayer(output);
+    let active = true;
+    const programme = new DabPlusProgrammeDecoder(
+      new WebCodecsDabAudioDecoder(
+        (left, right, rate) => {
+          if (!active) return;
+          pcm.play(left, right, rate);
+          receiver.recordPcm(left.length, rate);
+        },
+        (status) => {
+          if (!active) return;
+          receiver.updateAudioStatus(status);
+          if (status.state === "error") this.events.runtimeError(new Error(status.message));
+        },
+      ),
+      (stats) => { if (active) receiver.updateProgrammeStats(stats); },
+      (error) => { if (active) this.events.runtimeError(error instanceof Error ? error : new Error(String(error))); },
+      (metadata) => { if (active) receiver.updateProgrammeMetadata(metadata); },
+    );
+    const ensemble = this.dependencies.createDabEnsembleDecoder?.(programme) ??
+      (typeof Worker === "undefined" ? undefined : new DabEnsembleWorkerDecoder(
+        programme,
+        (status) => { if (active) receiver.updateDecoderStatus(status); },
+        (error) => { if (active) this.events.runtimeError(error); },
+        undefined,
+        () => {
+          if (!active) return;
+          pcm.reset(); output.reset(); this.player.reset(); receiver.resetProgramme();
+        },
+      ));
+    const receiver = new DabReceiver((value) => { if (active) this.events.dabChanged?.(value); }, ensemble);
+    return {
+      receiver, ensemble, output,
+      reset: () => { programme.reset(); pcm.reset(); output.reset(); },
+      close: () => {
+        active = false;
+        receiver.close(); programme.close(); pcm.reset(); output.dispose();
+      },
+    };
+  }
+
+  private releaseDabResources(): void {
+    this.dabResources?.close();
+    this.dabResources = undefined;
+  }
+
+  get channelDiagnostics() {
+    return this.channel?.diagnostics;
+  }
+  async resume(): Promise<void> {
+    await this.audioContext.resume();
+    // Resuming an already-running context emits no statechange event.
+    this.audioChanged();
+  }
+  requireRunning(): void {
+    if (this.audioContext.state !== "running")
+      throw new DOMException(
+        `Audio context remained ${this.audioContext.state}`,
+        "NotAllowedError",
+      );
+  }
+  setVolume(volume: number): void {
+    this.demodulator.setVolume(volume);
+    this.volume = volume;
+    this.dabResources?.output.setVolume(volume);
+  }
   /** Signals 0.10.1 uses exact rational interpolation and allocates one phase
    * filter per output/gcd(input, output). Fractional readbacks can make that
    * allocation enormous. Reject before any consumer sees the rate; never round
@@ -65,25 +185,90 @@ export class LiveReceiverPipeline implements SampleReceiver {
   validateRateBudget(sampleRate: number): void {
     validateLiveRateBudget(sampleRate, this.audioContext.sampleRate);
   }
-  setSampleRate(sampleRate: number): void { this.receiver.setSampleRate(channelSampleRate(sampleRate)); }
+  setSampleRate(sampleRate: number): void {
+    this.receiver.setSampleRate(channelSampleRate(sampleRate));
+  }
   receiveSamples(block: SampleBlock): void {
     if (!this.enabled || block.frequency !== this.centerFrequencyHz) return;
     this.rawAnalysis?.receiveSamples(block);
+    if (!this.outputEnabled) return;
     if (this.channel) this.channel.receive(block, this.selectedFrequency);
     else this.receiver.receiveSamples(block);
   }
+  receiveCi8(bytes: Uint8Array, frequency: number): boolean {
+    if (!this.enabled || frequency !== this.centerFrequencyHz) return true;
+    if (!this.outputEnabled) {
+      this.analysis?.receiveCi8(bytes, frequency, this.generation!, this.timings);
+      return true;
+    }
+    if (!this.channel) return false;
+    this.analysis?.receiveCi8(bytes, frequency, this.generation!, this.timings);
+    this.channel.receiveCi8(bytes, this.selectedFrequency);
+    return true;
+  }
+  receiveSc16(bytes: Uint8Array, frequency: number): boolean {
+    if (!this.enabled || frequency !== this.centerFrequencyHz) return true;
+    if (!this.outputEnabled) {
+      this.analysis?.receiveSc16(
+        bytes,
+        frequency,
+        this.generation!,
+        this.timings,
+      );
+      return true;
+    }
+    if (!this.channel) return false;
+    this.analysis?.receiveSc16(
+      bytes,
+      frequency,
+      this.generation!,
+      this.timings,
+    );
+    this.channel.receiveSc16(bytes, this.selectedFrequency);
+    return true;
+  }
   async prepare(metadata: SourceSessionMetadata): Promise<void> {
-    if (!isWidebandRate(metadata.actualSampleRateHz)) return;
     this.requireOpen();
-    this.channel ??= new WidebandChannelWorker(block => { if (this.enabled) this.receiver.receiveSamples(block); },
-      error => this.events.runtimeError(error), this.dependencies.createChannelWorker);
-    await this.channel.configure(metadata.sessionGeneration, metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz, metadata.actualSampleRateHz);
+    const dabReady =
+      metadata.mode === "DAB"
+        ? (this.ensureDabResources().ensemble?.prepare?.() ?? Promise.resolve())
+        : Promise.resolve();
+    if (metadata.mode === "OFF" || !isWidebandRate(metadata.actualSampleRateHz)) {
+      await dabReady;
+      return;
+    }
+    this.requireOpen();
+    this.channel ??= new WidebandChannelWorker(
+      (block) => {
+        if (this.enabled) this.receiver.receiveSamples(block);
+      },
+      (error) => this.events.runtimeError(error),
+      this.dependencies.createChannelWorker,
+      this.timings,
+    );
+    await Promise.all([
+      this.channel.configure(
+        metadata.sessionGeneration,
+        metadata.selectedChannelFrequencyHz -
+          metadata.hardwareCenterFrequencyHz,
+        metadata.actualSampleRateHz,
+        metadata.source === "hackrf"
+          ? "ci8"
+          : metadata.source === "bladerf"
+            ? "sc16"
+            : false,
+      ),
+      dabReady,
+    ]);
     this.requireOpen();
   }
 
   begin(metadata: SourceSessionMetadata, volume: number): void {
     this.requireOpen();
-    validateModeSampleRate(metadata.mode, channelSampleRate(metadata.actualSampleRateHz));
+    validateModeSampleRate(
+      metadata.mode,
+      channelSampleRate(metadata.actualSampleRateHz),
+    );
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
@@ -96,31 +281,101 @@ export class LiveReceiverPipeline implements SampleReceiver {
   /** Keep the analysis tap but reset decoder/filter histories for a new route. */
   retune(metadata: SourceSessionMetadata): void {
     this.requireOpen();
-    validateModeSampleRate(metadata.mode, channelSampleRate(metadata.actualSampleRateHz));
+    validateModeSampleRate(
+      metadata.mode,
+      channelSampleRate(metadata.actualSampleRateHz),
+    );
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
-    if (this.generation === undefined) this.rawAnalysis = this.analysis?.begin(metadata);
+    if (this.generation === undefined)
+      this.rawAnalysis = this.analysis?.begin(metadata);
     else this.analysis?.retune(metadata);
     this.generation = metadata.sessionGeneration;
     this.setSampleRate(metadata.actualSampleRateHz);
     this.enabled = true;
   }
+  selectDabService(key: string): void {
+    this.dabResources?.ensemble?.selectService?.(key);
+  }
+
+  updateAnalogMode(settings: ReceiverModeSettings): void {
+    this.requireOpen();
+    if (["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(settings.mode))
+      throw new Error(`${settings.mode} does not use the analog audio path.`);
+    this.demodulator.setCwToneFrequency?.(settings.beatToneHz ?? 600);
+    this.demodulator.setMode(createSignalsMode(settings));
+  }
+
   private route(metadata: SourceSessionMetadata): void {
-    const digital = metadata.mode === "DAB" ? this.dab : metadata.mode === "ADS-B" ? this.adsb : metadata.mode === "AIS" ? this.ais : undefined;
+    if (metadata.mode === "DAB") this.ensureDabResources().reset();
     const wideband = isWidebandRate(metadata.actualSampleRateHz);
     const rate = channelSampleRate(metadata.actualSampleRateHz);
-    const offset = wideband ? 0 : metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz;
-    if (wideband) {
-      if (!this.channel) throw new Error("Prepare the wideband channel worker before starting reception.");
-      void this.channel.configure(metadata.sessionGeneration, metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz, metadata.actualSampleRateHz);
+    const offset = wideband
+      ? 0
+      : metadata.selectedChannelFrequencyHz -
+        metadata.hardwareCenterFrequencyHz;
+    if (metadata.mode === "SRD") {
+      this.srd ??= new SrdDigitalReceiver(
+        ({ snapshot, diagnostics }) =>
+          this.events.srdChanged?.(snapshot, diagnostics),
+        (error) => this.events.runtimeError(error),
+      );
+      this.srd.configureSession(
+        srdConfigurationForRoute(
+          metadata.srd!,
+          rate as 1_024_000 | 2_400_000,
+          offset,
+          metadata.sessionGeneration,
+        ),
+      );
+    }
+    const digital =
+      metadata.mode === "DAB"
+        ? this.ensureDabResources().receiver
+        : metadata.mode === "ADS-B"
+          ? this.adsb
+          : metadata.mode === "AIS"
+          ? this.ais
+          : metadata.mode === "SRD"
+            ? this.srd
+          : undefined;
+    this.outputEnabled = metadata.mode !== "OFF";
+    if (wideband && this.outputEnabled) {
+      if (!this.channel)
+        throw new Error(
+          "Prepare the wideband channel worker before starting reception.",
+        );
+      void this.channel.configure(
+        metadata.sessionGeneration,
+        metadata.selectedChannelFrequencyHz -
+          metadata.hardwareCenterFrequencyHz,
+        metadata.actualSampleRateHz,
+        metadata.source === "hackrf"
+          ? "ci8"
+          : metadata.source === "bladerf"
+            ? "sc16"
+            : false,
+      );
     }
     // Configure first: rate rejection cannot replace the active decoder route.
     this.receiver.setDigitalReceiver(digital, rate, offset);
-    if (digital !== this.dab) this.dab.reset();
+    if (metadata.mode !== "DAB") this.releaseDabResources();
     if (digital !== this.adsb) this.adsb.reset();
     if (digital !== this.ais) this.ais.reset();
-    if (!digital) this.demodulator.setMode(createSignalsMode({ mode: metadata.mode, bandwidthHz: metadata.channelBandwidthHz, squelch: metadata.squelch }));
+    if (digital !== this.srd) this.srd?.reset({ reason: "reconfigure", missingInputSamples: null });
+    if (!digital && this.outputEnabled)
+      this.demodulator.setCwToneFrequency?.(metadata.beatToneHz ?? 600);
+    if (!digital && this.outputEnabled)
+      this.demodulator.setMode(
+        createSignalsMode({
+          mode: metadata.mode,
+          bandwidthHz: metadata.channelBandwidthHz,
+          squelch: metadata.squelch,
+          beatToneHz: metadata.beatToneHz,
+        }),
+      );
+    this.player.configure(metadata.actualSampleRateHz === 19_200_000);
     this.demodulator.setFrequencyOffset(offset);
     this.rds.setEnabled(metadata.mode === "WBFM");
     this.rds.setFrequencyOffset(offset);
@@ -128,14 +383,25 @@ export class LiveReceiverPipeline implements SampleReceiver {
   /** Synchronous invalidation precedes every hardware await/close. */
   reset(): void {
     this.enabled = false;
+    this.outputEnabled = false;
+    this.player.reset();
+    if (this.dabResources) {
+      this.receiver.setDigitalReceiver(undefined, 2_400_000, 0);
+      this.releaseDabResources();
+    }
     this.rawAnalysis = undefined;
-    this.channel?.close(); this.channel = undefined;
+    this.channel?.close();
+    this.channel = undefined;
     if (this.generation !== undefined) this.analysis?.stop(this.generation);
     this.generation = undefined;
-    this.rds.reset(); this.dab.reset(); this.adsb.reset(); this.ais.reset();
+    this.rds.reset();
+    this.adsb.reset();
+    this.ais.reset();
+    this.srd?.reset();
   }
   async suspend(): Promise<void> {
-    if (this.audioContext.state === "running") await this.audioContext.suspend();
+    if (this.audioContext.state === "running")
+      await this.audioContext.suspend();
   }
   close(): Promise<void> {
     if (this.closed) return Promise.resolve();
@@ -143,15 +409,20 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.closing = true;
     this.reset();
     const task = (async () => {
+      this.srd?.dispose();
       if (this.audioContext.state !== "closed") await this.audioContext.close();
       this.audioContext.removeEventListener("statechange", this.audioChanged);
       this.closed = true;
-    })().finally(() => { if (this.closeTask === task) this.closeTask = undefined; });
+    })().finally(() => {
+      if (this.closeTask === task) this.closeTask = undefined;
+    });
     this.closeTask = task;
     return task;
   }
   private requireOpen(): void {
-    if (this.closing) throw new DOMException("Live receiver was disconnected", "AbortError");
+    if (this.closing)
+      throw new DOMException("Live receiver was disconnected", "AbortError");
   }
-  private readonly audioChanged = (): void => this.events.audioStateChanged(this.audioContext.state);
+  private readonly audioChanged = (): void =>
+    this.events.audioStateChanged(this.audioContext.state);
 }

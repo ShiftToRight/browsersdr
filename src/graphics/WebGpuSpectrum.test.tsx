@@ -1,0 +1,164 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import { WebGpuSpectrum } from "./WebGpuSpectrum";
+import type { AnalysisPipeline } from "../dsp/analysisPipeline";
+import type { SpectrumFrame } from "../radio/types";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  document.body.replaceChildren();
+});
+
+it("retains hidden rows without drawing, throttles status, and caches canvas layout", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: ResizeObserverCallback;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const submit = vi.fn(),
+    writeBuffer = vi.fn();
+  const pass = { setBindGroup() {}, setPipeline() {}, draw() {}, end() {} };
+  const device = {
+    limits: { maxTextureDimension2D: 8192 },
+    queue: { submit, writeBuffer },
+    lost: new Promise(() => {}),
+    addEventListener() {},
+    removeEventListener() {},
+    destroy() {},
+    createShaderModule: () => ({
+      getCompilationInfo: async () => ({ messages: [] }),
+    }),
+    createBindGroupLayout() {},
+    createPipelineLayout() {},
+    createRenderPipeline: () => ({}),
+    createBindGroup: () => ({}),
+    createBuffer: (descriptor: { label: string }) => ({
+      label: descriptor.label,
+      destroy() {},
+    }),
+    createCommandEncoder: () => ({ beginRenderPass: () => pass, finish() {} }),
+  };
+  vi.stubGlobal("navigator", {
+    gpu: {
+      requestAdapter: async () => ({ requestDevice: async () => device }),
+      getPreferredCanvasFormat: () => "bgra8unorm",
+    },
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    configure() {},
+    unconfigure() {},
+    getCurrentTexture: () => ({ createView() {} }),
+  } as unknown as RenderingContext);
+  const width = vi
+    .spyOn(HTMLCanvasElement.prototype, "clientWidth", "get")
+    .mockReturnValue(960);
+  const height = vi
+    .spyOn(HTMLCanvasElement.prototype, "clientHeight", "get")
+    .mockReturnValue(560);
+  let listener!: (
+    latest: SpectrumFrame,
+    frames: readonly SpectrumFrame[],
+  ) => void;
+  const unsubscribe = vi.fn();
+  const pipeline = {
+    subscribe: (callback: typeof listener) => {
+      listener = callback;
+      return unsubscribe;
+    },
+  } as unknown as AnalysisPipeline;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  await act(async () =>
+    root.render(<WebGpuSpectrum pipeline={pipeline} active />),
+  );
+  const frame = (sequence: number): SpectrumFrame => ({
+    sessionGeneration: 0,
+    sequence,
+    timestampMs: now,
+    sampleIndex: (sequence + 1) * 192512,
+    hopSamples: 192512,
+    sampleRateHz: 4800000,
+    centerFrequencyHz: 118800000,
+    units: "relative-dB",
+    bins: new Float32Array(4096),
+    droppedFramesBefore: 0,
+  });
+  const send = async (sequence: number) => {
+    const f = frame(sequence);
+    await act(async () => listener(f, [f]));
+  };
+  await send(0);
+  const status = host.querySelector('[role="status"]')!.textContent;
+  now += 40;
+  await send(1);
+  expect(host.querySelector('[role="status"]')!.textContent).toBe(status);
+  now += 250;
+  await send(2);
+  expect(host.querySelector('[role="status"]')!.textContent).not.toBe(status);
+  expect(width).toHaveBeenCalledOnce();
+  expect(height).toHaveBeenCalledOnce();
+  const uniforms = writeBuffer.mock.calls.filter(
+    (call) => call[0]?.label === "display controls",
+  );
+  expect(new Set(uniforms.map((call) => call[2])).size).toBe(1);
+  await act(async () =>
+    root.render(<WebGpuSpectrum pipeline={pipeline} active={false} />),
+  );
+  submit.mockClear();
+  writeBuffer.mockClear();
+  const hiddenStatus = host.querySelector('[role="status"]')!.textContent;
+  now += 1000;
+  await send(3);
+  await send(4);
+  expect(submit).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="status"]')!.textContent).toBe(hiddenStatus);
+  expect(
+    writeBuffer.mock.calls.filter(
+      (call) => call[0]?.label === "circular waterfall power history",
+    ),
+  ).toHaveLength(2);
+  await act(async () =>
+    root.render(<WebGpuSpectrum pipeline={pipeline} active />),
+  );
+  expect(submit).toHaveBeenCalledOnce();
+  expect(unsubscribe).not.toHaveBeenCalled();
+  const canvas = host.querySelector("canvas")!;
+  await act(async () =>
+    resize(
+      [
+        {
+          target: canvas,
+          contentRect: { width: 800, height: 400 },
+        } as unknown as ResizeObserverEntry,
+      ],
+      {} as ResizeObserver,
+    ),
+  );
+  expect(canvas.width).toBe(800);
+  expect(canvas.height).toBe(400);
+  const visibility = vi
+    .spyOn(document, "visibilityState", "get")
+    .mockReturnValue("hidden");
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  submit.mockClear();
+  await send(5);
+  expect(submit).not.toHaveBeenCalled();
+  visibility.mockReturnValue("visible");
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  expect(submit).toHaveBeenCalled();
+  await act(async () => root.unmount());
+  expect(unsubscribe).toHaveBeenCalledOnce();
+});

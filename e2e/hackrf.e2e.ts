@@ -58,8 +58,8 @@ async function installHackrfUsb(page: Page, failure = false) {
       if (device.radio.get(0) === 1n && device.pendingReads.length)
         device.deliver(bytes);
       // The test log is also bounded across repeated retunes.
-      if (device.reads.length > 64)
-        device.reads.splice(0, device.reads.length - 4);
+      while (device.reads.length > 64 && device.reads[0]?.settled)
+        device.reads.shift();
     }, 20);
   }, failure);
 }
@@ -110,6 +110,7 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await expect(page.locator(".receiver-status")).toContainText(
     "accepted LNA code 33, VGA 62 dB, RF amplifier on",
   );
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   await expect(page.locator(".recording-controls")).toContainText(
     /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ 32 MiB · recording/,
@@ -136,7 +137,7 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await page.getByLabel("Start frequency").fill("4300");
   await page.getByLabel("End frequency").fill("4300.5");
   await page
-    .getByRole("button", { name: "Run selected band", exact: true })
+    .getByRole("button", { name: "Scan current window", exact: true })
     .click();
   await expect(page.getByText(/Survey complete:/)).toBeVisible({
     timeout: 15_000,
@@ -152,7 +153,9 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
     /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ 32 MiB · recording/,
   );
   const partialDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Cancel capture", exact: true })
+    .click();
   await expect(
     page.locator(".explorer-results .diagnostic-message"),
   ).toContainText("Candidate capture cancelled");
@@ -215,10 +218,11 @@ test("HackRF unsupported firmware fails with compatibility details before recept
   ).toBeEnabled();
 });
 
-for (const rate of [4_800_000, 9_600_000]) {
+for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
   test(`HackRF wideband keeps ${rate} samples/s and a 2.4 MS/s channel across offset tuning and restart`, async ({
     page,
   }) => {
+    test.setTimeout(30_000);
     await installHackrfUsb(page);
     await page.goto("/?browser-test=1");
     await page
@@ -244,11 +248,33 @@ for (const rate of [4_800_000, 9_600_000]) {
     await expect(page.locator(".receiver-status")).toContainText(
       `native ${rate.toLocaleString("en-US")}`,
     );
+    await expect(
+      page.getByRole("meter", { name: "Current channel quality" }),
+    ).not.toHaveAttribute("aria-valuenow", "0");
+    await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+    await expect(page.getByText("USB callback", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Spectrum copy", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Channel copy", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Main-thread normalization", { exact: true }),
+    ).toHaveCount(0);
+    // AM and its live squelch meter have remained active through startup and
+    // diagnostics rendering. Meter telemetry must not starve analysis credits.
+    await expect(
+      page
+        .getByText("Input blocks skipped", { exact: true })
+        .locator("..")
+        .locator("dd"),
+    ).toContainText("0 · 0 samples");
+    await page.getByRole("tab", { name: "Receiver", exact: true }).click();
     await page.getByLabel("Channel frequency", { exact: false }).fill("101.7");
     await page.getByRole("button", { name: "Tune", exact: true }).click();
     await expect(page.locator(".receiver-status")).toContainText(
       "Center 100.000000 MHz · selected 101.700000 MHz",
     );
+    await page.getByRole("tab", { name: "Capture & replay" }).click();
     await page
       .getByRole("button", { name: "Start I/Q recording", exact: true })
       .click();
@@ -276,8 +302,10 @@ for (const rate of [4_800_000, 9_600_000]) {
         kind:
           rate === 4_800_000
             ? "channel-fir-decimate-2-v1"
-            : "channel-fir-decimate-4-v1",
-        denominator: rate === 4_800_000 ? 2 : 4,
+            : rate === 9_600_000
+              ? "channel-fir-decimate-4-v1"
+              : "channel-fir-decimate-8-v1",
+        denominator: rate / 2_400_000,
       },
     });
     await page

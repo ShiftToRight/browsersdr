@@ -65,22 +65,11 @@ export class SpectrumProcessor {
     this.missingSamplesSincePublication += droppedInputSamples;
     this.droppedSincePublication += droppedInputBlocks;
     const output: ProcessorFrame[] = [];
-    let sourceOffset = 0;
-    while (sourceOffset < I.length) {
-      const count = Math.min(FFT_SIZE - this.pendingLength, I.length - sourceOffset);
-      this.pendingI.set(I.subarray(sourceOffset, sourceOffset + count), this.pendingLength);
-      this.pendingQ.set(Q.subarray(sourceOffset, sourceOffset + count), this.pendingLength);
-      this.pendingLength += count;
-      sourceOffset += count;
-      if (this.pendingLength !== FFT_SIZE) continue;
-      this.pendingLength = 0;
-      this.sampleIndex += FFT_SIZE;
-      const bins = this.accumulator.addWindow(this.pendingI, this.pendingQ);
-      if (!bins) continue;
+    const publish = (bins: Float32Array) => {
       if (!this.publicationCredit || (!this.sampleClockCadence && nowMs - this.lastPublicationMs < 40)) {
         this.droppedSincePublication += 1;
         this.skippedSpectrumFramesSincePublication += 1;
-        continue;
+        return;
       }
       this.publicationCredit = false;
       this.lastPublicationMs = nowMs;
@@ -94,6 +83,31 @@ export class SpectrumProcessor {
       this.droppedSincePublication = 0;
       this.skippedSpectrumFramesSincePublication = 0;
       this.missingSamplesSincePublication = 0;
+    };
+    let sourceOffset = 0;
+    while (sourceOffset < I.length) {
+      if (this.pendingLength === 0 && this.accumulator.addWindows && I.length - sourceOffset >= FFT_SIZE) {
+        const count = Math.min(8, Math.floor((I.length - sourceOffset) / FFT_SIZE)) * FFT_SIZE;
+        const base = this.sampleIndex;
+        const frames = this.accumulator.addWindows(I.subarray(sourceOffset, sourceOffset + count), Q.subarray(sourceOffset, sourceOffset + count));
+        for (const frame of frames) {
+          this.sampleIndex = base + (frame.window + 1) * FFT_SIZE;
+          publish(frame.bins);
+        }
+        this.sampleIndex = base + count; sourceOffset += count;
+        continue;
+      }
+      const count = Math.min(FFT_SIZE - this.pendingLength, I.length - sourceOffset);
+      this.pendingI.set(I.subarray(sourceOffset, sourceOffset + count), this.pendingLength);
+      this.pendingQ.set(Q.subarray(sourceOffset, sourceOffset + count), this.pendingLength);
+      this.pendingLength += count;
+      sourceOffset += count;
+      if (this.pendingLength !== FFT_SIZE) continue;
+      this.pendingLength = 0;
+      this.sampleIndex += FFT_SIZE;
+      const bins = this.accumulator.addWindow(this.pendingI, this.pendingQ);
+      if (!bins) continue;
+      publish(bins);
     }
     return output;
   }

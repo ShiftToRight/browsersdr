@@ -1,0 +1,22 @@
+[Unit]
+Description=BrowserSDR diagnostic report collector
+After=network.target
+
+[Service]
+Type=simple
+User=browsersdr-report
+Group=browsersdr-report
+Environment=BROWSERSDR_REPORT_PORT=8787
+Environment=BROWSERSDR_REPORT_ORIGIN=https://browsersdr.com
+Environment=BROWSERSDR_REPORT_DB=/var/lib/browsersdr-reports/reports.sqlite
+EnvironmentFile=-/etc/browsersdr-report.env
+ExecStart=/usr/bin/node /opt/browsersdr-report/report-service.mjs
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/browsersdr-reports
+
+[Install]
+WantedBy=multi-user.target

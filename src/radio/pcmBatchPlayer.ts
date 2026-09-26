@@ -1,0 +1,33 @@
+import type { Player } from "@jtarrio/signals/demod/player.js";
+
+export const PCM_BATCH_FRAMES = 1024;
+/** Fixed stereo PCM staging for high-rate input's tiny demodulator outputs.
+ * The underlying player must copy synchronously (Signals AudioPlayer does).
+ * RF data, decoders and native recording are unaffected. */
+export class PcmBatchPlayer implements Player {
+  private readonly left = new Float32Array(PCM_BATCH_FRAMES);
+  private readonly right = new Float32Array(PCM_BATCH_FRAMES);
+  private count = 0;
+  private enabled = false;
+  constructor(private readonly output: Player) {}
+  get sampleRate(): number { return this.output.sampleRate; }
+  setVolume(value: number): void { this.output.setVolume(value); }
+  getVolume(): number { return this.output.getVolume(); }
+  configure(enabled: boolean): void { this.enabled = enabled; this.reset(); }
+  reset(): void { this.count = 0; }
+  flush(): void {
+    if (this.count) this.output.play(this.left.subarray(0, this.count), this.right.subarray(0, this.count));
+    this.count = 0;
+  }
+  play(left: Float32Array, right: Float32Array): void {
+    if (left.length !== right.length) throw new Error("Mismatched stereo PCM lengths.");
+    if (!this.enabled) { this.output.play(left, right); return; }
+    for (let offset = 0; offset < left.length;) {
+      const length = Math.min(PCM_BATCH_FRAMES - this.count, left.length - offset);
+      this.left.set(left.subarray(offset, offset + length), this.count);
+      this.right.set(right.subarray(offset, offset + length), this.count);
+      offset += length; this.count += length;
+      if (this.count === PCM_BATCH_FRAMES) this.flush();
+    }
+  }
+}

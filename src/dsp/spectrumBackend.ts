@@ -8,10 +8,11 @@ export interface SpectrumKernel {
   readonly size: number;
   reset(): void;
   addWindow(I: Float32Array, Q: Float32Array): Float32Array | undefined;
+  addWindows?(I: Float32Array, Q: Float32Array): Array<{ window: number; bins: Float32Array }>;
   dispose?(): void;
 }
 
-interface WasmSpectrumExports extends WebAssembly.Exports {
+interface WasmSpectrumExports {
   readonly memory: WebAssembly.Memory;
   readonly spectrum_create: (size: number, windowsPerAverage: number) => number;
   readonly spectrum_destroy: (handle: number) => void;
@@ -19,6 +20,8 @@ interface WasmSpectrumExports extends WebAssembly.Exports {
   readonly spectrum_input_i: (handle: number) => number;
   readonly spectrum_input_q: (handle: number) => number;
   readonly spectrum_output: (handle: number) => number;
+  readonly spectrum_process_batch?: (handle: number, windows: number) => number;
+  readonly spectrum_batch_output?: (handle: number) => number;
   readonly spectrum_process: (handle: number) => number;
 }
 
@@ -73,6 +76,29 @@ export class WasmSpectrumAccumulator implements SpectrumKernel {
       this.exports.spectrum_output(this.handle),
       this.size,
     ));
+  }
+
+  /** Eight-window bounded batch; old cached modules retain the scalar ABI. */
+  addWindows(I: Float32Array, Q: Float32Array): Array<{ window: number; bins: Float32Array }> {
+    this.assertAlive();
+    if (I.length !== Q.length || I.length % this.size || I.length > this.size * 8) throw new RangeError("Invalid spectrum batch");
+    const output: Array<{ window: number; bins: Float32Array }> = [];
+    const e = this.exports;
+    if (!e.spectrum_process_batch || !e.spectrum_batch_output) {
+      for (let p = 0; p < I.length; p += this.size) {
+        const bins = this.addWindow(I.subarray(p, p + this.size), Q.subarray(p, p + this.size));
+        if (bins) output.push({ window: p / this.size, bins });
+      }
+      return output;
+    }
+    new Float32Array(e.memory.buffer, e.spectrum_input_i(this.handle), I.length).set(I);
+    new Float32Array(e.memory.buffer, e.spectrum_input_q(this.handle), Q.length).set(Q);
+    const mask = e.spectrum_process_batch(this.handle, I.length / this.size);
+    const base = e.spectrum_batch_output(this.handle);
+    for (let window = 0; window < I.length / this.size; window++) {
+      if (mask & (1 << window)) output.push({ window, bins: new Float32Array(new Float32Array(e.memory.buffer, base + window * this.size * 4, this.size)) });
+    }
+    return output;
   }
 
   dispose(): void {

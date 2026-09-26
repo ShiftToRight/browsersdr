@@ -19,6 +19,26 @@ describe("source preferences", () => {
     expect(loadSourcePreferences(saved, "hackrf")).toEqual(pro);
     expect(loadSourcePreferences(saved, "rtl-sdr").gainDb).toBe(25);
   });
+  it("persists CW filter and beat-tone settings", () => {
+    const saved = storage();
+    const preferences = { ...sourcePreferenceDefaults("rtl-sdr"), modeSettings: { mode: "CW" as const, bandwidthHz: 250, squelch: 0, beatToneHz: 750 } };
+    saveSourcePreferences(saved, "rtl-sdr", preferences);
+    expect(loadSourcePreferences(saved, "rtl-sdr").modeSettings).toEqual(preferences.modeSettings);
+  });
+  it("persists validated SRD modulation and decoder settings", () => {
+    const saved = storage();
+    const modeSettings = defaultModeSettings("SRD");
+    modeSettings.srd = {
+      ...modeSettings.srd!,
+      modulation: "2fsk",
+      protocol: "fineoffset-wh51",
+    };
+    saveSourcePreferences(saved, "rtl-sdr", {
+      ...sourcePreferenceDefaults("rtl-sdr"),
+      modeSettings,
+    });
+    expect(loadSourcePreferences(saved, "rtl-sdr").modeSettings).toEqual(modeSettings);
+  });
   it.each(["not json", "null", '{"sampleRateHz":2400000}', JSON.stringify({ ...sourcePreferenceDefaults("hackrf"), gainDb: null }), JSON.stringify({ ...sourcePreferenceDefaults("hackrf"), sampleRateHz: 10_000_000 }), JSON.stringify({ ...sourcePreferenceDefaults("hackrf"), hardwareSettings: { ...sourcePreferenceDefaults("hackrf").hardwareSettings, rxVgaGainDb: 3 } })])("rejects incompatible saved settings %s", (value) => {
     expect(loadSourcePreferences(storage({ "browsersdr.source.v1.hackrf": value }), "hackrf")).toEqual(sourcePreferenceDefaults("hackrf"));
   });

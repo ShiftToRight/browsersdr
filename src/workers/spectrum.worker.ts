@@ -1,3 +1,5 @@
+import { decodeCi8Into } from "../radio/ci8Samples";
+import { decodeSc16Q11Into } from "../radio/sc16Samples";
 import type { AnalysisWorkerInput, AnalysisWorkerOutput } from "../dsp/spectrumProtocol";
 import { createAnalysisBackend, type AnalysisBackendSelection } from "../dsp/spectrumBackend";
 import { FFT_SIZE } from "../dsp/spectrumMath";
@@ -12,6 +14,7 @@ let generation = 0;
 let centerFrequencyHz = 0;
 let sampleRateHz = 0;
 let sequence = 0;
+let ci8Scratch: [Float32Array, Float32Array] | undefined;
 
 async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   if (message.type === "configure") {
@@ -46,25 +49,31 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   centerFrequencyHz = message.centerFrequencyHz;
   sampleRateHz = message.sampleRateHz;
   const processingStartedMs = performance.now();
+  let I: Float32Array, Q: Float32Array;
+  if (message.type === "samples-ci8" || message.type === "samples-sc16") {
+    ci8Scratch ??= [new Float32Array(32768), new Float32Array(32768)];
+    const bytes = new Uint8Array(message.bytes);
+    const count = message.type === "samples-ci8" ? decodeCi8Into(bytes, ...ci8Scratch) : decodeSc16Q11Into(bytes, ...ci8Scratch);
+    I = ci8Scratch[0].subarray(0, count); Q = ci8Scratch[1].subarray(0, count);
+  } else { I = new Float32Array(message.I); Q = new Float32Array(message.Q); }
   const frames = processor.accept(
-    new Float32Array(message.I),
-    new Float32Array(message.Q),
+    I, Q,
     performance.now(),
     message.discontinuity,
     message.droppedInputBlocks,
     message.droppedInputSamples,
   );
   const acknowledgement: AnalysisWorkerOutput = {
-    type: "samples-ack",
+    ...(message.type === "samples-ci8" ? { type: "samples-ci8-ack" as const, bytes: message.bytes }
+      : message.type === "samples-sc16" ? { type: "samples-sc16-ack" as const, bytes: message.bytes }
+      : { type: "samples-ack" as const, I: message.I, Q: message.Q }),
     sessionGeneration: generation,
     processingTimeMs: performance.now() - processingStartedMs,
     backend: selection.name,
     backendStartupMs: selection.startupMs,
     ...(selection.fallbackReason ? { backendFallbackReason: selection.fallbackReason } : {}),
-    I: message.I,
-    Q: message.Q,
   };
-  workerScope.postMessage(acknowledgement, [message.I, message.Q]);
+  workerScope.postMessage(acknowledgement, message.type === "samples" ? [message.I, message.Q] : [message.bytes]);
   for (const frame of frames) {
     const frameMessage: AnalysisWorkerOutput = {
       type: "spectrum",

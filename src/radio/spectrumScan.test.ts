@@ -5,6 +5,7 @@ import {
   canStartSpectrumScan,
   compressSpectrumPoints,
   collectSpectrumMeasurement,
+  failedScanWindow,
   mergeSignalCandidates,
   planSpectrumScan,
 } from "./spectrumScan";
@@ -173,6 +174,18 @@ describe("bounded spectrum scan", () => {
   it("rejects invalid and unbounded scan requests", () => {
     expect(() => planSpectrumScan(100, 100, 1000)).toThrow(/above the start/);
     expect(() => planSpectrumScan(1, 1_000_000, 1000)).toThrow(/narrow it/);
+  });
+
+  it("retains a failed window as an empty result so a survey can continue", () => {
+    const plan = planSpectrumScan(9_999_400, 10_000_600, 1_600)[0]!;
+    expect(failedScanWindow(plan, new Error("temporary USB gap"))).toMatchObject({
+      plan,
+      points: [],
+      candidates: [],
+      coverage: 0,
+      status: "failed",
+      error: "temporary USB gap",
+    });
   });
 });
 

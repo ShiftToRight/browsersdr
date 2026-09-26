@@ -16,9 +16,7 @@ test.afterEach(async ({ page }) => {
 
 async function gotoApp(page: Page): Promise<void> {
   await page.goto("/?browser-test=1");
-  await expect(
-    page.getByRole("heading", { name: "Receive & demodulate" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Live signal path")).toBeVisible();
 }
 
 async function selectSyntheticAndStart(page: Page): Promise<void> {
@@ -108,7 +106,9 @@ function highRateReplayFiles() {
 
 function sigmfReplayFiles() {
   const sampleRateHz = 48_000;
-  const sampleCount = 24_000;
+  // Keep the running state observable even under the slower development
+  // StrictMode lifecycle while retaining a short, bounded replay.
+  const sampleCount = 96_000;
   const data = Buffer.alloc(sampleCount * 2, 128);
   const metadata = {
     global: {
@@ -327,6 +327,7 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
   await page
     .locator('select[aria-label="Signal source"]')
     .selectOption("replay");
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
   const fixture = highRateReplayFiles();
   const fileInputs = page.locator(".file-picker-input");
   await fileInputs.nth(0).setInputFiles(fixture.data);
@@ -340,11 +341,40 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
     "effective rate 2,400,000 samples/s",
   );
 
-  for (const mode of ["AIS", "DAB", "ADS-B", "AM"] as const) {
+  for (const mode of ["AIS", "DAB", "ADS-B", "SRD", "AM"] as const) {
     await page.getByLabel("Mode").selectOption(mode);
-    await page.getByRole("button", { name: "Apply channel" }).click();
     await expect(page.locator(".receiver-status")).toContainText(`· ${mode} ·`);
+    if (mode === "SRD") {
+      await expect(
+        page.locator("label", { hasText: /^\s*Modulation/ }).locator("select"),
+      ).toHaveValue("ook");
+      await expect(
+        page.locator("label", { hasText: /^\s*Decoder/ }).locator("select"),
+      ).toHaveValue("none");
+      await page.getByRole("tab", { name: "Audio & decode" }).click();
+      await expect(
+        page.getByRole("heading", { name: "Short-range devices" }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Unknown signals remain inspector-only."),
+      ).toBeVisible();
+      const download = page.waitForEvent("download");
+      await page
+        .getByRole("button", { name: "Export bounded SRD JSON" })
+        .click();
+      expect((await download).suggestedFilename()).toContain("srd");
+    }
+    if (mode === "AM") {
+      await page.getByRole("tab", { name: "Receiver" }).click();
+      await expect(
+        page.getByRole("meter", { name: "Current channel quality" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Auto set" }),
+      ).toBeEnabled();
+    }
   }
+  await page.getByRole("tab", { name: "Audio & decode" }).click();
   await expect(
     page.getByRole("heading", { name: "Radio Data System" }),
   ).toBeVisible();
@@ -371,6 +401,7 @@ test("imports a bounded SigMF pair into paced replay without requesting USB", as
   await page
     .locator('select[aria-label="Signal source"]')
     .selectOption("replay");
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByLabel("Replay pair format").selectOption("sigmf");
   await page.getByLabel("SigMF replay mode").selectOption("AM");
   await expect(page.getByLabel("SigMF replay channel")).toHaveValue("center");
@@ -380,7 +411,7 @@ test("imports a bounded SigMF pair into paced replay without requesting USB", as
   await fileInputs.nth(1).setInputFiles(fixture.metadata);
   await page.getByRole("button", { name: "Load SigMF pair" }).click();
   await expect(page.locator(".file-message")).toContainText(
-    "Loaded SigMF replay: 24,000 samples",
+    "Loaded SigMF replay: 96,000 samples",
   );
 
   await page.getByRole("button", { name: "Start replay" }).click();
@@ -428,14 +459,14 @@ test("survey measurements progress without animation callbacks and freeze proven
   const surveySliders = page.locator('.explorer-controls input[type="range"]');
   await surveySliders.nth(0).fill("150");
   await surveySliders.nth(1).fill("1");
-  await page.getByRole("button", { name: "Run selected band" }).click();
+  await page.getByRole("button", { name: "Scan current window" }).click();
 
   await expect(
     page.locator(".explorer-results .diagnostic-message"),
   ).toContainText("Survey complete");
   await expect(
     page.getByRole("progressbar", { name: "Spectrum scan progress" }),
-  ).toHaveAttribute("value", "1");
+  ).toHaveAttribute("value", "2");
   await page
     .getByRole("textbox", { name: "Profile name" })
     .fill("Edited later");
@@ -462,11 +493,53 @@ test("survey measurements progress without animation callbacks and freeze proven
   expect(manifest.profile.name).toBe("Acquisition profile");
   expect(manifest.profile.site.label).toBe("Acquisition site");
   expect(manifest.profile.bands[0]).toMatchObject({
-    startFrequencyHz: 99_900_000,
-    endFrequencyHz: 100_100_000,
+    startFrequencyHz: 99_590_400,
+    endFrequencyHz: 100_409_600,
     dwellMs: 150,
     thresholdDb: 1,
   });
+
+  const firstMarker = page.locator(".candidate-marker").first();
+  const firstCard = page.locator(".candidate-review-card").first();
+  await expect(firstMarker).toBeVisible();
+  await firstMarker.click();
+  await expect(firstCard).toHaveClass(/candidate-review-card-highlighted/);
+  await firstCard
+    .getByRole("textbox", { name: "Label" })
+    .fill("Persistent carrier");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<string | undefined>((resolve, reject) => {
+            const open = indexedDB.open("browsersdr-surveys", 1);
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const request = open.result
+                .transaction("survey-runs", "readonly")
+                .objectStore("survey-runs")
+                .get("latest");
+              request.onerror = () => reject(request.error);
+              request.onsuccess = () => {
+                resolve(request.result?.records?.[0]?.annotation?.label);
+                open.result.close();
+              };
+            };
+          }),
+      ),
+    )
+    .toBe("Persistent carrier");
+
+  await page.reload();
+  await page.getByRole("tab", { name: /Explorer/ }).click();
+  await expect(
+    page.locator(".explorer-results .diagnostic-message"),
+  ).toContainText("Restored");
+  await expect(
+    page.locator(".candidate-review-card").first().getByRole("textbox", {
+      name: "Label",
+    }),
+  ).toHaveValue("Persistent carrier");
 });
 
 test("survey cancellation preserves progress and restores controls", async ({
@@ -475,28 +548,30 @@ test("survey cancellation preserves progress and restores controls", async ({
   await gotoApp(page);
   await selectSyntheticAndStart(page);
   await page.getByRole("tab", { name: /Explorer/ }).click();
+  await page.getByLabel("Scan scope").selectOption("band-plan");
   await page.getByRole("spinbutton", { name: /Start frequency/ }).fill("98");
   await page.getByRole("spinbutton", { name: /End frequency/ }).fill("102");
   await page
     .locator('.explorer-controls input[type="range"]')
     .nth(0)
     .fill("150");
-  await page.getByRole("button", { name: "Run selected band" }).click();
+  await page.getByRole("button", { name: "Save band" }).click();
+  await page.getByRole("button", { name: "Run band plan" }).click();
   const progress = page.getByRole("progressbar", {
     name: "Spectrum scan progress",
   });
   await expect
     .poll(async () => Number(await progress.getAttribute("value")))
     .toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Pause scan" }).click();
   await expect(
     page.locator(".explorer-results .diagnostic-message"),
-  ).toContainText("Survey cancelled");
+  ).toContainText("Survey paused");
   await expect
     .poll(async () => Number(await progress.getAttribute("value")))
     .toBeGreaterThan(0);
   await expect(
-    page.getByRole("button", { name: "Run selected band" }),
+    page.getByRole("button", { name: "Run band plan" }),
   ).toBeEnabled();
   await expect(
     page.getByRole("textbox", { name: "Profile name" }),
@@ -511,25 +586,45 @@ test("recording preparation retries and the paired archive remains truthfully do
   page,
 }) => {
   await page.addInitScript(() => {
-    const original = SubtleCrypto.prototype.digest;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      override postMessage(
+        message: unknown,
+        transfer: Transferable[] | StructuredSerializeOptions = [],
+      ) {
+        const testWindow = window as Window & {
+          __failNextPreparation?: boolean;
+        };
+        if (
+          (message as { type?: string })?.type === "prepare" &&
+          testWindow.__failNextPreparation
+        ) {
+          testWindow.__failNextPreparation = false;
+          queueMicrotask(() =>
+            this.dispatchEvent(
+              new MessageEvent("message", {
+                data: {
+                  ok: false,
+                  error: "Injected worker preparation failure",
+                },
+              }),
+            ),
+          );
+          return;
+        }
+        if (Array.isArray(transfer)) super.postMessage(message, transfer);
+        else super.postMessage(message, transfer);
+      }
+    };
+    // Successful retry must hash inside the worker, not on the UI thread.
     Object.defineProperty(SubtleCrypto.prototype, "digest", {
       configurable: true,
-      value(
-        this: SubtleCrypto,
-        algorithm: AlgorithmIdentifier,
-        data: BufferSource,
-      ) {
-        const testWindow = window as Window & { __failNextDigest?: boolean };
-        if (testWindow.__failNextDigest) {
-          testWindow.__failNextDigest = false;
-          return Promise.reject(new Error("Injected digest failure"));
-        }
-        return original.call(this, algorithm, data);
-      },
+      value: () => Promise.reject(new Error("Unexpected main-thread hashing")),
     });
   });
   await gotoApp(page);
   await selectSyntheticAndStart(page);
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByLabel("Recording export format").selectOption("sigmf");
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   const recordingControls = page.locator(".recording-controls");
@@ -541,11 +636,13 @@ test("recording preparation retries and the paired archive remains truthfully do
     })
     .toBeGreaterThan(0);
   await page.evaluate(() => {
-    (window as Window & { __failNextDigest?: boolean }).__failNextDigest = true;
+    (
+      window as Window & { __failNextPreparation?: boolean }
+    ).__failNextPreparation = true;
   });
   await page.getByRole("button", { name: "Stop & prepare" }).click();
   await expect(page.locator(".file-message")).toContainText(
-    "Injected digest failure",
+    "Injected worker preparation failure",
   );
   await expect(
     page.getByRole("button", { name: "Retry preparation" }),
@@ -702,4 +799,73 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
       .getByText("WebGPU API", { exact: true })
       .locator("xpath=following-sibling::small"),
   ).toContainText("Use a WebGPU-compatible browser");
+});
+
+test("diagnostic reports default to automatic upload and remain reviewable and downloadable", async ({
+  page,
+}) => {
+  await gotoApp(page);
+  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Help improve BrowserSDR" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel(/Automatically send errors and recent diagnostic logs/),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Create diagnostic report" }).click();
+  const dialog = page.getByRole("dialog", { name: /Diagnostic report/ });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Send report" }),
+  ).toBeEnabled();
+  const downloadPromise = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Download JSON" }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const report = JSON.parse(await readFile(path!, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  expect(report.schemaVersion).toBe(1);
+  expect(report.reportId).toMatch(/^BR-/);
+  expect(report.events).toEqual(expect.any(Array));
+  expect(report.receiver).not.toHaveProperty("exactFrequencyHz");
+  expect(report.redaction).toMatchObject({ exactFrequencyIncluded: false });
+});
+
+test("compatibility reports capture reviewed service evidence and receiver state", async ({
+  page,
+}) => {
+  await gotoApp(page);
+  await page.getByRole("tab", { name: /Help/ }).click();
+  await page.getByRole("button", { name: "Share test result" }).click();
+  const dialog = page.getByRole("dialog", { name: /Compatibility report/ });
+  await expect(
+    dialog.getByRole("button", { name: "Send report" }),
+  ).toBeDisabled();
+  await dialog.getByLabel("Device connection result").selectOption("working");
+  await dialog
+    .getByLabel("Spectrum & waterfall result")
+    .selectOption("degraded");
+  await expect(
+    dialog.getByRole("button", { name: "Send report" }),
+  ).toBeEnabled();
+  const downloadPromise = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Download JSON" }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const report = JSON.parse(await readFile(path!, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  expect(report.reportType).toBe("compatibility");
+  expect(report.reportId).toMatch(/^BC-/);
+  expect(report.observations).toEqual([
+    { service: "connection", result: "working" },
+    { service: "spectrum", result: "degraded" },
+  ]);
+  expect(report.receiver).not.toHaveProperty("exactFrequencyHz");
+  expect(report.redaction).toMatchObject({ exactFrequencyIncluded: false });
 });

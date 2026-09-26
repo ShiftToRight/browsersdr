@@ -98,7 +98,7 @@ function describeRecording(recording: IqRecording): string {
 function receiverSettingsComment(recording: IqRecording): string {
   const { metadata } = recording;
   if (metadata.format !== RECORDING_FORMAT) {
-    return `Receiver settings: selected channel ${metadata.selectedChannelFrequencyHz} Hz; bandwidth ${metadata.channelBandwidthHz} Hz; source ${metadata.source}; mode ${metadata.mode}; squelch ${metadata.squelch}; stop reason ${metadata.stopReason}. Accepted settings and provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. Not measured or calibrated RF gain.`;
+    return `Receiver settings: selected channel ${metadata.selectedChannelFrequencyHz} Hz; bandwidth ${metadata.channelBandwidthHz} Hz; source ${metadata.source}; mode ${metadata.mode}; squelch ${metadata.squelch}${metadata.beatToneHz === undefined ? "" : `; CW beat tone ${metadata.beatToneHz} Hz`}; stop reason ${metadata.stopReason}. Accepted settings and provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. Not measured or calibrated RF gain.`;
   }
   const gain = metadata.gainDb === null
     ? "automatic RF gain"

@@ -88,7 +88,12 @@ describe("source capabilities and requests", () => {
   it("allows 9.6 MS/s only on HackRF or native CI8 replay routes", () => {
     for (const mode of RECEIVER_MODES) expect(() => validateOptions({ ...options, source: "hackrf", sampleRateHz: 9_600_000, modeSettings: defaultModeSettings(mode) })).not.toThrow();
     for (const source of ["rtl-sdr", "synthetic"] as const) expect(() => validateOptions({ ...options, source, sampleRateHz: 9_600_000 })).toThrow();
-    for (const rate of [9_599_999, 9_600_001, 19_200_000]) expect(() => validateOptions({ ...options, source: "hackrf", sampleRateHz: rate })).toThrow();
+    for (const rate of [9_599_999, 9_600_001, 19_200_001]) expect(() => validateOptions({ ...options, source: "hackrf", sampleRateHz: rate })).toThrow();
+  });
+  it("exposes experimental 19.2 MS/s for bladeRF", () => {
+    const rates = sourceCapabilities("bladerf").rates;
+    expect(rates).toMatchObject({ valuesHz: [2_400_000, 4_800_000, 9_600_000, 19_200_000], experimentalHz: [19_200_000] });
+    for (const mode of RECEIVER_MODES) expect(() => validateOptions({ ...options, source: "bladerf", sampleRateHz: 19_200_000, modeSettings: defaultModeSettings(mode) })).not.toThrow();
   });
   it("uses hardware mode/rate combinations and replay's own rate limits", () => {
     for (const source of ["rtl-sdr", "hackrf"] as const) {
@@ -116,4 +121,10 @@ describe("source capabilities and requests", () => {
     for (const appliedRateFixed36 of ["-1", "18446744073709551616", "1.5", "00", "1"]) expect(() => validateHackrfSessionDetails({ ...valid, captureSettings: { ...valid.captureSettings, appliedRateFixed36 } })).toThrow();
     expect(() => new IqRecorder({ ...SYNTHETIC_DEMO_SESSION, source: "hackrf" })).toThrow(/native signed/);
   });
+});
+
+it("marks 19.2 MS/s experimental and restricts it to HackRF", () => {
+ expect(sourceCapabilities("hackrf").rates).toMatchObject({ experimentalHz: [19_200_000] });
+ for (const mode of RECEIVER_MODES) expect(() => validateOptions({ ...options, source: "hackrf", sampleRateHz: 19_200_000, modeSettings: defaultModeSettings(mode) })).not.toThrow();
+ for (const source of ["rtl-sdr", "synthetic"] as const) expect(() => validateOptions({ ...options, source, sampleRateHz: 19_200_000 })).toThrow();
 });

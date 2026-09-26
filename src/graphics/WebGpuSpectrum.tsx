@@ -1,3 +1,4 @@
+import { usePageVisible } from "../ui/usePageVisible";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { frequencyForPixel, spectrumEdges } from "../dsp/frequencyScale";
@@ -7,6 +8,8 @@ import { GpuSpectrum, gpuFftSize } from "../dsp/gpuSpectrum";
 import { GpuAnalysisTap } from "../dsp/gpuAnalysisTap";
 import { WaterfallHistory } from "./waterfallHistory";
 import { HISTORY_ROWS, spectrumShader } from "./spectrumShader";
+import { defaultDiagnosticRecorder } from "../diagnostics/diagnosticRecorder";
+import { channelPassbands, formatPassbandWidth } from "./channelPassband";
 
 type GpuState = { kind: "checking" | "ready" | "unsupported" | "error"; message: string };
 
@@ -21,11 +24,19 @@ function formatFrequency(frequencyHz: number): string {
   return `${(frequencyHz / 1_000_000).toFixed(3)} MHz`;
 }
 
-export function WebGpuSpectrum({ pipeline, session, onTune }: {
+function frequencyPercent(frequencyHz: number, centerFrequencyHz: number, sampleRateHz: number): number {
+  return (0.5 + (frequencyHz - centerFrequencyHz) / sampleRateHz) * 100;
+}
+
+export function WebGpuSpectrum({ pipeline, session, onTune, active = true }: {
+  active?: boolean;
   pipeline: AnalysisPipeline;
   session?: SourceSessionMetadata;
   onTune?: (frequencyHz: number) => void;
 }) {
+  const visible = usePageVisible(active);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const requestedFftSize = gpuFftSize();
   const [fftSize, setFftSize] = useState<number>(requestedFftSize ?? FFT_SIZE);
   const [fftMessage, setFftMessage] = useState(requestedFftSize ? "Experimental GPU FFT initializing; WASM remains active." : "");
@@ -33,6 +44,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const renderRef = useRef<() => void>(() => undefined);
+  useEffect(() => { if (visible) renderRef.current(); }, [visible]);
   const pausedRef = useRef(false);
   const floorRef = useRef(-105);
   const rangeRef = useRef(90);
@@ -43,6 +55,29 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
   const [state, setState] = useState<GpuState>({ kind: "checking", message: "Requesting a GPU adapter and device…" });
   const labels = useMemo(() => session ? spectrumEdges(session.hardwareCenterFrequencyHz, session.actualSampleRateHz).map(formatFrequency) : undefined, [session]);
   const markerPositionPercent = session ? Math.max(0, Math.min(100, (0.5 + (session.selectedChannelFrequencyHz - session.hardwareCenterFrequencyHz) / session.actualSampleRateHz) * 100)) : 50;
+  const passbandDisplay = useMemo(() => {
+    if (!session) return undefined;
+    const bands = channelPassbands(session)
+      .map((band) => ({
+        ...band,
+        left: Math.max(0, Math.min(100, frequencyPercent(band.startFrequencyHz, session.hardwareCenterFrequencyHz, session.actualSampleRateHz))),
+        right: Math.max(0, Math.min(100, frequencyPercent(band.endFrequencyHz, session.hardwareCenterFrequencyHz, session.actualSampleRateHz))),
+      }))
+      .filter((band) => band.right > band.left)
+      .sort((left, right) => left.left - right.left);
+    if (!bands.length) return undefined;
+    const dimmed: { left: number; right: number }[] = [];
+    let cursor = 0;
+    for (const band of bands) {
+      if (band.left > cursor) dimmed.push({ left: cursor, right: band.left });
+      cursor = Math.max(cursor, band.right);
+    }
+    if (cursor < 100) dimmed.push({ left: cursor, right: 100 });
+    const summary = session.mode === "AIS"
+      ? `AIS 1 / AIS 2 · ${formatPassbandWidth(bands[0]!.endFrequencyHz - bands[0]!.startFrequencyHz)} each`
+      : `${session.mode} · ${formatPassbandWidth(bands[0]!.endFrequencyHz - bands[0]!.startFrequencyHz)}${session.mode === "USB" ? " upper sideband" : session.mode === "LSB" ? " lower sideband" : ""}`;
+    return { bands, dimmed, summary };
+  }, [session]);
 
   useEffect(() => {
     let disposed = false;
@@ -69,11 +104,20 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     const history = new WaterfallHistory(HISTORY_ROWS, size);
     history.reset(sessionRef.current?.sessionGeneration ?? 0);
     const gapRow = new Float32Array(size).fill(GAP_LEVEL_DB);
+    const data = new ArrayBuffer(32);
+    const view = new DataView(data);
+    let cssWidth = 0;
+    let cssHeight = 0;
+    let statusAt = -Infinity;
+    const shouldUpdateStatus = () => {
+      const now = performance.now();
+      if (!visibleRef.current || now - statusAt < 250) return false;
+      statusAt = now;
+      return true;
+    };
 
     const writeDisplay = () => {
       if (!device || !displayBuffer) return;
-      const data = new ArrayBuffer(32);
-      const view = new DataView(data);
       const currentSession = sessionRef.current;
       const selected = currentSession?.selectedChannelFrequencyHz ?? latestFrame?.centerFrequencyHz ?? 0;
       const center = latestFrame?.centerFrequencyHz ?? currentSession?.hardwareCenterFrequencyHz ?? selected;
@@ -87,10 +131,10 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     };
     const render = () => {
       const canvas = canvasRef.current;
-      if (!canvas || !device || !context || !waterfallPipeline || !spectrumPipeline || !markerPipeline || !bindGroup) return;
+      if (!visibleRef.current || !canvas || !device || !context || !waterfallPipeline || !spectrumPipeline || !markerPipeline || !bindGroup) return;
       const ratio = Math.max(1, window.devicePixelRatio || 1);
-      const width = Math.min(Math.max(1, Math.round(canvas.clientWidth * ratio)), device.limits.maxTextureDimension2D);
-      const height = Math.min(Math.max(1, Math.round(canvas.clientHeight * ratio)), device.limits.maxTextureDimension2D);
+      const width = Math.min(Math.max(1, Math.round(cssWidth * ratio)), device.limits.maxTextureDimension2D);
+      const height = Math.min(Math.max(1, Math.round(cssHeight * ratio)), device.limits.maxTextureDimension2D);
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       writeDisplay();
@@ -110,15 +154,17 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     };
     renderRef.current = render;
 
-    const unsubscribe = pipeline.subscribe((frame) => {
+    const unsubscribe = pipeline.subscribe((frame, frames) => {
       if (fft || gpuFailed || !device || !spectrumBuffer || !historyBuffer || frame.bins.length !== size || pausedRef.current) return;
       latestFrame = frame;
       device.queue.writeBuffer(spectrumBuffer, 0, frame.bins);
-      for (const row of history.append(frame)) {
-        device.queue.writeBuffer(historyBuffer, row.row * size * Float32Array.BYTES_PER_ELEMENT, row.bins ?? gapRow);
+      for (const retainedFrame of frames) {
+        for (const row of history.append(retainedFrame)) {
+          device.queue.writeBuffer(historyBuffer, row.row * size * Float32Array.BYTES_PER_ELEMENT, row.bins ?? gapRow);
+        }
       }
       render();
-      setState({ kind: "ready", message: frame.droppedFramesBefore > 0
+      if (shouldUpdateStatus()) setState({ kind: "ready", message: frame.droppedFramesBefore > 0
         ? `WebGPU live · ${frame.droppedFramesBefore} display frame(s) skipped and marked in history`
         : `WebGPU live · ${(frame.sampleIndex / frame.sampleRateHz).toFixed(2)} s on source sample clock` });
     });
@@ -145,6 +191,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
         void requestedDevice.lost.then((info) => {
           if (disposed || device !== requestedDevice) return;
           releaseGpuResources(false);
+          defaultDiagnosticRecorder.record({ area: "graphics", code: "WEBGPU_DEVICE_LOST", severity: "error", operation: "render", safeMessage: info.reason || "unknown", autoSubmitEligible: true });
           setState({ kind: "error", message: `The GPU device was lost (${info.reason || "unknown"}). Select Retry graphics; if loss repeats, check browser GPU settings and drivers.` });
         });
         device.addEventListener("uncapturederror", onUncapturedError);
@@ -195,13 +242,21 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
               if (disposed || gpuFailed) return;
               const latency = performance.now() - started;
               gpuFrames++; totalLatency += latency; maxLatency = Math.max(maxLatency, latency);
+              if (shouldUpdateStatus()) {
               setFftMessage(`Experimental GPU FFT · ${size} bins · ${startupMs.toFixed(2)} ms startup · upload + compute + render completion, wall clock: ${(totalLatency / gpuFrames).toFixed(2)} ms mean / ${maxLatency.toFixed(2)} ms max · ${gpuFrames} frames · WASM reference also active`);
               setState({ kind: "ready", message: `WebGPU FFT live · ${(frame.sampleIndex / frame.sampleRateHz).toFixed(2)} s source clock · ${frame.droppedFramesBefore} skipped input/gap event(s)` });
+              }
             }, (error) => disableFft(error));
-            detachGpuTap = pipeline.attachGpuTap((block) => gpuTap?.accept(block));
+            detachGpuTap = pipeline.attachGpuTap((block) => gpuTap?.accept(block), (block) => gpuTap?.accept(block));
           } catch (error) { disableFft(error); }
         }
-        resizeObserver = new ResizeObserver(render);
+        cssWidth = canvas.clientWidth;
+        cssHeight = canvas.clientHeight;
+        resizeObserver = new ResizeObserver((entries) => {
+          const entry = entries.find(item => item.target === canvas);
+          if (entry) { cssWidth = entry.contentRect.width; cssHeight = entry.contentRect.height; }
+          render();
+        });
         resizeObserver.observe(canvas);
         document.addEventListener("visibilitychange", renderWhenVisible);
         render();
@@ -209,6 +264,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
       } catch (error) {
         if (!disposed) {
           releaseGpuResources(true);
+          defaultDiagnosticRecorder.record({ area: "graphics", code: "WEBGPU_INITIALIZATION_FAILURE", severity: "warning", operation: "initialize", error });
           setState({ kind: "error", message: `WebGPU initialization failed: ${error instanceof Error ? error.message : String(error)}` });
         }
       }
@@ -231,6 +287,7 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
     function onUncapturedError(event: GPUUncapturedErrorEvent): void {
       if (!disposed) {
         releaseGpuResources(true);
+        defaultDiagnosticRecorder.record({ area: "graphics", code: "WEBGPU_UNCAPTURED_ERROR", severity: "error", operation: "render", error: event.error, autoSubmitEligible: true });
         setState({ kind: "error", message: `WebGPU rendering error: ${event.error.message}. Select Retry graphics to recreate GPU resources.` });
       }
     }
@@ -283,6 +340,14 @@ export function WebGpuSpectrum({ pipeline, session, onTune }: {
       </div>
       <div className="canvas-frame">
         <canvas ref={canvasRef} width={960} height={560} aria-label="WebGPU RF spectrum and waterfall plot; click to tune" onClick={tuneFromClick} />
+        {passbandDisplay ? <>
+          <div className="passband-layer" aria-hidden="true">
+            {passbandDisplay.dimmed.map((segment, index) => <span key={`dim-${index}`} className="passband-dim" style={{ left: `${segment.left}%`, width: `${segment.right - segment.left}%` }} />)}
+            {passbandDisplay.bands.map((band) => <span key={band.label} className="passband-band" style={{ left: `${band.left}%`, width: `${band.right - band.left}%` }} />)}
+          </div>
+          <span className="selected-frequency-line" aria-hidden="true" style={{ left: `${markerPositionPercent}%` }} />
+          <span className="passband-legend">Channel passband · {passbandDisplay.summary}</span>
+        </> : null}
         <span className="plot-label spectrum-label">Spectrum</span><span className="plot-label waterfall-label">Waterfall · newest at top</span>
         {paused ? <span className="paused-label">Display paused · receiver still running</span> : null}
         {labels ? <div className="frequency-rule" aria-hidden="true"><span>{labels[0]}</span><span>{labels[1]}</span><span>{labels[2]}</span></div> : null}

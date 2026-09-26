@@ -17,7 +17,7 @@ export function compatibleSourceRate(source: SourceKind, mode: ReceiverMode, pre
   const rates = caps.rates.kind === "choices" ? caps.rates.valuesHz : [preferred];
   return [preferred, ...rates].find((rate) => {
     if (!rates.includes(rate)) return false;
-    try { validateModeSampleRate(mode, source === "hackrf" || source === "replay" ? channelSampleRate(rate) : rate); return true; } catch { return false; }
+    try { validateModeSampleRate(mode, source === "hackrf" || source === "bladerf" || source === "replay" ? channelSampleRate(rate) : rate); return true; } catch { return false; }
   });
 }
 export function sourcePreferenceDefaults(source: SourceKind): SourcePreferences {
@@ -62,14 +62,14 @@ export function sourceModeUnavailableReason(source: SourceKind, mode: ReceiverMo
   const caps = sourceCapabilities(source);
   if (!caps.modes.includes(mode)) return `Unavailable with ${caps.label}`;
   try {
-    if (fixedRate) validateModeSampleRate(mode, source === "hackrf" || source === "replay" ? channelSampleRate(rate) : rate);
+    if (fixedRate) validateModeSampleRate(mode, source === "hackrf" || source === "bladerf" || source === "replay" ? channelSampleRate(rate) : rate);
     else if (compatibleSourceRate(source, mode, rate) === undefined) throw new Error("No compatible rate");
-  } catch { return source === "replay" ? "Requires a recording with a compatible sample rate" : "Requires a compatible sample rate; stop and disconnect to change it"; }
+  } catch { return source === "replay" ? "Requires a recording with a compatible sample rate" : "Requires a compatible sample rate; stop reception to change it"; }
 }
 
 
 export function loadSourceSelection(storage: StorageAccess): SourceKind {
-  try { const value = storage.getItem("browsersdr.selectedSource"); if (value === "hackrf" || value === "synthetic") return value; } catch { /* Optional preference. */ }
+  try { const value = storage.getItem("browsersdr.selectedSource"); if (value === "hackrf" || value === "bladerf" || value === "synthetic") return value; } catch { /* Optional preference. */ }
   // Replay needs a file chosen during this page session.
   return "rtl-sdr";
 }

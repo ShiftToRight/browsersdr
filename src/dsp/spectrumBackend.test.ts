@@ -146,3 +146,19 @@ describe("spectrum backend benchmark", () => {
     console.table(results);
   });
 });
+
+it("batched FFT preserves frame boundaries, credits, partial windows and gaps", async () => {
+  const e = await instantiateWasmSpectrum(wasmBytes);
+  const batched = new SpectrumProcessor(new WasmSpectrumAccumulator(e, 4096, 3), true);
+  const scalarKernel = new WasmSpectrumAccumulator(e, 4096, 3);
+  const scalar = new SpectrumProcessor({ size: 4096, reset: () => scalarKernel.reset(), addWindow: (i, q) => scalarKernel.addWindow(i, q) }, true);
+  let start = 0;
+  for (const [index, length] of [32768, 1, 123, 65536, 4095, 32768, 8192].entries()) {
+    const [I, Q] = seededNoise(length); const gap = index === 4;
+    if (index % 2 === 0) { batched.grantPublicationCredit(); scalar.grantPublicationCredit(); }
+    const actual = batched.accept(I, Q, start, gap, gap ? 2 : 0, gap ? 77 : 0);
+    const expected = scalar.accept(I, Q, start, gap, gap ? 2 : 0, gap ? 77 : 0);
+    expect(actual).toEqual(expected); start += 10;
+  }
+  batched.dispose(); scalarKernel.dispose();
+});

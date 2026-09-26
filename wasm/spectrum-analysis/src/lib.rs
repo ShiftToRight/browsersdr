@@ -15,6 +15,8 @@ pub struct SpectrumAnalyzer {
     output: Vec<f32>,
     normalization: f64,
     fft: Arc<dyn Fft<f32>>,
+    scratch: Vec<Complex32>,
+    batch_output: Vec<f32>,
 }
 
 impl SpectrumAnalyzer {
@@ -35,13 +37,15 @@ impl SpectrumAnalyzer {
             size,
             windows_per_average,
             averaged_windows: 0,
-            input_i: vec![0.0; size],
-            input_q: vec![0.0; size],
+            input_i: vec![0.0; size * 8],
+            input_q: vec![0.0; size * 8],
             fft_buffer: vec![Complex32::new(0.0, 0.0); size],
             window,
             power_sum: vec![0.0; size],
             output: vec![FLOOR_DB; size],
             normalization: coherent_gain * coherent_gain,
+            scratch: vec![Complex32::new(0.0, 0.0); fft.get_inplace_scratch_len()],
+            batch_output: vec![FLOOR_DB; size * 8],
             fft,
         })
     }
@@ -51,18 +55,17 @@ impl SpectrumAnalyzer {
         self.power_sum.fill(0.0);
     }
 
-    fn process(&mut self) -> bool {
+    fn process(&mut self, offset: usize) -> bool {
         for index in 0..self.size {
             let coefficient = self.window[index];
             self.fft_buffer[index] =
-                Complex32::new(self.input_i[index] * coefficient, self.input_q[index] * coefficient);
+                Complex32::new(self.input_i[offset + index] * coefficient, self.input_q[offset + index] * coefficient);
         }
-        self.fft.process(&mut self.fft_buffer);
+        self.fft.process_with_scratch(&mut self.fft_buffer, &mut self.scratch);
         for index in 0..self.size {
             let value = self.fft_buffer[index];
             self.power_sum[index] += (value.re as f64 * value.re as f64
-                + value.im as f64 * value.im as f64)
-                / self.normalization;
+                + value.im as f64 * value.im as f64);
         }
         self.averaged_windows += 1;
         if self.averaged_windows < self.windows_per_average {
@@ -72,7 +75,7 @@ impl SpectrumAnalyzer {
         let half = self.size / 2;
         for shifted in 0..self.size {
             let source = (shifted + half) % self.size;
-            let mean_power = self.power_sum[source] / self.averaged_windows as f64;
+            let mean_power = self.power_sum[source] / (self.normalization * self.averaged_windows as f64);
             self.output[shifted] = (10.0 * mean_power.max(1e-12).log10())
                 .max(FLOOR_DB as f64) as f32;
         }
@@ -119,7 +122,26 @@ pub unsafe extern "C" fn spectrum_output(analyzer: *mut SpectrumAnalyzer) -> *co
 
 #[no_mangle]
 pub unsafe extern "C" fn spectrum_process(analyzer: *mut SpectrumAnalyzer) -> u32 {
-    analyzer.as_mut().map(|value| u32::from(value.process())).unwrap_or(0)
+    analyzer.as_mut().map(|value| u32::from(value.process(0))).unwrap_or(0)
 }
 
 mod channel;
+
+/// At most eight complete windows per call; bit n identifies output for window n.
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_process_batch(analyzer: *mut SpectrumAnalyzer, windows: u32) -> u32 {
+    if windows > 8 { return 0; }
+    let Some(a) = analyzer.as_mut() else { return 0; };
+    let mut mask = 0;
+    for n in 0..windows as usize {
+        if a.process(n * a.size) {
+            a.batch_output[n*a.size..(n+1)*a.size].copy_from_slice(&a.output);
+            mask |= 1 << n;
+        }
+    }
+    mask
+}
+#[no_mangle]
+pub unsafe extern "C" fn spectrum_batch_output(analyzer: *mut SpectrumAnalyzer) -> *const f32 {
+    analyzer.as_ref().map(|a| a.batch_output.as_ptr()).unwrap_or(std::ptr::null())
+}

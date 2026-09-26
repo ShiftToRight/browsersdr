@@ -1,6 +1,21 @@
+import { usePageVisible } from "./ui/usePageVisible";
+import { DabMetadata } from "./ui/DabMetadata";
 import { isWidebandRate } from "./radio/sourceCapabilities";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnalysisPipeline, type AnalysisDiagnostics } from "./dsp/analysisPipeline";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import {
+  AnalysisPipeline,
+  type AnalysisDiagnostics,
+} from "./dsp/analysisPipeline";
 import { WebGpuSpectrum } from "./graphics/WebGpuSpectrum";
 import { SpectrumExplorer } from "./ui/SpectrumExplorer";
 import {
@@ -8,8 +23,22 @@ import {
   type ReceiverSnapshot,
 } from "./radio/receiverController";
 import { createHackrfBackend } from "./radio/hackrfBackend";
-import { sourceCapabilities, validateSourceFrequency, DEFAULT_HACKRF_RX_SETTINGS, type HackrfRxSettings } from "./radio/sourceCapabilities";
-import { compatibleSourceRate, loadSourcePreferences, saveSourcePreferences, sourceModeUnavailableReason, loadSourceSelection } from "./radio/sourcePreferences";
+import { createBladeRfBackend } from "./radio/bladerfBackend";
+import { HACKRF_USB_FILTER } from "./radio/hackrfProtocol";
+import { BLADERF_USB_FILTER } from "./radio/bladerfProtocol";
+import {
+  sourceCapabilities,
+  validateSourceFrequency,
+  DEFAULT_HACKRF_RX_SETTINGS,
+  type HackrfRxSettings,
+} from "./radio/sourceCapabilities";
+import {
+  compatibleSourceRate,
+  loadSourcePreferences,
+  saveSourcePreferences,
+  sourceModeUnavailableReason,
+  loadSourceSelection,
+} from "./radio/sourcePreferences";
 import { createRtlSdrBackend } from "./radio/rtlSdrBackend";
 import { SyntheticBackend } from "./radio/syntheticBackend";
 import { ReplayBackend } from "./radio/replayBackend";
@@ -35,22 +64,35 @@ import {
 import { createDeterministicRecordingFixture } from "./testing/recordingFixture";
 import { importSigmfRecording } from "./radio/sigmfImport";
 import {
+  CW_FILTER_BANDWIDTHS_HZ,
+  CW_TONE_MAX_HZ,
+  CW_TONE_MIN_HZ,
   defaultModeSettings,
   MANUAL_GAIN_MAX_DB,
   modeCapabilities,
   normalizeModeSettings,
   RECEIVER_MODES,
   type ReceiverMode,
+  type ReceiverModeSettings,
 } from "./radio/receiverConfig";
 import type { SurveyCandidateRecord, SurveyProfile } from "./radio/fieldSurvey";
 import { DAB_BAND_III_CHANNELS, dabChannelAt } from "./dab/channels";
 import { ADSB_FREQUENCY_HZ } from "./adsb/adsbReceiver";
 import { AIS_CENTER_FREQUENCY_HZ } from "./ais/aisReceiver";
+import { probeDabPlusAudioSupport } from "./dab/dabAudio";
 import { browserTestConfig } from "./testing/browserTestBridge";
+import { defaultDiagnosticRecorder } from "./diagnostics/diagnosticRecorder";
+import { defaultSrdModeSettings, type SrdModeSettings } from "./srd/settings";
+import {
+  DiagnosticReportCard,
+  OPEN_DIAGNOSTIC_REPORT_EVENT,
+} from "./ui/DiagnosticReportCard";
+import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
+import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
 interface Capability {
   label: string;
-  available: boolean;
+  available: boolean | null;
   detail: string;
 }
 
@@ -60,19 +102,337 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "receiver" | "explorer" | "diagnostics";
+type AppView = "receiver" | "explorer" | "diagnostics" | "help";
+type ReceiverDockView = "decode" | "capture" | "session";
+type CompatibilityDetailView = "modes" | "recording" | "browsers";
 type ReplayImportFormat = "browsersdr" | "sigmf";
+
+type CompatibilityStatus =
+  "validated" | "available" | "experimental" | "unclear" | "unsupported";
+
+interface CompatibilityCellData {
+  status: CompatibilityStatus;
+  evidence: string;
+}
+
+interface CompatibilityDetailData {
+  label: string;
+  columns: string[];
+  rows: Array<{
+    label: string;
+    cells: CompatibilityCellData[];
+  }>;
+  note: string;
+}
+
+const COMPATIBILITY_STATUS_LABELS: Record<CompatibilityStatus, string> = {
+  validated: "Validated",
+  available: "Available",
+  experimental: "Experimental",
+  unclear: "Unclear",
+  unsupported: "Unsupported",
+};
+
+const COMPATIBILITY_DETAILS: Record<
+  CompatibilityDetailView,
+  CompatibilityDetailData
+> = {
+  modes: {
+    label: "Modes",
+    columns: ["RTL-SDR", "HackRF Pro", "bladeRF xA4", "Replay"],
+    rows: [
+      {
+        label: "Spectrum only (OFF)",
+        cells: [
+          { status: "validated", evidence: "Live WebGPU spectrum" },
+          { status: "validated", evidence: "4.8 and 9.6 MS/s live paths" },
+          { status: "available", evidence: "Initial physical reception only" },
+          { status: "validated", evidence: "Capture span only; no retuning" },
+        ],
+      },
+      {
+        label: "WBFM audio + RDS",
+        cells: [
+          { status: "validated", evidence: "Physical FM, audio and RDS" },
+          { status: "validated", evidence: "Physical reception and RDS" },
+          {
+            status: "available",
+            evidence: "Decoder implemented; live proof pending",
+          },
+          { status: "validated", evidence: "Deterministic replay coverage" },
+        ],
+      },
+      {
+        label: "AM, NBFM, USB, LSB + CW",
+        cells: [
+          {
+            status: "available",
+            evidence: "DSP covered; live-air matrix pending",
+          },
+          {
+            status: "available",
+            evidence: "DSP covered; live-air matrix pending",
+          },
+          {
+            status: "available",
+            evidence: "DSP covered; live-air matrix pending",
+          },
+          { status: "validated", evidence: "Deterministic decoder tests" },
+        ],
+      },
+      {
+        label: "DAB / DAB+",
+        cells: [
+          {
+            status: "available",
+            evidence: "Decoder covered; live ensemble pending",
+          },
+          {
+            status: "available",
+            evidence: "Decoder covered; live ensemble pending",
+          },
+          { status: "available", evidence: "Compatible sample rate required" },
+          { status: "available", evidence: "Compatible sample rate required" },
+        ],
+      },
+      {
+        label: "ADS-B, AIS + SRD",
+        cells: [
+          {
+            status: "available",
+            evidence: "Decoder fixtures; live RF pending",
+          },
+          {
+            status: "available",
+            evidence: "Decoder fixtures; live RF pending",
+          },
+          {
+            status: "available",
+            evidence: "Decoder fixtures; live RF pending",
+          },
+          {
+            status: "validated",
+            evidence: "Deterministic routing and fixtures",
+          },
+        ],
+      },
+      {
+        label: "Explorer surveys",
+        cells: [
+          {
+            status: "available",
+            evidence: "Retune workflow; field survey pending",
+          },
+          {
+            status: "available",
+            evidence: "Retune workflow; field survey pending",
+          },
+          {
+            status: "available",
+            evidence: "Retune workflow; field survey pending",
+          },
+          { status: "unsupported", evidence: "A recording cannot retune" },
+        ],
+      },
+      {
+        label: "19.2 MS/s wideband",
+        cells: [
+          { status: "unsupported", evidence: "Profile tops out at 2.4 MS/s" },
+          {
+            status: "experimental",
+            evidence: "Offered with performance warnings",
+          },
+          {
+            status: "experimental",
+            evidence: "Offered with performance warnings",
+          },
+          {
+            status: "available",
+            evidence: "Depends on recording rate and browser",
+          },
+        ],
+      },
+    ],
+    note: "Mode availability also depends on frequency range, sample rate and a signal suitable for the selected decoder.",
+  },
+  recording: {
+    label: "Recording & export",
+    columns: ["RTL-SDR", "HackRF Pro", "bladeRF xA4", "Synthetic demo"],
+    rows: [
+      {
+        label: "Native I/Q capture",
+        cells: [
+          { status: "validated", evidence: "CU8 samples" },
+          { status: "validated", evidence: "CI8 samples" },
+          {
+            status: "unsupported",
+            evidence: "Recording is disabled for this profile",
+          },
+          { status: "available", evidence: "Quantized CU8 samples" },
+        ],
+      },
+      {
+        label: "BrowserSDR data + metadata",
+        cells: [
+          { status: "validated", evidence: "Export and replay covered" },
+          { status: "validated", evidence: "Export and replay covered" },
+          { status: "unsupported", evidence: "No I/Q capture" },
+          { status: "available", evidence: "Local export path" },
+        ],
+      },
+      {
+        label: "SigMF data + metadata",
+        cells: [
+          {
+            status: "validated",
+            evidence: "Schema, export and import covered",
+          },
+          {
+            status: "validated",
+            evidence: "Schema, export and import covered",
+          },
+          { status: "unsupported", evidence: "No I/Q capture" },
+          { status: "available", evidence: "Local export path" },
+        ],
+      },
+      {
+        label: "ZIP or separate downloads",
+        cells: [
+          { status: "validated", evidence: "Both delivery paths covered" },
+          { status: "validated", evidence: "Both delivery paths covered" },
+          { status: "unsupported", evidence: "No I/Q capture" },
+          {
+            status: "available",
+            evidence: "Browser download behavior applies",
+          },
+        ],
+      },
+      {
+        label: "Explorer JSON / CSV manifest",
+        cells: [
+          { status: "available", evidence: "Survey metadata only" },
+          { status: "available", evidence: "Survey metadata only" },
+          { status: "available", evidence: "Survey metadata only" },
+          { status: "available", evidence: "Survey metadata only" },
+        ],
+      },
+    ],
+    note: "I/Q capture is retained locally in browser memory and capped at 32 MiB. A successful download request does not guarantee that the browser or operating system saved the file.",
+  },
+  browsers: {
+    label: "Browsers",
+    columns: ["SDR hardware", "Demo + replay", "WebGPU spectrum"],
+    rows: [
+      {
+        label: "Chrome · desktop",
+        cells: [
+          { status: "validated", evidence: "WebUSB tested" },
+          { status: "validated", evidence: "Primary browser test target" },
+          { status: "validated", evidence: "Compatible GPU required" },
+        ],
+      },
+      {
+        label: "Edge / Chromium · desktop",
+        cells: [
+          {
+            status: "unclear",
+            evidence: "APIs plausible; direct evidence pending",
+          },
+          {
+            status: "unclear",
+            evidence: "Not in the validated browser matrix",
+          },
+          { status: "unclear", evidence: "GPU and driver dependent" },
+        ],
+      },
+      {
+        label: "Firefox · desktop",
+        cells: [
+          {
+            status: "unsupported",
+            evidence: "Required WebUSB path is unavailable",
+          },
+          { status: "unclear", evidence: "No supported-browser validation" },
+          { status: "unclear", evidence: "Environment dependent" },
+        ],
+      },
+      {
+        label: "Safari · desktop",
+        cells: [
+          {
+            status: "unsupported",
+            evidence: "Required WebUSB path is unavailable",
+          },
+          { status: "unclear", evidence: "No supported-browser validation" },
+          { status: "unclear", evidence: "Environment dependent" },
+        ],
+      },
+      {
+        label: "Mobile browsers",
+        cells: [
+          {
+            status: "unsupported",
+            evidence: "Hardware workflow is desktop-only",
+          },
+          {
+            status: "unclear",
+            evidence: "Layout adapts; runtime is unvalidated",
+          },
+          {
+            status: "unclear",
+            evidence: "GPU, memory and thermal limits vary",
+          },
+        ],
+      },
+    ],
+    note: "Hardware access requires HTTPS or localhost, user-granted device permission and exclusive access. BrowserSDR does not treat API availability alone as validation.",
+  },
+};
+
+const RTL_USB_FILTERS = [
+  { vendorId: 0x0bda, productId: 0x2832 },
+  { vendorId: 0x0bda, productId: 0x2838 },
+] as const;
+
+export function usbDeviceMatchesSource(
+  device: USBDevice,
+  source: SourceKind,
+): boolean {
+  const filters =
+    source === "hackrf"
+      ? [HACKRF_USB_FILTER]
+      : source === "bladerf"
+        ? [BLADERF_USB_FILTER]
+        : source === "rtl-sdr"
+          ? RTL_USB_FILTERS
+          : [];
+  return filters.some(
+    (filter) =>
+      device.vendorId === filter.vendorId &&
+      device.productId === filter.productId,
+  );
+}
 
 function selectedSigmfModeSettings(mode: ReceiverMode | "") {
   if (!mode) throw new Error("Choose a replay mode for the SigMF capture.");
   return defaultModeSettings(mode);
 }
 
-export function waitForCaptureDelay(ms: number, signal: AbortSignal): Promise<void> {
+export function waitForCaptureDelay(
+  ms: number,
+  signal: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const abort = () => { window.clearTimeout(timer); reject(new DOMException("Candidate capture cancelled", "AbortError")); };
-    const timer = window.setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
-    if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
+    const abort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Candidate capture cancelled", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
   });
 }
 
@@ -88,7 +448,12 @@ export async function waitForRecordingCompletion(
     elapsed += slice;
     const lifecycle = controller.getSnapshot().lifecycle;
     const status = controller.getRecordingStatus();
-    if (!status || status.state === "capacity-reached" || !["running", "tuning"].includes(lifecycle)) return;
+    if (
+      !status ||
+      status.state === "capacity-reached" ||
+      !["running", "tuning"].includes(lifecycle)
+    )
+      return;
   }
 }
 
@@ -102,6 +467,149 @@ interface AppResourceOwnerProps {
   createAnalysis?: () => AnalysisPipeline;
   children: (runtime: AppRuntime) => ReactNode;
 }
+
+const SquelchControl = memo(function SquelchControl({
+  controller,
+  squelch,
+  disabled,
+  running,
+  onChange,
+}: {
+  controller: ReceiverController;
+  squelch: number;
+  disabled: boolean;
+  running: boolean;
+  onChange: (value: number) => void;
+}) {
+  const meter = useSyncExternalStore(
+    controller.subscribeSquelchMeter,
+    controller.getSquelchMeterSnapshot,
+    controller.getSquelchMeterSnapshot,
+  );
+  const [autoStatus, setAutoStatus] = useState<
+    "idle" | "measuring" | "set" | "unavailable"
+  >("idle");
+  const autoSamples = useRef<number[]>([]);
+  const autoTimer = useRef<number | undefined>(undefined);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (autoStatus !== "measuring") return;
+    return controller.subscribeSquelchMeter(() => {
+      const sample = controller.getSquelchMeterSnapshot();
+      if (sample) autoSamples.current.push(sample.level);
+    });
+  }, [autoStatus, controller]);
+  useEffect(
+    () => () => {
+      if (autoTimer.current !== undefined)
+        window.clearTimeout(autoTimer.current);
+    },
+    [],
+  );
+
+  const autoSet = () => {
+    if (autoTimer.current !== undefined) window.clearTimeout(autoTimer.current);
+    const current = controller.getSquelchMeterSnapshot();
+    autoSamples.current = current ? [current.level] : [];
+    setAutoStatus("measuring");
+    autoTimer.current = window.setTimeout(() => {
+      autoTimer.current = undefined;
+      const samples = [...autoSamples.current].sort((a, b) => a - b);
+      if (samples.length === 0) {
+        setAutoStatus("unavailable");
+        return;
+      }
+      const noise = samples[Math.floor((samples.length - 1) * 0.95)] ?? 0;
+      const threshold = Math.min(
+        6,
+        Math.max(0.1, Math.round((noise + 0.2) * 10) / 10),
+      );
+      onChangeRef.current(threshold);
+      setAutoStatus("set");
+    }, 2_000);
+  };
+
+  return (
+    <div className="squelch-control">
+      <div className="squelch-heading">
+        <span>
+          Squelch <output>{squelch.toFixed(1)}</output>
+        </span>
+        <span
+          className={`squelch-state ${meter?.open ? "is-open" : "is-muted"}`}
+        >
+          {meter?.open ? "Audio open" : "Muted"}
+        </span>
+      </div>
+      <div className="squelch-meter-control">
+        <div
+          className="squelch-meter"
+          role="meter"
+          aria-label="Current channel quality"
+          aria-valuemin={0}
+          aria-valuemax={6}
+          aria-valuenow={meter?.level ?? 0}
+        >
+          <span
+            className="squelch-meter-level"
+            style={{
+              width: `${Math.min(100, ((meter?.level ?? 0) / 6) * 100)}%`,
+            }}
+          />
+          <span
+            className="squelch-meter-peak"
+            style={{
+              left: `${Math.min(100, ((meter?.peak ?? 0) / 6) * 100)}%`,
+            }}
+          />
+        </div>
+        <span
+          className="squelch-meter-threshold"
+          style={{ left: `${(squelch / 6) * 100}%` }}
+        />
+        <input
+          className="squelch-meter-input"
+          type="range"
+          aria-label="Squelch"
+          min="0"
+          max="6"
+          step="0.1"
+          value={squelch}
+          disabled={disabled}
+          onChange={(event) => {
+            setAutoStatus("idle");
+            onChange(event.currentTarget.valueAsNumber);
+          }}
+        />
+      </div>
+      <div className="squelch-meter-scale" aria-hidden="true">
+        <span>Open</span>
+        <span>Strong signals only</span>
+      </div>
+      <div className="squelch-auto-row">
+        <button
+          type="button"
+          className="secondary"
+          disabled={!running || disabled || autoStatus === "measuring"}
+          onClick={autoSet}
+        >
+          {autoStatus === "measuring" ? "Measuring noise…" : "Auto set"}
+        </button>
+        <small>
+          {autoStatus === "measuring"
+            ? "Keep the channel quiet for two seconds"
+            : autoStatus === "set"
+              ? `Set just above the measured noise at ${squelch.toFixed(1)}`
+              : autoStatus === "unavailable"
+                ? "No channel-quality samples were available"
+                : "Sets the threshold just above current noise"}
+        </small>
+      </div>
+    </div>
+  );
+});
 
 /** Creates effect-owned resources so every StrictMode setup has a matching cleanup. */
 export function AppResourceOwner({
@@ -118,10 +626,38 @@ export function AppResourceOwner({
       options.source === "synthetic"
         ? new SyntheticBackend(events, analysis, generation)
         : options.source === "replay"
-          ? new ReplayBackend(events, analysis, replayRef.current ?? (() => { throw new Error("Load a valid I/Q recording and JSON sidecar before starting replay."); })(), generation)
+          ? new ReplayBackend(
+              events,
+              analysis,
+              replayRef.current ??
+                (() => {
+                  throw new Error(
+                    "Load a valid I/Q recording and JSON sidecar before starting replay.",
+                  );
+                })(),
+              generation,
+            )
           : options.source === "hackrf"
-            ? createHackrfBackend(events, analysis, generation, testConfig?.hackrfDependencies)
-            : createRtlSdrBackend(events, analysis, generation, options.channelFrequencyHz, testConfig?.rtlDependencies),
+            ? createHackrfBackend(
+                events,
+                analysis,
+                generation,
+                testConfig?.hackrfDependencies,
+              )
+            : options.source === "bladerf"
+              ? createBladeRfBackend(
+                  events,
+                  analysis,
+                  generation,
+                  testConfig?.bladerfDependencies,
+                )
+              : createRtlSdrBackend(
+                  events,
+                  analysis,
+                  generation,
+                  options.channelFrequencyHz,
+                  testConfig?.rtlDependencies,
+                ),
     );
     const owned = { analysis, controller, replayRef };
     setRuntime(owned);
@@ -133,27 +669,120 @@ export function AppResourceOwner({
   return runtime ? children(runtime) : null;
 }
 
-function capabilities(): Capability[] {
+function storageAvailable(): boolean {
+  try {
+    window.localStorage.getItem("browsersdr.capability-check");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
   const secure = window.isSecureContext;
   const webUsb = "usb" in navigator;
   const webGpu = "gpu" in navigator;
+  const webAssembly = typeof WebAssembly === "object";
+  const workers = typeof Worker === "function";
+  const webAudio = typeof AudioContext === "function";
+  const webCodecs =
+    typeof AudioDecoder === "function" &&
+    typeof EncodedAudioChunk === "function";
+  const webCrypto = typeof globalThis.crypto?.subtle?.digest === "function";
+  const localFiles =
+    typeof File === "function" &&
+    typeof Blob === "function" &&
+    typeof URL.createObjectURL === "function";
+  const storage = storageAvailable();
   return [
-    { label: "Secure context", available: secure, detail: secure ? "available" : "Use localhost or HTTPS" },
-    { label: "WebUSB API", available: webUsb, detail: webUsb ? "available" : "Use a WebUSB-compatible browser" },
+    {
+      label: "Secure context",
+      available: secure,
+      detail: secure ? "available" : "Use localhost or HTTPS",
+    },
+    {
+      label: "WebUSB API",
+      available: webUsb,
+      detail: webUsb
+        ? "RTL-SDR, HackRF and bladeRF access available"
+        : "Required for live hardware; use a WebUSB-compatible browser",
+    },
     {
       label: "WebGPU API",
       available: webGpu,
-      detail: webGpu ? "API detected; device check below" : "Use a WebGPU-compatible browser",
+      detail: webGpu
+        ? "API detected; device check below"
+        : "Use a WebGPU-compatible browser",
+    },
+    {
+      label: "WebAssembly DSP",
+      available: webAssembly,
+      detail: webAssembly
+        ? "Spectrum and wideband channel kernels available"
+        : "Required for optimized spectrum and high-rate channel processing",
+    },
+    {
+      label: "Module workers",
+      available: workers,
+      detail: workers
+        ? "Spectrum, channel, DAB and recording jobs available"
+        : "Required for bounded background signal processing",
+    },
+    {
+      label: "Web Audio API",
+      available: webAudio,
+      detail: webAudio
+        ? "Demodulated PCM output available"
+        : "Required for analog and DAB+ audio output",
+    },
+    {
+      label: "DAB+ AAC decoder",
+      available: webCodecs ? dabPlusAudioAvailable : false,
+      detail: !webCodecs
+        ? "WebCodecs AudioDecoder is unavailable"
+        : dabPlusAudioAvailable === null
+          ? "Checking AAC-LC, HE-AAC and HE-AAC v2 profiles…"
+          : dabPlusAudioAvailable
+            ? "AAC-LC, HE-AAC and HE-AAC v2 profiles available"
+            : "Browser or system media stack does not expose every required DAB+ AAC profile",
+    },
+    {
+      label: "Web Crypto API",
+      available: webCrypto,
+      detail: webCrypto
+        ? "SigMF and bladeRF image verification available"
+        : "Required for recording and FPGA image integrity checks",
+    },
+    {
+      label: "Local file APIs",
+      available: localFiles,
+      detail: localFiles
+        ? "Recording import and export available"
+        : "Required to load and download recording pairs",
+    },
+    {
+      label: "Local storage",
+      available: storage,
+      detail: storage
+        ? "Receiver and survey preferences can persist"
+        : "Preferences will not survive a reload",
     },
   ];
 }
 
-function loadNumber(key: string, fallback: number, minimum: number, maximum: number): number {
+function loadNumber(
+  key: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
   try {
     const stored = localStorage.getItem(key);
     if (stored === null) return fallback;
     const value = Number(stored);
-    return Number.isFinite(value) && value >= minimum && value <= maximum ? value : fallback;
+    return Number.isFinite(value) && value >= minimum && value <= maximum
+      ? value
+      : fallback;
   } catch {
     return fallback;
   }
@@ -171,152 +800,1439 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
-function PositionPlot({ targets, label }: { targets: { latitude: number | null; longitude: number | null; label: string }[]; label: string }) {
-  const positioned = targets.filter((target): target is { latitude: number; longitude: number; label: string } => target.latitude !== null && target.longitude !== null);
+function PositionPlot({
+  targets,
+  label,
+}: {
+  targets: {
+    latitude: number | null;
+    longitude: number | null;
+    label: string;
+  }[];
+  label: string;
+}) {
+  const positioned = targets.filter(
+    (
+      target,
+    ): target is { latitude: number; longitude: number; label: string } =>
+      target.latitude !== null && target.longitude !== null,
+  );
   return (
     <div className="target-plot">
-      <svg viewBox="0 0 720 280" role="img" aria-label={`${label}: ${positioned.length} positioned targets`}>
+      <svg
+        viewBox="0 0 720 280"
+        role="img"
+        aria-label={`${label}: ${positioned.length} positioned targets`}
+      >
         <rect width="720" height="280" />
-        {[90, 180, 270, 360, 450, 540, 630].map((x) => <line key={`x${x}`} x1={x} x2={x} y1="0" y2="280" />)}
-        {[70, 140, 210].map((y) => <line key={`y${y}`} x1="0" x2="720" y1={y} y2={y} />)}
-        {positioned.map((target) => <g key={target.label} transform={`translate(${(target.longitude + 180) * 2} ${(90 - target.latitude) * 280 / 180})`}><circle r="4" /><title>{target.label}</title></g>)}
+        {[90, 180, 270, 360, 450, 540, 630].map((x) => (
+          <line key={`x${x}`} x1={x} x2={x} y1="0" y2="280" />
+        ))}
+        {[70, 140, 210].map((y) => (
+          <line key={`y${y}`} x1="0" x2="720" y1={y} y2={y} />
+        ))}
+        {positioned.map((target) => (
+          <g
+            key={target.label}
+            transform={`translate(${(target.longitude + 180) * 2} ${((90 - target.latitude) * 280) / 180})`}
+          >
+            <circle r="4" />
+            <title>{target.label}</title>
+          </g>
+        ))}
       </svg>
-      <small>License-free equirectangular position plot · transmitted coordinates only</small>
+      <small>
+        License-free equirectangular position plot · transmitted coordinates
+        only
+      </small>
     </div>
   );
 }
 
 function downloadDecodedTargets(mode: string, targets: unknown[]): void {
-  const url = URL.createObjectURL(new Blob([JSON.stringify({ mode, exportedAt: new Date().toISOString(), targets }, null, 2)], { type: "application/json" }));
-  const anchor = document.createElement("a"); anchor.href = url; anchor.download = `browsersdr-${mode.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-targets.json`; anchor.click();
+  const url = URL.createObjectURL(
+    new Blob(
+      [
+        JSON.stringify(
+          { mode, exportedAt: new Date().toISOString(), targets },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    ),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `browsersdr-${mode.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-targets.json`;
+  anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function DiagnosticsPanel({ pipeline, receiver }: { pipeline: AnalysisPipeline; receiver: ReceiverSnapshot }) {
-  const [diagnostics, setDiagnostics] = useState<AnalysisDiagnostics>(() => pipeline.getDiagnostics());
+function downloadSrdSnapshot(receiver: ReceiverSnapshot): void {
+  if (!receiver.srd || !receiver.session) return;
+  const session = receiver.session;
+  downloadDecodedTargets("SRD", [
+    {
+      schema: "browsersdr-srd-export-v1",
+      settings: session.srd,
+      provenance: {
+        source: session.source,
+        generation: session.sessionGeneration,
+        actualInputSampleRateHz: session.actualSampleRateHz,
+        hardwareCenterFrequencyHz: session.hardwareCenterFrequencyHz,
+        selectedChannelFrequencyHz: session.selectedChannelFrequencyHz,
+        selectedChannelOffsetHz:
+          session.selectedChannelFrequencyHz -
+          session.hardwareCenterFrequencyHz,
+        decoderInputOffsetHz: isWidebandRate(session.actualSampleRateHz)
+          ? 0
+          : session.selectedChannelFrequencyHz -
+            session.hardwareCenterFrequencyHz,
+      },
+      integrityPolicy: "Only protocol-validated readings are included.",
+      units: {
+        temperatureC: "degC",
+        humidityPercent: "percent",
+        moisturePercent: "percent",
+        batteryMillivolts: "mV",
+      },
+      counters: receiver.srd.counters,
+      readings: receiver.srd.recentReadings.slice(-32),
+      bursts: receiver.srd.bursts.slice(-4),
+      worker: receiver.srdWorker,
+    },
+  ]);
+}
+
+function DiagnosticsPanel({
+  active,
+  pipeline,
+  receiver,
+  controller,
+}: {
+  active: boolean;
+  pipeline: AnalysisPipeline;
+  receiver: ReceiverSnapshot;
+  controller: ReceiverController;
+}) {
+  const visible = usePageVisible(active);
+  const [diagnostics, setDiagnostics] = useState<AnalysisDiagnostics>(() =>
+    pipeline.getDiagnostics(),
+  );
   useEffect(() => {
+    if (!visible) return;
     const refresh = () => setDiagnostics(pipeline.getDiagnostics());
     refresh();
     const timer = window.setInterval(refresh, 500);
     return () => window.clearInterval(timer);
-  }, [pipeline, receiver.sessionGeneration]);
-  const processing = diagnostics.processingTimeAverageMs === null
-    ? "unavailable"
-    : `${diagnostics.processingTimeAverageMs.toFixed(2)} ms avg · ${(diagnostics.processingTimeMaximumMs ?? 0).toFixed(2)} ms max`;
-  const audio = diagnostics.source === "synthetic"
-    ? "not applicable (demo has no audio)"
-    : receiver.audioState ?? "unavailable until audio starts";
+  }, [pipeline, receiver.sessionGeneration, visible]);
+  const channel = visible ? controller.getChannelDiagnostics() : undefined;
+  const ingress = visible ? controller.getIngressDiagnostics() : undefined;
+  const processing =
+    diagnostics.processingTimeAverageMs === null
+      ? "unavailable"
+      : `${diagnostics.processingTimeAverageMs.toFixed(2)} ms avg · ${(diagnostics.processingTimeMaximumMs ?? 0).toFixed(2)} ms max`;
+  const audio =
+    diagnostics.source === "synthetic"
+      ? "not applicable (demo has no audio)"
+      : (receiver.audioState ?? "unavailable until audio starts");
+  useEffect(() => {
+    const startedAt = performance.now();
+    let queuePressureSamples = 0;
+    let debtSamples = 0;
+    const emitted = new Set<string>();
+    const warnOnce = (
+      code: string,
+      area: "analysis" | "channel" | "usb",
+      message: string,
+      context: Record<string, number | string | boolean | null>,
+    ) => {
+      if (emitted.has(code)) return;
+      emitted.add(code);
+      defaultDiagnosticRecorder.record({
+        area,
+        code,
+        severity: "warning",
+        operation: "monitor",
+        safeMessage: message,
+        context: { ...context, thresholdVersion: 1 },
+      });
+    };
+    const snapshot = () => {
+      const current = pipeline.getDiagnostics();
+      const currentChannel = controller.getChannelDiagnostics();
+      const currentIngress = controller.getIngressDiagnostics();
+      defaultDiagnosticRecorder.addSnapshot({
+        lifecycle: receiver.lifecycle,
+        visibility: document.visibilityState,
+        analysis: {
+          receivedComplexSamples: current.receivedComplexSamples,
+          receivedBytes: current.receivedBytes,
+          processedBlocks: current.processedBlocks,
+          processingTimeAverageMs: current.processingTimeAverageMs,
+          processingTimeMaximumMs: current.processingTimeMaximumMs,
+          skippedInputBlocks: current.skippedInputBlocks,
+          skippedInputSamples: current.skippedInputSamples,
+          skippedSpectrumFrames: current.skippedSpectrumFrames,
+          deliveredDisplayFrames: current.deliveredDisplayFrames,
+          knownApplicationDiscontinuities:
+            current.knownApplicationDiscontinuities,
+          analysisBackend: current.analysisBackend,
+          backendStartupMs: current.backendStartupMs,
+          backendFallbackReason: current.backendFallbackReason,
+        },
+        ...(currentChannel
+          ? {
+              channel: {
+                queuedBlocks: currentChannel.queuedBlocks,
+                capacityBlocks: currentChannel.capacityBlocks,
+                peakQueuedBlocks: currentChannel.peakQueuedBlocks,
+                recentBlocks: currentChannel.recentBlocks,
+                computeAverageMs: currentChannel.computeAverageMs,
+                computeMaximumMs: currentChannel.computeMaximumMs,
+                computeBudgetPercent: currentChannel.computeBudgetPercent,
+                deliveryAverageMs: currentChannel.deliveryAverageMs,
+                turnaroundMaximumMs: currentChannel.turnaroundMaximumMs,
+              },
+            }
+          : {}),
+        ...(currentIngress
+          ? {
+              ingress: {
+                debtMs: currentIngress.debtMs,
+                budgetMs: currentIngress.budgetMs,
+                stageCount: Object.keys(currentIngress.stages).length,
+                maximumStageRunMs: Math.max(
+                  0,
+                  ...Object.values(currentIngress.stages).map(
+                    (stage) => stage.lifetimeMaxMs,
+                  ),
+                ),
+              },
+            }
+          : {}),
+      });
+      const eligible =
+        receiver.lifecycle === "running" &&
+        document.visibilityState === "visible" &&
+        performance.now() - startedAt >= 10_000;
+      if (!eligible) {
+        queuePressureSamples = 0;
+        debtSamples = 0;
+        return;
+      }
+      if (
+        currentChannel &&
+        currentChannel.capacityBlocks > 0 &&
+        currentChannel.queuedBlocks / currentChannel.capacityBlocks >= 0.75
+      )
+        queuePressureSamples++;
+      else queuePressureSamples = 0;
+      if (queuePressureSamples >= 5 && currentChannel)
+        warnOnce(
+          "CHANNEL_QUEUE_PRESSURE",
+          "channel",
+          "Channel queue remained above 75% capacity.",
+          {
+            queuedBlocks: currentChannel.queuedBlocks,
+            capacityBlocks: currentChannel.capacityBlocks,
+          },
+        );
+      if (
+        currentIngress &&
+        currentIngress.budgetMs > 0 &&
+        currentIngress.debtMs >= currentIngress.budgetMs
+      )
+        debtSamples++;
+      else debtSamples = 0;
+      if (debtSamples >= 3 && currentIngress)
+        warnOnce(
+          "TRANSPORT_DEBT_EXCEEDED",
+          "usb",
+          "Transport callback debt remained above its declared budget.",
+          { debtMs: currentIngress.debtMs, budgetMs: currentIngress.budgetMs },
+        );
+      if (
+        current.receivedComplexSamples > 0 &&
+        current.skippedInputSamples / current.receivedComplexSamples > 0.01
+      )
+        warnOnce(
+          "ANALYSIS_SKIP_RATE_HIGH",
+          "analysis",
+          "More than 1% of received samples were skipped by analysis.",
+          {
+            skippedInputSamples: current.skippedInputSamples,
+            receivedComplexSamples: current.receivedComplexSamples,
+          },
+        );
+      if (current.backendFallbackReason)
+        warnOnce(
+          "ANALYSIS_BACKEND_FALLBACK",
+          "analysis",
+          "The preferred analysis backend was unavailable; a fallback is active.",
+          {
+            backend: current.analysisBackend,
+            reason: current.backendFallbackReason,
+          },
+        );
+    };
+    snapshot();
+    const timer = window.setInterval(snapshot, 2_000);
+    return () => window.clearInterval(timer);
+  }, [controller, pipeline, receiver.lifecycle, receiver.sessionGeneration]);
+  const reportContext = {
+    lifecycle: receiver.lifecycle,
+    source: receiver.session?.source ?? diagnostics.source,
+    mode: receiver.session?.mode ?? null,
+    sampleRateHz: receiver.session?.actualSampleRateHz ?? null,
+    bandwidthHz: receiver.session?.channelBandwidthHz ?? null,
+    gainMode: receiver.session
+      ? receiver.session.gainDb === null
+        ? "automatic-or-source-managed"
+        : "manual"
+      : null,
+    firmwareVersion:
+      receiver.session?.hackrf?.capabilities.identity.firmwareVersion ??
+      (receiver.session?.bladerf
+        ? `${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}`
+        : null),
+    recordingActive: Boolean(controller.getRecordingStatus()),
+    ...(receiver.session
+      ? { exactFrequencyHz: receiver.session.selectedChannelFrequencyHz }
+      : {}),
+  };
 
   return (
-    <section className="diagnostics-panel" aria-labelledby="diagnostics-heading">
-      <div className="panel-heading"><div><p className="eyebrow">Bounded telemetry</p><h2 id="diagnostics-heading">Session diagnostics</h2></div></div>
+    <section
+      className="diagnostics-panel"
+      aria-labelledby="diagnostics-heading"
+    >
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Bounded telemetry</p>
+          <h2 id="diagnostics-heading">Session diagnostics</h2>
+        </div>
+      </div>
+      <DiagnosticReportCard context={reportContext} />
       <dl className="diagnostics-grid">
-        <div><dt>Received bytes</dt><dd>{diagnostics.receivedBytes === null
-          ? diagnostics.source === "synthetic" ? "not applicable to generated demo" : "unavailable until a source starts"
-          : formatCount(diagnostics.receivedBytes)}</dd></div>
-        <div><dt>Complex samples</dt><dd>{formatCount(diagnostics.receivedComplexSamples)}</dd></div>
-        <div><dt>Worker processing</dt><dd>{processing}</dd></div>
-        <div><dt>Analysis backend</dt><dd>{diagnostics.analysisBackend ?? "initializing when a source starts"}{diagnostics.backendStartupMs === null ? "" : ` · ${diagnostics.backendStartupMs.toFixed(2)} ms startup`}{diagnostics.backendFallbackReason ? ` · ${diagnostics.backendFallbackReason}` : ""}</dd></div>
-        <div><dt>Analysis blocks</dt><dd>{formatCount(diagnostics.processedBlocks)}</dd></div>
-        <div><dt>Display frames delivered</dt><dd>{formatCount(diagnostics.deliveredDisplayFrames)}</dd></div>
-        <div><dt>Display frames skipped</dt><dd>{formatCount(diagnostics.skippedSpectrumFrames)}</dd></div>
-        <div><dt>Input blocks skipped</dt><dd>{formatCount(diagnostics.skippedInputBlocks)} · {formatCount(diagnostics.skippedInputSamples)} samples</dd></div>
-        <div><dt>Known app discontinuities</dt><dd>{formatCount(diagnostics.knownApplicationDiscontinuities)}</dd></div>
-        <div><dt>Audio output state</dt><dd>{audio}</dd></div>
-        <div><dt>Audio underruns</dt><dd>unavailable (upstream player exposes no counter)</dd></div>
-        <div><dt>Hardware sample loss</dt><dd>unavailable (USB byte streams have no sequence numbers)</dd></div>
+        <div>
+          <dt>Received bytes</dt>
+          <dd>
+            {diagnostics.receivedBytes === null
+              ? diagnostics.source === "synthetic"
+                ? "not applicable to generated demo"
+                : "unavailable until a source starts"
+              : formatCount(diagnostics.receivedBytes)}
+          </dd>
+        </div>
+        <div>
+          <dt>Complex samples</dt>
+          <dd>{formatCount(diagnostics.receivedComplexSamples)}</dd>
+        </div>
+        <div>
+          <dt>Worker processing</dt>
+          <dd>{processing}</dd>
+        </div>
+        {channel && (
+          <>
+            <div>
+              <dt>Channel queue</dt>
+              <dd>
+                {channel.queuedBlocks}/{channel.capacityBlocks} blocks · peak{" "}
+                {channel.peakQueuedBlocks}
+              </dd>
+            </div>
+            <div>
+              <dt>Channel processing</dt>
+              <dd>
+                {channel.computeAverageMs.toFixed(2)} ms avg ·{" "}
+                {channel.computeMaximumMs.toFixed(2)} ms max ·{" "}
+                {channel.computeBudgetPercent.toFixed(1)}% of sample time · last{" "}
+                {channel.recentBlocks} blocks
+              </dd>
+            </div>
+            <div>
+              <dt>Channel delivery</dt>
+              <dd>
+                {channel.deliveryAverageMs.toFixed(2)} ms avg ·{" "}
+                {channel.turnaroundMaximumMs.toFixed(2)} ms maximum round trip
+              </dd>
+            </div>
+          </>
+        )}
+        {ingress && (
+          <>
+            <div>
+              <dt>Transport lag budget</dt>
+              <dd>
+                {ingress.debtMs.toFixed(2)} / {ingress.budgetMs.toFixed(2)} ms ·
+                estimated callback debt
+              </dd>
+            </div>
+            {Object.entries(ingress.stages).map(([name, value]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>
+                  {value.meanMs.toFixed(3)} ms avg · {value.p99Ms.toFixed(3)} ms
+                  p99 · {value.maxMs.toFixed(3)} ms recent max ·{" "}
+                  {value.lifetimeMaxMs.toFixed(3)} ms run max · last{" "}
+                  {value.count}
+                </dd>
+              </div>
+            ))}
+          </>
+        )}
+        <div>
+          <dt>Analysis backend</dt>
+          <dd>
+            {diagnostics.analysisBackend ?? "initializing when a source starts"}
+            {diagnostics.backendStartupMs === null
+              ? ""
+              : ` · ${diagnostics.backendStartupMs.toFixed(2)} ms startup`}
+            {diagnostics.backendFallbackReason
+              ? ` · ${diagnostics.backendFallbackReason}`
+              : ""}
+          </dd>
+        </div>
+        <div>
+          <dt>Analysis blocks</dt>
+          <dd>{formatCount(diagnostics.processedBlocks)}</dd>
+        </div>
+        <div>
+          <dt>Display frames delivered</dt>
+          <dd>{formatCount(diagnostics.deliveredDisplayFrames)}</dd>
+        </div>
+        <div>
+          <dt>Display frames skipped</dt>
+          <dd>{formatCount(diagnostics.skippedSpectrumFrames)}</dd>
+        </div>
+        <div>
+          <dt>Input blocks skipped</dt>
+          <dd>
+            {formatCount(diagnostics.skippedInputBlocks)} ·{" "}
+            {formatCount(diagnostics.skippedInputSamples)} samples
+          </dd>
+        </div>
+        <div>
+          <dt>Known app discontinuities</dt>
+          <dd>{formatCount(diagnostics.knownApplicationDiscontinuities)}</dd>
+        </div>
+        <div>
+          <dt>Audio output state</dt>
+          <dd>{audio}</dd>
+        </div>
+        <div>
+          <dt>Audio underruns</dt>
+          <dd>unavailable (upstream player exposes no counter)</dd>
+        </div>
+        <div>
+          <dt>Hardware sample loss</dt>
+          <dd>unavailable (USB byte streams have no sequence numbers)</dd>
+        </div>
       </dl>
     </section>
   );
 }
 
+/** Decoder telemetry must not rebuild the controls, Explorer and Help on every
+ * FIC/PCM update: long main-thread renders starve WebUSB despite fast DSP workers. */
+function ReceiverDecodePanel({
+  controller,
+  source,
+  mode,
+  volume,
+  active,
+}: {
+  controller: ReceiverController;
+  source: SourceKind;
+  mode: ReceiverMode;
+  volume: number;
+  active: boolean;
+}) {
+  const receiver = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+  );
+  return (
+    <section
+      className="control-panel rds-panel decode-panel receiver-dock-panel"
+      aria-labelledby="decode-heading"
+      hidden={!active}
+    >
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Listen & decode</p>
+          <h2 id="decode-heading">Decoded data</h2>
+        </div>
+        <span
+          className={`status-pill ${(mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+        >
+          {mode === "OFF"
+            ? "spectrum only"
+            : mode === "DAB"
+              ? (receiver.dab?.state ?? "not started")
+              : mode === "ADS-B"
+                ? `${receiver.adsb?.validFrames ?? 0} valid frames`
+                : mode === "AIS"
+                  ? `${receiver.ais?.validFrames ?? 0} valid frames`
+                  : mode === "SRD"
+                    ? `${receiver.srd?.counters.bursts ?? 0} bursts`
+                    : receiver.rds?.validGroups
+                      ? `${receiver.rds.validGroups} valid groups`
+                      : source === "synthetic"
+                        ? "no audio"
+                        : `${mode} audio`}
+        </span>
+      </div>
+      <div className="decode-layout">
+        <div className="audio-summary">
+          <span>
+            {mode === "OFF"
+              ? "Demodulation disabled"
+              : mode === "DAB"
+                ? "DAB+ audio output"
+                : mode === "ADS-B" || mode === "AIS" || mode === "SRD"
+                  ? "Data acquisition"
+                  : "Audio output"}
+          </span>
+          <strong>
+            {mode === "OFF"
+              ? "No audio or decoder output"
+              : mode === "DAB"
+                ? (receiver.dab?.message ?? "Not active")
+                : mode === "ADS-B"
+                  ? (receiver.adsb?.message ?? "Not active")
+                  : mode === "AIS"
+                    ? (receiver.ais?.message ?? "Not active")
+                    : mode === "SRD"
+                      ? receiver.srd
+                        ? `${receiver.srd.devices.length} validated device(s)`
+                        : "Not active"
+                      : source === "synthetic"
+                        ? "Not available in demo"
+                        : (receiver.audioState ?? "Not active")}
+          </strong>
+          <small>
+            {mode === "OFF"
+              ? "Raw I/Q continues to feed the spectrum, waterfall, surveys and recordings."
+              : mode === "DAB"
+                ? `Mode I · browser HE-AAC · ${Math.round(volume * 100)}% volume`
+                : mode === "ADS-B"
+                  ? "1090ES · CRC-validated Mode S frames"
+                  : mode === "AIS"
+                    ? "AIS 1 + AIS 2 · dual-channel GMSK"
+                    : mode === "SRD"
+                      ? "Bounded OOK / 2-FSK burst inspection"
+                      : source === "synthetic"
+                        ? "Use a hardware source or replay to listen."
+                        : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
+          </small>
+        </div>
+        <div className="rds-content">
+          <h3>
+            {mode === "OFF"
+              ? "Spectrum explorer"
+              : mode === "DAB"
+                ? "Digital Audio Broadcasting"
+                : mode === "ADS-B"
+                  ? "Aircraft targets"
+                  : mode === "AIS"
+                    ? "Vessel targets"
+                    : mode === "SRD"
+                      ? "Short-range devices"
+                      : "Radio Data System"}
+          </h3>
+          {mode === "OFF" ? (
+            <p className="rds-empty">
+              Spectrum-only mode keeps RF acquisition and analysis active
+              without sending samples to an audio or digital decoder.
+            </p>
+          ) : mode === "SRD" ? (
+            <>
+              <dl className="rds-grid">
+                <div>
+                  <dt>Bursts</dt>
+                  <dd>{receiver.srd?.counters.bursts ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Validated readings</dt>
+                  <dd>{receiver.srd?.counters.validatedReadings ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Unknown / rejected</dt>
+                  <dd>{receiver.srd?.counters.rejectedProtocolFrames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Queue drops</dt>
+                  <dd>{receiver.srdWorker?.droppedInputBlocks ?? 0}</dd>
+                </div>
+              </dl>
+              <div
+                className="srd-trace"
+                aria-label="Bounded SRD pulse inspector"
+              >
+                {(receiver.srd?.trace ?? []).slice(-512).map((point, index) => (
+                  <i
+                    key={`${point.inputSampleIndex}:${index}`}
+                    className={point.level ? "high" : "low"}
+                    title={`${point.inputSampleIndex}: envelope ${point.envelope.toFixed(3)}, discriminator ${point.discriminatorHz.toFixed(0)} Hz`}
+                  />
+                ))}
+              </div>
+              <p className="display-note">
+                {receiver.srd?.activeBurst
+                  ? "Burst in progress…"
+                  : receiver.srd?.bursts.length
+                    ? `${receiver.srd.bursts.length} recent burst(s); truncated bursts are marked below.`
+                    : "Waiting for a bounded burst. Unknown signals remain inspector-only."}
+              </p>
+              <div className="target-table-wrap">
+                <table className="target-table">
+                  <thead>
+                    <tr>
+                      <th>Device</th>
+                      <th>Protocol / integrity</th>
+                      <th>Measurements</th>
+                      <th>Last sample</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(receiver.srd?.devices ?? [])
+                      .slice(0, 32)
+                      .map((device) => {
+                        const reading = device.reading;
+                        return (
+                          <tr key={device.key}>
+                            <td>
+                              <strong>{reading.deviceId}</strong>
+                              <small>
+                                {device.readings} validated reading(s)
+                              </small>
+                            </td>
+                            <td>
+                              {reading.protocol}
+                              <small>{reading.integrity}</small>
+                            </td>
+                            <td>
+                              {reading.protocol === "acurite-592txr"
+                                ? `${reading.temperatureC.toFixed(1)} °C${reading.humidityPercent == null ? "" : ` · ${reading.humidityPercent}% RH`}`
+                                : `${reading.moisturePercent}% moisture · ${reading.batteryMillivolts} mV`}
+                            </td>
+                            <td>
+                              {device.lastInputSampleIndex.toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {!receiver.srd?.devices.length && (
+                      <tr>
+                        <td colSpan={4}>
+                          No integrity-validated sensor reading yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <details>
+                <summary>Recent pulse bursts</summary>
+                <ul className="srd-burst-list">
+                  {(receiver.srd?.bursts ?? []).slice(-4).map((burst) => (
+                    <li key={burst.id}>
+                      Burst {burst.id}: {burst.pulses.length} pulses
+                      {burst.truncated
+                        ? ` · truncated (${burst.truncationReason ?? "unknown"})`
+                        : ""}
+                      {burst.timingCandidates[0]
+                        ? ` · candidate ${burst.timingCandidates[0].symbolUs.toFixed(0)} µs (${burst.timingCandidates[0].basis})`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!receiver.srd}
+                onClick={() => downloadSrdSnapshot(receiver)}
+              >
+                Export bounded SRD JSON
+              </button>
+            </>
+          ) : mode === "DAB" ? (
+            <>
+              <p className="display-note">
+                Ensemble:{" "}
+                <strong>
+                  {receiver.dab?.ensemble?.label ||
+                    "Waiting for ensemble name…"}
+                </strong>
+              </p>
+              <label>
+                <span>DAB station</span>
+                <select
+                  aria-label="DAB station"
+                  disabled={
+                    receiver.lifecycle !== "running" ||
+                    !receiver.dab?.stations?.some((station) => station.playable)
+                  }
+                  value={
+                    receiver.dab?.serviceId == null
+                      ? ""
+                      : `${receiver.dab.serviceId}:${receiver.dab.subchannelId}`
+                  }
+                  onChange={(event) =>
+                    controller.selectDabService(event.target.value)
+                  }
+                >
+                  {receiver.dab?.serviceId == null && (
+                    <option value="">Discovering stations…</option>
+                  )}
+                  {receiver.dab?.stations?.map((station) => (
+                    <option
+                      key={station.key}
+                      value={station.key}
+                      disabled={!station.playable}
+                    >
+                      {station.label ||
+                        `Service 0x${station.serviceId.toString(16).toUpperCase()}`}
+                      {!station.primary
+                        ? ` · subchannel ${station.subchannelId}`
+                        : ""}
+                      {station.bitrateKbps
+                        ? ` · ${station.bitrateKbps} kbps`
+                        : ""}
+                      {!station.dabPlus
+                        ? " · DAB (unsupported)"
+                        : !station.playable
+                          ? " · waiting for configuration"
+                          : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="display-note">
+                {receiver.dab?.stations?.length ?? 0} stations discovered.
+                Choose a station without retuning the channel.
+              </p>
+              <DabMetadata metadata={receiver.dab?.programmeMetadata} />
+              <p className="display-note">
+                Broadcast metadata: {receiver.dab?.padStatistics?.padUnits ?? 0}{" "}
+                PAD units · {receiver.dab?.padStatistics?.labelGroups ?? 0} text
+                segments · {receiver.dab?.padStatistics?.motGroups ?? 0} image
+                segments · {receiver.dab?.padStatistics?.motObjects ?? 0}{" "}
+                completed images
+                {receiver.dab?.padStatistics?.motBytes
+                  ? ` · ${(receiver.dab.padStatistics.motBytes / 1024).toFixed(1)} KB assembling`
+                  : ""}
+              </p>
+              <dl className="rds-grid">
+                <div>
+                  <dt>Transmission frames</dt>
+                  <dd>{receiver.dab?.frameCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Null symbols</dt>
+                  <dd>{receiver.dab?.nullSymbolCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Estimated signal/null</dt>
+                  <dd>
+                    {receiver.dab?.estimatedSnrDb == null
+                      ? "—"
+                      : `${receiver.dab.estimatedSnrDb.toFixed(1)} dB`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Coarse frequency offset</dt>
+                  <dd>
+                    {receiver.dab?.coarseFrequencyOffsetHz == null
+                      ? "—"
+                      : `${receiver.dab.coarseFrequencyOffsetHz.toFixed(0)} Hz`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Valid FIC blocks</dt>
+                  <dd>
+                    {receiver.dab?.ficBlockCount ?? 0} /{" "}
+                    {receiver.dab?.ficBlockAttempts ?? 0}
+                  </dd>
+                </div>
+                <div>
+                  <dt>FIC-bearing frames</dt>
+                  <dd>
+                    {receiver.dab?.ficFramesWithAny ?? 0} /{" "}
+                    {receiver.dab?.ficFrameCount ?? 0} (
+                    {receiver.dab?.ficCompleteFrames ?? 0} complete)
+                  </dd>
+                </div>
+                <div>
+                  <dt>FIBs per frame</dt>
+                  <dd>
+                    {receiver.dab?.ficSuccessHistogram
+                      ?.map((count, valid) =>
+                        count > 0 ? `${valid}:${count}` : "",
+                      )
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Valid FIBs by coding group</dt>
+                  <dd>{receiver.dab?.ficGroupBlocks?.join(" · ") || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Decoder frequency correction</dt>
+                  <dd>
+                    {receiver.dab?.decoderCoarseCarrierOffsetHz ?? 0} Hz coarse
+                    {receiver.dab?.decoderCoarseCarrierLocked
+                      ? " (locked)"
+                      : ""}
+                    ,{" "}
+                    {receiver.dab?.decoderFineFrequencyCorrectionHz?.toFixed(
+                      1,
+                    ) ?? "0.0"}{" "}
+                    Hz fine
+                  </dd>
+                </div>
+                <div>
+                  <dt>Decoder timing start</dt>
+                  <dd>
+                    {receiver.dab?.decoderTimingStartSamples ?? 0} samples
+                  </dd>
+                </div>
+                <div>
+                  <dt>Frame interval / missed frames</dt>
+                  <dd>
+                    {((receiver.dab?.frameIntervalSamples ?? 0) / 2048).toFixed(
+                      1,
+                    )}{" "}
+                    ms / {receiver.dab?.missedFrames ?? 0}
+                  </dd>
+                </div>
+                <div>
+                  <dt>OFDM/FEC processing (last / peak)</dt>
+                  <dd>
+                    {receiver.dab?.processingMs?.toFixed(1) ?? "0"} /{" "}
+                    {receiver.dab?.maxProcessingMs?.toFixed(1) ?? "0"} ms per 96
+                    ms frame
+                  </dd>
+                </div>
+                <div>
+                  <dt>Q convention</dt>
+                  <dd>{receiver.dab?.quadraturePolarity ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>Selected service</dt>
+                  <dd>
+                    {receiver.dab?.serviceId == null
+                      ? "—"
+                      : `0x${receiver.dab.serviceId.toString(16).toUpperCase()}`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>MSC subchannel</dt>
+                  <dd>{receiver.dab?.subchannelId ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>MSC logical frames</dt>
+                  <dd>{receiver.dab?.logicalFrameCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>DAB+ superframes</dt>
+                  <dd>{receiver.dab?.superframeCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Superframe candidates</dt>
+                  <dd>{receiver.dab?.superframeCandidateCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>RS-rejected candidates</dt>
+                  <dd>{receiver.dab?.reedSolomonFailureCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>RS columns (last / best)</dt>
+                  <dd>
+                    {receiver.dab?.lastCorrectedRsColumns ?? 0} /{" "}
+                    {receiver.dab?.bestCorrectedRsColumns ?? 0}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Fire-code failures</dt>
+                  <dd>{receiver.dab?.fireCodeFailureCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Audio format</dt>
+                  <dd>
+                    {receiver.dab?.audioFormat
+                      ? `DAB+ · ${receiver.dab.audioFormat.dacRate ? "48" : "32"} kHz · ${receiver.dab.audioFormat.stereo || receiver.dab.audioFormat.parametricStereo ? "Stereo" : "Mono"}${receiver.dab.audioFormat.sbr ? " · SBR" : ""}${receiver.dab.audioFormat.parametricStereo ? " · PS" : ""}`
+                      : "Waiting for audio format…"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Browser audio decoder</dt>
+                  <dd>
+                    {receiver.dab?.audioDecoderMessage ??
+                      "Waiting for validated audio"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Decoded PCM audio</dt>
+                  <dd>
+                    {receiver.dab?.decodedAudioSeconds?.toFixed(2) ?? "0.00"} s
+                    {receiver.dab?.pcmSampleRateHz
+                      ? ` at ${receiver.dab.pcmSampleRateHz.toLocaleString()} Hz`
+                      : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>AAC access units</dt>
+                  <dd>{receiver.dab?.accessUnitCount ?? 0}</dd>
+                </div>
+              </dl>
+              <p className="display-note">
+                The first available DAB+ station plays automatically. Use the
+                station selector above to change programmes. Legacy MPEG Layer
+                II DAB and encrypted services are not sent to the HE-AAC output
+                path.
+              </p>
+            </>
+          ) : mode === "ADS-B" ? (
+            <>
+              <dl className="rds-grid">
+                <div>
+                  <dt>Candidate frames</dt>
+                  <dd>{receiver.adsb?.frames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Valid frames</dt>
+                  <dd>{receiver.adsb?.validFrames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Rejected</dt>
+                  <dd>{receiver.adsb?.rejectedFrames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Targets</dt>
+                  <dd>{receiver.adsb?.targets.length ?? 0}</dd>
+                </div>
+              </dl>
+              <PositionPlot
+                label="ADS-B target positions"
+                targets={(receiver.adsb?.targets ?? []).map((target) => ({
+                  latitude: target.latitude,
+                  longitude: target.longitude,
+                  label: target.callsign ?? target.icao,
+                }))}
+              />
+              <div className="target-table-wrap">
+                <table className="target-table">
+                  <thead>
+                    <tr>
+                      <th>Aircraft</th>
+                      <th>Altitude</th>
+                      <th>Speed / track</th>
+                      <th>Position</th>
+                      <th>Messages</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(receiver.adsb?.targets ?? [])
+                      .slice(0, 50)
+                      .map((target) => (
+                        <tr key={target.icao}>
+                          <td>
+                            <strong>{target.callsign ?? "—"}</strong>
+                            <small>{target.icao}</small>
+                          </td>
+                          <td>
+                            {target.altitudeFt == null
+                              ? "—"
+                              : `${target.altitudeFt.toLocaleString()} ft`}
+                          </td>
+                          <td>
+                            {target.groundSpeedKt == null
+                              ? "—"
+                              : `${target.groundSpeedKt.toFixed(0)} kt · ${target.trackDegrees?.toFixed(0) ?? "—"}°`}
+                          </td>
+                          <td>
+                            {target.latitude == null
+                              ? "—"
+                              : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
+                          </td>
+                          <td>{target.messages}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!receiver.adsb?.targets.length}
+                onClick={() =>
+                  downloadDecodedTargets("ADS-B", receiver.adsb?.targets ?? [])
+                }
+              >
+                Export targets JSON
+              </button>
+            </>
+          ) : mode === "AIS" ? (
+            <>
+              <dl className="rds-grid">
+                <div>
+                  <dt>AIS 1 frames</dt>
+                  <dd>{receiver.ais?.channel1Frames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>AIS 2 frames</dt>
+                  <dd>{receiver.ais?.channel2Frames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Rejected</dt>
+                  <dd>{receiver.ais?.rejectedFrames ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Vessels</dt>
+                  <dd>{receiver.ais?.targets.length ?? 0}</dd>
+                </div>
+              </dl>
+              <PositionPlot
+                label="AIS vessel positions"
+                targets={(receiver.ais?.targets ?? []).map((target) => ({
+                  latitude: target.latitude,
+                  longitude: target.longitude,
+                  label: target.name ?? String(target.mmsi),
+                }))}
+              />
+              <div className="target-table-wrap">
+                <table className="target-table">
+                  <thead>
+                    <tr>
+                      <th>Vessel</th>
+                      <th>Channel</th>
+                      <th>Speed / course</th>
+                      <th>Position</th>
+                      <th>Messages</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(receiver.ais?.targets ?? [])
+                      .slice(0, 50)
+                      .map((target) => (
+                        <tr key={target.mmsi}>
+                          <td>
+                            <strong>{target.name ?? "—"}</strong>
+                            <small>{target.callSign ?? target.mmsi}</small>
+                          </td>
+                          <td>{target.channel}</td>
+                          <td>
+                            {target.speedKnots == null
+                              ? "—"
+                              : `${target.speedKnots.toFixed(1)} kt · ${target.courseDegrees?.toFixed(1) ?? "—"}°`}
+                          </td>
+                          <td>
+                            {target.latitude == null
+                              ? "—"
+                              : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
+                          </td>
+                          <td>{target.messages}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!receiver.ais?.targets.length}
+                onClick={() =>
+                  downloadDecodedTargets("AIS", receiver.ais?.targets ?? [])
+                }
+              >
+                Export targets JSON
+              </button>
+            </>
+          ) : mode !== "WBFM" ? (
+            <p className="rds-empty">
+              RDS decoding is available only in WBFM. Audio remains available
+              for the selected mode.
+            </p>
+          ) : !receiver.rds?.validGroups ? (
+            <p className="rds-empty">No validated station data decoded yet.</p>
+          ) : (
+            <dl className="rds-grid">
+              <div>
+                <dt>PI identifier</dt>
+                <dd>{receiver.rds.pi ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Programme Service</dt>
+                <dd>
+                  {receiver.rds.programmeService ??
+                    "Waiting for all PS segments…"}
+                </dd>
+              </div>
+              <div className="rds-text">
+                <dt>RadioText</dt>
+                <dd>{receiver.rds.radioText ?? "Waiting for RadioText…"}</dd>
+              </div>
+            </dl>
+          )}
+          {mode === "WBFM" && (
+            <p className="display-note">
+              Text appears only after CRC and block-offset validation. Retuning,
+              changing station PI, or leaving WBFM clears prior data.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
-  const [receiver, setReceiver] = useState<ReceiverSnapshot>(controller.getSnapshot());
-  const [initialSource] = useState(() => loadSourceSelection(preferenceStorage));
+  const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
+    controller.getSnapshot(),
+  );
+  const [initialSource] = useState(() =>
+    loadSourceSelection(preferenceStorage),
+  );
   const [source, setSource] = useState<SourceKind>(initialSource);
-  const [initialPreferences] = useState(() => loadSourcePreferences(preferenceStorage, initialSource));
+  const [initialPreferences] = useState(() =>
+    loadSourcePreferences(preferenceStorage, initialSource),
+  );
   const [mode, setMode] = useState(initialPreferences.modeSettings.mode);
-  const [frequencyMhz, setFrequencyMhz] = useState(initialPreferences.frequencyHz / 1_000_000);
-  const [volume, setVolume] = useState(() => loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1));
-  const [bandwidthHz, setBandwidthHz] = useState(initialPreferences.modeSettings.bandwidthHz);
-  const [squelch, setSquelch] = useState(initialPreferences.modeSettings.squelch);
-  const [gainDb, setGainDb] = useState<number | null>(initialPreferences.gainDb ?? null);
-  const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(initialPreferences.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS });
-  const [sampleRateHz, setSampleRateHz] = useState(initialPreferences.sampleRateHz);
+  const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(
+    initialSource === "hackrf" || initialSource === "bladerf",
+  );
+  const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
+    !["OFF", "WBFM"].includes(initialPreferences.modeSettings.mode),
+  );
+  const [frequencyMhz, setFrequencyMhz] = useState(
+    initialPreferences.frequencyHz / 1_000_000,
+  );
+  const [volume, setVolume] = useState(() =>
+    loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1),
+  );
+  const [bandwidthHz, setBandwidthHz] = useState(
+    initialPreferences.modeSettings.bandwidthHz,
+  );
+  const [squelch, setSquelch] = useState(
+    initialPreferences.modeSettings.squelch,
+  );
+  const [beatToneHz, setBeatToneHz] = useState(
+    initialPreferences.modeSettings.beatToneHz ?? 600,
+  );
+  const [srdSettings, setSrdSettings] = useState<SrdModeSettings>(
+    initialPreferences.modeSettings.srd ?? defaultSrdModeSettings(),
+  );
+  const [gainDb, setGainDb] = useState<number | null>(
+    initialPreferences.gainDb ?? null,
+  );
+  const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(
+    initialPreferences.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
+  );
+  const [sampleRateHz, setSampleRateHz] = useState(
+    initialPreferences.sampleRateHz,
+  );
   const caps = sourceCapabilities(source);
-  const hardwareOptions = source === "hackrf" ? { hardwareSettings } : source === "rtl-sdr" ? { gainDb } : {};
+  const hardwareOptions =
+    source === "hackrf"
+      ? { hardwareSettings }
+      : source === "rtl-sdr"
+        ? { gainDb }
+        : {};
+  const currentModeSettings = useMemo(
+    () => ({
+      mode,
+      bandwidthHz,
+      squelch,
+      beatToneHz,
+      ...(mode === "SRD" ? { srd: srdSettings } : {}),
+    }),
+    [bandwidthHz, beatToneHz, mode, squelch, srdSettings],
+  );
   useEffect(() => {
-    saveSourcePreferences(preferenceStorage, source, { frequencyHz: frequencyMhz * 1_000_000, modeSettings: { mode, bandwidthHz, squelch }, sampleRateHz,
-      ...(source === "hackrf" ? { hardwareSettings } : source === "rtl-sdr" ? { gainDb } : {}) });
-  }, [source, frequencyMhz, mode, bandwidthHz, squelch, sampleRateHz, hardwareSettings, gainDb]);
+    saveSourcePreferences(preferenceStorage, source, {
+      frequencyHz: frequencyMhz * 1_000_000,
+      modeSettings: currentModeSettings,
+      sampleRateHz,
+      ...(source === "hackrf"
+        ? { hardwareSettings }
+        : source === "rtl-sdr"
+          ? { gainDb }
+          : {}),
+    });
+  }, [
+    currentModeSettings,
+    source,
+    frequencyMhz,
+    mode,
+    bandwidthHz,
+    squelch,
+    beatToneHz,
+    srdSettings,
+    sampleRateHz,
+    hardwareSettings,
+    gainDb,
+  ]);
   const [loadedReplay, setLoadedReplay] = useState<IqRecording>();
   const [replayBinary, setReplayBinary] = useState<File>();
   const [replayMetadata, setReplayMetadata] = useState<File>();
-  const [replayImportFormat, setReplayImportFormat] = useState<ReplayImportFormat>("browsersdr");
+  const [replayImportFormat, setReplayImportFormat] =
+    useState<ReplayImportFormat>("browsersdr");
   const [sigmfReplayMode, setSigmfReplayMode] = useState<ReceiverMode | "">("");
-  const [sigmfChannelChoice, setSigmfChannelChoice] = useState<"center" | "custom">("center");
+  const [sigmfChannelChoice, setSigmfChannelChoice] = useState<
+    "center" | "custom"
+  >("center");
   const [sigmfChannelMhz, setSigmfChannelMhz] = useState("");
-  const [fileMessage, setFileMessage] = useState("Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.");
+  const [fileMessage, setFileMessage] = useState(
+    "Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.",
+  );
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>();
-  const [recordingFormat, setRecordingFormat] = useState<RecordingExportFormat>("browsersdr");
+  const [recordingFormat, setRecordingFormat] =
+    useState<RecordingExportFormat>("browsersdr");
   const [exportingRecording, setExportingRecording] = useState(false);
   const [exportCoordinator] = useState(() => new RecordingExportCoordinator());
-  const [retainedCapture, setRetainedCapture] = useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
+  useEffect(() => () => exportCoordinator.cancel(), [exportCoordinator]);
+  const [retainedCapture, setRetainedCapture] =
+    useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
   const [recordingFormatLatch] = useState(() => new RecordingFormatLatch());
   const capacityStopPending = useRef(false);
   const surveyCaptureActive = useRef(false);
+  const autoConnectAttempted = useRef(false);
   const [activeView, setActiveView] = useState<AppView>("receiver");
+  const [compatibilityDetailView, setCompatibilityDetailView] =
+    useState<CompatibilityDetailView>("modes");
+  const [receiverDockView, setReceiverDockView] =
+    useState<ReceiverDockView>("decode");
+  const [receiverDockExpanded, setReceiverDockExpanded] = useState(true);
   const [scanActive, setScanActive] = useState(false);
-  const detectedCapabilities = capabilities();
-  const busy = Boolean(receiver.cleanupRequired) || ["requesting-permission", "connecting", "disconnecting", "starting", "running", "tuning", "stopping"].includes(receiver.lifecycle);
+  const [dabPlusAudioAvailable, setDabPlusAudioAvailable] = useState<
+    boolean | null
+  >(null);
+  useEffect(() => {
+    let current = true;
+    void probeDabPlusAudioSupport()
+      .then((available) => {
+        if (current) setDabPlusAudioAvailable(available);
+      })
+      .catch(() => {
+        if (current) setDabPlusAudioAvailable(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+  const detectedCapabilities = capabilities(dabPlusAudioAvailable);
+  const busy =
+    Boolean(receiver.cleanupRequired) ||
+    [
+      "requesting-permission",
+      "connecting",
+      "disconnecting",
+      "starting",
+      "running",
+      "tuning",
+      "stopping",
+    ].includes(receiver.lifecycle);
   const running = receiver.lifecycle === "running";
-  const hardwareConnected = caps.persistentConnection && ["connected", "starting", "running", "tuning", "stopping"].includes(receiver.lifecycle);
-  const transitioning = scanActive || ["requesting-permission", "connecting", "starting", "tuning", "stopping", "disconnecting"].includes(receiver.lifecycle);
-  const frequencyValid = (() => { try { validateSourceFrequency(source, frequencyMhz * 1_000_000, source === "hackrf" ? bandwidthHz : 0); return true; } catch { return false; } })();
-  const encoding = source === "hackrf" ? "ci8" : source === "replay" && loadedReplay ? loadedReplay.metadata.sampleEncoding === "signed-8-bit" ? "ci8" : "cu8" : "cu8";
-  const nativeRateHz = receiver.session?.hackrf?.nativeSampleRateHz ?? receiver.session?.actualSampleRateHz ?? sampleRateHz;
-  const modeUnavailable = (candidate: ReceiverMode) => sourceModeUnavailableReason(source, candidate,
-    receiver.session?.actualSampleRateHz ?? (source === "replay" ? loadedReplay?.metadata.sampleRateHz ?? sampleRateHz : sampleRateHz), hardwareConnected || source === "replay");
+  const hardwareConnected =
+    caps.persistentConnection &&
+    ["connected", "starting", "running", "tuning", "stopping"].includes(
+      receiver.lifecycle,
+    );
+  const transitioning =
+    scanActive ||
+    [
+      "requesting-permission",
+      "connecting",
+      "starting",
+      "tuning",
+      "stopping",
+      "disconnecting",
+    ].includes(receiver.lifecycle);
+  const sourceConfigurationEditable =
+    !hardwareConnected || receiver.lifecycle === "connected";
+  const frequencyValid = (() => {
+    try {
+      validateSourceFrequency(
+        source,
+        frequencyMhz * 1_000_000,
+        source === "hackrf" || source === "bladerf" ? bandwidthHz : 0,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const encoding =
+    source === "bladerf"
+      ? "sc16"
+      : source === "hackrf"
+        ? "ci8"
+        : source === "replay" && loadedReplay
+          ? loadedReplay.metadata.sampleEncoding === "signed-8-bit"
+            ? "ci8"
+            : "cu8"
+          : "cu8";
+  const recordingSupported = source !== "bladerf";
+  const nativeRateHz =
+    receiver.session?.bladerf?.nativeSampleRateHz ??
+    receiver.session?.hackrf?.nativeSampleRateHz ??
+    receiver.session?.actualSampleRateHz ??
+    sampleRateHz;
+  const modeUnavailable = (candidate: ReceiverMode) =>
+    sourceModeUnavailableReason(
+      source,
+      candidate,
+      sourceConfigurationEditable
+        ? sampleRateHz
+        : (receiver.session?.actualSampleRateHz ??
+            (source === "replay"
+              ? (loadedReplay?.metadata.sampleRateHz ?? sampleRateHz)
+              : sampleRateHz)),
+      (!sourceConfigurationEditable && hardwareConnected) ||
+        source === "replay",
+    );
   const modeCaps = modeCapabilities(mode);
-  const captureSlotBlocked = !["empty", "discarded", "download-requested"].includes(retainedCapture.status);
-  const retainedCapturePresent = !["empty", "discarded"].includes(retainedCapture.status);
-  const preparedCaptureAvailable = ["prepared", "download-requested", "retry-available"].includes(retainedCapture.status) && Boolean(retainedCapture.basename);
+  const captureSlotBlocked = ![
+    "empty",
+    "discarded",
+    "download-requested",
+  ].includes(retainedCapture.status);
+  const retainedCapturePresent = !["empty", "discarded"].includes(
+    retainedCapture.status,
+  );
+  const preparedCaptureAvailable =
+    ["prepared", "download-requested", "retry-available"].includes(
+      retainedCapture.status,
+    ) && Boolean(retainedCapture.basename);
 
-  const settlePreparation = useCallback((attempt: Promise<RetainRecordingResult>) => {
-    setExportingRecording(true);
-    setFileMessage("Preparing completed recording…");
-    void attempt.then((result) => {
-      if (result.status === "prepared") {
-        const format = result.prepared.format === "sigmf" ? "SigMF" : "BrowserSDR replay";
-        setFileMessage(`Prepared ${result.prepared.sampleCount.toLocaleString()} samples as ${format}. Choose one ZIP download or request the two compatible files.`);
-      } else if (result.status === "failure") {
-        setFileMessage(`${result.error.message} The completed recording remains in memory; retry preparation.`);
-      } else if (result.status === "blocked") {
-        setFileMessage("A prepared recording is still retained. Request its download or discard it before completing another capture.");
-      }
-      setRetainedCapture(exportCoordinator.getSnapshot());
-      setExportingRecording(false);
-    });
-  }, [exportCoordinator]);
+  const settlePreparation = useCallback(
+    (attempt: Promise<RetainRecordingResult>) => {
+      setExportingRecording(true);
+      setFileMessage("Preparing completed recording…");
+      void attempt.then((result) => {
+        if (result.status === "prepared") {
+          const format =
+            result.prepared.format === "sigmf" ? "SigMF" : "BrowserSDR replay";
+          setFileMessage(
+            `Prepared ${result.prepared.sampleCount.toLocaleString()} samples as ${format}. Choose one ZIP download or request the two compatible files.`,
+          );
+        } else if (result.status === "failure") {
+          setFileMessage(
+            `${result.error.message} The completed recording remains in memory; retry preparation.`,
+          );
+        } else if (result.status === "blocked") {
+          setFileMessage(
+            "A prepared recording is still retained. Request its download or discard it before completing another capture.",
+          );
+        }
+        setRetainedCapture(exportCoordinator.getSnapshot());
+        setExportingRecording(false);
+      });
+    },
+    [exportCoordinator],
+  );
 
-  const retainCompletedRecording = useCallback((recording: IqRecording) => {
-    const format = recordingFormatLatch.complete(recordingFormat);
-    capacityStopPending.current = false;
-    setRecordingStatus(undefined);
-    settlePreparation(exportCoordinator.retain(recording, format));
-  }, [exportCoordinator, recordingFormat, recordingFormatLatch, settlePreparation]);
+  const retainCompletedRecording = useCallback(
+    (recording: IqRecording) => {
+      const format = recordingFormatLatch.complete(recordingFormat);
+      capacityStopPending.current = false;
+      setRecordingStatus(undefined);
+      settlePreparation(exportCoordinator.retain(recording, format));
+    },
+    [
+      exportCoordinator,
+      recordingFormat,
+      recordingFormatLatch,
+      settlePreparation,
+    ],
+  );
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe(setReceiver);
+    let previous = controller.getSnapshot();
+    const unsubscribe = controller.subscribe((next) => {
+      if (
+        previous.lifecycle === next.lifecycle &&
+        previous.message === next.message &&
+        previous.sessionGeneration === next.sessionGeneration &&
+        previous.session === next.session &&
+        previous.audioState === next.audioState &&
+        previous.cleanupRequired === next.cleanupRequired
+      )
+        return;
+      previous = next;
+      setReceiver(next);
+    });
     return unsubscribe;
   }, [controller]);
+
+  useEffect(() => {
+    if (autoConnectAttempted.current) return;
+    if (!sourceCapabilities(source).requiresUsb || !navigator.usb?.getDevices) {
+      autoConnectAttempted.current = true;
+      return;
+    }
+    let active = true;
+    void navigator.usb
+      .getDevices()
+      .then((devices) => {
+        if (!active || autoConnectAttempted.current) return;
+        autoConnectAttempted.current = true;
+        const device = devices.find((candidate) =>
+          usbDeviceMatchesSource(candidate, source),
+        );
+        if (!device) return;
+        void controller.connectGranted(
+          {
+            source,
+            channelFrequencyHz: frequencyMhz * 1_000_000,
+            volume,
+            modeSettings: currentModeSettings,
+            ...(source === "hackrf"
+              ? { hardwareSettings }
+              : source === "rtl-sdr"
+                ? { gainDb }
+                : {}),
+            sampleRateHz,
+          },
+          device,
+        );
+      })
+      .catch(() => {
+        if (active) autoConnectAttempted.current = true;
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    currentModeSettings,
+    bandwidthHz,
+    beatToneHz,
+    controller,
+    frequencyMhz,
+    gainDb,
+    hardwareSettings,
+    mode,
+    sampleRateHz,
+    source,
+    squelch,
+    volume,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const status = controller.getRecordingStatus();
       setRecordingStatus(status);
       if (surveyCaptureActive.current) return;
-      if (status?.state === "capacity-reached" && !capacityStopPending.current) {
+      if (
+        status?.state === "capacity-reached" &&
+        !capacityStopPending.current
+      ) {
         capacityStopPending.current = true;
         const recording = controller.finalizeCapacityRecording();
         controller.takeCompletedRecording();
@@ -330,39 +2246,91 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   }, [controller, retainCompletedRecording, source]);
 
   const start = () => {
-    void controller.start({ source, channelFrequencyHz: frequencyMhz * 1_000_000, volume, modeSettings: { mode, bandwidthHz, squelch }, ...hardwareOptions, sampleRateHz });
+    void controller.start({
+      source,
+      channelFrequencyHz: frequencyMhz * 1_000_000,
+      volume,
+      modeSettings: currentModeSettings,
+      ...hardwareOptions,
+      sampleRateHz,
+    });
   };
 
-  const startReceptionForScan = useCallback(async (): Promise<ReceiverSnapshot> => {
-    if (controller.getSnapshot().lifecycle === "connected") {
-      await controller.start({
-        source,
-        channelFrequencyHz: frequencyMhz * 1_000_000,
-        volume,
-        modeSettings: { mode, bandwidthHz, squelch },
-        ...(source === "hackrf" ? { hardwareSettings } : source === "rtl-sdr" ? { gainDb } : {}),
-        sampleRateHz,
-      });
-    }
-    return controller.getSnapshot();
-  }, [bandwidthHz, controller, frequencyMhz, gainDb, hardwareSettings, mode, sampleRateHz, source, squelch, volume]);
+  const startReceptionForScan =
+    useCallback(async (): Promise<ReceiverSnapshot> => {
+      if (controller.getSnapshot().lifecycle === "connected") {
+        await controller.start({
+          source,
+          channelFrequencyHz: frequencyMhz * 1_000_000,
+          volume,
+          modeSettings: currentModeSettings,
+          ...(source === "hackrf"
+            ? { hardwareSettings }
+            : source === "rtl-sdr"
+              ? { gainDb }
+              : {}),
+          sampleRateHz,
+        });
+      }
+      return controller.getSnapshot();
+    }, [
+      currentModeSettings,
+      controller,
+      frequencyMhz,
+      gainDb,
+      hardwareSettings,
+      sampleRateHz,
+      source,
+      volume,
+    ]);
 
   const connectReceiver = () => {
-    void controller.connect({ source, channelFrequencyHz: frequencyMhz * 1_000_000, volume, modeSettings: { mode, bandwidthHz, squelch }, ...hardwareOptions, sampleRateHz });
+    void controller.connect({
+      source,
+      channelFrequencyHz: frequencyMhz * 1_000_000,
+      volume,
+      modeSettings: currentModeSettings,
+      ...hardwareOptions,
+      sampleRateHz,
+    });
   };
 
   const switchSource = async (nextSource: SourceKind) => {
-    if (receiver.lifecycle !== "idle" && (receiver.lifecycle !== "error" || receiver.cleanupRequired)) await controller.disconnect();
+    if (
+      receiver.lifecycle !== "idle" &&
+      (receiver.lifecycle !== "error" || receiver.cleanupRequired)
+    )
+      await controller.disconnect();
     if (controller.getSnapshot().cleanupRequired) return;
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
     const next = loadSourcePreferences(preferenceStorage, nextSource);
-    setMode(next.modeSettings.mode); setBandwidthHz(next.modeSettings.bandwidthHz); setSquelch(next.modeSettings.squelch);
-    setFrequencyMhz(next.frequencyHz / 1_000_000); setSampleRateHz(next.sampleRateHz);
-    setGainDb(next.gainDb ?? null); setHardwareSettings(next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS });
+    setMode(next.modeSettings.mode);
+    setBandwidthHz(next.modeSettings.bandwidthHz);
+    setSquelch(next.modeSettings.squelch);
+    setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
+    setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
+    setChannelAdvancedOpen(!["OFF", "WBFM"].includes(next.modeSettings.mode));
+    setFrequencyMhz(next.frequencyHz / 1_000_000);
+    setSampleRateHz(next.sampleRateHz);
+    setGainDb(next.gainDb ?? null);
+    setHardwareSettings(
+      next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
+    );
+    setSourceAdvancedOpen(nextSource === "hackrf" || nextSource === "bladerf");
     if (nextSource === "replay" && loadedReplay) {
-      setMode(loadedReplay.metadata.mode); setBandwidthHz(loadedReplay.metadata.channelBandwidthHz); setSquelch(loadedReplay.metadata.squelch);
-      setFrequencyMhz(loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000); setSampleRateHz(loadedReplay.metadata.sampleRateHz);
+      setMode(loadedReplay.metadata.mode);
+      setBandwidthHz(loadedReplay.metadata.channelBandwidthHz);
+      setSquelch(loadedReplay.metadata.squelch);
+      setBeatToneHz(loadedReplay.metadata.beatToneHz ?? 600);
+      setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
+      setChannelAdvancedOpen(
+        !["OFF", "WBFM"].includes(loadedReplay.metadata.mode),
+      );
+      setFrequencyMhz(
+        loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
+      );
+      setSampleRateHz(loadedReplay.metadata.sampleRateHz);
     }
     setSource(nextSource);
   };
@@ -373,43 +2341,78 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     controller.setVolume(nextVolume);
   };
 
-  const tune = useCallback((frequencyHz: number) => {
-    if (sourceCapabilities(source).frequency.integerHz) frequencyHz = Math.round(frequencyHz);
-    const nextMhz = frequencyHz / 1_000_000;
-    setFrequencyMhz(nextMhz);
-    void controller.tune(frequencyHz).then(() => {
-      const accepted = controller.getSnapshot().session;
-      if (accepted) setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
-      const completed = controller.takeCompletedRecording();
-      if (completed) retainCompletedRecording(completed);
-    });
-  }, [controller, retainCompletedRecording, source]);
+  const tune = useCallback(
+    (frequencyHz: number) => {
+      if (sourceCapabilities(source).frequency.integerHz)
+        frequencyHz = Math.round(frequencyHz);
+      const nextMhz = frequencyHz / 1_000_000;
+      setFrequencyMhz(nextMhz);
+      void controller.tune(frequencyHz).then(() => {
+        const accepted = controller.getSnapshot().session;
+        if (accepted)
+          setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
+        const completed = controller.takeCompletedRecording();
+        if (completed) retainCompletedRecording(completed);
+      });
+    },
+    [controller, retainCompletedRecording, source],
+  );
 
-  const chooseMode = (nextMode: ReceiverMode) => {
-    const next = defaultModeSettings(nextMode);
-    setMode(nextMode);
-    setBandwidthHz(next.bandwidthHz);
-    setSquelch(next.squelch);
-    if (!hardwareConnected) setSampleRateHz(compatibleSourceRate(source, nextMode, sampleRateHz) ?? sampleRateHz);
-    if (caps.requiresUsb && !hardwareConnected && nextMode === "ADS-B") setFrequencyMhz(ADSB_FREQUENCY_HZ / 1_000_000);
-    if (caps.requiresUsb && !hardwareConnected && nextMode === "AIS") setFrequencyMhz(AIS_CENTER_FREQUENCY_HZ / 1_000_000);
-  };
-
-  const applyMode = () => {
-    const rawSettings = { mode, bandwidthHz, squelch };
+  const applyModeSettings = (rawSettings: ReceiverModeSettings) => {
     try {
       const settings = normalizeModeSettings(rawSettings);
       setBandwidthHz(settings.bandwidthHz);
       setSquelch(settings.squelch);
+      setBeatToneHz(settings.beatToneHz ?? beatToneHz);
+      const active = controller.getSnapshot().session;
+      if (
+        active?.mode === settings.mode &&
+        !["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(settings.mode)
+      ) {
+        controller.updateAnalogMode(settings);
+        return;
+      }
       void controller.configureMode(settings).then(() => {
         const accepted = controller.getSnapshot().session;
-        if (accepted) setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
+        if (accepted)
+          setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
         const completed = controller.takeCompletedRecording();
         if (completed) retainCompletedRecording(completed);
       });
     } catch {
       void controller.configureMode(rawSettings);
     }
+  };
+
+  const applySquelch = useCallback(
+    (value: number) => {
+      setSquelch(value);
+      if (running)
+        controller.updateAnalogMode({
+          ...currentModeSettings,
+          squelch: value,
+        });
+    },
+    [controller, currentModeSettings, running],
+  );
+
+  const chooseMode = (nextMode: ReceiverMode) => {
+    const next = defaultModeSettings(nextMode);
+    setMode(nextMode);
+    setChannelAdvancedOpen(nextMode !== "WBFM" && nextMode !== "OFF");
+    setBandwidthHz(next.bandwidthHz);
+    setSquelch(next.squelch);
+    setBeatToneHz(next.beatToneHz ?? 600);
+    setSrdSettings(next.srd ?? defaultSrdModeSettings());
+    if (running) applyModeSettings(next);
+    if (sourceConfigurationEditable)
+      setSampleRateHz(
+        compatibleSourceRate(source, nextMode, sampleRateHz) ?? sampleRateHz,
+      );
+    if (caps.requiresUsb && sourceConfigurationEditable && nextMode === "ADS-B")
+      setFrequencyMhz(ADSB_FREQUENCY_HZ / 1_000_000);
+    if (caps.requiresUsb && sourceConfigurationEditable && nextMode === "AIS")
+      setFrequencyMhz(AIS_CENTER_FREQUENCY_HZ / 1_000_000);
   };
 
   const applyGain = (nextGain: number | null) => {
@@ -423,7 +2426,14 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   const applyHardware = async () => {
     await controller.configureHardware(hardwareSettings);
     const accepted = controller.getSnapshot().session?.hackrf?.captureSettings;
-    if (accepted) setHardwareSettings({ kind: "hackrf", rxLnaGainCode: accepted.rxLnaGainCode, rxVgaGainDb: accepted.rxVgaGainDb, rfAmplifierEnabled: accepted.rfAmplifierEnabled, antennaPowerEnabled: false });
+    if (accepted)
+      setHardwareSettings({
+        kind: "hackrf",
+        rxLnaGainCode: accepted.rxLnaGainCode,
+        rxVgaGainDb: accepted.rxVgaGainDb,
+        rfAmplifierEnabled: accepted.rfAmplifierEnabled,
+        antennaPowerEnabled: false,
+      });
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
   };
@@ -447,9 +2457,11 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     setRecordingStatus(status);
     if (status) {
       recordingFormatLatch.begin(recordingFormat);
-      setFileMessage(recordingFormat === "sigmf"
-        ? `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare paired SigMF data and metadata.`
-        : `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare the BrowserSDR binary and JSON sidecar.`);
+      setFileMessage(
+        recordingFormat === "sigmf"
+          ? `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare paired SigMF data and metadata.`
+          : `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare the BrowserSDR binary and JSON sidecar.`,
+      );
     }
   };
 
@@ -462,14 +2474,23 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     }
   };
 
-  const retryRecordingPreparation = () => settlePreparation(exportCoordinator.retryPreparation());
+  const retryRecordingPreparation = () =>
+    settlePreparation(exportCoordinator.retryPreparation());
 
-  const requestRecordingDownload = (kind: RecordingDownloadKind) => {
-    const result = exportCoordinator.requestDownload(kind);
+  const requestRecordingDownload = async (kind: RecordingDownloadKind) => {
+    setFileMessage("Preparing recording download…");
+    setExportingRecording(true);
+    const result = await exportCoordinator.requestDownload(kind);
+    setExportingRecording(false);
     setRetainedCapture(exportCoordinator.getSnapshot());
     if (result.status === "download-requested") {
-      setFileMessage(`${kind === "archive" ? "Archive" : "Separate-file"} download requested for ${result.name}. Browser download requests do not confirm that the file was stored; the prepared capture remains available for retry.`);
-    } else if (result.status === "failure") setFileMessage(`${result.error.message} The prepared capture remains available.`);
+      setFileMessage(
+        `${kind === "archive" ? "Archive" : "Separate-file"} download requested for ${result.name}. Browser download requests do not confirm that the file was stored; the prepared capture remains available for retry.`,
+      );
+    } else if (result.status === "failure")
+      setFileMessage(
+        `${result.error.message} The prepared capture remains available.`,
+      );
   };
 
   const discardPreparedRecording = () => {
@@ -478,113 +2499,205 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     setFileMessage("Prepared recording discarded from memory.");
   };
 
-  const captureSurveyCandidates = useCallback(async (
-    candidates: SurveyCandidateRecord[],
-    profile: SurveyProfile,
-    sessionId: string,
-    signal: AbortSignal,
-  ): Promise<{ captured: number[]; cancelled: boolean }> => {
-    const snapshot = controller.getSnapshot();
-    if (snapshot.lifecycle !== "running" || !snapshot.session) throw new Error("Keep reception running while capturing survey candidates.");
-    const captured: number[] = [];
-    const originalFrequencyHz = snapshot.session.selectedChannelFrequencyHz;
-    let cancelled = false;
-    surveyCaptureActive.current = true;
-    setExportingRecording(true);
-    controller.setVolume(0);
-    try {
-      for (const candidate of candidates) {
-        if (signal.aborted) throw new DOMException("Candidate capture cancelled", "AbortError");
-        if (exportCoordinator.blocksNewCapture) throw new Error("Request or discard the retained recording before capturing another candidate.");
-        const band = profile.bands.find((entry) => entry.id === candidate.bandId);
-        const captureFrequencyHz = sourceCapabilities(snapshot.session.source).frequency.integerHz ? Math.round(candidate.frequencyHz) : candidate.frequencyHz;
-        const captureTune = await controller.scanTune(captureFrequencyHz);
-        if (!captureTune) throw new Error(`Could not tune ${captureFrequencyHz} Hz for capture.`);
-        if (signal.aborted) throw new DOMException("Candidate capture cancelled", "AbortError");
-        const tuned = controller.getSnapshot();
-        if (tuned.lifecycle !== "running" || !tuned.session) throw new Error(`Could not tune ${candidate.frequencyHz} Hz for capture.`);
-        await waitForCaptureDelay(250, signal);
-        const maximumSeconds = Math.max(1, recordingCapacitySeconds(tuned.session.actualSampleRateHz) - 0.5);
-        const requestedSeconds = band?.captureSeconds ?? 10;
-        const captureSeconds = Math.min(requestedSeconds, maximumSeconds);
-        recordingFormatLatch.begin("sigmf");
-        const status = controller.startRecording({
-          sessionId,
-          profileName: profile.name,
-          site: profile.site,
-          bandName: candidate.bandName,
-          detector: candidate.detector,
-          signal: candidate.annotation,
-        });
-        if (!status) { recordingFormatLatch.complete("sigmf"); throw new Error(`Could not start the ${candidate.frequencyHz} Hz recording.`); }
-        setRecordingStatus(status);
-        setFileMessage(`Survey capture ${captured.length + 1}/${candidates.length}: ${candidate.frequencyHz.toLocaleString()} Hz for ${captureSeconds.toFixed(1)} s…`);
-        await waitForRecordingCompletion(controller, captureSeconds * 1_000, signal);
-        const stopped = controller.stopRecording();
-        const recording = stopped ?? controller.takeCompletedRecording();
-        if (stopped) controller.takeCompletedRecording();
-        setRecordingStatus(undefined);
-        if (!recording) throw new Error(`The ${candidate.frequencyHz} Hz recording did not complete.`);
-        const result = await exportCoordinator.retain(recording, recordingFormatLatch.complete("sigmf"));
-        if (result.status === "failure") throw result.error;
-        if (result.status !== "prepared") throw new Error("A previous completed recording still owns the export slot.");
-        const request = exportCoordinator.requestDownload("archive");
-        if (request.status === "failure") throw request.error;
-        setRetainedCapture(exportCoordinator.getSnapshot());
-        if (recording.metadata.stopReason === "source-stop") throw new Error(`The source stopped during the ${candidate.frequencyHz} Hz capture; its partial SigMF archive was requested and retained.`);
-        captured.push(candidate.frequencyHz);
-        setFileMessage(`Survey SigMF archive download requested for ${result.prepared.basename} (${captured.length}/${candidates.length}); storage is not confirmed.`);
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") cancelled = true;
-      else throw error;
-    } finally {
-      if (controller.getRecordingStatus()) {
-        const stopped = controller.stopRecording();
-        const partial = stopped ?? controller.takeCompletedRecording();
-        if (stopped) controller.takeCompletedRecording();
-        if (partial) {
-          const retained = await exportCoordinator.retain(partial, recordingFormatLatch.complete("sigmf"));
-          if (retained.status === "prepared") exportCoordinator.requestDownload("archive");
+  const captureSurveyCandidates = useCallback(
+    async (
+      candidates: SurveyCandidateRecord[],
+      profile: SurveyProfile,
+      sessionId: string,
+      signal: AbortSignal,
+    ): Promise<{ captured: number[]; cancelled: boolean }> => {
+      const snapshot = controller.getSnapshot();
+      if (snapshot.lifecycle !== "running" || !snapshot.session)
+        throw new Error(
+          "Keep reception running while capturing survey candidates.",
+        );
+      const captured: number[] = [];
+      const originalFrequencyHz = snapshot.session.selectedChannelFrequencyHz;
+      let cancelled = false;
+      surveyCaptureActive.current = true;
+      setExportingRecording(true);
+      controller.setVolume(0);
+      try {
+        for (const candidate of candidates) {
+          if (signal.aborted)
+            throw new DOMException("Candidate capture cancelled", "AbortError");
+          if (exportCoordinator.blocksNewCapture)
+            throw new Error(
+              "Request or discard the retained recording before capturing another candidate.",
+            );
+          const band = profile.bands.find(
+            (entry) => entry.id === candidate.bandId,
+          );
+          const captureFrequencyHz = sourceCapabilities(snapshot.session.source)
+            .frequency.integerHz
+            ? Math.round(candidate.frequencyHz)
+            : candidate.frequencyHz;
+          const captureTune = await controller.scanTune(captureFrequencyHz);
+          if (!captureTune)
+            throw new Error(
+              `Could not tune ${captureFrequencyHz} Hz for capture.`,
+            );
+          if (signal.aborted)
+            throw new DOMException("Candidate capture cancelled", "AbortError");
+          const tuned = controller.getSnapshot();
+          if (tuned.lifecycle !== "running" || !tuned.session)
+            throw new Error(
+              `Could not tune ${candidate.frequencyHz} Hz for capture.`,
+            );
+          await waitForCaptureDelay(250, signal);
+          const maximumSeconds = Math.max(
+            1,
+            recordingCapacitySeconds(tuned.session.actualSampleRateHz) - 0.5,
+          );
+          const requestedSeconds = band?.captureSeconds ?? 10;
+          const captureSeconds = Math.min(requestedSeconds, maximumSeconds);
+          recordingFormatLatch.begin("sigmf");
+          const status = controller.startRecording({
+            sessionId,
+            profileName: profile.name,
+            site: profile.site,
+            bandName: candidate.bandName,
+            detector: candidate.detector,
+            signal: candidate.annotation,
+          });
+          if (!status) {
+            recordingFormatLatch.complete("sigmf");
+            throw new Error(
+              `Could not start the ${candidate.frequencyHz} Hz recording.`,
+            );
+          }
+          setRecordingStatus(status);
+          setFileMessage(
+            `Survey capture ${captured.length + 1}/${candidates.length}: ${candidate.frequencyHz.toLocaleString()} Hz for ${captureSeconds.toFixed(1)} s…`,
+          );
+          await waitForRecordingCompletion(
+            controller,
+            captureSeconds * 1_000,
+            signal,
+          );
+          const stopped = controller.stopRecording();
+          const recording = stopped ?? controller.takeCompletedRecording();
+          if (stopped) controller.takeCompletedRecording();
+          setRecordingStatus(undefined);
+          if (!recording)
+            throw new Error(
+              `The ${candidate.frequencyHz} Hz recording did not complete.`,
+            );
+          const result = await exportCoordinator.retain(
+            recording,
+            recordingFormatLatch.complete("sigmf"),
+          );
+          if (result.status === "failure") throw result.error;
+          if (result.status !== "prepared")
+            throw new Error(
+              "A previous completed recording still owns the export slot.",
+            );
+          const request = await exportCoordinator.requestDownload(
+            "archive",
+            undefined,
+            undefined,
+            signal,
+          );
+          if (request.status === "failure") throw request.error;
+          setRetainedCapture(exportCoordinator.getSnapshot());
+          if (recording.metadata.stopReason === "source-stop")
+            throw new Error(
+              `The source stopped during the ${candidate.frequencyHz} Hz capture; its partial SigMF archive was requested and retained.`,
+            );
+          captured.push(candidate.frequencyHz);
+          setFileMessage(
+            `Survey SigMF archive download requested for ${result.prepared.basename} (${captured.length}/${candidates.length}); storage is not confirmed.`,
+          );
         }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          cancelled = true;
+        else throw error;
+      } finally {
+        if (controller.getRecordingStatus()) {
+          const stopped = controller.stopRecording();
+          const partial = stopped ?? controller.takeCompletedRecording();
+          if (stopped) controller.takeCompletedRecording();
+          if (partial) {
+            const retained = await exportCoordinator.retain(
+              partial,
+              recordingFormatLatch.complete("sigmf"),
+            );
+            if (retained.status === "prepared")
+              await exportCoordinator.requestDownload("archive");
+          }
+        }
+        surveyCaptureActive.current = false;
+        setRecordingStatus(undefined);
+        setRetainedCapture(exportCoordinator.getSnapshot());
+        if (["running", "tuning"].includes(controller.getSnapshot().lifecycle))
+          await controller.tune(originalFrequencyHz);
+        controller.setVolume(volume);
+        setExportingRecording(false);
       }
-      surveyCaptureActive.current = false;
-      setRecordingStatus(undefined);
-      setRetainedCapture(exportCoordinator.getSnapshot());
-      if (["running", "tuning"].includes(controller.getSnapshot().lifecycle)) await controller.tune(originalFrequencyHz);
-      controller.setVolume(volume);
-      setExportingRecording(false);
-    }
-    return { captured, cancelled };
-  }, [controller, exportCoordinator, recordingFormatLatch, volume]);
+      return { captured, cancelled };
+    },
+    [controller, exportCoordinator, recordingFormatLatch, volume],
+  );
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     let nextView: AppView | undefined;
-    const views: AppView[] = ["receiver", "explorer", "diagnostics"];
+    const views: AppView[] = ["receiver", "explorer", "diagnostics", "help"];
     const currentIndex = views.indexOf(activeView);
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const direction = event.key === "ArrowRight" ? 1 : -1;
-      nextView = views[(currentIndex + direction + views.length) % views.length];
+      nextView =
+        views[(currentIndex + direction + views.length) % views.length];
     } else if (event.key === "Home") {
       nextView = "receiver";
     } else if (event.key === "End") {
-      nextView = "diagnostics";
+      nextView = "help";
     }
     if (!nextView) return;
     event.preventDefault();
     setActiveView(nextView);
-    window.requestAnimationFrame(() => document.getElementById(`${nextView}-tab`)?.focus());
+    window.requestAnimationFrame(() =>
+      document.getElementById(`${nextView}-tab`)?.focus(),
+    );
+  };
+
+  const handleCompatibilityTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    const views: CompatibilityDetailView[] = ["modes", "recording", "browsers"];
+    const currentIndex = views.indexOf(compatibilityDetailView);
+    let nextView: CompatibilityDetailView | undefined;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      nextView =
+        views[(currentIndex + direction + views.length) % views.length];
+    } else if (event.key === "Home") {
+      nextView = views[0];
+    } else if (event.key === "End") {
+      nextView = views[views.length - 1];
+    }
+    if (!nextView) return;
+    event.preventDefault();
+    setCompatibilityDetailView(nextView);
+    window.requestAnimationFrame(() =>
+      document.getElementById(`compatibility-${nextView}-tab`)?.focus(),
+    );
   };
 
   const activateReplay = async (recording: IqRecording, message: string) => {
     await controller.disconnect();
-    if (controller.getSnapshot().cleanupRequired) { setFileMessage("Retry disconnect before loading replay."); return; }
+    if (controller.getSnapshot().cleanupRequired) {
+      setFileMessage("Retry disconnect before loading replay.");
+      return;
+    }
     replayRef.current = recording;
     setLoadedReplay(recording);
     setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
     setMode(recording.metadata.mode);
+    setChannelAdvancedOpen(!["OFF", "WBFM"].includes(recording.metadata.mode));
     setBandwidthHz(recording.metadata.channelBandwidthHz);
     setSquelch(recording.metadata.squelch);
+    setBeatToneHz(recording.metadata.beatToneHz ?? 600);
     setSampleRateHz(recording.metadata.sampleRateHz);
     setSource("replay");
     setFileMessage(message);
@@ -593,9 +2706,12 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   const loadReplayFiles = async () => {
     if (!replayBinary || !replayMetadata) return;
     try {
-      if (replayBinary.size > RECORDING_MAX_BYTES) throw new Error("Replay file exceeds the 32 MiB limit.");
-      if (replayMetadata.size > RECORDING_METADATA_MAX_BYTES) throw new Error("Recording metadata exceeds the 1 MiB limit.");
-      if (replayImportFormat === "sigmf") selectedSigmfModeSettings(sigmfReplayMode);
+      if (replayBinary.size > RECORDING_MAX_BYTES)
+        throw new Error("Replay file exceeds the 32 MiB limit.");
+      if (replayMetadata.size > RECORDING_METADATA_MAX_BYTES)
+        throw new Error("Recording metadata exceeds the 1 MiB limit.");
+      if (replayImportFormat === "sigmf")
+        selectedSigmfModeSettings(sigmfReplayMode);
       const metadataText = await replayMetadata.text();
       const binary = await replayBinary.arrayBuffer();
       let recording: IqRecording;
@@ -603,7 +2719,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         recording = await importSigmfRecording(metadataText, binary, {
           modeSettings: selectedSigmfModeSettings(sigmfReplayMode),
           ...(sigmfChannelChoice === "custom"
-            ? { selectedChannelFrequencyHz: Number(sigmfChannelMhz) * 1_000_000 }
+            ? {
+                selectedChannelFrequencyHz: Number(sigmfChannelMhz) * 1_000_000,
+              }
             : {}),
           dataFilename: replayBinary.name,
           metadataFilename: replayMetadata.name,
@@ -611,81 +2729,210 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       } else {
         recording = parseRecording(metadataText, binary);
       }
-      await activateReplay(recording, replayImportFormat === "sigmf"
-        ? `Loaded SigMF replay: ${recording.metadata.sampleCount.toLocaleString()} samples (${recording.metadata.durationSeconds.toFixed(3)} s).`
-        : `Loaded ${recording.metadata.sampleCount.toLocaleString()} samples (${recording.metadata.durationSeconds.toFixed(3)} s).`);
+      await activateReplay(
+        recording,
+        replayImportFormat === "sigmf"
+          ? `Loaded SigMF replay: ${recording.metadata.sampleCount.toLocaleString()} samples (${recording.metadata.durationSeconds.toFixed(3)} s).`
+          : `Loaded ${recording.metadata.sampleCount.toLocaleString()} samples (${recording.metadata.durationSeconds.toFixed(3)} s).`,
+      );
     } catch (error) {
       setLoadedReplay(undefined);
       replayRef.current = undefined;
-      setFileMessage(error instanceof Error ? error.message : "Could not load recording.");
+      setFileMessage(
+        error instanceof Error ? error.message : "Could not load recording.",
+      );
     }
+  };
+
+  const activeSession = receiver.session;
+  const activeHackrfSettings = activeSession?.hackrf?.captureSettings;
+  const compatibilityReportContext: CompatibilityReportContext = {
+    lifecycle: receiver.lifecycle,
+    source: activeSession?.source ?? source,
+    deviceProfile: caps.label,
+    mode: activeSession?.mode ?? mode,
+    sampleRateHz: activeSession?.actualSampleRateHz ?? sampleRateHz,
+    nativeSampleRateHz:
+      activeSession?.hackrf?.nativeSampleRateHz ??
+      activeSession?.bladerf?.nativeSampleRateHz ??
+      activeSession?.actualSampleRateHz ??
+      null,
+    bandwidthHz: activeSession?.channelBandwidthHz ?? bandwidthHz,
+    squelch: activeSession?.squelch ?? squelch,
+    gainMode:
+      activeSession?.source === "hackrf" || source === "hackrf"
+        ? "staged"
+        : activeSession?.source === "bladerf" || source === "bladerf"
+          ? (activeSession?.bladerf?.gainMode ?? "slow-attack-agc")
+          : activeSession?.source === "rtl-sdr" || source === "rtl-sdr"
+            ? (activeSession?.gainDb ?? gainDb) === null
+              ? "automatic"
+              : "manual"
+            : "not-applicable",
+    gainDb:
+      activeSession?.source === "rtl-sdr" || source === "rtl-sdr"
+        ? (activeSession?.gainDb ?? gainDb)
+        : null,
+    lnaGainCode:
+      activeHackrfSettings?.rxLnaGainCode ??
+      (source === "hackrf" ? hardwareSettings.rxLnaGainCode : null),
+    vgaGainDb:
+      activeHackrfSettings?.rxVgaGainDb ??
+      (source === "hackrf" ? hardwareSettings.rxVgaGainDb : null),
+    rfAmplifierEnabled:
+      activeHackrfSettings?.rfAmplifierEnabled ??
+      (source === "hackrf" ? hardwareSettings.rfAmplifierEnabled : null),
+    antennaPowerEnabled:
+      activeHackrfSettings?.antennaPowerEnabled ??
+      (source === "hackrf" ? hardwareSettings.antennaPowerEnabled : null),
+    firmwareVersion:
+      activeSession?.hackrf?.capabilities.identity.firmwareVersion ??
+      (activeSession?.bladerf
+        ? `${activeSession.bladerf.identity.firmware.major}.${activeSession.bladerf.identity.firmware.minor}`
+        : null),
+    usbApiVersion:
+      activeSession?.hackrf?.capabilities.identity.usbApiVersion ?? null,
+    protocolProfile:
+      activeSession?.hackrf?.capabilities.protocolProfile ??
+      activeSession?.bladerf?.protocolProfile ??
+      null,
+    recordingActive: Boolean(recordingStatus),
+    audioState: receiver.audioState ?? null,
+    ...(Number.isFinite(
+      activeSession?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000,
+    )
+      ? {
+          exactFrequencyHz:
+            activeSession?.selectedChannelFrequencyHz ??
+            frequencyMhz * 1_000_000,
+        }
+      : {}),
   };
 
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <div className="brand-lockup">
-          <img
-            className="brand-logo"
-            src="/brand/logo-observatory-dish-v3-theme-aligned.png"
-            alt=""
-            width="1254"
-            height="1254"
-          />
-          <div className="brand-copy">
-            <div className="brand-heading">
-              <h1 className="brand-name">BrowserSDR</h1>
-              <p className="brand-tagline">Listen closer.</p>
+      <div className="app-topbar">
+        <header className="app-header">
+          <div className="brand-lockup">
+            <img
+              className="brand-logo"
+              src="/brand/logo-observatory-dish-v3-theme-aligned.png"
+              alt=""
+              width="1254"
+              height="1254"
+            />
+            <div className="brand-copy">
+              <div className="brand-heading">
+                <h1 className="brand-name">BrowserSDR</h1>
+                <p className="brand-tagline">Listen closer.</p>
+              </div>
+              <p className="subtitle">
+                A local software-defined radio workspace, built for the browser.
+              </p>
             </div>
-            <p className="subtitle">A local software-defined radio workspace, built for the browser.</p>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <nav className="view-tabs" aria-label="Application views">
-        <div role="tablist" aria-label="BrowserSDR views">
-          <button
-            type="button"
-            role="tab"
-            id="receiver-tab"
-            aria-selected={activeView === "receiver"}
-            aria-controls="receiver-view"
-            tabIndex={activeView === "receiver" ? 0 : -1}
-            onClick={() => setActiveView("receiver")}
-            onKeyDown={handleTabKeyDown}
-          >
-            <span>Receiver</span>
-            <small>Tune, listen & record</small>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="explorer-tab"
-            aria-selected={activeView === "explorer"}
-            aria-controls="explorer-view"
-            tabIndex={activeView === "explorer" ? 0 : -1}
-            onClick={() => setActiveView("explorer")}
-            onKeyDown={handleTabKeyDown}
-          >
-            <span>Explorer</span>
-            <small>Scan & investigate</small>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="diagnostics-tab"
-            aria-selected={activeView === "diagnostics"}
-            aria-controls="diagnostics-view"
-            tabIndex={activeView === "diagnostics" ? 0 : -1}
-            onClick={() => setActiveView("diagnostics")}
-            onKeyDown={handleTabKeyDown}
-          >
-            <span>Diagnostics</span>
-            <small>Telemetry & setup</small>
-          </button>
+        <div className="operational-rail" aria-label="Live signal path">
+          <span
+            className={`operational-state-dot status-${receiver.lifecycle}`}
+            aria-hidden="true"
+          />
+          <span className="operational-stage">
+            <small>Source · {receiver.lifecycle.replace("-", " ")}</small>
+            <strong>{caps.label}</strong>
+          </span>
+          <i aria-hidden="true">→</i>
+          <span className="operational-stage">
+            <small>Channel · {mode}</small>
+            <strong>
+              {Number.isFinite(frequencyMhz) ? frequencyMhz.toFixed(6) : "—"}{" "}
+              MHz
+            </strong>
+          </span>
+          <i aria-hidden="true">→</i>
+          <span className="operational-stage">
+            <small>Output</small>
+            <strong>
+              {source === "synthetic"
+                ? "Spectrum only"
+                : mode === "OFF"
+                  ? "Spectrum only"
+                  : ["ADS-B", "AIS", "SRD"].includes(mode)
+                    ? `${mode} data`
+                    : mode === "DAB"
+                      ? "DAB+ audio"
+                      : `${mode} audio`}
+            </strong>
+          </span>
         </div>
-        <p>{activeView === "receiver" ? "Live radio workspace" : activeView === "explorer" ? "Wideband spectrum survey" : "Session health and browser support"}</p>
-      </nav>
+
+        <nav className="view-tabs" aria-label="Application views">
+          <div role="tablist" aria-label="BrowserSDR views">
+            <button
+              type="button"
+              role="tab"
+              id="receiver-tab"
+              aria-selected={activeView === "receiver"}
+              aria-controls="receiver-view"
+              tabIndex={activeView === "receiver" ? 0 : -1}
+              onClick={() => setActiveView("receiver")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>Receiver</span>
+              <small>Tune, listen & record</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="explorer-tab"
+              aria-selected={activeView === "explorer"}
+              aria-controls="explorer-view"
+              tabIndex={activeView === "explorer" ? 0 : -1}
+              onClick={() => setActiveView("explorer")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>Explorer</span>
+              <small>Scan & investigate</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="diagnostics-tab"
+              aria-selected={activeView === "diagnostics"}
+              aria-controls="diagnostics-view"
+              tabIndex={activeView === "diagnostics" ? 0 : -1}
+              onClick={() => setActiveView("diagnostics")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>Diagnostics</span>
+              <small>Telemetry & setup</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="help-tab"
+              aria-selected={activeView === "help"}
+              aria-controls="help-view"
+              tabIndex={activeView === "help" ? 0 : -1}
+              onClick={() => setActiveView("help")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>Help</span>
+              <small>Setup & compatibility</small>
+            </button>
+          </div>
+          <p>
+            {activeView === "receiver"
+              ? "Live radio workspace"
+              : activeView === "explorer"
+                ? "Wideband spectrum survey"
+                : activeView === "diagnostics"
+                  ? "Session health and browser support"
+                  : "Answers, setup and compatibility"}
+          </p>
+        </nav>
+      </div>
 
       <div
         id="receiver-view"
@@ -693,311 +2940,1231 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         aria-labelledby="receiver-tab"
         hidden={activeView !== "receiver"}
       >
+        <section
+          className="control-panel signal-chain-panel"
+          aria-labelledby="receiver-heading"
+        >
+          <h2 id="receiver-heading" className="visually-hidden">
+            Receive and demodulate
+          </h2>
 
-      <section className="control-panel signal-chain-panel" aria-labelledby="receiver-heading">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Live signal path</p>
-            <h2 id="receiver-heading">Receive & demodulate</h2>
+          <div className="signal-map" aria-label="Receiver signal flow">
+            <span>Acquire</span>
+            <i aria-hidden="true">→</i>
+            <span>Tune & demodulate</span>
+            <i aria-hidden="true">→</i>
+            <span>Listen & decode</span>
+            <small>Analysis and capture tap the I/Q stream in parallel.</small>
           </div>
-          <span className={`status-pill status-${receiver.lifecycle}`}>{receiver.lifecycle.replace("-", " ")}</span>
-        </div>
 
-        <div className="signal-map" aria-label="Receiver signal flow">
-          <span>Acquire</span><i aria-hidden="true">→</i><span>Tune & demodulate</span><i aria-hidden="true">→</i><span>Listen & decode</span>
-          <small>Analysis and capture tap the I/Q stream in parallel.</small>
-        </div>
+          <div className="signal-stage-grid">
+            <section
+              className="signal-stage acquire-stage"
+              aria-labelledby="acquire-heading"
+            >
+              <div className="stage-heading">
+                <span aria-hidden="true">01</span>
+                <div>
+                  <p>Acquire</p>
+                  <h3 id="acquire-heading">Signal source</h3>
+                </div>
+              </div>
+              <div className="stage-controls acquire-controls">
+                <label>
+                  Source
+                  <select
+                    value={source}
+                    disabled={
+                      transitioning || Boolean(receiver.cleanupRequired)
+                    }
+                    onChange={(event) =>
+                      void switchSource(event.currentTarget.value as SourceKind)
+                    }
+                    aria-label="Signal source"
+                  >
+                    <option value="rtl-sdr">
+                      {sourceCapabilities("rtl-sdr").label} device
+                    </option>
+                    <option value="hackrf">
+                      {sourceCapabilities("hackrf").label} device
+                    </option>
+                    <option value="bladerf">
+                      {sourceCapabilities("bladerf").label} device
+                    </option>
+                    <option value="synthetic">Synthetic spectrum demo</option>
+                    <option value="replay">I/Q recording replay</option>
+                  </select>
+                </label>
+                {caps.persistentConnection ? (
+                  <div className="connection-stack">
+                    <div className="connection-row">
+                      <span>
+                        <i
+                          className={`connection-dot ${hardwareConnected ? "is-active" : ""}`}
+                        />
+                        Hardware
+                      </span>
+                      <div className="transport">
+                        <button
+                          type="button"
+                          onClick={connectReceiver}
+                          disabled={
+                            receiver.lifecycle !== "idle" &&
+                            !(
+                              receiver.lifecycle === "error" &&
+                              !receiver.cleanupRequired
+                            )
+                          }
+                        >
+                          {source === "bladerf"
+                            ? "Connect & load FPGA if needed"
+                            : "Connect"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void disconnectReceiver()}
+                          disabled={
+                            scanActive ||
+                            receiver.lifecycle === "idle" ||
+                            receiver.lifecycle === "disconnecting" ||
+                            (receiver.lifecycle === "error" &&
+                              !receiver.cleanupRequired)
+                          }
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                    <div className="connection-row">
+                      <span>
+                        <i
+                          className={`connection-dot ${running ? "is-receiving" : ""}`}
+                        />
+                        Reception
+                      </span>
+                      <div className="transport">
+                        <button
+                          type="button"
+                          onClick={start}
+                          disabled={receiver.lifecycle !== "connected"}
+                        >
+                          Start receiving
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void stopReceiver()}
+                          disabled={
+                            scanActive ||
+                            (!running && receiver.lifecycle !== "tuning")
+                          }
+                        >
+                          Stop receiving
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="transport" aria-label="Receiver transport">
+                    <button
+                      type="button"
+                      onClick={start}
+                      disabled={busy || (source === "replay" && !loadedReplay)}
+                    >
+                      {source === "synthetic" ? "Start demo" : "Start replay"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => void stopReceiver()}
+                      disabled={
+                        scanActive || !busy || receiver.lifecycle === "stopping"
+                      }
+                    >
+                      Stop
+                    </button>
+                  </div>
+                )}
+                {caps.requiresUsb && (
+                  <details
+                    className="advanced-settings"
+                    key={source}
+                    open={sourceAdvancedOpen}
+                    onToggle={(event) =>
+                      setSourceAdvancedOpen(event.currentTarget.open)
+                    }
+                  >
+                    <summary>
+                      <span>Advanced source settings</span>
+                      <small>
+                        {(sampleRateHz / 1_000_000).toFixed(3)} MS/s ·{" "}
+                        {caps.gain.kind === "rtl-auto-manual"
+                          ? gainDb === null
+                            ? "automatic gain"
+                            : `${gainDb.toFixed(1)} dB gain`
+                          : caps.gain.kind === "hackrf-stages"
+                            ? `LNA ${hardwareSettings.rxLnaGainCode} · VGA ${hardwareSettings.rxVgaGainDb} dB`
+                            : "slow-attack AGC"}
+                      </small>
+                    </summary>
+                    <div className="advanced-settings-body">
+                      {caps.requiresUsb && caps.rates.kind === "choices" && (
+                        <label>
+                          Sample rate
+                          <select
+                            value={sampleRateHz}
+                            disabled={transitioning || running}
+                            onChange={(event) =>
+                              setSampleRateHz(Number(event.currentTarget.value))
+                            }
+                          >
+                            {caps.rates.valuesHz.map((rate) => (
+                              <option
+                                key={rate}
+                                value={rate}
+                                disabled={
+                                  compatibleSourceRate(source, mode, rate) !==
+                                  rate
+                                }
+                              >
+                                {(rate / 1_000_000).toFixed(3)} MS/s
+                                {caps.rates.kind === "choices" &&
+                                caps.rates.experimentalHz?.includes(rate)
+                                  ? " (experimental)"
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                          <small>
+                            {source === "hackrf"
+                              ? "4.8, 9.6 and experimental 19.2 MS/s widen the spectrum and native recording; the selected channel is filtered to 2.4 MS/s. Stop reception to change rate without disconnecting."
+                              : source === "bladerf"
+                                ? "The xA4 accepts native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
+                                : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses. Stop reception to change rate without disconnecting."}
+                          </small>
+                        </label>
+                      )}
+                      {caps.gain.kind === "rtl-auto-manual" && (
+                        <div className="gain-control">
+                          <label>
+                            RF gain
+                            <select
+                              value={gainDb === null ? "auto" : "manual"}
+                              disabled={transitioning}
+                              onChange={(event) =>
+                                applyGain(
+                                  event.currentTarget.value === "auto"
+                                    ? null
+                                    : 25,
+                                )
+                              }
+                            >
+                              <option value="auto">Automatic</option>
+                              <option value="manual">Manual</option>
+                            </select>
+                          </label>
+                          {gainDb !== null && (
+                            <label>
+                              <span>
+                                Requested manual gain{" "}
+                                <output>{gainDb.toFixed(1)} dB</output>
+                              </span>
+                              <input
+                                type="range"
+                                min="0"
+                                max={MANUAL_GAIN_MAX_DB}
+                                step="0.1"
+                                value={gainDb}
+                                disabled={transitioning}
+                                onChange={(event) =>
+                                  setGainDb(event.currentTarget.valueAsNumber)
+                                }
+                                onPointerUp={() => applyGain(gainDb)}
+                                onKeyUp={() => applyGain(gainDb)}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      )}
+                      {caps.gain.kind === "hackrf-stages" && (
+                        <div className="gain-control hackrf-gain-control">
+                          <label>
+                            RX LNA state
+                            <select
+                              value={hardwareSettings.rxLnaGainCode}
+                              disabled={transitioning}
+                              onChange={(event) =>
+                                setHardwareSettings({
+                                  ...hardwareSettings,
+                                  rxLnaGainCode: Number(
+                                    event.currentTarget.value,
+                                  ) as HackrfRxSettings["rxLnaGainCode"],
+                                })
+                              }
+                            >
+                              {caps.gain.lnaCodes.map((code) => (
+                                <option key={code} value={code}>
+                                  {code === 0
+                                    ? "Low (−33 dB relative)"
+                                    : code === 16
+                                      ? "Middle (−16 dB relative)"
+                                      : "High (maximum)"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            RX VGA gain (dB)
+                            <input
+                              type="number"
+                              min={caps.gain.vgaMinimumDb}
+                              max={caps.gain.vgaMaximumDb}
+                              step={caps.gain.vgaStepDb}
+                              value={hardwareSettings.rxVgaGainDb}
+                              disabled={transitioning}
+                              onChange={(event) =>
+                                setHardwareSettings({
+                                  ...hardwareSettings,
+                                  rxVgaGainDb:
+                                    event.currentTarget.valueAsNumber,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="checkbox-control hackrf-amplifier-control">
+                            <span>RF amplifier</span>
+                            <input
+                              type="checkbox"
+                              aria-label="RF amplifier"
+                              checked={hardwareSettings.rfAmplifierEnabled}
+                              disabled={transitioning}
+                              onChange={(event) =>
+                                setHardwareSettings({
+                                  ...hardwareSettings,
+                                  rfAmplifierEnabled:
+                                    event.currentTarget.checked,
+                                })
+                              }
+                            />
+                            <span className="checkbox-state" aria-hidden="true">
+                              {hardwareSettings.rfAmplifierEnabled
+                                ? "On"
+                                : "Off"}
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            disabled={!hardwareConnected || transitioning}
+                            onClick={() => void applyHardware()}
+                          >
+                            Apply RX settings
+                          </button>
+                          <small>
+                            Stage values are requested settings, not calibrated
+                            total gain. Antenna power stays off.
+                          </small>
+                          {mode === "DAB" && (
+                            <small>
+                              For DAB, start with the RF amplifier off. If
+                              stations appear but audio breaks up, extra RF gain
+                              can worsen decoding even without visible I/Q
+                              clipping.
+                            </small>
+                          )}
+                        </div>
+                      )}
+                      {source === "bladerf" && (
+                        <div className="fpga-load-note" role="note">
+                          <strong>Bundled volatile FPGA loader</strong>
+                          <span>
+                            <b>Connect & load FPGA if needed</b> verifies an
+                            official Nuand hostedxA4 image, loads it into FPGA
+                            RAM, then verifies the running version before
+                            reception. Firmware 2.4 uses v0.15.3; firmware 2.5+
+                            uses v0.16.0.
+                          </span>
+                          <small>
+                            This never writes SPI flash and never enables TX.
+                            The temporary image disappears when the bladeRF
+                            loses power.
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
+            </section>
 
-        <div className="signal-stage-grid">
-          <section className="signal-stage acquire-stage" aria-labelledby="acquire-heading">
-            <div className="stage-heading"><span aria-hidden="true">01</span><div><p>Acquire</p><h3 id="acquire-heading">Signal source</h3></div></div>
-            <div className="stage-controls acquire-controls">
-              <label>
-                Source
-                <select value={source} disabled={transitioning || Boolean(receiver.cleanupRequired)} onChange={(event) => void switchSource(event.currentTarget.value as SourceKind)} aria-label="Signal source">
-                  <option value="rtl-sdr">{sourceCapabilities("rtl-sdr").label} device</option>
-                  <option value="hackrf">{sourceCapabilities("hackrf").label} device</option>
-                  <option value="synthetic">Synthetic spectrum demo</option>
-                  <option value="replay">I/Q recording replay</option>
+            <section
+              className="signal-stage demodulate-stage"
+              aria-labelledby="demodulate-heading"
+            >
+              <div className="stage-heading">
+                <span aria-hidden="true">02</span>
+                <div>
+                  <p>Tune & demodulate</p>
+                  <h3 id="demodulate-heading">Channel settings</h3>
+                </div>
+              </div>
+              <div className="stage-controls primary-channel-controls">
+                <label>
+                  Mode
+                  <select
+                    value={mode}
+                    disabled={transitioning}
+                    onChange={(event) =>
+                      chooseMode(event.currentTarget.value as ReceiverMode)
+                    }
+                  >
+                    {RECEIVER_MODES.map((candidate) => (
+                      <option
+                        key={candidate}
+                        value={candidate}
+                        disabled={Boolean(modeUnavailable(candidate))}
+                        title={modeUnavailable(candidate)}
+                      >
+                        {candidate === "OFF"
+                          ? "Spectrum only · no demodulation"
+                          : candidate === "DAB"
+                            ? "DAB / DAB+"
+                            : candidate}
+                        {modeUnavailable(candidate)
+                          ? ` — ${modeUnavailable(candidate)}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Channel frequency
+                  <span className="unit-input">
+                    <input
+                      type="number"
+                      min={Math.max(1, caps.frequency.minimumHz) / 1_000_000}
+                      max={caps.frequency.maximumHz / 1_000_000}
+                      step="0.000001"
+                      value={Number.isFinite(frequencyMhz) ? frequencyMhz : ""}
+                      disabled={transitioning}
+                      onChange={(event) =>
+                        setFrequencyMhz(event.currentTarget.valueAsNumber)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && running && frequencyValid)
+                          tune(frequencyMhz * 1_000_000);
+                      }}
+                      aria-describedby="frequency-help"
+                    />
+                    <span>MHz</span>
+                  </span>
+                  <small id="frequency-help">
+                    {caps.frequency.limitsDiscoveredAtTune
+                      ? "Checked by the connected tuner"
+                      : `${caps.label}: ${caps.frequency.minimumHz / 1_000_000}–${caps.frequency.maximumHz / 1_000_000} MHz`}{" "}
+                    · stored internally as Hz
+                  </small>
+                </label>
+                <button
+                  type="button"
+                  className="secondary tune-button"
+                  disabled={!running || !frequencyValid}
+                  onClick={() => tune(frequencyMhz * 1_000_000)}
+                >
+                  Tune
+                </button>
+                <label>
+                  Volume <output>{Math.round(volume * 100)}%</output>
+                  <input
+                    className="volume-slider"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    disabled={
+                      source === "synthetic" ||
+                      ["OFF", "ADS-B", "AIS", "SRD"].includes(mode)
+                    }
+                    onChange={(event) =>
+                      updateVolume(event.currentTarget.valueAsNumber)
+                    }
+                  />
+                  <small>
+                    {source === "synthetic"
+                      ? "Demo has no audio output"
+                      : mode === "OFF"
+                        ? "Demodulation and audio are disabled"
+                        : ["ADS-B", "AIS", "SRD"].includes(mode)
+                          ? `${mode} is a data receiver`
+                          : mode === "DAB"
+                            ? "DAB+ audio"
+                            : `${mode} audio`}
+                  </small>
+                </label>
+              </div>
+              <details
+                className="advanced-settings channel-advanced-settings"
+                key={mode}
+                open={channelAdvancedOpen}
+                onToggle={(event) =>
+                  setChannelAdvancedOpen(event.currentTarget.open)
+                }
+              >
+                <summary>
+                  <span>Advanced channel settings</span>
+                  <small>
+                    {mode === "OFF"
+                      ? "Spectrum only · no audio"
+                      : `${bandwidthHz.toLocaleString()} Hz`}
+                    {mode === "OFF"
+                      ? ""
+                      : mode === "CW"
+                        ? ` · ${beatToneHz.toLocaleString()} Hz tone`
+                        : modeCaps.squelchSettable
+                          ? ` · squelch ${squelch.toFixed(1)}`
+                          : " · fixed profile"}
+                  </small>
+                </summary>
+                <div
+                  className="stage-controls demodulation-controls"
+                  aria-label="Channel demodulation settings"
+                >
+                  {mode === "DAB" && (
+                    <label>
+                      Band III channel
+                      <select
+                        value={
+                          dabChannelAt(frequencyMhz * 1_000_000)?.label ??
+                          "custom"
+                        }
+                        disabled={transitioning}
+                        onChange={(event) => {
+                          const channel = DAB_BAND_III_CHANNELS.find(
+                            (candidate) =>
+                              candidate.label === event.currentTarget.value,
+                          );
+                          if (!channel) return;
+                          setFrequencyMhz(channel.frequencyHz / 1_000_000);
+                          if (running) tune(channel.frequencyHz);
+                        }}
+                      >
+                        {!dabChannelAt(frequencyMhz * 1_000_000) && (
+                          <option value="custom">Custom frequency</option>
+                        )}
+                        {DAB_BAND_III_CHANNELS.map((channel) => (
+                          <option key={channel.label} value={channel.label}>
+                            {channel.label} ·{" "}
+                            {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {mode === "OFF" ? (
+                    <p className="display-note">
+                      No channel filter, audio demodulator, or digital decoder
+                      is active. RF acquisition and spectrum analysis continue.
+                    </p>
+                  ) : mode === "CW" ? (
+                    <label>
+                      Receive filter bandwidth
+                      <select
+                        value={bandwidthHz}
+                        disabled={transitioning}
+                        onChange={(event) => {
+                          const value = Number(event.currentTarget.value);
+                          setBandwidthHz(value);
+                          if (running)
+                            applyModeSettings({
+                              ...currentModeSettings,
+                              bandwidthHz: value,
+                            });
+                        }}
+                      >
+                        {CW_FILTER_BANDWIDTHS_HZ.map((bandwidth) => (
+                          <option key={bandwidth} value={bandwidth}>
+                            {bandwidth.toLocaleString()} Hz
+                          </option>
+                        ))}
+                      </select>
+                      <small>Centered on the selected RF carrier</small>
+                    </label>
+                  ) : modeCaps.bandwidthSettable ? (
+                    <label>
+                      Channel bandwidth
+                      <span className="unit-input">
+                        <input
+                          type="number"
+                          min={modeCaps.minimumBandwidthHz}
+                          max={modeCaps.maximumBandwidthHz}
+                          step="10"
+                          value={bandwidthHz}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const value = event.currentTarget.valueAsNumber;
+                            setBandwidthHz(value);
+                            if (
+                              running &&
+                              Number.isFinite(value) &&
+                              value >= modeCaps.minimumBandwidthHz &&
+                              value <= modeCaps.maximumBandwidthHz
+                            )
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                bandwidthHz: value,
+                              });
+                          }}
+                        />
+                        <span>Hz</span>
+                      </span>
+                      <small>
+                        {modeCaps.minimumBandwidthHz.toLocaleString()}–
+                        {modeCaps.maximumBandwidthHz.toLocaleString()} Hz
+                      </small>
+                    </label>
+                  ) : (
+                    <div className="readout">
+                      <span>Channel bandwidth</span>
+                      <strong>{bandwidthHz.toLocaleString()} Hz fixed</strong>
+                    </div>
+                  )}
+                  {mode === "SRD" && (
+                    <>
+                      <label>
+                        Modulation
+                        <select
+                          value={srdSettings.modulation}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const modulation = event.currentTarget.value as
+                              "ook" | "2fsk";
+                            const next: SrdModeSettings = {
+                              ...srdSettings,
+                              modulation,
+                              protocol: "none",
+                            };
+                            setSrdSettings(next);
+                            if (running)
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                srd: next,
+                              });
+                          }}
+                        >
+                          <option value="ook">OOK / ASK envelope</option>
+                          <option value="2fsk">Binary FSK discriminator</option>
+                        </select>
+                      </label>
+                      <label>
+                        Decoder
+                        <select
+                          value={srdSettings.protocol}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const next = {
+                              ...srdSettings,
+                              protocol: event.currentTarget
+                                .value as SrdModeSettings["protocol"],
+                            };
+                            setSrdSettings(next);
+                            if (running)
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                srd: next,
+                              });
+                          }}
+                        >
+                          <option value="none">Inspector only</option>
+                          {srdSettings.modulation === "ook" && (
+                            <option value="acurite-592txr">
+                              Acurite 592TXR
+                            </option>
+                          )}
+                          {srdSettings.modulation === "2fsk" && (
+                            <option value="fineoffset-wh51">
+                              Fine Offset WH51
+                            </option>
+                          )}
+                        </select>
+                        <small>
+                          Unknown bursts stay inspectable and never become
+                          guessed readings.
+                        </small>
+                      </label>
+                      <label>
+                        Threshold
+                        <select
+                          value={srdSettings.threshold.mode}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const next = {
+                              ...srdSettings,
+                              threshold: {
+                                ...srdSettings.threshold,
+                                mode: event.currentTarget.value as
+                                  "adaptive" | "manual",
+                              },
+                            };
+                            setSrdSettings(next);
+                            if (running)
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                srd: next,
+                              });
+                          }}
+                        >
+                          <option value="adaptive">Adaptive</option>
+                          <option value="manual">Manual</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                  {modeCaps.squelchSettable && (
+                    <SquelchControl
+                      controller={controller}
+                      squelch={squelch}
+                      disabled={transitioning}
+                      running={running}
+                      onChange={applySquelch}
+                    />
+                  )}
+                  {mode === "CW" && (
+                    <label>
+                      Beat tone{" "}
+                      <output>{beatToneHz.toLocaleString()} Hz</output>
+                      <input
+                        type="range"
+                        min={CW_TONE_MIN_HZ}
+                        max={CW_TONE_MAX_HZ}
+                        step="10"
+                        value={beatToneHz}
+                        disabled={transitioning}
+                        onChange={(event) => {
+                          const value = event.currentTarget.valueAsNumber;
+                          setBeatToneHz(value);
+                          if (running)
+                            applyModeSettings({
+                              ...currentModeSettings,
+                              beatToneHz: value,
+                            });
+                        }}
+                      />
+                      <small>
+                        Changes audible pitch without changing the selected RF
+                        frequency
+                      </small>
+                    </label>
+                  )}
+                </div>
+              </details>
+            </section>
+          </div>
+
+          <div
+            className={`receiver-status receiver-status-${receiver.lifecycle}`}
+            role={receiver.lifecycle === "error" ? "alert" : "status"}
+          >
+            <span className="status-light" />
+            <div>
+              <strong>{receiver.message}</strong>
+              {(running || hardwareConnected) && receiver.session ? (
+                <p>
+                  Center{" "}
+                  {(
+                    receiver.session.hardwareCenterFrequencyHz / 1_000_000
+                  ).toFixed(6)}{" "}
+                  MHz · selected{" "}
+                  {(
+                    receiver.session.selectedChannelFrequencyHz / 1_000_000
+                  ).toFixed(6)}{" "}
+                  MHz · {receiver.session.mode} ·{" "}
+                  {receiver.session.mode === "OFF"
+                    ? "spectrum-only route"
+                    : `${receiver.session.channelBandwidthHz.toLocaleString()} Hz channel`}{" "}
+                  ·{" "}
+                  {receiver.session.source === "rtl-sdr"
+                    ? receiver.session.gainDb === null
+                      ? "automatic gain"
+                      : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
+                    : receiver.session.hackrf
+                      ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
+                      : receiver.session.bladerf
+                        ? "slow-attack AGC"
+                        : "no hardware gain control"}{" "}
+                  ·{" "}
+                  {isWidebandRate(receiver.session.actualSampleRateHz)
+                    ? "channel DSP rate"
+                    : "effective rate"}{" "}
+                  {(
+                    receiver.session.bladerf?.effectiveSampleRateHz ??
+                    receiver.session.hackrf?.effectiveSampleRateHz ??
+                    (isWidebandRate(receiver.session.actualSampleRateHz)
+                      ? 2_400_000
+                      : receiver.session.actualSampleRateHz)
+                  ).toLocaleString()}{" "}
+                  samples/s
+                  {receiver.session.hackrf &&
+                    ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
+                  {receiver.session.bladerf &&
+                    ` · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · volatile hostedxA4 ${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA"} (hardware validation pending)`}
+                </p>
+              ) : (
+                <p>
+                  {source === "synthetic"
+                    ? "Demo uses deterministic complex RF tones and no audio."
+                    : source === "replay"
+                      ? "Replay is paced from sample counts and never opens a USB chooser."
+                      : receiver.lifecycle === "connected"
+                        ? "The USB device remains open while sample transfers and audio are stopped."
+                        : "Connect opens the browser device chooser. Reception starts only when you request it."}
+                </p>
+              )}
+            </div>
+            {receiver.lifecycle === "error" && (
+              <button
+                type="button"
+                className="secondary report-error-button"
+                onClick={() => {
+                  window.dispatchEvent(new Event(OPEN_DIAGNOSTIC_REPORT_EVENT));
+                  setActiveView("diagnostics");
+                }}
+              >
+                Review &amp; send report
+              </button>
+            )}
+          </div>
+        </section>
+
+        <WebGpuSpectrum
+          active={activeView === "receiver"}
+          pipeline={analysis}
+          session={receiver.session}
+          onTune={running && !scanActive ? tune : undefined}
+        />
+
+        <section
+          className={`receiver-dock ${receiverDockExpanded ? "is-expanded" : "is-collapsed"}`}
+          aria-label="Receiver tools"
+        >
+          <div className="receiver-dock-bar">
+            <div
+              className="receiver-dock-tabs"
+              role="tablist"
+              aria-label="Receiver tool panels"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={receiverDockView === "decode"}
+                onClick={() => {
+                  setReceiverDockView("decode");
+                  setReceiverDockExpanded(true);
+                }}
+              >
+                Audio & decode
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={receiverDockView === "capture"}
+                onClick={() => {
+                  setReceiverDockView("capture");
+                  setReceiverDockExpanded(true);
+                }}
+              >
+                Capture & replay
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={receiverDockView === "session"}
+                onClick={() => {
+                  setReceiverDockView("session");
+                  setReceiverDockExpanded(true);
+                }}
+              >
+                Session
+              </button>
+            </div>
+            <button
+              type="button"
+              className="secondary dock-toggle"
+              aria-expanded={receiverDockExpanded}
+              onClick={() => setReceiverDockExpanded((expanded) => !expanded)}
+            >
+              {receiverDockExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+
+          <ReceiverDecodePanel
+            controller={controller}
+            source={source}
+            mode={mode}
+            volume={volume}
+            active={receiverDockExpanded && receiverDockView === "decode"}
+          />
+
+          <section
+            className="control-panel capture-panel receiver-dock-panel"
+            aria-labelledby="recording-heading"
+            hidden={!receiverDockExpanded || receiverDockView !== "capture"}
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Capture & replay</p>
+                <h2 id="recording-heading">I/Q recordings</h2>
+              </div>
+            </div>
+            <p>
+              {recordingSupported ? (
+                <>
+                  {encoding.toUpperCase()} stores interleaved{" "}
+                  {encoding === "ci8" ? "signed" : "unsigned"} 8-bit I,Q;
+                  hardware recordings preserve native transport bytes. The 32
+                  MiB memory cap is{" "}
+                  {recordingCapacitySeconds(nativeRateHz).toFixed(1)} seconds at
+                  the current/default rate; at 2.4 MS/s it is{" "}
+                  {recordingCapacitySeconds(2_400_000).toFixed(1)} seconds.
+                </>
+              ) : (
+                <>
+                  Native SC16 Q11 recording and replay are intentionally
+                  deferred from the first xA4 release; live reception remains
+                  available.
+                </>
+              )}
+            </p>
+            <div className="recording-controls">
+              <label className="recording-format">
+                Export format
+                <select
+                  aria-label="Recording export format"
+                  value={recordingFormat}
+                  disabled={
+                    !recordingSupported ||
+                    formatControlDisabled(recordingStatus, exportingRecording)
+                  }
+                  onChange={(event) =>
+                    setRecordingFormat(
+                      event.currentTarget.value as RecordingExportFormat,
+                    )
+                  }
+                >
+                  {recordingSupported ? (
+                    <>
+                      <option value="browsersdr">
+                        BrowserSDR replay (.{encoding} + .json)
+                      </option>
+                      <option value="sigmf">
+                        SigMF (.sigmf-data + .sigmf-meta)
+                      </option>
+                    </>
+                  ) : (
+                    <option value={recordingFormat}>
+                      Unavailable for bladeRF first release
+                    </option>
+                  )}
                 </select>
               </label>
-              {caps.requiresUsb && caps.rates.kind === "choices" && (
-                <label>
-                  Sample rate
-                  <select value={sampleRateHz} disabled={transitioning || hardwareConnected} onChange={(event) => setSampleRateHz(Number(event.currentTarget.value))}>
-                    {caps.rates.valuesHz.map((rate) => <option key={rate} value={rate} disabled={compatibleSourceRate(source, mode, rate) !== rate}>{(rate / 1_000_000).toFixed(3)} MS/s</option>)}
-                  </select>
-                  <small>{source === "hackrf" ? "4.8 and 9.6 MS/s widen the spectrum and native recording; the selected channel is filtered to 2.4 MS/s. Higher rates shorten recording time." : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses; recording time is shorter."}</small>
-                </label>
+              <button
+                type="button"
+                disabled={
+                  !recordingSupported ||
+                  !running ||
+                  scanActive ||
+                  Boolean(recordingStatus) ||
+                  exportingRecording ||
+                  captureSlotBlocked
+                }
+                onClick={startRecording}
+              >
+                Start I/Q recording
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!recordingStatus || exportingRecording}
+                onClick={stopRecording}
+              >
+                Stop & prepare
+              </button>
+              {retainedCapture.status === "retry-available" && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={exportingRecording}
+                  onClick={retryRecordingPreparation}
+                >
+                  Retry preparation
+                </button>
               )}
-              {caps.gain.kind === "rtl-auto-manual" && (
-                <div className="gain-control">
-                  <label>
-                    RF gain
-                    <select value={gainDb === null ? "auto" : "manual"} disabled={transitioning} onChange={(event) => applyGain(event.currentTarget.value === "auto" ? null : 25)}>
-                      <option value="auto">Automatic</option><option value="manual">Manual</option>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!preparedCaptureAvailable || exportingRecording}
+                onClick={() => requestRecordingDownload("archive")}
+              >
+                Download paired ZIP
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!preparedCaptureAvailable || exportingRecording}
+                onClick={() => requestRecordingDownload("separate")}
+              >
+                Download separate files
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  !retainedCapturePresent ||
+                  exportingRecording ||
+                  Boolean(recordingStatus)
+                }
+                onClick={discardPreparedRecording}
+              >
+                Discard prepared capture
+              </button>
+              <span>
+                {recordingStatus
+                  ? `${(recordingStatus.bytes / (1024 * 1024)).toFixed(2)} / ${(RECORDING_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB · ${recordingStatus.state.replace("-", " ")}`
+                  : "Not recording"}
+              </span>
+            </div>
+            <p className="display-note">
+              The chosen format is locked for each segment. State:{" "}
+              {retainedCapture.status.replace("-", " ")}
+              {retainedCapture.sampleCount === undefined
+                ? ""
+                : ` · ${retainedCapture.sampleCount.toLocaleString()} samples · ${(retainedCapture.retainedBytes / (1024 * 1024)).toFixed(2)} MiB retained`}
+              . A download request cannot confirm browser storage. One prepared
+              capture is retained within{" "}
+              {(RETAINED_CAPTURE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB;
+              after a download request, starting another capture replaces it
+              under this disclosed latest-capture policy.
+            </p>
+            <div className="replay-inputs">
+              <label className="recording-format">
+                Replay pair format
+                <select
+                  aria-label="Replay pair format"
+                  value={replayImportFormat}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const next = event.currentTarget
+                      .value as ReplayImportFormat;
+                    setReplayImportFormat(next);
+                    setReplayBinary(undefined);
+                    setReplayMetadata(undefined);
+                    setFileMessage(
+                      next === "sigmf"
+                        ? "Choose a local .sigmf-data/.sigmf-meta pair and an explicit replay mode. The RF-center channel is selected unless you choose a custom channel."
+                        : "Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.",
+                    );
+                  }}
+                >
+                  <option value="browsersdr">
+                    BrowserSDR (.cu8 or .ci8 + .json)
+                  </option>
+                  <option value="sigmf">
+                    SigMF (.sigmf-data + .sigmf-meta)
+                  </option>
+                </select>
+              </label>
+              {replayImportFormat === "sigmf" && (
+                <>
+                  <label className="recording-format">
+                    SigMF replay mode
+                    <select
+                      aria-label="SigMF replay mode"
+                      value={sigmfReplayMode}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setSigmfReplayMode(
+                          event.currentTarget.value as ReceiverMode | "",
+                        )
+                      }
+                    >
+                      <option value="">Choose mode…</option>
+                      {RECEIVER_MODES.map((candidate) => (
+                        <option key={candidate} value={candidate}>
+                          {candidate}
+                        </option>
+                      ))}
                     </select>
                   </label>
-                  {gainDb !== null && <label><span>Requested manual gain <output>{gainDb.toFixed(1)} dB</output></span><input type="range" min="0" max={MANUAL_GAIN_MAX_DB} step="0.1" value={gainDb} disabled={transitioning} onChange={(event) => setGainDb(event.currentTarget.valueAsNumber)} onPointerUp={() => applyGain(gainDb)} onKeyUp={() => applyGain(gainDb)} /></label>}
-                </div>
+                  <label className="recording-format">
+                    SigMF replay channel
+                    <select
+                      aria-label="SigMF replay channel"
+                      value={sigmfChannelChoice}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setSigmfChannelChoice(
+                          event.currentTarget.value as "center" | "custom",
+                        )
+                      }
+                    >
+                      <option value="center">RF center from metadata</option>
+                      <option value="custom">Custom frequency</option>
+                    </select>
+                  </label>
+                  {sigmfChannelChoice === "custom" && (
+                    <label>
+                      Custom replay channel (MHz)
+                      <input
+                        aria-label="Custom replay channel (MHz)"
+                        type="number"
+                        min="0.000001"
+                        max={Number.MAX_SAFE_INTEGER / 1_000_000}
+                        step="0.001"
+                        value={sigmfChannelMhz}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setSigmfChannelMhz(event.currentTarget.value)
+                        }
+                      />
+                    </label>
+                  )}
+                </>
               )}
-              {caps.gain.kind === "hackrf-stages" && <div className="gain-control hackrf-gain-control">
-                <label>RX LNA state<select value={hardwareSettings.rxLnaGainCode} disabled={transitioning} onChange={(event) => setHardwareSettings({ ...hardwareSettings, rxLnaGainCode: Number(event.currentTarget.value) as HackrfRxSettings["rxLnaGainCode"] })}>
-                  {caps.gain.lnaCodes.map((code) => <option key={code} value={code}>{code === 0 ? "Low (−33 dB relative)" : code === 16 ? "Middle (−16 dB relative)" : "High (maximum)"}</option>)}
-                </select></label>
-                <label>RX VGA gain (dB)<input type="number" min={caps.gain.vgaMinimumDb} max={caps.gain.vgaMaximumDb} step={caps.gain.vgaStepDb} value={hardwareSettings.rxVgaGainDb} disabled={transitioning} onChange={(event) => setHardwareSettings({ ...hardwareSettings, rxVgaGainDb: event.currentTarget.valueAsNumber })} /></label>
-                <label className="checkbox-control hackrf-amplifier-control">
-                  <span>RF amplifier</span>
-                  <input type="checkbox" aria-label="RF amplifier" checked={hardwareSettings.rfAmplifierEnabled} disabled={transitioning} onChange={(event) => setHardwareSettings({ ...hardwareSettings, rfAmplifierEnabled: event.currentTarget.checked })} />
-                  <span className="checkbox-state" aria-hidden="true">{hardwareSettings.rfAmplifierEnabled ? "On" : "Off"}</span>
-                </label>
-                <button type="button" disabled={!hardwareConnected || transitioning} onClick={() => void applyHardware()}>Apply RX settings</button>
-                <small>Stage values are requested settings, not calibrated total gain. Antenna power stays off.</small>
-              </div>}
-              {caps.persistentConnection ? (
-                <div className="connection-stack">
-                  <div className="connection-row">
-                    <span><i className={`connection-dot ${hardwareConnected ? "is-active" : ""}`} />Hardware</span>
-                    <div className="transport">
-                      <button type="button" onClick={connectReceiver} disabled={receiver.lifecycle !== "idle" && !(receiver.lifecycle === "error" && !receiver.cleanupRequired)}>Connect</button>
-                      <button type="button" className="secondary" onClick={() => void disconnectReceiver()} disabled={scanActive || receiver.lifecycle === "idle" || receiver.lifecycle === "disconnecting" || (receiver.lifecycle === "error" && !receiver.cleanupRequired)}>Disconnect</button>
-                    </div>
-                  </div>
-                  <div className="connection-row">
-                    <span><i className={`connection-dot ${running ? "is-receiving" : ""}`} />Reception</span>
-                    <div className="transport">
-                      <button type="button" onClick={start} disabled={receiver.lifecycle !== "connected"}>Start receiving</button>
-                      <button type="button" className="secondary" onClick={() => void stopReceiver()} disabled={scanActive || (!running && receiver.lifecycle !== "tuning")}>Stop receiving</button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="transport" aria-label="Receiver transport">
-                  <button type="button" onClick={start} disabled={busy || (source === "replay" && !loadedReplay)}>{source === "synthetic" ? "Start demo" : "Start replay"}</button>
-                  <button type="button" className="secondary" onClick={() => void stopReceiver()} disabled={scanActive || !busy || receiver.lifecycle === "stopping"}>Stop</button>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="signal-stage demodulate-stage" aria-labelledby="demodulate-heading">
-            <div className="stage-heading"><span aria-hidden="true">02</span><div><p>Tune & demodulate</p><h3 id="demodulate-heading">Channel settings</h3></div></div>
-            <div className="stage-controls tuning-controls">
-              <label>
-                Channel frequency
-                <span className="unit-input">
-                  <input type="number" min={Math.max(1, caps.frequency.minimumHz) / 1_000_000} max={caps.frequency.maximumHz / 1_000_000} step="0.000001" value={Number.isFinite(frequencyMhz) ? frequencyMhz : ""} disabled={transitioning} onChange={(event) => setFrequencyMhz(event.currentTarget.valueAsNumber)} onKeyDown={(event) => { if (event.key === "Enter" && running && frequencyValid) tune(frequencyMhz * 1_000_000); }} aria-describedby="frequency-help" />
-                  <span>MHz</span>
+              <label className="file-picker">
+                {replayImportFormat === "sigmf"
+                  ? "SigMF dataset"
+                  : "BrowserSDR I/Q binary"}
+                <span className="file-picker-control">
+                  <input
+                    className="file-picker-input"
+                    type="file"
+                    accept={
+                      replayImportFormat === "sigmf"
+                        ? ".sigmf-data,application/octet-stream"
+                        : ".cu8,.ci8,application/octet-stream"
+                    }
+                    onChange={(event) =>
+                      setReplayBinary(event.currentTarget.files?.[0])
+                    }
+                  />
+                  <span className="file-picker-button" aria-hidden="true">
+                    Choose file
+                  </span>
+                  <span className="file-picker-name" aria-hidden="true">
+                    {replayBinary?.name ?? "No file chosen"}
+                  </span>
                 </span>
-                <small id="frequency-help">{caps.frequency.limitsDiscoveredAtTune ? "Checked by the connected tuner" : `${caps.label}: ${caps.frequency.minimumHz / 1_000_000}–${caps.frequency.maximumHz / 1_000_000} MHz`} · stored internally as Hz</small>
               </label>
-              <button type="button" className="secondary tune-button" disabled={!running || !frequencyValid} onClick={() => tune(frequencyMhz * 1_000_000)}>Tune</button>
-              <label>
-                Volume <output>{Math.round(volume * 100)}%</output>
-                <input className="volume-slider" type="range" min="0" max="1" step="0.01" value={volume} disabled={source === "synthetic" || ["DAB", "ADS-B", "AIS"].includes(mode)} onChange={(event) => updateVolume(event.currentTarget.valueAsNumber)} />
-                <small>{source === "synthetic" ? "Demo has no audio output" : ["DAB", "ADS-B", "AIS"].includes(mode) ? `${mode} is a data receiver` : `${mode} audio`}</small>
+              <label className="file-picker">
+                {replayImportFormat === "sigmf"
+                  ? "SigMF metadata"
+                  : "BrowserSDR JSON sidecar"}
+                <span className="file-picker-control">
+                  <input
+                    className="file-picker-input"
+                    type="file"
+                    accept={
+                      replayImportFormat === "sigmf"
+                        ? ".sigmf-meta,application/json"
+                        : ".json,application/json"
+                    }
+                    onChange={(event) =>
+                      setReplayMetadata(event.currentTarget.files?.[0])
+                    }
+                  />
+                  <span className="file-picker-button" aria-hidden="true">
+                    Choose file
+                  </span>
+                  <span className="file-picker-name" aria-hidden="true">
+                    {replayMetadata?.name ?? "No file chosen"}
+                  </span>
+                </span>
               </label>
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  !replayBinary ||
+                  !replayMetadata ||
+                  busy ||
+                  (replayImportFormat === "sigmf" &&
+                    (!sigmfReplayMode ||
+                      (sigmfChannelChoice === "custom" &&
+                        !(Number(sigmfChannelMhz) > 0))))
+                }
+                onClick={() => void loadReplayFiles()}
+              >
+                {replayImportFormat === "sigmf"
+                  ? "Load SigMF pair"
+                  : "Load files"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void activateReplay(
+                    createDeterministicRecordingFixture(),
+                    "Loaded generated 0.5 s AM fixture: +6 kHz carrier, 1 kHz audio tone, 48 ksample/s.",
+                  )
+                }
+              >
+                Use deterministic fixture
+              </button>
             </div>
-            <div className="stage-controls demodulation-controls" aria-label="Channel demodulation settings">
-              <label>
-                Mode
-                <select value={mode} disabled={transitioning} onChange={(event) => chooseMode(event.currentTarget.value as ReceiverMode)}>
-                  {RECEIVER_MODES.map((candidate) => <option
-                    key={candidate}
-                    value={candidate}
-                    disabled={Boolean(modeUnavailable(candidate))} title={modeUnavailable(candidate)}
-                  >{candidate === "DAB" ? "DAB / DAB+" : candidate}{modeUnavailable(candidate) ? ` — ${modeUnavailable(candidate)}` : ""}</option>)}
-                </select>
-              </label>
-              {mode === "DAB" && (
-                <label>
-                  Band III channel
-                  <select value={dabChannelAt(frequencyMhz * 1_000_000)?.label ?? "custom"} disabled={transitioning} onChange={(event) => {
-                    const channel = DAB_BAND_III_CHANNELS.find((candidate) => candidate.label === event.currentTarget.value);
-                    if (!channel) return;
-                    setFrequencyMhz(channel.frequencyHz / 1_000_000);
-                    if (running) tune(channel.frequencyHz);
-                  }}>
-                    {!dabChannelAt(frequencyMhz * 1_000_000) && <option value="custom">Custom frequency</option>}
-                    {DAB_BAND_III_CHANNELS.map((channel) => <option key={channel.label} value={channel.label}>{channel.label} · {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz</option>)}
-                  </select>
-                </label>
-              )}
-              {modeCaps.bandwidthSettable ? (
-                <label>
-                  Channel bandwidth
-                  <span className="unit-input"><input type="number" min={modeCaps.minimumBandwidthHz} max={modeCaps.maximumBandwidthHz} step="10" value={bandwidthHz} disabled={transitioning} onChange={(event) => setBandwidthHz(event.currentTarget.valueAsNumber)} /><span>Hz</span></span>
-                  <small>{modeCaps.minimumBandwidthHz.toLocaleString()}–{modeCaps.maximumBandwidthHz.toLocaleString()} Hz</small>
-                </label>
-              ) : <div className="readout"><span>Channel bandwidth</span><strong>{bandwidthHz.toLocaleString()} Hz fixed</strong></div>}
-              {modeCaps.squelchSettable && (
-                <label>
-                  Squelch <output>{squelch.toFixed(1)}</output>
-                  <input type="range" min="0" max="6" step="0.1" value={squelch} disabled={transitioning} onChange={(event) => setSquelch(event.currentTarget.valueAsNumber)} />
-                  <small>0 keeps audio open</small>
-                </label>
-              )}
-              <button type="button" className="secondary" disabled={!running} onClick={applyMode}>Apply channel</button>
-            </div>
+            <p className="file-message" role="status">
+              {fileMessage}
+            </p>
           </section>
-        </div>
 
-        <div className={`receiver-status receiver-status-${receiver.lifecycle}`} role={receiver.lifecycle === "error" ? "alert" : "status"}>
-          <span className="status-light" />
-          <div>
-            <strong>{receiver.message}</strong>
-            {(running || hardwareConnected) && receiver.session ? (
-              <p>
-                Center {(receiver.session.hardwareCenterFrequencyHz / 1_000_000).toFixed(6)} MHz · selected {(receiver.session.selectedChannelFrequencyHz / 1_000_000).toFixed(6)} MHz · {receiver.session.mode} · {receiver.session.channelBandwidthHz.toLocaleString()} Hz channel · {receiver.session.source === "rtl-sdr" ? receiver.session.gainDb === null ? "automatic gain" : `${receiver.session.gainDb.toFixed(1)} dB requested gain` : receiver.session.hackrf ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}` : "no hardware gain control"} · {isWidebandRate(receiver.session.actualSampleRateHz) ? "channel DSP rate" : "effective rate"} {(receiver.session.hackrf?.effectiveSampleRateHz ?? (isWidebandRate(receiver.session.actualSampleRateHz) ? 2_400_000 : receiver.session.actualSampleRateHz)).toLocaleString()} samples/s{receiver.session.hackrf && ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
-              </p>
-            ) : (
-              <p>{source === "synthetic" ? "Demo uses deterministic complex RF tones and no audio." : source === "replay" ? "Replay is paced from sample counts and never opens a USB chooser." : receiver.lifecycle === "connected" ? "The USB device remains open while sample transfers and audio are stopped." : "Connect opens the browser device chooser. Reception starts only when you request it."}</p>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <WebGpuSpectrum pipeline={analysis} session={receiver.session} onTune={running && !scanActive ? tune : undefined} />
-
-      <section className="control-panel rds-panel decode-panel" aria-labelledby="decode-heading">
-        <div className="panel-heading">
-          <div><p className="eyebrow">Listen & decode</p><h2 id="decode-heading">Decoded data</h2></div>
-          <span className={`status-pill ${(mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}>
-            {mode === "DAB" ? receiver.dab?.state ?? "not started" : mode === "ADS-B" ? `${receiver.adsb?.validFrames ?? 0} valid frames` : mode === "AIS" ? `${receiver.ais?.validFrames ?? 0} valid frames` : receiver.rds?.validGroups ? `${receiver.rds.validGroups} valid groups` : source === "synthetic" ? "no audio" : `${mode} audio`}
-          </span>
-        </div>
-        <div className="decode-layout">
-          <div className="audio-summary"><span>{mode === "DAB" ? "Ensemble acquisition" : mode === "ADS-B" || mode === "AIS" ? "Data acquisition" : "Audio output"}</span><strong>{mode === "DAB" ? receiver.dab?.message ?? "Not active" : mode === "ADS-B" ? receiver.adsb?.message ?? "Not active" : mode === "AIS" ? receiver.ais?.message ?? "Not active" : source === "synthetic" ? "Not available in demo" : receiver.audioState ?? "Not active"}</strong><small>{mode === "DAB" ? "Mode I · complete 2.4 MS/s capture required" : mode === "ADS-B" ? "1090ES · CRC-validated Mode S frames" : mode === "AIS" ? "AIS 1 + AIS 2 · dual-channel GMSK" : source === "synthetic" ? "Use a hardware source or replay to listen." : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}</small></div>
-          <div className="rds-content">
-            <h3>{mode === "DAB" ? "Digital Audio Broadcasting" : mode === "ADS-B" ? "Aircraft targets" : mode === "AIS" ? "Vessel targets" : "Radio Data System"}</h3>
-            {mode === "DAB" ? (
-              <>
-                <dl className="rds-grid">
-                  <div><dt>Transmission frames</dt><dd>{receiver.dab?.frameCount ?? 0}</dd></div>
-                  <div><dt>Null symbols</dt><dd>{receiver.dab?.nullSymbolCount ?? 0}</dd></div>
-                  <div><dt>Estimated signal/null</dt><dd>{receiver.dab?.estimatedSnrDb == null ? "—" : `${receiver.dab.estimatedSnrDb.toFixed(1)} dB`}</dd></div>
-                  <div><dt>Coarse frequency offset</dt><dd>{receiver.dab?.coarseFrequencyOffsetHz == null ? "—" : `${receiver.dab.coarseFrequencyOffsetHz.toFixed(0)} Hz`}</dd></div>
-                </dl>
-                <p className="display-note">The built-in permissive front end acquires DAB mode I frames. FIC/MSC service and HE-AAC audio decoding use a replaceable decoder boundary and are not bundled, avoiding a GPL dependency or a fixed codec-license choice.</p>
-              </>
-            ) : mode === "ADS-B" ? (
-              <>
-                <dl className="rds-grid"><div><dt>Candidate frames</dt><dd>{receiver.adsb?.frames ?? 0}</dd></div><div><dt>Valid frames</dt><dd>{receiver.adsb?.validFrames ?? 0}</dd></div><div><dt>Rejected</dt><dd>{receiver.adsb?.rejectedFrames ?? 0}</dd></div><div><dt>Targets</dt><dd>{receiver.adsb?.targets.length ?? 0}</dd></div></dl>
-                <PositionPlot label="ADS-B target positions" targets={(receiver.adsb?.targets ?? []).map((target) => ({ latitude: target.latitude, longitude: target.longitude, label: target.callsign ?? target.icao }))} />
-                <div className="target-table-wrap"><table className="target-table"><thead><tr><th>Aircraft</th><th>Altitude</th><th>Speed / track</th><th>Position</th><th>Messages</th></tr></thead><tbody>{(receiver.adsb?.targets ?? []).slice(0, 50).map((target) => <tr key={target.icao}><td><strong>{target.callsign ?? "—"}</strong><small>{target.icao}</small></td><td>{target.altitudeFt == null ? "—" : `${target.altitudeFt.toLocaleString()} ft`}</td><td>{target.groundSpeedKt == null ? "—" : `${target.groundSpeedKt.toFixed(0)} kt · ${target.trackDegrees?.toFixed(0) ?? "—"}°`}</td><td>{target.latitude == null ? "—" : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}</td><td>{target.messages}</td></tr>)}</tbody></table></div>
-                <button type="button" className="secondary" disabled={!receiver.adsb?.targets.length} onClick={() => downloadDecodedTargets("ADS-B", receiver.adsb?.targets ?? [])}>Export targets JSON</button>
-              </>
-            ) : mode === "AIS" ? (
-              <>
-                <dl className="rds-grid"><div><dt>AIS 1 frames</dt><dd>{receiver.ais?.channel1Frames ?? 0}</dd></div><div><dt>AIS 2 frames</dt><dd>{receiver.ais?.channel2Frames ?? 0}</dd></div><div><dt>Rejected</dt><dd>{receiver.ais?.rejectedFrames ?? 0}</dd></div><div><dt>Vessels</dt><dd>{receiver.ais?.targets.length ?? 0}</dd></div></dl>
-                <PositionPlot label="AIS vessel positions" targets={(receiver.ais?.targets ?? []).map((target) => ({ latitude: target.latitude, longitude: target.longitude, label: target.name ?? String(target.mmsi) }))} />
-                <div className="target-table-wrap"><table className="target-table"><thead><tr><th>Vessel</th><th>Channel</th><th>Speed / course</th><th>Position</th><th>Messages</th></tr></thead><tbody>{(receiver.ais?.targets ?? []).slice(0, 50).map((target) => <tr key={target.mmsi}><td><strong>{target.name ?? "—"}</strong><small>{target.callSign ?? target.mmsi}</small></td><td>{target.channel}</td><td>{target.speedKnots == null ? "—" : `${target.speedKnots.toFixed(1)} kt · ${target.courseDegrees?.toFixed(1) ?? "—"}°`}</td><td>{target.latitude == null ? "—" : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}</td><td>{target.messages}</td></tr>)}</tbody></table></div>
-                <button type="button" className="secondary" disabled={!receiver.ais?.targets.length} onClick={() => downloadDecodedTargets("AIS", receiver.ais?.targets ?? [])}>Export targets JSON</button>
-              </>
-            ) : mode !== "WBFM" ? (
-              <p className="rds-empty">RDS decoding is available only in WBFM. Audio remains available for the selected mode.</p>
-            ) : !receiver.rds?.validGroups ? (
-              <p className="rds-empty">No validated station data decoded yet.</p>
-            ) : (
-              <dl className="rds-grid">
-                <div><dt>PI identifier</dt><dd>{receiver.rds.pi ?? "—"}</dd></div>
-                <div><dt>Programme Service</dt><dd>{receiver.rds.programmeService ?? "Waiting for all PS segments…"}</dd></div>
-                <div className="rds-text"><dt>RadioText</dt><dd>{receiver.rds.radioText ?? "Waiting for RadioText…"}</dd></div>
-              </dl>
-            )}
-            {mode === "WBFM" && <p className="display-note">Text appears only after CRC and block-offset validation. Retuning, changing station PI, or leaving WBFM clears prior data.</p>}
-          </div>
-        </div>
-      </section>
-
-      <section className="control-panel capture-panel" aria-labelledby="recording-heading">
-        <div className="panel-heading"><div><p className="eyebrow">Capture & replay</p><h2 id="recording-heading">I/Q recordings</h2></div></div>
-        <p>{encoding.toUpperCase()} stores interleaved {encoding === "ci8" ? "signed" : "unsigned"} 8-bit I,Q; hardware recordings preserve native transport bytes. The 32 MiB memory cap is {recordingCapacitySeconds(nativeRateHz).toFixed(1)} seconds at the current/default rate; at 2.4 MS/s it is {recordingCapacitySeconds(2_400_000).toFixed(1)} seconds.</p>
-        <div className="recording-controls">
-          <label className="recording-format">
-            Export format
-            <select
-              aria-label="Recording export format"
-              value={recordingFormat}
-              disabled={formatControlDisabled(recordingStatus, exportingRecording)}
-              onChange={(event) => setRecordingFormat(event.currentTarget.value as RecordingExportFormat)}
-            >
-              <option value="browsersdr">BrowserSDR replay (.{encoding} + .json)</option>
-              <option value="sigmf">SigMF (.sigmf-data + .sigmf-meta)</option>
-            </select>
-          </label>
-          <button type="button" disabled={!running || scanActive || Boolean(recordingStatus) || exportingRecording || captureSlotBlocked} onClick={startRecording}>Start I/Q recording</button>
-          <button type="button" className="secondary" disabled={!recordingStatus || exportingRecording} onClick={stopRecording}>Stop & prepare</button>
-          {retainedCapture.status === "retry-available" && <button type="button" className="secondary" disabled={exportingRecording} onClick={retryRecordingPreparation}>Retry preparation</button>}
-          <button type="button" className="secondary" disabled={!preparedCaptureAvailable || exportingRecording} onClick={() => requestRecordingDownload("archive")}>Download paired ZIP</button>
-          <button type="button" className="secondary" disabled={!preparedCaptureAvailable || exportingRecording} onClick={() => requestRecordingDownload("separate")}>Download separate files</button>
-          <button type="button" className="secondary" disabled={!retainedCapturePresent || exportingRecording || Boolean(recordingStatus)} onClick={discardPreparedRecording}>Discard prepared capture</button>
-          <span>{recordingStatus ? `${(recordingStatus.bytes / (1024 * 1024)).toFixed(2)} / ${(RECORDING_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB · ${recordingStatus.state.replace("-", " ")}` : "Not recording"}</span>
-        </div>
-        <p className="display-note">The chosen format is locked for each segment. State: {retainedCapture.status.replace("-", " ")}{retainedCapture.sampleCount === undefined ? "" : ` · ${retainedCapture.sampleCount.toLocaleString()} samples · ${(retainedCapture.retainedBytes / (1024 * 1024)).toFixed(2)} MiB retained`}. A download request cannot confirm browser storage. One prepared capture is retained within {(RETAINED_CAPTURE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB; after a download request, starting another capture replaces it under this disclosed latest-capture policy.</p>
-        <div className="replay-inputs">
-          <label className="recording-format">
-            Replay pair format
-            <select
-              aria-label="Replay pair format"
-              value={replayImportFormat}
-              disabled={busy}
-              onChange={(event) => {
-                const next = event.currentTarget.value as ReplayImportFormat;
-                setReplayImportFormat(next);
-                setReplayBinary(undefined);
-                setReplayMetadata(undefined);
-                setFileMessage(next === "sigmf"
-                  ? "Choose a local .sigmf-data/.sigmf-meta pair and an explicit replay mode. The RF-center channel is selected unless you choose a custom channel."
-                  : "Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.");
-              }}
-            >
-              <option value="browsersdr">BrowserSDR (.cu8 or .ci8 + .json)</option>
-              <option value="sigmf">SigMF (.sigmf-data + .sigmf-meta)</option>
-            </select>
-          </label>
-          {replayImportFormat === "sigmf" && <>
-            <label className="recording-format">
-              SigMF replay mode
-              <select aria-label="SigMF replay mode" value={sigmfReplayMode} disabled={busy} onChange={(event) => setSigmfReplayMode(event.currentTarget.value as ReceiverMode | "")}>
-                <option value="">Choose mode…</option>
-                {RECEIVER_MODES.map((candidate) => <option key={candidate} value={candidate}>{candidate}</option>)}
-              </select>
-            </label>
-            <label className="recording-format">
-              SigMF replay channel
-              <select aria-label="SigMF replay channel" value={sigmfChannelChoice} disabled={busy} onChange={(event) => setSigmfChannelChoice(event.currentTarget.value as "center" | "custom")}>
-                <option value="center">RF center from metadata</option>
-                <option value="custom">Custom frequency</option>
-              </select>
-            </label>
-            {sigmfChannelChoice === "custom" && <label>
-              Custom replay channel (MHz)
-              <input aria-label="Custom replay channel (MHz)" type="number" min="0.000001" max={Number.MAX_SAFE_INTEGER / 1_000_000} step="0.001" value={sigmfChannelMhz} disabled={busy} onChange={(event) => setSigmfChannelMhz(event.currentTarget.value)} />
-            </label>}
-          </>}
-          <label className="file-picker">
-            {replayImportFormat === "sigmf" ? "SigMF dataset" : "BrowserSDR I/Q binary"}
-            <span className="file-picker-control">
-              <input className="file-picker-input" type="file" accept={replayImportFormat === "sigmf" ? ".sigmf-data,application/octet-stream" : ".cu8,.ci8,application/octet-stream"} onChange={(event) => setReplayBinary(event.currentTarget.files?.[0])} />
-              <span className="file-picker-button" aria-hidden="true">Choose file</span>
-              <span className="file-picker-name" aria-hidden="true">{replayBinary?.name ?? "No file chosen"}</span>
-            </span>
-          </label>
-          <label className="file-picker">
-            {replayImportFormat === "sigmf" ? "SigMF metadata" : "BrowserSDR JSON sidecar"}
-            <span className="file-picker-control">
-              <input className="file-picker-input" type="file" accept={replayImportFormat === "sigmf" ? ".sigmf-meta,application/json" : ".json,application/json"} onChange={(event) => setReplayMetadata(event.currentTarget.files?.[0])} />
-              <span className="file-picker-button" aria-hidden="true">Choose file</span>
-              <span className="file-picker-name" aria-hidden="true">{replayMetadata?.name ?? "No file chosen"}</span>
-            </span>
-          </label>
-          <button type="button" className="secondary" disabled={!replayBinary || !replayMetadata || busy || (replayImportFormat === "sigmf" && (!sigmfReplayMode || (sigmfChannelChoice === "custom" && !(Number(sigmfChannelMhz) > 0))))} onClick={() => void loadReplayFiles()}>{replayImportFormat === "sigmf" ? "Load SigMF pair" : "Load files"}</button>
-          <button type="button" className="secondary" disabled={busy} onClick={() => void activateReplay(createDeterministicRecordingFixture(), "Loaded generated 0.5 s AM fixture: +6 kHz carrier, 1 kHz audio tone, 48 ksample/s.")}>Use deterministic fixture</button>
-        </div>
-        <p className="file-message" role="status">{fileMessage}</p>
-      </section>
-
+          <section
+            className="control-panel receiver-dock-panel session-panel"
+            aria-labelledby="session-heading"
+            hidden={!receiverDockExpanded || receiverDockView !== "session"}
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Receiver state</p>
+                <h2 id="session-heading">Session details</h2>
+              </div>
+            </div>
+            <dl className="session-grid">
+              <div>
+                <dt>Lifecycle</dt>
+                <dd>{receiver.lifecycle.replace("-", " ")}</dd>
+              </div>
+              <div>
+                <dt>Selected channel</dt>
+                <dd>
+                  {Number.isFinite(frequencyMhz)
+                    ? `${frequencyMhz.toFixed(6)} MHz`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>Mode</dt>
+                <dd>{mode}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{caps.label}</dd>
+              </div>
+              <div>
+                <dt>Sample rate</dt>
+                <dd>
+                  {(
+                    receiver.session?.actualSampleRateHz ?? sampleRateHz
+                  ).toLocaleString()}{" "}
+                  samples/s
+                </dd>
+              </div>
+              <div>
+                <dt>Audio</dt>
+                <dd>{receiver.audioState ?? "Not active"}</dd>
+              </div>
+            </dl>
+          </section>
+        </section>
       </div>
 
       <div
@@ -1012,13 +4179,24 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
           receiver={receiver}
           initialFrequencyHz={frequencyMhz * 1_000_000}
           volume={volume}
-          recordingBlocked={Boolean(recordingStatus) || exportingRecording || captureSlotBlocked}
+          recordingBlocked={
+            Boolean(recordingStatus) || exportingRecording || captureSlotBlocked
+          }
           startReceptionForScan={startReceptionForScan}
           onScanningChange={setScanActive}
           onCaptureCandidates={captureSurveyCandidates}
           onInvestigate={(frequencyHz) => {
             setActiveView("receiver");
-            tune(frequencyHz);
+            const settings = defaultModeSettings("SRD");
+            setMode("SRD");
+            setBandwidthHz(settings.bandwidthHz);
+            setSquelch(settings.squelch);
+            setSrdSettings(settings.srd ?? defaultSrdModeSettings());
+            if (receiver.lifecycle === "running")
+              void controller
+                .configureMode(settings)
+                .then(() => tune(frequencyHz));
+            else tune(frequencyHz);
           }}
         />
       </div>
@@ -1029,51 +4207,552 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         aria-labelledby="diagnostics-tab"
         hidden={activeView !== "diagnostics"}
       >
+        <DiagnosticsPanel
+          active={activeView === "diagnostics"}
+          pipeline={analysis}
+          receiver={receiver}
+          controller={controller}
+        />
 
-      <DiagnosticsPanel pipeline={analysis} receiver={receiver} />
+        <section
+          className="capabilities-panel"
+          aria-labelledby="capabilities-heading"
+        >
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Environment</p>
+              <h2 id="capabilities-heading">Capability checks</h2>
+            </div>
+          </div>
+          <ul className="capability-list">
+            {detectedCapabilities.map((capability) => (
+              <li key={capability.label}>
+                <span
+                  className={
+                    capability.available === null
+                      ? "check pending"
+                      : capability.available
+                        ? "check yes"
+                        : "check no"
+                  }
+                  aria-hidden="true"
+                >
+                  {capability.available === null
+                    ? "…"
+                    : capability.available
+                      ? "✓"
+                      : "!"}
+                </span>
+                <span>
+                  <strong>{capability.label}</strong>
+                  <small>{capability.detail}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
 
-      <section className="capabilities-panel" aria-labelledby="capabilities-heading">
-        <div className="panel-heading">
-          <div><p className="eyebrow">Environment</p><h2 id="capabilities-heading">Capability checks</h2></div>
-        </div>
-        <ul className="capability-list">
-          {detectedCapabilities.map((capability) => (
-            <li key={capability.label}>
-              <span className={capability.available ? "check yes" : "check no"} aria-hidden="true">{capability.available ? "✓" : "!"}</span>
-              <span><strong>{capability.label}</strong><small>{capability.detail}</small></span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <div
+        id="help-view"
+        role="tabpanel"
+        aria-labelledby="help-tab"
+        hidden={activeView !== "help"}
+      >
+        {activeView === "help" && (
+          <>
+            <section className="help-hero" aria-labelledby="help-heading">
+              <div>
+                <p className="eyebrow">BrowserSDR field guide</p>
+                <h2 id="help-heading">How can we help you receive?</h2>
+                <p>
+                  Start without hardware, check whether your setup is known to
+                  work, or troubleshoot a connection. BrowserSDR processes
+                  signals locally in this tab.
+                </p>
+              </div>
+              <div className="help-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView("receiver");
+                    void switchSource("synthetic");
+                  }}
+                >
+                  Try the no-hardware demo
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setActiveView("diagnostics")}
+                >
+                  Check this browser
+                </button>
+              </div>
+            </section>
 
-      <section className="help-panel" aria-labelledby="device-help-heading">
-        <p className="eyebrow">Device setup</p>
-        <h2 id="device-help-heading">If the dongle will not connect</h2>
-        {source === "hackrf" ? <p>HackRF Pro supports stable firmware v2026.01.1–v2026.01.3 (USB API 0x0109/0x0110) and the verified development API 0x0113, with production revision 9–11 and standard 8-bit reception. Close other SDR applications before connecting. Unsupported firmware is rejected with its detected identity; verify compatibility before trying again. Hardware validation is pending.</p> : <>
-        <p>Use an RTL2832U device with an R820/R828/R860 tuner. Close other SDR software first. On Windows, WebUSB may require a WinUSB driver; on Linux, the DVB kernel driver may already own the device. Do not change drivers unless the instructions for your hardware and OS require it.</p>
-        <div className="system-troubleshooting" aria-label="Operating system troubleshooting hints">
-          <article>
-            <h3>Windows</h3>
-            <p>Close SDR applications, then use Zadig to assign the WinUSB driver to the RTL2832U interface. Reconnect the dongle and restart the browser.</p>
-          </article>
-          <article>
-            <h3>Linux</h3>
-            <p>If the DVB driver owns the device, close TV/SDR software and unload the module temporarily:</p>
-            <code>sudo rmmod dvb_usb_rtl28xxu</code>
-            <small>This can disable DVB use until the module is reloaded or the computer restarts.</small>
-          </article>
-          <article>
-            <h3>macOS</h3>
-            <p>Close other SDR applications, reconnect the dongle, and use a current Chromium-based browser. A separate USB driver is normally unnecessary.</p>
-          </article>
-        </div>
-        <div className="help-links">
-          <a href="https://developer.chrome.com/docs/capabilities/build-for-webusb" target="_blank" rel="noreferrer">Chrome WebUSB guidance ↗</a>
-          <a href="https://github.com/jtarrio/webrtlsdr#compatible-hardware-and-software" target="_blank" rel="noreferrer">Supported hardware ↗</a>
-          <a href="https://www.rtl-sdr.com/rtl-sdr-quick-start-guide/" target="_blank" rel="noreferrer">RTL-SDR setup guide ↗</a>
-        </div>
-        </>}
-      </section>
+            <div className="help-layout">
+              <main className="help-main">
+                <section
+                  className="help-panel compatibility-panel"
+                  aria-labelledby="compatibility-heading"
+                >
+                  <div className="panel-heading">
+                    <div>
+                      <p className="eyebrow">Compatibility</p>
+                      <h2 id="compatibility-heading">Tested receiver setups</h2>
+                    </div>
+                    <div className="matrix-legend">
+                      <span>
+                        <i className="matrix-dot validated" />
+                        Validated
+                      </span>
+                      <span>
+                        <i className="matrix-dot unclear" />
+                        Unclear
+                      </span>
+                    </div>
+                  </div>
+                  <p className="matrix-intro">
+                    <strong>Validated</strong> means the listed path has direct
+                    automated or physical evidence. <strong>Unclear</strong>{" "}
+                    means support may be plausible, but there is not enough
+                    evidence to recommend it yet.
+                  </p>
+                  <div className="compatibility-table-wrap compatibility-overview">
+                    <table className="compatibility-table">
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Status</th>
+                          <th>Validated scope</th>
+                          <th>Known limits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <th scope="row">Synthetic demo</th>
+                          <td>
+                            <span className="compat-status is-validated">
+                              Validated
+                            </span>
+                          </td>
+                          <td>
+                            Current desktop Chromium; spectrum and analysis path
+                          </td>
+                          <td>No RF hardware or audio</td>
+                        </tr>
+                        <tr>
+                          <th scope="row">
+                            RTL-SDR
+                            <br />
+                            <small>R820 / R828 / R860 tuner</small>
+                          </th>
+                          <td>
+                            <span className="compat-status is-validated">
+                              Validated
+                            </span>
+                          </td>
+                          <td>
+                            Live FM, audio, RDS, WebGPU, recording and replay in
+                            Chrome
+                          </td>
+                          <td>Other tuner families are unclear</td>
+                        </tr>
+                        <tr>
+                          <th scope="row">
+                            HackRF Pro
+                            <br />
+                            <small>firmware v2026.01.1–v2026.01.3</small>
+                          </th>
+                          <td>
+                            <span className="compat-status is-validated">
+                              Validated
+                            </span>
+                          </td>
+                          <td>
+                            Live reception at 4.8 and 9.6 MS/s, tuning,
+                            recording and restart
+                          </td>
+                          <td>
+                            19.2 MS/s remains experimental; HackRF One is not
+                            this profile
+                          </td>
+                        </tr>
+                        <tr>
+                          <th scope="row">bladeRF 2.0 Micro xA4</th>
+                          <td>
+                            <span className="compat-status is-validated">
+                              Validated
+                            </span>
+                          </td>
+                          <td>
+                            Connection, volatile FPGA load, RF configuration and
+                            initial reception
+                          </td>
+                          <td>
+                            Recording and TX are unavailable; sustained/two-rate
+                            checks remain
+                          </td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Other SDR hardware</th>
+                          <td>
+                            <span className="compat-status is-unclear">
+                              Unclear
+                            </span>
+                          </td>
+                          <td>No direct evidence</td>
+                          <td>BrowserSDR only offers the profiles above</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="matrix-footnote">
+                    Hardware reception requires a current desktop Chromium
+                    browser with WebUSB, an HTTPS or localhost page, and
+                    exclusive access to the device. Chrome is the tested
+                    browser; other Chromium browsers remain unclear.
+                  </p>
+                  <details className="compatibility-details">
+                    <summary>
+                      <span>View detailed compatibility</span>
+                      <small>Modes, recording &amp; export, and browsers</small>
+                    </summary>
+                    <div className="compatibility-detail-content">
+                      <div
+                        className="compatibility-status-guide"
+                        aria-label="Detailed compatibility status definitions"
+                      >
+                        <span>
+                          <strong className="guide-validated">Validated</strong>
+                          Direct automated or physical evidence
+                        </span>
+                        <span>
+                          <strong className="guide-available">Available</strong>
+                          Implemented; live evidence is incomplete
+                        </span>
+                        <span>
+                          <strong className="guide-experimental">
+                            Experimental
+                          </strong>
+                          Known stability or performance risk
+                        </span>
+                        <span>
+                          <strong className="guide-unclear">Unclear</strong>
+                          Not enough evidence to recommend
+                        </span>
+                        <span>
+                          <strong className="guide-unsupported">
+                            Unsupported
+                          </strong>
+                          Not offered by this implementation
+                        </span>
+                      </div>
+                      <div
+                        className="compatibility-detail-tabs"
+                        role="tablist"
+                        aria-label="Detailed compatibility views"
+                      >
+                        {(
+                          Object.keys(
+                            COMPATIBILITY_DETAILS,
+                          ) as CompatibilityDetailView[]
+                        ).map((view) => (
+                          <button
+                            type="button"
+                            id={`compatibility-${view}-tab`}
+                            role="tab"
+                            aria-selected={compatibilityDetailView === view}
+                            aria-controls={`compatibility-${view}-panel`}
+                            tabIndex={compatibilityDetailView === view ? 0 : -1}
+                            onClick={() => setCompatibilityDetailView(view)}
+                            onKeyDown={handleCompatibilityTabKeyDown}
+                            key={view}
+                          >
+                            {COMPATIBILITY_DETAILS[view].label}
+                          </button>
+                        ))}
+                      </div>
+                      {(
+                        Object.keys(
+                          COMPATIBILITY_DETAILS,
+                        ) as CompatibilityDetailView[]
+                      ).map((view) => {
+                        const detail = COMPATIBILITY_DETAILS[view];
+                        return (
+                          <div
+                            id={`compatibility-${view}-panel`}
+                            className="compatibility-detail-panel"
+                            role="tabpanel"
+                            aria-labelledby={`compatibility-${view}-tab`}
+                            hidden={compatibilityDetailView !== view}
+                            key={view}
+                          >
+                            <div className="compatibility-table-wrap">
+                              <table className="compatibility-table compatibility-detail-table">
+                                <thead>
+                                  <tr>
+                                    <th>
+                                      {view === "modes"
+                                        ? "Mode or workflow"
+                                        : view === "recording"
+                                          ? "Workflow"
+                                          : "Environment"}
+                                    </th>
+                                    {detail.columns.map((column) => (
+                                      <th key={column}>{column}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {detail.rows.map((row) => (
+                                    <tr key={row.label}>
+                                      <th scope="row">{row.label}</th>
+                                      {row.cells.map((cell, index) => (
+                                        <td key={detail.columns[index]}>
+                                          <span
+                                            className={`compat-status is-${cell.status}`}
+                                          >
+                                            {
+                                              COMPATIBILITY_STATUS_LABELS[
+                                                cell.status
+                                              ]
+                                            }
+                                          </span>
+                                          <small className="compat-evidence">
+                                            {cell.evidence}
+                                          </small>
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <p className="compatibility-detail-note">
+                              {detail.note}
+                            </p>
+                          </div>
+                        );
+                      })}
+                      <p className="compatibility-last-reviewed">
+                        Evidence reviewed 26 September 2026 · Statuses describe
+                        the paths above, not every device, signal or driver
+                        combination.
+                      </p>
+                    </div>
+                  </details>
+                  <CompatibilityReportCard
+                    context={compatibilityReportContext}
+                  />
+                </section>
+
+                <section
+                  className="help-panel faq-panel"
+                  aria-labelledby="faq-heading"
+                >
+                  <p className="eyebrow">Frequently asked questions</p>
+                  <h2 id="faq-heading">The useful answers, up front</h2>
+                  <div className="faq-list">
+                    <details open>
+                      <summary>How do I get started?</summary>
+                      <p>
+                        For a quick check, choose the synthetic demo and press{" "}
+                        <strong>Start demo</strong>. For hardware, connect one
+                        supported receiver, choose a sample rate and mode, then
+                        use <strong>Connect</strong> followed by{" "}
+                        <strong>Start receiving</strong>. The browser will ask
+                        you to select the USB device.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>Which browser should I use?</summary>
+                      <p>
+                        Use a current desktop Google Chrome build. Hardware
+                        access needs WebUSB, and the spectrum benefits from
+                        WebGPU. Open Diagnostics to see what this browser
+                        exposes before troubleshooting the radio.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>
+                        Why is my device missing from the USB chooser?
+                      </summary>
+                      <p>
+                        Close other SDR tools first—only one application can own
+                        the radio. Confirm the device matches a supported
+                        profile. On Windows, an RTL-SDR may need WinUSB; on
+                        Linux, a DVB kernel driver may already own it. Reconnect
+                        the radio after changing driver ownership.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>Does BrowserSDR upload my radio data?</summary>
+                      <p>
+                        Live processing, recordings, replay, decoded content,
+                        spectrum data and audio stay in the browser. The
+                        Diagnostics view can send a separately reviewed error
+                        report. Errors and recent diagnostic logs are sent
+                        automatically by default, and you can turn automatic
+                        sending off there at any time. Reports exclude radio
+                        data, USB serial numbers and exact tuned frequency by
+                        default.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>
+                        Can BrowserSDR transmit or change device firmware?
+                      </summary>
+                      <p>
+                        No. All supported hardware paths are receive-only. For
+                        an empty bladeRF xA4, BrowserSDR can load a verified
+                        official FPGA image into volatile RAM. It does not write
+                        flash, replace FX3 firmware or enable TX, and the
+                        temporary FPGA image disappears on power loss.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>What can I receive?</summary>
+                      <p>
+                        Spectrum-only mode keeps acquisition and analysis active
+                        without audio or decoder output. Analog WBFM, NBFM, AM,
+                        USB, LSB and CW are also available, plus DAB/DAB+, 1090
+                        MHz ADS-B, dual-channel AIS and bounded SRD inspection
+                        where the selected source and sample rate support them.
+                        Reception still depends on your antenna, local signals
+                        and RF conditions.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>What is Explorer for?</summary>
+                      <p>
+                        Explorer scans a frequency range or reusable
+                        field-survey profile with the active receiver. It finds
+                        candidates using relative signal power, then lets you
+                        investigate or capture them. A detected peak is evidence
+                        of activity—not proof of a modulation or transmitter
+                        identity.
+                      </p>
+                    </details>
+                    <details>
+                      <summary>How do recording and replay work?</summary>
+                      <p>
+                        Capture is intentionally bounded to 32 MiB in memory.
+                        RTL-SDR uses CU8 and HackRF Pro uses CI8; both can be
+                        exported in BrowserSDR or SigMF pairs where supported.
+                        bladeRF recording is not available yet. Replay never
+                        asks for USB permission.
+                      </p>
+                    </details>
+                  </div>
+                </section>
+              </main>
+
+              <aside
+                className="help-aside"
+                aria-label="Setup and troubleshooting"
+              >
+                <section className="help-panel quick-start-panel">
+                  <p className="eyebrow">Three steps</p>
+                  <h2>Before connecting</h2>
+                  <ol className="quick-start-list">
+                    <li>
+                      <span>01</span>
+                      <div>
+                        <strong>Check the matrix</strong>
+                        <p>Match the exact device and firmware profile.</p>
+                      </div>
+                    </li>
+                    <li>
+                      <span>02</span>
+                      <div>
+                        <strong>Close SDR software</strong>
+                        <p>Release the USB device from other applications.</p>
+                      </div>
+                    </li>
+                    <li>
+                      <span>03</span>
+                      <div>
+                        <strong>Check Diagnostics</strong>
+                        <p>Confirm secure context, WebUSB and WebGPU.</p>
+                      </div>
+                    </li>
+                  </ol>
+                </section>
+
+                <section
+                  className="help-panel"
+                  aria-labelledby="device-help-heading"
+                >
+                  <p className="eyebrow">Device setup</p>
+                  <h2 id="device-help-heading">If it will not connect</h2>
+                  <p>
+                    Use an RTL2832U device with an R820/R828/R860 tuner. Close
+                    other SDR software first. Do not change drivers unless the
+                    instructions for your hardware and OS require it.
+                  </p>
+                  <div
+                    className="system-troubleshooting"
+                    aria-label="Operating system troubleshooting hints"
+                  >
+                    <article>
+                      <h3>Windows</h3>
+                      <p>
+                        Close SDR applications, then use Zadig to assign the
+                        WinUSB driver to the RTL2832U interface. Reconnect the
+                        dongle and restart the browser.
+                      </p>
+                    </article>
+                    <article>
+                      <h3>Linux</h3>
+                      <p>
+                        If the DVB driver owns the device, close TV/SDR software
+                        and unload the module temporarily:
+                      </p>
+                      <code>sudo rmmod dvb_usb_rtl28xxu</code>
+                      <small>
+                        This can disable DVB use until the module is reloaded or
+                        the computer restarts.
+                      </small>
+                    </article>
+                    <article>
+                      <h3>macOS</h3>
+                      <p>
+                        Close other SDR applications, reconnect the dongle, and
+                        use a current Chromium-based browser. A separate USB
+                        driver is normally unnecessary.
+                      </p>
+                    </article>
+                  </div>
+                  <div className="help-links">
+                    <a
+                      href="https://developer.chrome.com/docs/capabilities/build-for-webusb"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Chrome WebUSB guidance ↗
+                    </a>
+                    <a
+                      href="https://github.com/jtarrio/webrtlsdr#compatible-hardware-and-software"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Supported hardware ↗
+                    </a>
+                    <a
+                      href="https://www.rtl-sdr.com/rtl-sdr-quick-start-guide/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      RTL-SDR setup guide ↗
+                    </a>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </>
+        )}
       </div>
     </main>
   );

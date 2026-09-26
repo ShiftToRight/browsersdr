@@ -93,7 +93,7 @@ describe("versioned native CI8 capture", () => {
 });
 
 describe("CI8 export and import", () => {
-  it.each([1_024_000, 4_800_000, 9_600_000] as const)("exports schema-valid ci8 at %i, exact SHA-512 and truthful identity/settings/survey evidence", async rate => {
+  it.each([1_024_000, 4_800_000, 9_600_000, 19_200_000] as const)("exports schema-valid ci8 at %i, exact SHA-512 and truthful identity/settings/survey evidence", async rate => {
     const { recording } = await hackrfRecordingFixture(tone(1), rate);
     recording.metadata.survey = { sessionId: "test", site: { label: "Test site", latitude: 48, longitude: 11, antenna: "test dipole" }, signal: { label: "Unverified carrier", confidence: "low" } };
     recording.metadata.knownGaps = [{ afterSample: 10, missingSamples: 20, reason: "known app gap" }, { afterSample: 20, missingSamples: null, reason: "unknown loss" }, { afterSample: 30, missingSamples: 3, reason: "after unknown" }];
@@ -123,8 +123,8 @@ describe("CI8 export and import", () => {
     const files = unzipSync(createRecordingArchive(result.prepared).contents as Uint8Array);
     expect(files[result.prepared.files[0].name]).toEqual(recording.data);
     expect(result.prepared.files[0].name.endsWith(format === "browsersdr" ? ".ci8" : ".sigmf-data")).toBe(true);
-    expect(coordinator.requestDownload("archive", () => { throw new Error("blocked download"); }).status).toBe("failure");
-    expect(coordinator.requestDownload("archive", () => {}).status).toBe("download-requested");
+    expect((await coordinator.requestDownload("archive", () => { throw new Error("blocked download"); })).status).toBe("failure");
+    expect((await coordinator.requestDownload("archive", () => {})).status).toBe("download-requested");
     coordinator.discard(); expect(coordinator.getSnapshot().retainedBytes).toBe(0);
   });
 });

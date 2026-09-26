@@ -39,7 +39,9 @@ export interface ScanWindowResult {
   frameCount: number;
   coverage: number;
   missingSamples: number;
-  status: "complete" | "insufficient";
+  status: "complete" | "insufficient" | "failed";
+  /** A bounded, user-safe explanation when this window could not be measured. */
+  error?: string;
 }
 
 export interface SpectrumMeasurementSource {
@@ -56,7 +58,11 @@ export interface SpectrumMeasurement {
 }
 
 export class SpectrumMeasurementTimeoutError extends Error {
-  constructor() { super("Spectrum input stopped before the requested source-sample dwell completed; the window is incomplete."); }
+  constructor(details?: string) {
+    super(
+      `Spectrum input stopped before the requested source-sample dwell completed; the window is incomplete.${details ? ` ${details}` : ""}`,
+    );
+  }
 }
 
 export function collectSpectrumMeasurement(
@@ -71,6 +77,8 @@ export function collectSpectrumMeasurement(
     let missingSamples = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
+    let observedFrames = 0;
+    let lastObservedFrame: SpectrumFrame | undefined;
     let unsubscribe: () => void = () => undefined;
     const cleanup = () => {
       if (timer !== undefined) clearTimeout(timer);
@@ -81,7 +89,10 @@ export function collectSpectrumMeasurement(
       if (settled) return;
       settled = true;
       cleanup();
-      reject(new SpectrumMeasurementTimeoutError());
+      const details = lastObservedFrame
+        ? `Observed ${observedFrames} frame${observedFrames === 1 ? "" : "s"}; last frame was generation ${lastObservedFrame.sessionGeneration} at ${lastObservedFrame.centerFrequencyHz} Hz/${lastObservedFrame.sampleRateHz} samples/s, expected generation ${options.generation} at ${options.centerFrequencyHz} Hz/${options.sampleRateHz} samples/s.`
+        : "No spectrum frames were published during the watchdog interval.";
+      reject(new SpectrumMeasurementTimeoutError(details));
     };
     const armTimeout = () => {
       if (timer !== undefined) clearTimeout(timer);
@@ -94,6 +105,8 @@ export function collectSpectrumMeasurement(
       reject(new DOMException("Spectrum scan cancelled", "AbortError"));
     };
     unsubscribe = source.subscribeMeasurements((frame) => {
+      observedFrames += 1;
+      lastObservedFrame = frame;
       if (settled || frame.sessionGeneration !== options.generation) return;
       if (frame.centerFrequencyHz !== options.centerFrequencyHz) return;
       if (frame.sampleRateHz !== options.sampleRateHz) return;
@@ -273,6 +286,23 @@ export function analyzeScanWindow(
   return {
     plan, points, candidates: status === "complete" ? candidates : [], noiseFloorDb, frameCount: acceptedFrames,
     coverage: measurement?.coverage ?? 1, missingSamples: measurement?.missingSamples ?? 0, status,
+  };
+}
+
+export function failedScanWindow(
+  plan: ScanWindowPlan,
+  error: unknown,
+): ScanWindowResult {
+  return {
+    plan,
+    points: [],
+    candidates: [],
+    noiseFloorDb: -120,
+    frameCount: 0,
+    coverage: 0,
+    missingSamples: 0,
+    status: "failed",
+    error: error instanceof Error ? error.message : "This scan window failed.",
   };
 }
 

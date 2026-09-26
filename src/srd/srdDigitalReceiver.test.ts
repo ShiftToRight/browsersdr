@@ -1,0 +1,42 @@
+import { describe, expect, it, vi } from "vitest";
+import type { DigitalPublication, DigitalWorkerInput, DigitalWorkerOutput, DigitalWorkerPort } from "../digital";
+import { defaultSrdConfiguration } from "./settings";
+import { SrdDigitalReceiver } from "./srdDigitalReceiver";
+import type { SrdEvent, SrdSnapshot } from "./types";
+
+class FakeWorker implements DigitalWorkerPort<SrdSnapshot, SrdEvent> {
+  onmessage: ((event: MessageEvent<DigitalWorkerOutput<SrdSnapshot, SrdEvent>>) => void) | null = null;
+  onerror: OnErrorEventHandler = null;
+  readonly messages: DigitalWorkerInput<ReturnType<typeof defaultSrdConfiguration>>[] = [];
+  readonly terminate = vi.fn();
+  postMessage(message: unknown): void { this.messages.push(message as DigitalWorkerInput<ReturnType<typeof defaultSrdConfiguration>>); }
+  emit(message: DigitalWorkerOutput<SrdSnapshot, SrdEvent>): void {
+    this.onmessage?.({ data: message } as MessageEvent<DigitalWorkerOutput<SrdSnapshot, SrdEvent>>);
+  }
+}
+
+describe("SrdDigitalReceiver integration adapter", () => {
+  it("owns submitted buffers, caps the queue, reports drops and rejects stale publications", () => {
+    const worker = new FakeWorker(), updates = vi.fn();
+    const receiver = new SrdDigitalReceiver(updates, vi.fn(), () => worker);
+    receiver.configureSession(defaultSrdConfiguration(1_024_000, 7, 12_000));
+    receiver.configure(1_024_000, 12_000);
+    const sourceI = Float32Array.of(0.25, 0.5), sourceQ = Float32Array.of(-0.25, -0.5);
+    for (let index = 0; index < 9; index++) receiver.receiveSamples({ I: sourceI, Q: sourceQ, frequency: 100_000_000 });
+    const samples = worker.messages.find((message) => message.type === "samples");
+    expect(samples?.type).toBe("samples");
+    if (samples?.type === "samples") {
+      expect(samples.I).not.toBe(sourceI); expect(samples.Q).not.toBe(sourceQ); expect(samples.firstSampleIndex).toBe(0);
+    }
+    expect(Array.from(sourceI)).toEqual([0.25, 0.5]);
+    expect(receiver.diagnostics).toMatchObject({ queuedBlocks: 8, droppedInputBlocks: 1, droppedInputSamples: 2 });
+    const publication: DigitalPublication<SrdSnapshot> = {
+      sequence: 1,
+      provenance: { generation: 6, firstInputSampleIndex: 0, lastInputSampleIndex: 1, actualInputSampleRateHz: 1_024_000, selectedChannelOffsetHz: 12_000 },
+      value: { modulation: "ook", protocol: "none", configured: true, activeBurst: false, trace: [], bursts: [], devices: [], recentReadings: [], counters: { bursts: 0, truncatedBursts: 0, validatedReadings: 0, rejectedProtocolFrames: 0, duplicateReadings: 0, tracePointsDropped: 0 } },
+    };
+    worker.emit({ type: "snapshot", generation: 6, publication });
+    expect(updates).not.toHaveBeenCalled(); expect(receiver.diagnostics.staleResults).toBe(1);
+    receiver.dispose(); expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+});

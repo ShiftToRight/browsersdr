@@ -73,3 +73,16 @@ describe("HackRF Signals sample adapter", () => {
     asynchronous.ready(await session()); expect(() => asynchronous.receive(block(Uint8Array.of(0, 0)))).toThrow(/synchronously/);
   });
 });
+
+it("delivers original CI8 before conversion when the receiver accepts it, preserving capture order", async () => {
+  const order: string[] = [];
+  const bytes = Uint8Array.of(128, 255, 0, 127);
+  const receiveSamples = vi.fn();
+  const receiveCi8 = vi.fn((input: Uint8Array, frequency: number) => {
+    order.push("native"); expect(input).toBe(bytes); expect(frequency).toBe(4_300_000_001); return true;
+  });
+  const adapter = new HackrfSampleAdapter({ setSampleRate: vi.fn(), receiveSamples, receiveCi8 }, () => { order.push("capture"); });
+  adapter.ready(await session()); adapter.receive(block(bytes));
+  expect(order).toEqual(["capture", "native"]); expect(receiveSamples).not.toHaveBeenCalled();
+  receiveCi8.mockReturnValue(false); adapter.receive(block(bytes)); expect(receiveSamples).toHaveBeenCalledOnce();
+});

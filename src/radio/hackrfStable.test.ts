@@ -27,13 +27,13 @@ async function setup(api = 0x0110, rate: HackrfSampleRateHz = 1_024_000) {
 
 describe("released Pro firmware compatibility", () => {
   it.each([0x0109, 0x0110])("uses the shared stable command set for API %i at all menu rates", async (api) => {
-    for (const rate of [1_024_000, 2_400_000, 4_800_000, 9_600_000] as const) {
+    for (const rate of [1_024_000, 2_400_000, 4_800_000, 9_600_000, 19_200_000] as const) {
       const f = await setup(api, rate);
       try {
         const ready = await f.start();
         expect(ready.details.capabilities.protocolProfile).toBe(HACKRF_STABLE_PROFILE);
-        expect(ready.details).toMatchObject({ nativeSampleRateHz: rate, effectiveSampleRateHz: rate >= 4_800_000 ? 2_400_000 : rate, rateEvidence: "requested-and-acknowledged", fpgaDecimationFactor: rate === 1_024_000 ? 32 : rate === 2_400_000 ? 16 : rate === 4_800_000 ? 8 : 4 });
-        expect(f.usb.fpga.get(2)).toBe(rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : 2);
+        expect(ready.details).toMatchObject({ nativeSampleRateHz: rate, effectiveSampleRateHz: rate >= 4_800_000 ? 2_400_000 : rate, rateEvidence: "requested-and-acknowledged", fpgaDecimationFactor: rate === 1_024_000 ? 32 : rate === 2_400_000 ? 16 : rate === 4_800_000 ? 8 : rate === 9_600_000 ? 4 : 2 });
+        expect(f.usb.fpga.get(2)).toBe(rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : rate === 9_600_000 ? 2 : 1);
         expect(f.usb.fpga.get(1)).toBe(7); // legacy quarter shift is in CTRL, not register 3
         expect(ready.details.captureSettings).toMatchObject({ appliedRateFixed36: null, appliedRfFixed24: null, appliedRotation: null,
           reportedBasebandBandwidthHz: null, reportedAnalogLpfTargetHz: null, settingsEvidence: "usb-acknowledged", stableFpgaControl: 7 });
@@ -47,9 +47,10 @@ describe("released Pro firmware compatibility", () => {
         expect(calls.filter(call => call.setup.request === 1).every(call => call.setup.value === 0 || call.setup.value === 1)).toBe(true);
         if (rate === 4_800_000) expect(calls.find(call => call.setup.request === 6)?.bytes).toEqual([0x00, 0x3e, 0x49, 0, 1, 0, 0, 0]);
         if (rate === 9_600_000) expect(calls.find(call => call.setup.request === 6)?.bytes).toEqual([0x00, 0x7c, 0x92, 0, 1, 0, 0, 0]);
+        if (rate === 19_200_000) expect(calls.find(call => call.setup.request === 6)?.bytes).toEqual([0x00, 0xf8, 0x24, 1, 1, 0, 0, 0]);
         const frequencies = calls.filter(call => call.setup.request === 16).map(call => call.bytes);
         expect(frequencies.slice(-2)).toEqual([[0xcc, 0x10, 0, 0, 2, 0, 0, 0], [0xcc, 0x10, 0, 0, 1, 0, 0, 0]]);
-        expect(calls.filter(call => call.setup.request === 49).map(call => [call.setup.index, call.setup.value])).toEqual([[1, 1], [2, rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : 2], [3, 0], [4, 0], [5, 0]]);
+        expect(calls.filter(call => call.setup.request === 49).map(call => [call.setup.index, call.setup.value])).toEqual([[1, 1], [2, rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : rate === 9_600_000 ? 2 : 1], [3, 0], [4, 0], [5, 0]]);
       } finally { await f.transport.close(); }
     }
   });

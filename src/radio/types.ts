@@ -1,9 +1,12 @@
-export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "replay";
+export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "replay";
 import type { HackrfRxSettings, HackrfSessionDetails } from "./sourceCapabilities";
+import type { BladeRfSessionDetails } from "./bladerfProtocol";
 import type { ReceiverMode } from "./receiverConfig";
 export type { DabSnapshot } from "../dab/dabReceiver";
 export type { AdsbSnapshot, AdsbTarget } from "../adsb/adsbReceiver";
 export type { AisSnapshot, AisTarget } from "../ais/aisReceiver";
+export type { SrdSnapshot } from "../srd/types";
+import type { SrdModeSettings } from "../srd/settings";
 
 export type ReceiverLifecycle =
   | "idle"
@@ -16,6 +19,14 @@ export type ReceiverLifecycle =
   | "stopping"
   | "disconnecting"
   | "error";
+
+export interface SquelchMeterState {
+  /** Relative in-channel quality ratio used by the analog squelch, not dB. */
+  level: number;
+  /** Recent peak held briefly to make intermittent transmissions visible. */
+  peak: number;
+  open: boolean;
+}
 
 export type ReceiverCommand =
   | { type: "connect"; source: SourceKind }
@@ -51,11 +62,21 @@ export interface SourceSessionMetadata {
   mode: ReceiverMode;
   channelBandwidthHz: number;
   squelch: number;
+  /** Selected audible CW beat note; absent in recordings made before CW support. */
+  beatToneHz?: number;
+  srd?: SrdModeSettings;
   /** Legacy RTL scalar. HackRF keeps null for compatibility; this is NOT AGC. */
   gainDb: number | null;
   /** Required by the HackRF backend; legacy constructors need no new fields. */
   hackrf?: HackrfSessionDetails;
+  /** Present only for the receive-only bladeRF 2.0 Micro xA4 backend. */
+  bladerf?: BladeRfSessionDetails;
   sampleFormat: "planar-f32-iq-normalized";
+}
+
+export interface BladeRfSourceSessionMetadata extends SourceSessionMetadata {
+  source: "bladerf";
+  bladerf: BladeRfSessionDetails;
 }
 
 /** Stronger construction contract for step 04; common legacy fixtures stay compatible. */

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browsersdr.com/schemas/diagnostic-report-v1.json",
+  "title": "BrowserSDR diagnostic report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "reportId", "createdAt", "trigger", "autoSubmitted", "build", "environment", "receiver", "events", "snapshots", "redaction"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "reportId": { "type": "string", "maxLength": 64 },
+    "createdAt": { "type": "string", "format": "date-time", "maxLength": 40 },
+    "trigger": { "enum": ["manual", "error", "automatic"] },
+    "autoSubmitted": { "type": "boolean" },
+    "build": { "type": "object" },
+    "environment": { "type": "object" },
+    "receiver": { "type": "object" },
+    "description": { "type": "string", "maxLength": 1000 },
+    "events": { "type": "array", "maxItems": 100 },
+    "snapshots": { "type": "array", "maxItems": 60 },
+    "redaction": { "type": "object" }
+  }
+}

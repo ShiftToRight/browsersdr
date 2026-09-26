@@ -14,16 +14,21 @@ export type HackrfReferenceCommit = typeof HACKRF_REFERENCE_COMMIT | typeof HACK
 export const isStableHackrfApi = (api: number): boolean => api === 0x0109 || api === 0x0110;
 export const isSupportedHackrfApi = (api: number): boolean => isStableHackrfApi(api) || api === 0x0113;
 export const LIVE_SAMPLE_RATES_HZ = [1_024_000, 2_400_000] as const;
-export const HACKRF_SAMPLE_RATES_HZ = [1_024_000, 2_400_000, 4_800_000, 9_600_000] as const;
+export const HACKRF_SAMPLE_RATES_HZ = [1_024_000, 2_400_000, 4_800_000, 9_600_000, 19_200_000] as const;
+export const BLADERF_SAMPLE_RATES_HZ = [2_400_000, 4_800_000, 9_600_000, 19_200_000] as const;
+export type BladeRfSampleRateHz = typeof BLADERF_SAMPLE_RATES_HZ[number];
 export type HackrfSampleRateHz = typeof HACKRF_SAMPLE_RATES_HZ[number];
-export const isWidebandRate = (rate: number): boolean => rate === 4_800_000 || rate === 9_600_000;
+export const isWidebandRate = (rate: number): boolean => rate === 4_800_000 || rate === 9_600_000 || rate === 19_200_000;
 export const channelSampleRate = (nativeRate: number): number => isWidebandRate(nativeRate) ? 2_400_000 : nativeRate;
-export const hackrfDecimationExponent = (rate: number): number => rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : 2;
-export const hackrfDecimationFactor = (rate: number): 4 | 8 | 16 | 32 => rate === 1_024_000 ? 32 : rate === 2_400_000 ? 16 : rate === 4_800_000 ? 8 : 4;
+export const hackrfDecimationExponent = (rate: number): number => rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : rate === 9_600_000 ? 2 : 1;
+export const hackrfDecimationFactor = (rate: number): 2 | 4 | 8 | 16 | 32 => rate === 1_024_000 ? 32 : rate === 2_400_000 ? 16 : rate === 4_800_000 ? 8 : rate === 9_600_000 ? 4 : 2;
 export type HostResampling = { kind: "none"; numerator: 1; denominator: 1 }
   | { kind: "channel-fir-decimate-2-v1"; numerator: 1; denominator: 2 }
-  | { kind: "channel-fir-decimate-4-v1"; numerator: 1; denominator: 4 };
-export const hostResamplingForRate = (rate: number): HostResampling => rate === 9_600_000
+  | { kind: "channel-fir-decimate-4-v1"; numerator: 1; denominator: 4 }
+  | { kind: "channel-fir-decimate-8-v1"; numerator: 1; denominator: 8 };
+export const hostResamplingForRate = (rate: number): HostResampling => rate === 19_200_000
+  ? { kind: "channel-fir-decimate-8-v1", numerator: 1, denominator: 8 }
+  : rate === 9_600_000
   ? { kind: "channel-fir-decimate-4-v1", numerator: 1, denominator: 4 }
   : rate === 4_800_000
   ? { kind: "channel-fir-decimate-2-v1", numerator: 1, denominator: 2 }
@@ -97,7 +102,7 @@ export interface HackrfSessionDetails {
   nativeSampleRateHz: number;
   effectiveSampleRateHz: number;
   adcSampleRateHz: number;
-  fpgaDecimationFactor: 4 | 8 | 16 | 32;
+  fpgaDecimationFactor: 2 | 4 | 8 | 16 | 32;
   hostResampling: HostResampling;
   rateEvidence: "firmware-reported" | "requested-and-acknowledged";
   captureSettings: HackrfCaptureSettings;
@@ -109,7 +114,7 @@ export interface SourceCapabilities {
   readonly requiresUsb: boolean;
   readonly persistentConnection: boolean;
   readonly frequency: { readonly minimumHz: number; readonly maximumHz: number; readonly integerHz: boolean; readonly limitsDiscoveredAtTune: boolean };
-  readonly rates: { readonly kind: "choices"; readonly valuesHz: readonly number[]; readonly defaultHz: number }
+  readonly rates: { readonly kind: "choices"; readonly valuesHz: readonly number[]; readonly defaultHz: number; readonly experimentalHz?: readonly number[] }
     | { readonly kind: "recording"; readonly minimumHz: number; readonly maximumHz: number };
   readonly modes: readonly ReceiverMode[];
   readonly gain: { readonly kind: "rtl-auto-manual"; readonly minimumDb: number; readonly maximumDb: number }
@@ -128,8 +133,15 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
   hackrf: {
     source: "hackrf", label: "HackRF Pro", requiresUsb: true, persistentConnection: true,
     frequency: { minimumHz: 100_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
-    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 1_024_000 }, modes: RECEIVER_MODES,
+    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 1_024_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
     gain: { kind: "hackrf-stages", lnaCodes: [0, 16, 33], vgaMinimumDb: 0, vgaMaximumDb: 62, vgaStepDb: 2, antennaPowerEnabled: false },
+  },
+  bladerf: {
+    source: "bladerf", label: "bladeRF 2.0 Micro xA4", requiresUsb: true, persistentConnection: true,
+    frequency: { minimumHz: 70_000_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
+    rates: { kind: "choices", valuesHz: BLADERF_SAMPLE_RATES_HZ, defaultHz: 2_400_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
+    // The first hardware release deliberately uses the gateware's slow-attack AGC default.
+    gain: { kind: "none" },
   },
   synthetic: {
     source: "synthetic", label: "Synthetic spectrum demo", requiresUsb: false, persistentConnection: false,
@@ -139,7 +151,7 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
   },
   replay: {
     source: "replay", label: "I/Q replay", requiresUsb: false, persistentConnection: false,
-    frequency: legacyFrequency, rates: { kind: "recording", minimumHz: 8_000, maximumHz: 9_600_000 },
+    frequency: legacyFrequency, rates: { kind: "recording", minimumHz: 8_000, maximumHz: 19_200_000 },
     modes: RECEIVER_MODES, gain: { kind: "none" },
   },
 };
@@ -194,10 +206,11 @@ export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSe
   const caps = sourceCapabilities(source);
   if (!caps.modes.includes(settings.mode)) throw new Error(`${settings.mode} is unavailable with ${caps.label}.`);
   if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) throw new Error("Enter a valid sample rate.");
-  validateModeSampleRate(settings.mode, source === "hackrf" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
+  validateModeSampleRate(settings.mode, source === "hackrf" || source === "bladerf" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
   // Keep legacy analog behavior; Pro additionally requires the full guarded passband.
-  if (source === "hackrf") {
-    if (!HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF Pro effective rate must match a supported nominal rate within 1 Hz.");
+  if (source === "hackrf" || source === "bladerf") {
+    if (source === "bladerf" && !BLADERF_SAMPLE_RATES_HZ.includes(sampleRateHz as BladeRfSampleRateHz)) throw new Error("bladeRF 2.0 Micro rate must be 2.4, 4.8, 9.6 or 19.2 MS/s.");
+    if (source === "hackrf" && !HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF Pro effective rate must match a supported nominal rate within 1 Hz.");
     validateSourceFrequency(source, channelFrequencyHz, settings.bandwidthHz);
     planChannelTune(channelFrequencyHz, channelFrequencyHz, sampleRateHz, settings.bandwidthHz);
   } else validateSourceFrequency(source, channelFrequencyHz);
@@ -217,10 +230,10 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
   const caps = sourceCapabilities(source);
   const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
   validateSourceFrequency(source, options.channelFrequencyHz);
-  if (source === "hackrf") {
+    if (source === "hackrf") {
     if (options.gainDb !== undefined) throw new Error("HackRF uses RX stage settings, not RTL auto/manual gainDb.");
     validateHackrfRxSettings(options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS);
-  } else {
+    } else {
     if (options.hardwareSettings !== undefined) throw new Error("HackRF RX settings require the HackRF source.");
     // Existing demo/replay callers carry the legacy scalar; it controls no hardware.
     normalizeGain(options.gainDb ?? null);
@@ -228,7 +241,7 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
   const rate = options.sampleRateHz ?? (caps.rates.kind === "choices" ? caps.rates.defaultHz : undefined);
   if (rate !== undefined) {
     if (caps.rates.kind === "recording") {
-      if (!Number.isFinite(rate) || rate < caps.rates.minimumHz || rate > caps.rates.maximumHz || (rate > 3_200_000 && !isWidebandRate(rate))) throw new Error("Replay sample rate must be 8000–3200000 samples/s, or CI8 at 4800000 or 9600000 samples/s.");
+      if (!Number.isFinite(rate) || rate < caps.rates.minimumHz || rate > caps.rates.maximumHz || (rate > 3_200_000 && !isWidebandRate(rate))) throw new Error("Replay sample rate must be 8000–3200000 samples/s, or CI8 at 4800000, 9600000 or 19200000 samples/s.");
     } else if (!(source === "synthetic" ? LIVE_SAMPLE_RATES_HZ : caps.rates.valuesHz).includes(rate)) {
       throw new Error(`Choose a supported ${caps.label} sample rate (${caps.rates.valuesHz.join(" or ")} samples/s).`);
     }
