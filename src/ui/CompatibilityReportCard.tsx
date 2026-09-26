@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { buildCompatibilityReport } from "../diagnostics/compatibilityReportBuilder";
 import {
   downloadCompatibilityReport,
@@ -155,114 +156,116 @@ export function CompatibilityReportCard({
           </small>
         </div>
       </section>
-      {report && (
-        <div className="diagnostic-dialog-backdrop" role="presentation">
-          <section
-            className="diagnostic-dialog compatibility-report-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="compatibility-report-dialog-heading"
-          >
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Review before sending</p>
-                <h2 id="compatibility-report-dialog-heading">
-                  Compatibility report {report.reportId}
-                </h2>
+      {report &&
+        createPortal(
+          <div className="diagnostic-dialog-backdrop" role="presentation">
+            <section
+              className="diagnostic-dialog compatibility-report-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="compatibility-report-dialog-heading"
+            >
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Review before sending</p>
+                  <h2 id="compatibility-report-dialog-heading">
+                    Compatibility report {report.reportId}
+                  </h2>
+                </div>
               </div>
-            </div>
-            <p>
-              Mark only services you actually tested. “Degraded” means the
-              service worked but was unstable, incomplete or noticeably
-              impaired.
-            </p>
-            <div className="compatibility-observations">
-              {SERVICES.map(({ service, label }) => (
-                <label key={service}>
-                  <span>{label}</span>
-                  <select
-                    aria-label={`${label} result`}
-                    value={results[service]}
-                    onChange={(event) =>
-                      setResults({
-                        ...results,
-                        [service]: event.currentTarget.value as Selection,
-                      })
-                    }
-                  >
-                    <option value="not-tested">Not tested</option>
-                    <option value="working">Works</option>
-                    <option value="degraded">Degraded</option>
-                    <option value="not-working">Doesn’t work</option>
-                  </select>
-                </label>
-              ))}
-            </div>
-            <label>
-              Test notes
-              <textarea
-                maxLength={1000}
-                value={notes}
-                onChange={(event) => setNotes(event.currentTarget.value)}
-                placeholder="Optional: signal, antenna, duration, symptoms, or steps used"
-              />
-            </label>
-            <label className="auto-report-toggle">
-              <input
-                type="checkbox"
-                checked={includeFrequency}
-                onChange={(event) =>
-                  setIncludeFrequency(event.currentTarget.checked)
-                }
-              />
-              Include exact tuned frequency
-            </label>
-            {observations.length === 0 && (
-              <p className="compatibility-report-prompt" role="status">
-                Choose a result for at least one tested service.
+              <p>
+                Mark only services you actually tested. “Degraded” means the
+                service worked but was unstable, incomplete or noticeably
+                impaired.
               </p>
-            )}
-            <details>
-              <summary>Review sanitized JSON</summary>
-              <pre>
-                {JSON.stringify(currentReport(report.reportId), null, 2)}
-              </pre>
-            </details>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                onClick={() => void send()}
-                disabled={sending || observations.length === 0}
-              >
-                Send report
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() =>
-                  downloadCompatibilityReport(currentReport(report.reportId))
-                }
-              >
-                Download JSON
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => void copy()}
-              >
-                Copy JSON
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setReport(undefined)}
-              >
-                Cancel
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+              <div className="compatibility-observations">
+                {SERVICES.map(({ service, label }) => (
+                  <label key={service}>
+                    <span>{label}</span>
+                    <select
+                      aria-label={`${label} result`}
+                      value={results[service]}
+                      onChange={(event) =>
+                        setResults({
+                          ...results,
+                          [service]: event.currentTarget.value as Selection,
+                        })
+                      }
+                    >
+                      <option value="not-tested">Not tested</option>
+                      <option value="working">Works</option>
+                      <option value="degraded">Degraded</option>
+                      <option value="not-working">Doesn’t work</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+              <label>
+                Test notes
+                <textarea
+                  maxLength={1000}
+                  value={notes}
+                  onChange={(event) => setNotes(event.currentTarget.value)}
+                  placeholder="Optional: signal, antenna, duration, symptoms, or steps used"
+                />
+              </label>
+              <label className="auto-report-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeFrequency}
+                  onChange={(event) =>
+                    setIncludeFrequency(event.currentTarget.checked)
+                  }
+                />
+                Include exact tuned frequency
+              </label>
+              {observations.length === 0 && (
+                <p className="compatibility-report-prompt" role="status">
+                  Choose a result for at least one tested service.
+                </p>
+              )}
+              <details>
+                <summary>Review sanitized JSON</summary>
+                <pre>
+                  {JSON.stringify(currentReport(report.reportId), null, 2)}
+                </pre>
+              </details>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={sending || observations.length === 0}
+                >
+                  Send report
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    downloadCompatibilityReport(currentReport(report.reportId))
+                  }
+                >
+                  Download JSON
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void copy()}
+                >
+                  Copy JSON
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setReport(undefined)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

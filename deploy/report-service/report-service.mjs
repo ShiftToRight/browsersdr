@@ -57,6 +57,28 @@ const COMPATIBILITY_SERVICES = new Set([
   "replay",
 ]);
 const COMPATIBILITY_RESULTS = new Set(["working", "degraded", "not-working"]);
+const COMPATIBILITY_RECEIVER_FIELDS = new Set([
+  "lifecycle",
+  "source",
+  "deviceProfile",
+  "mode",
+  "sampleRateHz",
+  "nativeSampleRateHz",
+  "bandwidthHz",
+  "squelch",
+  "gainMode",
+  "gainDb",
+  "lnaGainCode",
+  "vgaGainDb",
+  "rfAmplifierEnabled",
+  "antennaPowerEnabled",
+  "firmwareVersion",
+  "usbApiVersion",
+  "protocolProfile",
+  "recordingActive",
+  "audioState",
+  "exactFrequencyHz",
+]);
 const FORBIDDEN_KEYS =
   /serial|iqSamples|sampleBuffer|audioData|spectrumBins|waterfall|decoded|fileName|metadataText|surveySite|latitude|longitude|urlQuery|cookie|localStorage/i;
 
@@ -232,7 +254,11 @@ export function sanitizeReport(value) {
 }
 
 export function sanitizeCompatibilityReport(value) {
-  const receiver = safeScalarRecord(value.receiver);
+  const receiver = Object.fromEntries(
+    Object.entries(safeScalarRecord(value.receiver)).filter(([key]) =>
+      COMPATIBILITY_RECEIVER_FIELDS.has(key),
+    ),
+  );
   if (!value.redaction?.exactFrequencyIncluded)
     delete receiver.exactFrequencyHz;
   const environment = safeScalarRecord(value.environment, 16);
@@ -248,12 +274,10 @@ export function sanitizeCompatibilityReport(value) {
     build: safeScalarRecord(value.build, 10),
     environment,
     receiver,
-    observations: value.observations
-      .slice(0, 12)
-      .map((observation) => ({
-        service: observation.service,
-        result: observation.result,
-      })),
+    observations: value.observations.slice(0, 12).map((observation) => ({
+      service: observation.service,
+      result: observation.result,
+    })),
     ...(value.notes ? { notes: boundedString(value.notes, 1000) } : {}),
     redaction: {
       omitted: Array.isArray(value.redaction?.omitted)

@@ -963,6 +963,8 @@ canvas {
   line-height: 1.45;
 }
 .auto-report-toggle input {
+  width: auto;
+  flex: 0 0 auto;
   min-height: auto;
   margin-top: 2px;
   accent-color: var(--cyan);
