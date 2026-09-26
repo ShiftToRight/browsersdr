@@ -2,12 +2,12 @@
  * Receive-only bladeRF 2.0 Micro xA4 protocol profile.
  *
  * This is a clean TypeScript implementation of the public Nuand USB/NIOS wire
- * formats. It may load verified bundled gateware into volatile RAM; it never
+ * formats. It may load verified user-imported gateware into volatile RAM; it never
  * flashes firmware/gateware and never enables TX.
  * Reference: Nuand/bladeRF commit 35174c30b009cdb335800c411f3c14d45283f12b.
  */
 import {
-  loadBundledBladeRfImage,
+  loadStoredBladeRfImage,
   selectBladeRfXa4Image,
   type BladeRfHostedImage,
 } from "./bladerfImages";
@@ -292,13 +292,13 @@ export class BladeRfProtocol {
       return null;
     if (this.options.allowVolatileFpgaLoad === false)
       throw new Error(
-        "bladeRF xA4 has no configured FPGA. Enable the bundled volatile hostedxA4 loader, then reconnect.",
+        "bladeRF xA4 has no configured FPGA. Import the official hostedxA4 image, then reconnect.",
       );
     const image = selectBladeRfXa4Image(firmware);
     this.options.statusChanged?.(
-      `Verifying bundled official hostedxA4 ${image.version} image…`,
+      `Verifying saved official hostedxA4 ${image.version} image…`,
     );
-    const bytes = await (this.options.loadImage ?? loadBundledBladeRfImage)(
+    const bytes = await (this.options.loadImage ?? loadStoredBladeRfImage)(
       image,
     );
     if (bytes.byteLength !== image.byteLength)

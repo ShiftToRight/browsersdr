@@ -2,12 +2,12 @@
 
 ## Nuand bladeRF hosted FPGA images
 
-BrowserSDR redistributes unmodified official Nuand hosted FPGA bitstreams under
-`public/vendor/nuand/fpga/` for volatile device configuration. Their upstream
-source URLs, exact lengths, versions and SHA-256 checksums are recorded in
-`src/radio/bladerfImages.ts`. The original images and release notes are
-published at <https://www.nuand.com/fpga_images/>. The A5 and A9 images are
-shipped for future device support but are not selectable by this release.
+BrowserSDR does not redistribute Nuand FPGA bitstreams. It links users to the
+official versioned Nuand downloads and accepts a local `.rbf` import for
+volatile device configuration. The supported xA4 source URLs, exact lengths,
+versions and SHA-256 checksums are recorded in `src/radio/bladerfImages.ts`.
+The original images and release notes are published at
+<https://www.nuand.com/fpga_images/>.
 
 ## DAB-Radio reference implementation
 

@@ -436,6 +436,45 @@ select {
   color: #607792;
   font-size: 0.65rem;
 }
+.fpga-image-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 5px 0 2px;
+}
+.fpga-image-actions a,
+.fpga-import-button {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  border: 1px solid rgba(91, 221, 255, 0.28);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #aeeeff;
+  background: rgba(12, 42, 72, 0.78);
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.fpga-image-actions a:hover,
+.fpga-import-button:hover,
+.fpga-import-button:focus-within {
+  border-color: rgba(91, 221, 255, 0.62);
+  color: #effcff;
+  background: rgba(20, 62, 96, 0.9);
+}
+.fpga-import-button {
+  grid-column: 1 / -1;
+}
+.fpga-import-button:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.fpga-image-status {
+  color: #aebed1;
+}
 .connection-row {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);

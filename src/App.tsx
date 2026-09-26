@@ -10,6 +10,7 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
+  type ChangeEvent,
   type ReactNode,
 } from "react";
 import {
@@ -26,6 +27,11 @@ import { createHackrfBackend } from "./radio/hackrfBackend";
 import { createBladeRfBackend } from "./radio/bladerfBackend";
 import { HACKRF_USB_FILTER } from "./radio/hackrfProtocol";
 import { BLADERF_USB_FILTER } from "./radio/bladerfProtocol";
+import {
+  BLADERF_HOSTED_IMAGES,
+  importBladeRfImage,
+  storedBladeRfImageVersions,
+} from "./radio/bladerfImages";
 import {
   sourceCapabilities,
   validateSourceFrequency,
@@ -1979,6 +1985,47 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     gainDb,
   ]);
   const [loadedReplay, setLoadedReplay] = useState<IqRecording>();
+  const [storedFpgaVersions, setStoredFpgaVersions] = useState<string[]>([]);
+  const [fpgaImageMessage, setFpgaImageMessage] = useState(
+    "Download the official image from Nuand, then import the .rbf once.",
+  );
+  const [importingFpgaImage, setImportingFpgaImage] = useState(false);
+  const refreshStoredFpgaVersions = useCallback(async () => {
+    try {
+      setStoredFpgaVersions(await storedBladeRfImageVersions());
+    } catch (error) {
+      setFpgaImageMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not inspect local FPGA image storage.",
+      );
+    }
+  }, []);
+  useEffect(() => {
+    void refreshStoredFpgaVersions();
+  }, [refreshStoredFpgaVersions]);
+  const importFpgaImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setImportingFpgaImage(true);
+    setFpgaImageMessage(`Verifying ${file.name}…`);
+    try {
+      const image = await importBladeRfImage(file);
+      await refreshStoredFpgaVersions();
+      setFpgaImageMessage(
+        `Verified and saved hostedxA4 ${image.version}. Connect the bladeRF again.`,
+      );
+    } catch (error) {
+      setFpgaImageMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not import the FPGA image.",
+      );
+    } finally {
+      setImportingFpgaImage(false);
+    }
+  };
   const [replayBinary, setReplayBinary] = useState<File>();
   const [replayMetadata, setReplayMetadata] = useState<File>();
   const [replayImportFormat, setReplayImportFormat] =
@@ -3276,18 +3323,52 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                       )}
                       {source === "bladerf" && (
                         <div className="fpga-load-note" role="note">
-                          <strong>Bundled volatile FPGA loader</strong>
+                          <strong>One-time FPGA image import</strong>
                           <span>
-                            <b>Connect & load FPGA if needed</b> verifies an
-                            official Nuand hostedxA4 image, loads it into FPGA
-                            RAM, then verifies the running version before
-                            reception. Firmware 2.4 uses v0.15.3; firmware 2.5+
-                            uses v0.16.0.
+                            Download the matching official image directly from
+                            Nuand, then import the <b>.rbf</b>. BrowserSDR
+                            verifies its exact size and SHA-256 and saves it in
+                            this browser. Firmware 2.4 uses v0.15.3; firmware
+                            2.5+ uses v0.16.0.
+                          </span>
+                          <div className="fpga-image-actions">
+                            {BLADERF_HOSTED_IMAGES.map((image) => (
+                              <a
+                                key={image.version}
+                                href={image.upstreamUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Download v{image.version} from Nuand
+                              </a>
+                            ))}
+                            <label className="fpga-import-button">
+                              <input
+                                className="visually-hidden"
+                                type="file"
+                                accept=".rbf,application/octet-stream"
+                                disabled={importingFpgaImage || transitioning}
+                                onChange={(event) =>
+                                  void importFpgaImage(event)
+                                }
+                              />
+                              {importingFpgaImage
+                                ? "Verifying image…"
+                                : "Import downloaded .rbf"}
+                            </label>
+                          </div>
+                          <span
+                            className="fpga-image-status"
+                            aria-live="polite"
+                          >
+                            {storedFpgaVersions.length
+                              ? `Saved locally: ${storedFpgaVersions.map((version) => `v${version}`).join(", ")}. ${fpgaImageMessage}`
+                              : `No verified image saved yet. ${fpgaImageMessage}`}
                           </span>
                           <small>
                             This never writes SPI flash and never enables TX.
-                            The temporary image disappears when the bladeRF
-                            loses power.
+                            The FPGA configuration disappears when the bladeRF
+                            loses power; the verified browser copy is reused.
                           </small>
                         </div>
                       )}

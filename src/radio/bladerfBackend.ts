@@ -29,6 +29,7 @@ import {
   type LiveReceiverDependencies,
 } from "./liveReceiverPipeline";
 import type { BladeRfSourceSessionMetadata } from "./types";
+import type { BladeRfHostedImage } from "./bladerfImages";
 
 export type BladeRfTransportPort = Pick<
   BladeRfTransport,
@@ -42,6 +43,7 @@ export type BladeRfTransportPort = Pick<
   Partial<Pick<BladeRfTransport, "open">>;
 export interface BladeRfBackendDependencies extends LiveReceiverDependencies {
   usb?: USB;
+  loadImage?: (image: BladeRfHostedImage) => Promise<Uint8Array>;
   createTransport?: (events: BladeRfTransportEvents) => BladeRfTransportPort;
 }
 type Metadata = Omit<BladeRfSourceSessionMetadata, "sessionGeneration">;
@@ -91,6 +93,7 @@ export class BladeRfBackend implements ReceiverBackend {
       new BladeRfTransport({
         error: this.runtimeError,
         statusChanged: events.statusChanged,
+        loadImage: dependencies.loadImage,
       });
     this.adapter = new BladeRfSampleAdapter(this.pipeline);
   }
@@ -273,7 +276,9 @@ export class BladeRfBackend implements ReceiverBackend {
     return metadata;
   }
 
-  selectDabService(key: string): void { this.pipeline.selectDabService(key); }
+  selectDabService(key: string): void {
+    this.pipeline.selectDabService(key);
+  }
 
   setVolume(volume: number): void {
     this.volume = volume;
@@ -316,7 +321,9 @@ export class BladeRfBackend implements ReceiverBackend {
   }
   updateAnalogMode(settings: ReceiverModeSettings): Metadata {
     if (!this.receiving || !this.selection || !this.metadata)
-      throw new Error("bladeRF reception must be running before changing analog settings.");
+      throw new Error(
+        "bladeRF reception must be running before changing analog settings.",
+      );
     const mode = normalizeModeSettings(settings);
     if (mode.mode !== this.metadata.mode)
       throw new Error("Live analog settings cannot change receiver mode.");

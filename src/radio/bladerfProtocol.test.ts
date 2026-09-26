@@ -43,7 +43,7 @@ describe("bladeRF xA4 protocol", () => {
     expect(missing.vendorRequests).not.toContain(5);
   });
 
-  it("rejects an invalid bundled image before beginning FPGA programming", async () => {
+  it("rejects an invalid imported image before beginning FPGA programming", async () => {
     const missing = new FakeBladeRfUsb(); missing.fpgaConfigured = false; await missing.open(); await missing.selectConfiguration(1); await missing.claimInterface(0);
     await expect(new BladeRfProtocol(missing, { loadImage: async () => new Uint8Array(16) }).open()).rejects.toThrow(/image length/i);
     expect(missing.lifecycle).not.toContain("alternate:3");

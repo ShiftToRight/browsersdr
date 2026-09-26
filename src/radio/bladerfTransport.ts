@@ -10,6 +10,7 @@ import {
   type BladeRfIdentity,
   type BladeRfSessionDetails,
 } from "./bladerfProtocol";
+import type { BladeRfHostedImage } from "./bladerfImages";
 
 /** Bounded 4 MiB USB queue: ~437 ms at 2.4 MS/s, ~109 ms at 9.6 MS/s.
  * Browser rendering can stall the USB completion thread beyond the previous
@@ -40,6 +41,7 @@ export interface BladeRfConfiguredSession {
 export interface BladeRfTransportEvents {
   error?(error: unknown): void;
   statusChanged?(message: string): void;
+  loadImage?(image: BladeRfHostedImage): Promise<Uint8Array>;
 }
 
 const abortError = () =>
@@ -121,6 +123,7 @@ export class BladeRfTransport {
       await device.claimInterface(0);
       const protocol = new BladeRfProtocol(device, {
         statusChanged: this.events.statusChanged,
+        loadImage: this.events.loadImage,
       });
       const identity = await protocol.open();
       this.device = device;

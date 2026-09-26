@@ -47,7 +47,11 @@ async function installBladeRfUsb(page: Page) {
     (
       window as unknown as { __BROWSERSDR_TEST_CONFIG__: unknown }
     ).__BROWSERSDR_TEST_CONFIG__ = {
-      bladerfDependencies: { usb },
+      bladerfDependencies: {
+        usb,
+        loadImage: async (image: { byteLength: number }) =>
+          new Uint8Array(image.byteLength),
+      },
     };
     const samples = Array.from({ length: 32_768 }, (_, index) =>
       Math.round(1024 * Math.sin((2 * Math.PI * index) / 32)),
