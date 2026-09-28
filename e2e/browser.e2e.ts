@@ -29,6 +29,268 @@ async function selectSyntheticAndStart(page: Page): Promise<void> {
   );
 }
 
+async function prepareSyntheticSigmf(page: Page): Promise<void> {
+  await selectSyntheticAndStart(page);
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await page.getByLabel("Recording export format").selectOption("sigmf");
+  await page.getByRole("button", { name: "Start I/Q recording" }).click();
+  await expect
+    .poll(async () => {
+      const text = await page.locator(".recording-controls").textContent();
+      return Number(text?.match(/([0-9.]+) \/ 32 MiB/)?.[1] ?? 0);
+    })
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Stop & prepare" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Save to SigIntAtlas" }),
+  ).toBeVisible();
+}
+
+interface AtlasMockOptions {
+  failFirstPart?: boolean;
+  gateFirstCapabilities?: Promise<void>;
+  expireFirstSession?: boolean;
+  offline?: boolean;
+}
+
+async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
+  const uploads = new Map<
+    string,
+    {
+      id: string;
+      role: "data" | "metadata";
+      byteLength: string;
+      sha256: string;
+      expectedParts: number;
+      state: "created" | "uploading" | "complete";
+      parts: Array<{
+        upload_id: string;
+        part_number: number;
+        byte_length: string;
+        sha256: string;
+        etag: string;
+        accepted_at: string;
+      }>;
+    }
+  >();
+  let uploadNumber = 0;
+  let firstPart = options.failFirstPart ?? false;
+  let firstCapabilities = true;
+  let firstSession = options.expireFirstSession ?? false;
+  let recordingCreates = 0;
+  const partSize = 65_536;
+  const recordingId = "30000000-0000-4000-8000-000000000001";
+  const revisionId = "40000000-0000-4000-8000-000000000001";
+  const runId = "50000000-0000-4000-8000-000000000001";
+
+  await page.route("**/api/v1/**", async (route, request) => {
+    const url = new URL(request.url());
+    const path = url.pathname.replace(/^.*\/api\/v1/, "");
+    if (options.offline) {
+      await route.abort("connectionrefused");
+      return;
+    }
+    if (path === "/capabilities") {
+      if (firstCapabilities && options.gateFirstCapabilities) {
+        firstCapabilities = false;
+        await options.gateFirstCapabilities;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          schema_version: "1.0.0",
+          supported_sigmf_versions: ["1.2.6"],
+          supported_datatypes: ["cu8", "ci8", "ci16_le", "cf32_le"],
+          max_data_bytes: "34340864",
+          max_metadata_bytes: "1048576",
+          upload_part_bytes: String(partSize),
+          max_inflight_parts: 2,
+          storage_configured: true,
+          analysis: {
+            schema_version: "signal-atlas-analysis-capabilities-v1",
+            available: true,
+            operations: ["analyze", "identify"],
+            profiles: ["legacy-http-v1", "offline-bounded-v1"],
+            supported_datatypes: ["cu8", "ci16_le", "cf32_le"],
+            unavailable_reason: null,
+          },
+        },
+      });
+      return;
+    }
+    if (path === "/session") {
+      if (firstSession) {
+        firstSession = false;
+        await route.fulfill({
+          status: 401,
+          json: {
+            error: { code: "session_expired", message: "Session expired." },
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 201,
+        headers: {
+          "Set-Cookie": "signal_atlas_session=test; HttpOnly; SameSite=Strict",
+        },
+        json: {
+          operator_id: "browser-test",
+          expires_at: "2026-09-28T00:00:00Z",
+          csrf_token: "browser-test-csrf",
+        },
+      });
+      return;
+    }
+    if (path === "/uploads" && request.method() === "POST") {
+      const body = request.postDataJSON() as {
+        role: "data" | "metadata";
+        byte_length: string;
+        sha256: string;
+      };
+      const id = `10000000-0000-4000-8000-${String(++uploadNumber).padStart(12, "0")}`;
+      const upload = {
+        id,
+        role: body.role,
+        byteLength: body.byte_length,
+        sha256: body.sha256,
+        expectedParts: Math.ceil(Number(body.byte_length) / partSize),
+        state: "created" as const,
+        parts: [],
+      };
+      uploads.set(id, upload);
+      await route.fulfill({ status: 201, json: uploadView(upload) });
+      return;
+    }
+    const part = path.match(/^\/uploads\/([^/]+)\/parts\/(\d+)$/);
+    if (part) {
+      if (firstPart) {
+        firstPart = false;
+        await route.abort("connectionreset");
+        return;
+      }
+      const upload = uploads.get(part[1]!)!;
+      const bytes = request.postDataBuffer()!;
+      const receipt = {
+        upload_id: upload.id,
+        part_number: Number(part[2]),
+        byte_length: String(bytes.byteLength),
+        sha256: request.headers()["content-sha256"]!,
+        etag: `etag-${part[2]}`,
+        accepted_at: "2026-09-27T00:00:00Z",
+      };
+      upload.parts.push(receipt);
+      upload.state = "uploading";
+      await route.fulfill({ status: 200, json: receipt });
+      return;
+    }
+    const complete = path.match(/^\/uploads\/([^/]+)\/complete$/);
+    if (complete) {
+      uploads.get(complete[1]!)!.state = "complete";
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: "20000000-0000-4000-8000-000000000001",
+          kind: "upload-complete",
+          status: "complete",
+          attempt: 1,
+          failure_code: null,
+          result: null,
+        },
+      });
+      return;
+    }
+    const uploadRead = path.match(/^\/uploads\/([^/]+)$/);
+    if (uploadRead) {
+      await route.fulfill({
+        status: 200,
+        json: uploadView(uploads.get(uploadRead[1]!)!),
+      });
+      return;
+    }
+    if (path === "/recordings" && request.method() === "POST") {
+      recordingCreates += 1;
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: "60000000-0000-4000-8000-000000000001",
+          state: "complete",
+          recording_id: recordingId,
+          failure_code: null,
+        },
+      });
+      return;
+    }
+    if (path === `/recordings/${recordingId}`) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          id: recordingId,
+          current_revision_id: revisionId,
+          import_status: "complete",
+        },
+      });
+      return;
+    }
+    if (path === `/recordings/${recordingId}/analysis-runs`) {
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: runId,
+          recording_id: recordingId,
+          recording_revision_id: revisionId,
+          status: "queued",
+          recording_url: `/#/recordings/${recordingId}`,
+          result_url: `/#/runs/${runId}`,
+        },
+      });
+      return;
+    }
+    if (path === `/runs/${runId}`) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          id: runId,
+          recording_id: recordingId,
+          recording_revision_id: revisionId,
+          status: "partial",
+          recording_url: `/#/recordings/${recordingId}`,
+          result_url: `/#/runs/${runId}`,
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 404,
+      json: { error: { code: "not_found", message: path } },
+    });
+  });
+
+  function uploadView(
+    upload: typeof uploads extends Map<string, infer T> ? T : never,
+  ) {
+    return {
+      id: upload.id,
+      state: upload.state,
+      role: upload.role,
+      byte_length: upload.byteLength,
+      accepted_bytes: String(
+        upload.parts.reduce(
+          (total, item) => total + Number(item.byte_length),
+          0,
+        ),
+      ),
+      part_size: String(partSize),
+      expected_parts: upload.expectedParts,
+      expires_at: "2026-09-28T00:00:00Z",
+      parts: upload.parts,
+      failure_code: null,
+    };
+  }
+
+  return { recordingCreates: () => recordingCreates };
+}
+
 async function installWorkerInstrumentation(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const NativeWorker = window.Worker;
@@ -678,7 +940,7 @@ test("recording preparation retries and the paired archive remains truthfully do
   await expect(page.locator(".file-message")).toContainText(
     "do not confirm that the file was stored",
   );
-  await expect(page.locator(".capture-panel .display-note")).toContainText(
+  await expect(page.locator(".capture-panel > .display-note")).toContainText(
     "State: download requested",
   );
 
@@ -687,6 +949,109 @@ test("recording preparation retries and the paired archive remains truthfully do
   await repeatedDownload;
   await expect(
     page.getByRole("button", { name: "Download paired ZIP" }),
+  ).toBeEnabled();
+});
+
+test("explicit SigIntAtlas save retries a lost part and exposes verified recording and analysis links", async ({
+  page,
+}) => {
+  const atlas = await installAtlasMock(page, { failFirstPart: true });
+  await gotoApp(page);
+  await prepareSyntheticSigmf(page);
+
+  await expect(
+    page.getByText("Not connected; nothing has been sent."),
+  ).toBeVisible();
+  await page
+    .getByLabel("SigIntAtlas recording title")
+    .fill("Deterministic browser acceptance");
+  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByLabel(/Analyze after save when the live capability/).check();
+  const save = page.getByRole("button", { name: "Save to SigIntAtlas" });
+  await save.dblclick();
+
+  await expect(
+    page.getByText("Saved and verified by SigIntAtlas."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Analysis is queued or running in SigIntAtlas."),
+  ).toBeVisible();
+  await expect(page.getByText(/completed with partial coverage/)).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open saved recording" }),
+  ).toHaveAttribute("href", /#\/recordings\/30000000-/);
+  await expect(
+    page.getByRole("link", { name: "Open analysis result" }),
+  ).toHaveAttribute("href", /#\/runs\/50000000-/);
+  expect(atlas.recordingCreates()).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Download paired ZIP" }),
+  ).toBeEnabled();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("link", { name: "Open saved recording" }),
+  ).toBeVisible();
+  expect(
+    await page
+      .locator(".atlas-save-panel")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+  ).toBe(true);
+});
+
+test("SigIntAtlas cancellation rejects late work, auth expiry retries, and receiver stays usable", async ({
+  page,
+}) => {
+  let releaseCapabilities!: () => void;
+  const capabilityGate = new Promise<void>((resolve) => {
+    releaseCapabilities = resolve;
+  });
+  const atlas = await installAtlasMock(page, {
+    gateFirstCapabilities: capabilityGate,
+    expireFirstSession: true,
+  });
+  await gotoApp(page);
+  await prepareSyntheticSigmf(page);
+  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
+  await expect(page.getByText(/Checking the same-origin/)).toBeVisible();
+  await page.getByRole("button", { name: "Cancel transfer" }).click();
+  releaseCapabilities();
+  await expect(page.getByText(/Transfer cancelled/)).toBeVisible();
+  await page.waitForTimeout(100);
+  await expect(
+    page.getByRole("link", { name: "Open saved recording" }),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Retry save" }).click();
+  await expect(page.getByText(/session_expired/)).toBeVisible();
+  await page.getByRole("button", { name: "Retry save" }).click();
+  await expect(
+    page.getByText("Saved and verified by SigIntAtlas."),
+  ).toBeVisible();
+  expect(atlas.recordingCreates()).toBe(1);
+
+  await page.getByRole("tab", { name: "Audio & decode" }).click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Synthetic RF demo running",
+  );
+});
+
+test("SigIntAtlas offline failure leaves local download fallback available", async ({
+  page,
+}) => {
+  await installAtlasMock(page, { offline: true });
+  await gotoApp(page);
+  await prepareSyntheticSigmf(page);
+  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
+  await expect(page.getByText(/Transfer failed/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry save" })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Download paired ZIP" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Download separate files" }),
   ).toBeEnabled();
 });
 
@@ -748,7 +1113,7 @@ test("failed device close retains the single owner until retry succeeds", async 
   );
   await expect(
     page.getByRole("button", { name: "Connect", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Disconnect", exact: true }),
   ).toBeEnabled();
@@ -801,7 +1166,7 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
   ).toContainText("Use a WebGPU-compatible browser");
 });
 
-test("diagnostic reports default to automatic upload and remain reviewable and downloadable", async ({
+test("diagnostic reports require opt-in and remain reviewable and downloadable", async ({
   page,
 }) => {
   await gotoApp(page);
@@ -811,7 +1176,7 @@ test("diagnostic reports default to automatic upload and remain reviewable and d
   ).toBeVisible();
   await expect(
     page.getByLabel(/Automatically send errors and recent diagnostic logs/),
-  ).toBeChecked();
+  ).not.toBeChecked();
   await page.getByRole("button", { name: "Create diagnostic report" }).click();
   const dialog = page.getByRole("dialog", { name: /Diagnostic report/ });
   await expect(dialog).toBeVisible();
@@ -832,6 +1197,27 @@ test("diagnostic reports default to automatic upload and remain reviewable and d
   expect(report.events).toEqual(expect.any(Array));
   expect(report.receiver).not.toHaveProperty("exactFrequencyHz");
   expect(report.redaction).toMatchObject({ exactFrequencyIncluded: false });
+  expect((report.redaction as { omitted: string[] }).omitted).toContain(
+    "ipAddress",
+  );
+});
+
+test("About exposes licence, driver provenance, and privacy boundaries", async ({
+  page,
+}) => {
+  await gotoApp(page);
+  await page.getByRole("tab", { name: /About/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Licences, privacy & provenance" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Automatic error reporting is off until you enable it in Diagnostics.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("row", { name: /AD9364 receive driver/ }),
+  ).toContainText("BSD-3-Clause");
 });
 
 test("compatibility reports capture reviewed service evidence and receiver state", async ({

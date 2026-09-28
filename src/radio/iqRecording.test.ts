@@ -12,6 +12,7 @@ import {
 } from "./iqRecording";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { syntheticAm } from "../testing/syntheticModulation";
+import { usrpB205SessionDetails } from "../testing/usrpB205SessionFixture";
 
 class CapturePlayer implements Player {
   readonly sampleRate = 48_000;
@@ -67,6 +68,16 @@ function sourceAudio(recording: IqRecording): Float32Array {
 }
 
 describe("BrowserSDR CU8 recording format", () => {
+  it("rejects B205 SC16/VRT instead of mislabelling it as a legacy recording", () => {
+    const details = usrpB205SessionDetails();
+    expect(() => new IqRecorder({
+      source: "usrp-b205", sessionGeneration: 1,
+      requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_000,
+      hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_000_000,
+      mode: "AM", channelBandwidthHz: 10_000, squelch: 0, gainDb: null,
+      sampleFormat: "planar-f32-iq-normalized", usrpB205: details,
+    })).toThrow(/not a replayable SC16\/SigMF stream/);
+  });
   it.each([
     { durationSeconds: 99 }, { source: "invalid" }, { stopReason: "invalid" },
     { squelch: -1 }, { gainDb: undefined }, { sampleRateHz: 1 },

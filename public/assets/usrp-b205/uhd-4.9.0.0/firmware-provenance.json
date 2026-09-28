@@ -1,0 +1,15 @@
+{
+  "redistributed": false,
+  "decision": "not-approved-user-import-only",
+  "uhdVersion": "4.9.0.0",
+  "uhdCommit": "006d7f7646fb66f2ae635cb44ef6442a6ad4fba7",
+  "sourceId": "uhd-7f7d016",
+  "manifestTarget": "b2xx_common_fw_default",
+  "archiveFilename": "b2xx_common_fw_default-g7f7d016.zip",
+  "archiveSha256": "22ac0e54cc90d53d8494d481439447a0c89b9bbaced6fabe24df260eda3ce3a3",
+  "memberFilename": "usrp_b200_fw.hex",
+  "memberBytes": 514346,
+  "memberSha256": "cc8e4bc968d91d1a67c63871ce5b2c1613c49676fe363bf2f6e336059899ae5c",
+  "entryAddress": "0x40019dec",
+  "notice": "The firmware binary is not present. BrowserSDR accepts an exact verified user import and writes it only to volatile FX3 RAM."
+}

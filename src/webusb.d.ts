@@ -18,6 +18,10 @@ interface Navigator {
   readonly usb?: USB;
 }
 
+interface WorkerNavigator {
+  readonly usb?: USB;
+}
+
 /** WebUSB members used by the receive-only HackRF adapter. */
 interface USBControlTransferParameters {
   requestType: "standard" | "class" | "vendor";
@@ -50,6 +54,7 @@ interface USBAlternateInterface {
 interface USBInterface {
   readonly interfaceNumber: number;
   readonly alternate: USBAlternateInterface;
+  readonly alternates?: readonly USBAlternateInterface[];
 }
 interface USBConfiguration {
   readonly configurationValue: number;
@@ -59,13 +64,16 @@ interface USBDevice {
   readonly vendorId: number;
   readonly productId: number;
   readonly serialNumber?: string | null;
+  readonly productName?: string | null;
   readonly deviceVersionMajor: number;
   readonly deviceVersionMinor: number;
   readonly deviceVersionSubminor: number;
   readonly configuration?: USBConfiguration | null;
+  readonly configurations?: readonly USBConfiguration[];
   open(): Promise<void>;
   selectConfiguration(configurationValue: number): Promise<void>;
   claimInterface(interfaceNumber: number): Promise<void>;
+  releaseInterface?(interfaceNumber: number): Promise<void>;
   selectAlternateInterface(
     interfaceNumber: number,
     alternateSetting: number,
@@ -86,4 +94,5 @@ interface USBDevice {
     endpointNumber: number,
     data: BufferSource,
   ): Promise<USBOutTransferResult>;
+  clearHalt?(direction: "in" | "out", endpointNumber: number): Promise<void>;
 }

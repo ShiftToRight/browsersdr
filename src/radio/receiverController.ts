@@ -29,6 +29,7 @@ import {
   validateHackrfRxSettings,
   type HackrfRxSettings,
 } from "./sourceCapabilities";
+import type { UsrpB205RxSettings } from "./usrpB205Capabilities";
 
 export const FM_MIN_HZ = 87_500_000;
 export const FM_MAX_HZ = 108_000_000;
@@ -43,6 +44,7 @@ export interface ReceiverStartOptions {
   gainDb?: number | null;
   sampleRateHz?: number;
   hardwareSettings?: HackrfRxSettings;
+  usrpSettings?: UsrpB205RxSettings;
 }
 
 export interface ReceiverBackendEvents {
@@ -211,7 +213,7 @@ export class ReceiverController {
           ? "Starting the synthetic RF spectrum demo…"
           : source === "replay"
             ? "Starting paced I/Q replay and audio…"
-            : `Choose ${options.source === "hackrf" || options.source === "bladerf" ? "a" : "an"} ${sourceCapabilities(source).label} device in the browser prompt…`,
+            : `Choose ${options.source === "rtl-sdr" ? "an" : "a"} ${sourceCapabilities(source).label} device in the browser prompt…`,
       sessionGeneration: generation,
       session: this.snapshot.session,
       audioState: this.snapshot.audioState,
@@ -284,7 +286,7 @@ export class ReceiverController {
       lifecycle: grantedDevice ? "connecting" : "requesting-permission",
       message: grantedDevice
         ? `Reconnecting the authorized ${sourceCapabilities(options.source ?? "rtl-sdr").label} device…`
-        : `Choose ${options.source === "hackrf" || options.source === "bladerf" ? "a" : "an"} ${sourceCapabilities(options.source ?? "rtl-sdr").label} device in the browser prompt…`,
+        : `Choose ${(options.source ?? "rtl-sdr") === "rtl-sdr" ? "an" : "a"} ${sourceCapabilities(options.source ?? "rtl-sdr").label} device in the browser prompt…`,
       sessionGeneration: generation,
     });
     try {
@@ -514,7 +516,8 @@ export class ReceiverController {
         this.snapshot.session.source,
         centerFrequencyHz,
         this.snapshot.session.source === "hackrf" ||
-          this.snapshot.session.source === "bladerf"
+          this.snapshot.session.source === "bladerf" ||
+          this.snapshot.session.source === "usrp-b205"
           ? this.snapshot.session.actualSampleRateHz
           : 0,
       );

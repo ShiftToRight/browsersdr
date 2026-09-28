@@ -153,6 +153,7 @@ export class IqRecorder {
   ) {
     validateSampleEncoding(encoding);
     if (session.source === "bladerf") throw new Error("Native bladeRF SC16 Q11 recording is not available in the first xA4 release.");
+    if (session.source === "usrp-b205") throw new Error("USRP B205-mini recording is unavailable in release 1: raw CHDR/VRT packets are not a replayable SC16/SigMF stream, and converting them to CU8, CI8 or bladeRF Q11 would corrupt the native format.");
     if (session.source === "hackrf" && encoding.format !== CI8_RECORDING_FORMAT) throw new Error("HackRF requires the native signed-I/Q recording path.");
     this.recordingSource = session.source;
     this.session = structuredClone(session); this.encoding = structuredClone(encoding); this.survey = survey ? structuredClone(survey) : undefined;

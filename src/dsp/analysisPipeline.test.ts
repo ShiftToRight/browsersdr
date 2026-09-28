@@ -8,6 +8,7 @@ import {
   ANALYSIS_MAX_BLOCK_SAMPLES,
   ANALYSIS_DISPLAY_QUEUE_CAPACITY,
   ANALYSIS_WIDEBAND_INPUT_SLOTS,
+  analysisInputSlots,
 } from "./analysisPipeline";
 
 import { WaterfallHistory } from "../graphics/waterfallHistory";
@@ -42,7 +43,7 @@ const METADATA = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AnalysisPipeline credits", () => {
-  it("buffers sixteen native-rate blocks at 4.8 MS/s before marking overflow", () => {
+  it("buffers the bounded wideband credit window before marking overflow", () => {
     const worker = new FakeWorker();
     const pipeline = new AnalysisPipeline(worker as unknown as Worker);
     const receiver = pipeline.begin({
@@ -328,8 +329,8 @@ describe("AnalysisPipeline credits", () => {
 });
 
 it.each([
-  { rate: 9_600_000, slots: 16 },
-  { rate: 19_200_000, slots: 16 },
+  { rate: 9_600_000, slots: analysisInputSlots(9_600_000) },
+  { rate: 19_200_000, slots: analysisInputSlots(19_200_000) },
 ])(
   "bounds $rate analysis bursts to $slots credits and rejects stale acknowledgements",
   ({ rate, slots }) => {
@@ -391,14 +392,15 @@ it("keeps native bytes compact with bounded credits, exact gap lengths and stale
   const gpu = vi.fn(),
     planar = vi.fn();
   pipeline.attachGpuTap(planar, gpu);
-  for (let n = 0; n < 17; n++) pipeline.receiveCi8(bytes, 100e6, 7);
+  const slots = analysisInputSlots(19_200_000);
+  for (let n = 0; n <= slots; n++) pipeline.receiveCi8(bytes, 100e6, 7);
   const sent = worker.sent.filter((m) => m.type === "samples-ci8");
-  expect(sent).toHaveLength(16);
+  expect(sent).toHaveLength(slots);
   expect(new Uint8Array(sent[0]!.bytes)).toEqual(bytes);
   bytes.fill(0);
   expect([...new Uint8Array(sent[0]!.bytes)]).toEqual([128, 255, 0, 127]);
   expect(planar).not.toHaveBeenCalled();
-  expect(gpu).toHaveBeenCalledTimes(17);
+  expect(gpu).toHaveBeenCalledTimes(slots + 1);
   worker.emit({
     type: "samples-ci8-ack",
     sessionGeneration: 7,
@@ -419,7 +421,7 @@ it("keeps native bytes compact with bounded credits, exact gap lengths and stale
     sessionGeneration: 8,
     actualSampleRateHz: 19_200_000,
   });
-  for (let n = 0; n < 16; n++) pipeline.receiveCi8(bytes, 100e6, 8);
+  for (let n = 0; n < slots; n++) pipeline.receiveCi8(bytes, 100e6, 8);
   worker.emit({
     type: "samples-ci8-ack",
     sessionGeneration: 7,
@@ -462,6 +464,38 @@ it("keeps bladeRF SC16 native through the spectrum-worker boundary", () => {
     backendStartupMs: 0,
   });
   expect(pipeline.getDiagnostics().processedBlocks).toBe(1);
+});
+
+it("keeps USRP Q/I SC16 distinct through the spectrum-worker boundary", () => {
+  const worker = new FakeWorker();
+  const pipeline = new AnalysisPipeline(worker as unknown as Worker);
+  pipeline.begin({
+    ...METADATA,
+    source: "usrp-b205",
+    actualSampleRateHz: 19_200_000,
+  });
+  const bytes = Uint8Array.of(0, 192, 0, 64);
+  pipeline.receiveUsrpSc16(bytes, 100e6, 7);
+  const sent = worker.sent.find(
+    (message) => message.type === "samples-usrp-sc16",
+  );
+  expect(sent).toBeDefined();
+  if (!sent || sent.type !== "samples-usrp-sc16")
+    throw new Error("Missing USRP SC16 worker message");
+  expect([...new Uint8Array(sent.bytes)]).toEqual([0, 192, 0, 64]);
+  worker.emit({
+    type: "samples-usrp-sc16-ack",
+    sessionGeneration: 7,
+    bytes: sent.bytes,
+    processingTimeMs: 1,
+    backend: "JavaScript reference",
+    backendStartupMs: 0,
+  });
+  expect(pipeline.getDiagnostics()).toMatchObject({
+    receivedComplexSamples: 1,
+    receivedBytes: 4,
+    processedBlocks: 1,
+  });
 });
 
 

@@ -14,6 +14,7 @@ export const CHANNEL_WORKER_SLOTS = 64;
  * 64 KiB HackRF CI8 transfer. Keep this explicit so block-count pools preserve
  * the same amount of sample time for both native encodings. */
 export const CHANNEL_SC16_MAX_SAMPLES = 16_384;
+export const CHANNEL_USRP_SC16_MAX_SAMPLES = 65_536;
 
 /** Symmetric Blackman half-band stage. Only retained output phases are evaluated.
  * Fixed storage, no per-sample allocation. State/oscillator reset at each generation/gap.
@@ -176,10 +177,14 @@ export interface Sc16ChannelBlock {
   frequency: number;
   sentAtMs?: number;
 }
-export type NativeChannelEncoding = false | "ci8" | "sc16";
+export interface UsrpSc16ChannelBlock extends Omit<Sc16ChannelBlock, "type"> {
+  type: "usrp-sc16";
+}
+export type NativeChannelEncoding = false | "ci8" | "sc16" | "usrp-sc16";
 export type ChannelWorkerInput =
   | Ci8ChannelBlock
   | Sc16ChannelBlock
+  | UsrpSc16ChannelBlock
   | {
       type: "configure";
       generation: number;
@@ -195,7 +200,7 @@ export type ChannelWorkerInput =
       sentAtMs?: number;
     };
 export type ChannelWorkerOutput =
-  | ((Ci8ChannelBlock | Sc16ChannelBlock) & {
+  | ((Ci8ChannelBlock | Sc16ChannelBlock | UsrpSc16ChannelBlock) & {
       count: number;
       processingMs?: number;
     })
@@ -382,7 +387,11 @@ export class WidebandChannelWorker {
     // SC16 transfers contain 16,384 samples while CI8/float blocks contain up
     // to 32,768, so SC16 needs twice as many fixed slots. Never grow on pressure.
     const maxInputSamples =
-      native === "sc16" ? CHANNEL_SC16_MAX_SAMPLES : CHANNEL_MAX_SAMPLES;
+      native === "usrp-sc16"
+        ? CHANNEL_USRP_SC16_MAX_SAMPLES
+        : native === "sc16"
+          ? CHANNEL_SC16_MAX_SAMPLES
+          : CHANNEL_MAX_SAMPLES;
     const slots =
       (((CHANNEL_WORKER_SLOTS * sampleRateHz) / WIDEBAND_RATE) *
         CHANNEL_MAX_SAMPLES) /
@@ -463,6 +472,9 @@ export class WidebandChannelWorker {
   receiveSc16(bytes: Uint8Array, selectedFrequency: number): void {
     this.receiveNative("sc16", bytes, selectedFrequency);
   }
+  receiveUsrpSc16(bytes: Uint8Array, selectedFrequency: number): void {
+    this.receiveNative("usrp-sc16", bytes, selectedFrequency);
+  }
   private receiveNative(
     encoding: Exclude<NativeChannelEncoding, false>,
     bytes: Uint8Array,
@@ -471,7 +483,11 @@ export class WidebandChannelWorker {
     if (this.closed || !this.started) return;
     const inputCount = bytes.byteLength / (encoding === "ci8" ? 2 : 4);
     const maximum =
-      encoding === "sc16" ? CHANNEL_SC16_MAX_SAMPLES : CHANNEL_MAX_SAMPLES;
+      encoding === "usrp-sc16"
+        ? CHANNEL_USRP_SC16_MAX_SAMPLES
+        : encoding === "sc16"
+          ? CHANNEL_SC16_MAX_SAMPLES
+          : CHANNEL_MAX_SAMPLES;
     if (
       this.native !== encoding ||
       !Number.isInteger(inputCount) ||

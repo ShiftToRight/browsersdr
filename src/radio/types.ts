@@ -1,6 +1,7 @@
-export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "replay";
+export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
 import type { HackrfRxSettings, HackrfSessionDetails } from "./sourceCapabilities";
 import type { BladeRfSessionDetails } from "./bladerfProtocol";
+import type { UsrpB205SessionDetails } from "./usrpB205Capabilities";
 import type { ReceiverMode } from "./receiverConfig";
 export type { DabSnapshot } from "../dab/dabReceiver";
 export type { AdsbSnapshot, AdsbTarget } from "../adsb/adsbReceiver";
@@ -71,6 +72,8 @@ export interface SourceSessionMetadata {
   hackrf?: HackrfSessionDetails;
   /** Present only for the receive-only bladeRF 2.0 Micro xA4 backend. */
   bladerf?: BladeRfSessionDetails;
+  /** Present only for the frozen receive-only USRP B205-mini profile. */
+  usrpB205?: UsrpB205SessionDetails;
   sampleFormat: "planar-f32-iq-normalized";
 }
 
@@ -84,6 +87,12 @@ export interface HackrfSourceSessionMetadata extends SourceSessionMetadata {
   source: "hackrf";
   gainDb: null;
   hackrf: HackrfSessionDetails;
+}
+
+export interface UsrpB205SourceSessionMetadata extends SourceSessionMetadata {
+  source: "usrp-b205";
+  gainDb: null;
+  usrpB205: UsrpB205SessionDetails;
 }
 
 /**

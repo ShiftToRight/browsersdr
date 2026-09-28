@@ -1,5 +1,6 @@
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
+import { decodeUsrpB205Sc16Into } from "../radio/usrpB205RxVrt";
 import type { AnalysisWorkerInput, AnalysisWorkerOutput } from "../dsp/spectrumProtocol";
 import { createAnalysisBackend, type AnalysisBackendSelection } from "../dsp/spectrumBackend";
 import { FFT_SIZE } from "../dsp/spectrumMath";
@@ -50,10 +51,16 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   sampleRateHz = message.sampleRateHz;
   const processingStartedMs = performance.now();
   let I: Float32Array, Q: Float32Array;
-  if (message.type === "samples-ci8" || message.type === "samples-sc16") {
-    ci8Scratch ??= [new Float32Array(32768), new Float32Array(32768)];
+  if (message.type === "samples-ci8" || message.type === "samples-sc16" || message.type === "samples-usrp-sc16") {
     const bytes = new Uint8Array(message.bytes);
-    const count = message.type === "samples-ci8" ? decodeCi8Into(bytes, ...ci8Scratch) : decodeSc16Q11Into(bytes, ...ci8Scratch);
+    const sampleCount = bytes.byteLength / (message.type === "samples-ci8" ? 2 : 4);
+    if (!ci8Scratch || ci8Scratch[0].length < sampleCount)
+      ci8Scratch = [new Float32Array(sampleCount), new Float32Array(sampleCount)];
+    const count = message.type === "samples-ci8"
+      ? decodeCi8Into(bytes, ...ci8Scratch)
+      : message.type === "samples-sc16"
+        ? decodeSc16Q11Into(bytes, ...ci8Scratch)
+        : decodeUsrpB205Sc16Into(bytes, ...ci8Scratch);
     I = ci8Scratch[0].subarray(0, count); Q = ci8Scratch[1].subarray(0, count);
   } else { I = new Float32Array(message.I); Q = new Float32Array(message.Q); }
   const frames = processor.accept(
@@ -66,6 +73,7 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   const acknowledgement: AnalysisWorkerOutput = {
     ...(message.type === "samples-ci8" ? { type: "samples-ci8-ack" as const, bytes: message.bytes }
       : message.type === "samples-sc16" ? { type: "samples-sc16-ack" as const, bytes: message.bytes }
+      : message.type === "samples-usrp-sc16" ? { type: "samples-usrp-sc16-ack" as const, bytes: message.bytes }
       : { type: "samples-ack" as const, I: message.I, Q: message.Q }),
     sessionGeneration: generation,
     processingTimeMs: performance.now() - processingStartedMs,

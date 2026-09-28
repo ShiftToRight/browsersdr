@@ -3,6 +3,14 @@ import {
   defaultModeSettings, normalizeGain, normalizeModeSettings, planChannelTune,
   RECEIVER_MODES, validateModeSampleRate, type ReceiverMode, type ReceiverModeSettings,
 } from "./receiverConfig";
+import {
+  DEFAULT_USRP_B205_RX_SETTINGS,
+  USRP_B205_EXPERIMENTAL_SAMPLE_RATE_HZ,
+  USRP_B205_SAMPLE_RATE_HZ,
+  USRP_B205_SAMPLE_RATES_HZ,
+  validateUsrpB205RxSettings,
+  type UsrpB205RxSettings,
+} from "./usrpB205Capabilities";
 
 /** Frozen step-01 profile, not a claim about the firmware shipped on a device. */
 export const HACKRF_PROTOCOL_PROFILE = "hackrf-pro-standard-7f96cc8-v1" as const;
@@ -119,6 +127,7 @@ export interface SourceCapabilities {
   readonly modes: readonly ReceiverMode[];
   readonly gain: { readonly kind: "rtl-auto-manual"; readonly minimumDb: number; readonly maximumDb: number }
     | { readonly kind: "hackrf-stages"; readonly lnaCodes: readonly HackrfLnaGainCode[]; readonly vgaMinimumDb: number; readonly vgaMaximumDb: number; readonly vgaStepDb: number; readonly antennaPowerEnabled: false }
+    | { readonly kind: "usrp-fixed-agc"; readonly mode: "slow_agc"; readonly exposedGainDb: false }
     | { readonly kind: "none" };
 }
 
@@ -142,6 +151,13 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
     rates: { kind: "choices", valuesHz: BLADERF_SAMPLE_RATES_HZ, defaultHz: 2_400_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
     // The first hardware release deliberately uses the gateware's slow-attack AGC default.
     gain: { kind: "none" },
+  },
+  "usrp-b205": {
+    source: "usrp-b205", label: "USRP B205-mini", requiresUsb: true, persistentConnection: true,
+    frequency: { minimumHz: 70_000_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
+    rates: { kind: "choices", valuesHz: USRP_B205_SAMPLE_RATES_HZ, defaultHz: USRP_B205_SAMPLE_RATE_HZ,
+      experimentalHz: [USRP_B205_EXPERIMENTAL_SAMPLE_RATE_HZ] }, modes: RECEIVER_MODES,
+    gain: { kind: "usrp-fixed-agc", mode: "slow_agc", exposedGainDb: false },
   },
   synthetic: {
     source: "synthetic", label: "Synthetic spectrum demo", requiresUsb: false, persistentConnection: false,
@@ -206,11 +222,13 @@ export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSe
   const caps = sourceCapabilities(source);
   if (!caps.modes.includes(settings.mode)) throw new Error(`${settings.mode} is unavailable with ${caps.label}.`);
   if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) throw new Error("Enter a valid sample rate.");
-  validateModeSampleRate(settings.mode, source === "hackrf" || source === "bladerf" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
+  validateModeSampleRate(settings.mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
   // Keep legacy analog behavior; Pro additionally requires the full guarded passband.
-  if (source === "hackrf" || source === "bladerf") {
+  if (source === "hackrf" || source === "bladerf" || source === "usrp-b205") {
     if (source === "bladerf" && !BLADERF_SAMPLE_RATES_HZ.includes(sampleRateHz as BladeRfSampleRateHz)) throw new Error("bladeRF 2.0 Micro rate must be 2.4, 4.8, 9.6 or 19.2 MS/s.");
     if (source === "hackrf" && !HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF Pro effective rate must match a supported nominal rate within 1 Hz.");
+    if (source === "usrp-b205" && !USRP_B205_SAMPLE_RATES_HZ.includes(sampleRateHz as 4_800_000 | 9_600_000 | 19_200_000))
+      throw new Error("USRP B205-mini native rate must be 4800000, 9600000 or 19200000 samples/s.");
     validateSourceFrequency(source, channelFrequencyHz, settings.bandwidthHz);
     planChannelTune(channelFrequencyHz, channelFrequencyHz, sampleRateHz, settings.bandwidthHz);
   } else validateSourceFrequency(source, channelFrequencyHz);
@@ -223,6 +241,7 @@ export interface SourceConfiguration {
   sampleRateHz?: number;
   gainDb?: number | null;
   hardwareSettings?: HackrfRxSettings;
+  usrpSettings?: UsrpB205RxSettings;
 }
 
 export function validateSourceConfiguration(options: SourceConfiguration): void {
@@ -232,9 +251,14 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
   validateSourceFrequency(source, options.channelFrequencyHz);
     if (source === "hackrf") {
     if (options.gainDb !== undefined) throw new Error("HackRF uses RX stage settings, not RTL auto/manual gainDb.");
+    if (options.usrpSettings !== undefined) throw new Error("USRP RX settings require the USRP B205-mini source.");
     validateHackrfRxSettings(options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS);
-    } else {
+    } else if (source === "usrp-b205") {
+    if (options.gainDb !== undefined) throw new Error("USRP B205-mini uses fixed slow-attack AGC, not RTL gainDb.");
     if (options.hardwareSettings !== undefined) throw new Error("HackRF RX settings require the HackRF source.");
+    validateUsrpB205RxSettings(options.usrpSettings ?? DEFAULT_USRP_B205_RX_SETTINGS);
+    } else {
+    if (options.hardwareSettings !== undefined || options.usrpSettings !== undefined) throw new Error("Source-specific RX settings require the matching hardware source.");
     // Existing demo/replay callers carry the legacy scalar; it controls no hardware.
     normalizeGain(options.gainDb ?? null);
   }

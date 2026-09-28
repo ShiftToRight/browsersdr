@@ -1,6 +1,8 @@
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
+import { decodeUsrpB205Sc16Into } from "../radio/usrpB205RxVrt";
 import {
+  CHANNEL_MAX_SAMPLES,
   WidebandChannelFilter,
   type ChannelWorkerInput,
   type ChannelWorkerOutput,
@@ -54,14 +56,17 @@ self.onmessage = (event: MessageEvent<ChannelWorkerInput>) => {
         const before = performance.now();
         let count = 0;
         if (message.generation === generation) {
-          if (message.type === "ci8" || message.type === "sc16") {
+          if (message.type === "ci8" || message.type === "sc16" || message.type === "usrp-sc16") {
             if (
               message.bytes.length !==
               message.inputCount * (message.type === "ci8" ? 2 : 4)
             )
               throw new Error("Invalid native channel count.");
-            const nativeProcess =
-              message.type === "ci8" ? filter.processCi8 : filter.processSc16;
+            const nativeProcess = message.type === "ci8"
+              ? filter.processCi8
+              : message.type === "sc16"
+                ? filter.processSc16
+                : undefined;
             if (nativeProcess)
               count = nativeProcess.call(
                 filter,
@@ -70,17 +75,35 @@ self.onmessage = (event: MessageEvent<ChannelWorkerInput>) => {
                 message.Q,
               );
             else {
-              ci8Scratch ??= [new Float32Array(32768), new Float32Array(32768)];
+              if (!ci8Scratch || ci8Scratch[0].length < message.inputCount)
+                ci8Scratch = [
+                  new Float32Array(message.inputCount),
+                  new Float32Array(message.inputCount),
+                ];
               const length =
                 message.type === "ci8"
                   ? decodeCi8Into(message.bytes, ...ci8Scratch)
-                  : decodeSc16Q11Into(message.bytes, ...ci8Scratch);
-              count = filter.process(
-                ci8Scratch[0].subarray(0, length),
-                ci8Scratch[1].subarray(0, length),
-              );
-              message.I.set(ci8Scratch[0].subarray(0, count));
-              message.Q.set(ci8Scratch[1].subarray(0, count));
+                  : message.type === "sc16"
+                    ? decodeSc16Q11Into(message.bytes, ...ci8Scratch)
+                    : decodeUsrpB205Sc16Into(message.bytes, ...ci8Scratch);
+              if (message.type === "usrp-sc16") {
+                for (let offset = 0; offset < length; offset += CHANNEL_MAX_SAMPLES) {
+                  const end = Math.min(length, offset + CHANNEL_MAX_SAMPLES);
+                  const I = ci8Scratch[0].subarray(offset, end);
+                  const Q = ci8Scratch[1].subarray(offset, end);
+                  const produced = filter.process(I, Q);
+                  message.I.set(I.subarray(0, produced), count);
+                  message.Q.set(Q.subarray(0, produced), count);
+                  count += produced;
+                }
+              } else {
+                count = filter.process(
+                  ci8Scratch[0].subarray(0, length),
+                  ci8Scratch[1].subarray(0, length),
+                );
+                message.I.set(ci8Scratch[0].subarray(0, count));
+                message.Q.set(ci8Scratch[1].subarray(0, count));
+              }
             }
           } else count = filter.process(message.I, message.Q);
         }

@@ -19,6 +19,14 @@ describe("source preferences", () => {
     expect(loadSourcePreferences(saved, "hackrf")).toEqual(pro);
     expect(loadSourcePreferences(saved, "rtl-sdr").gainDb).toBe(25);
   });
+  it("round trips B205-mini preferences above 4.3 GHz without sharing HackRF fields", () => {
+    const saved = storage();
+    const usrp = { ...sourcePreferenceDefaults("usrp-b205"), frequencyHz: 5_600_000_001 };
+    saveSourcePreferences(saved, "usrp-b205", usrp);
+    expect(loadSourcePreferences(saved, "usrp-b205")).toEqual(usrp);
+    expect(loadSourcePreferences(saved, "usrp-b205").hardwareSettings).toBeUndefined();
+    expect(loadSourcePreferences(saved, "hackrf")).toEqual(sourcePreferenceDefaults("hackrf"));
+  });
   it("persists CW filter and beat-tone settings", () => {
     const saved = storage();
     const preferences = { ...sourcePreferenceDefaults("rtl-sdr"), modeSettings: { mode: "CW" as const, bandwidthHz: 250, squelch: 0, beatToneHz: 750 } };
@@ -73,6 +81,8 @@ it("remembers a valid live source and requires explicit replay file selection", 
   const saved = storage();
   saveSourcePreferences(saved, "hackrf", sourcePreferenceDefaults("hackrf"));
   expect(loadSourceSelection(saved)).toBe("hackrf");
+  saved.setItem("browsersdr.selectedSource", "usrp-b205");
+  expect(loadSourceSelection(saved)).toBe("usrp-b205");
   saved.setItem("browsersdr.selectedSource", "replay");
   expect(loadSourceSelection(saved)).toBe("rtl-sdr");
 });

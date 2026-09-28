@@ -1,6 +1,7 @@
 import type { IngressTimings } from "../radio/ingressTimings";
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
+import { decodeUsrpB205Sc16Into } from "../radio/usrpB205RxVrt";
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import type { SourceSessionMetadata, SpectrumFrame } from "../radio/types";
@@ -59,12 +60,21 @@ const EMPTY_DIAGNOSTICS: AnalysisDiagnostics = {
   backendFallbackReason: null,
 };
 
-/** Bounded credits absorb worker/main-thread jitter; wideband native paths get
- * a larger compact-byte queue without creating an unbounded backlog. */
+/** Bounded credits absorb worker/main-thread jitter. The B205 9.6 MS/s path
+ * measured a 292.3 ms excursion, so it uses 96 coalesced slots (~327 ms).
+ * Existing 4.8 and 19.2 tiers retain their prior 32/128-slot bounds. */
 // Retain short rendering stalls without accumulating an unbounded background backlog.
 export const ANALYSIS_DISPLAY_QUEUE_CAPACITY = 32;
 export const ANALYSIS_INPUT_SLOTS = 4;
-export const ANALYSIS_WIDEBAND_INPUT_SLOTS = 16;
+export const ANALYSIS_WIDEBAND_INPUT_SLOTS = 32;
+export const analysisInputSlots = (sampleRateHz: number): number =>
+  sampleRateHz >= 19_200_000
+    ? ANALYSIS_WIDEBAND_INPUT_SLOTS * 4
+    : sampleRateHz >= 9_600_000
+      ? ANALYSIS_WIDEBAND_INPUT_SLOTS * 3
+      : sampleRateHz >= 4_800_000
+        ? ANALYSIS_WIDEBAND_INPUT_SLOTS
+    : ANALYSIS_INPUT_SLOTS;
 export const ANALYSIS_MAX_BLOCK_SAMPLES = 262_144;
 export class AnalysisPipeline {
   private readonly worker: Worker;
@@ -75,15 +85,14 @@ export class AnalysisPipeline {
   private centerFrequencyHz = 0;
   private inputsInFlight = 0;
   private get inputSlots(): number {
-    return this.sampleRateHz >= 4_800_000
-      ? ANALYSIS_WIDEBAND_INPUT_SLOTS
-      : ANALYSIS_INPUT_SLOTS;
+    return analysisInputSlots(this.sampleRateHz);
   }
   private droppedInputBlocks = 0;
   private droppedInputSamples = 0;
   private returnedBuffers: [ArrayBuffer, ArrayBuffer][] = [];
   private returnedCi8: ArrayBuffer[] = [];
   private returnedSc16: ArrayBuffer[] = [];
+  private returnedUsrpSc16: ArrayBuffer[] = [];
   private gpuCi8Tap?: (block: GpuCi8InputBlock) => void;
   private gpuCompatibility?: [Float32Array, Float32Array];
   private pendingFrames: SpectrumFrame[] = [];
@@ -153,6 +162,7 @@ export class AnalysisPipeline {
     this.returnedBuffers = [];
     this.returnedCi8 = [];
     this.returnedSc16 = [];
+    this.returnedUsrpSc16 = [];
     this.droppedInputBlocks = 0;
     this.droppedInputSamples = 0;
     this.pendingFrames = [];
@@ -184,6 +194,7 @@ export class AnalysisPipeline {
     this.returnedBuffers = [];
     this.returnedCi8 = [];
     this.returnedSc16 = [];
+    this.returnedUsrpSc16 = [];
     this.droppedInputBlocks = 0;
     this.droppedInputSamples = 0;
     this.pendingFrames = [];
@@ -215,6 +226,7 @@ export class AnalysisPipeline {
     this.returnedBuffers = [];
     this.returnedCi8 = [];
     this.returnedSc16 = [];
+    this.returnedUsrpSc16 = [];
     this.pendingFrames = [];
     if (this.animationFrame !== undefined)
       cancelAnimationFrame(this.animationFrame);
@@ -405,6 +417,73 @@ export class AnalysisPipeline {
     timings?.record("Spectrum dispatch", performance.now() - dispatchStart);
   }
 
+  /** Native USRP path: Q/I little-endian int16 with full-scale normalization. */
+  receiveUsrpSc16(
+    bytes: Uint8Array,
+    frequency: number,
+    generation: number,
+    timings?: IngressTimings,
+  ): void {
+    if (generation !== this.generation || !this.sourceToken) return;
+    const length = bytes.byteLength / 4;
+    if (!Number.isInteger(length) || length < 1 || length > 65536)
+      throw new Error("Invalid native USRP SC16 analysis block.");
+    const tapStart = performance.now();
+    const context = {
+      sampleIndex: this.gpuSourceSamples,
+      sessionGeneration: generation,
+      centerFrequencyHz: frequency,
+      sampleRateHz: this.sampleRateHz,
+      discontinuity: this.gpuDiscontinuity,
+      missingSamples: this.gpuMissingSamples,
+    };
+    if (this.gpuTap) {
+      if (!this.gpuCompatibility || this.gpuCompatibility[0].length < length)
+        this.gpuCompatibility = [new Float32Array(length), new Float32Array(length)];
+      const [I, Q] = this.gpuCompatibility;
+      decodeUsrpB205Sc16Into(bytes, I, Q);
+      this.gpuTap({ ...context, I: I.subarray(0, length), Q: Q.subarray(0, length) });
+    }
+    timings?.record("GPU tap", performance.now() - tapStart);
+    this.gpuSourceSamples += length;
+    this.gpuDiscontinuity = false;
+    this.gpuMissingSamples = 0;
+    this.diagnostics.receivedComplexSamples += length;
+    if (this.diagnostics.receivedBytes !== null)
+      this.diagnostics.receivedBytes += bytes.byteLength;
+    if (this.inputsInFlight >= this.inputSlots) {
+      this.droppedInputBlocks++;
+      this.droppedInputSamples += length;
+      this.diagnostics.skippedInputBlocks++;
+      this.diagnostics.skippedInputSamples += length;
+      this.diagnostics.knownApplicationDiscontinuities++;
+      return;
+    }
+    const copyStart = performance.now();
+    const returned = this.returnedUsrpSc16.pop();
+    const buffer = returned?.byteLength === bytes.byteLength
+      ? returned
+      : new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    timings?.record("Spectrum copy", performance.now() - copyStart);
+    const message: AnalysisWorkerInput = {
+      type: "samples-usrp-sc16",
+      sessionGeneration: generation,
+      centerFrequencyHz: frequency,
+      sampleRateHz: this.sampleRateHz,
+      bytes: buffer,
+      discontinuity: this.droppedInputBlocks > 0,
+      droppedInputBlocks: this.droppedInputBlocks,
+      droppedInputSamples: this.droppedInputSamples,
+    };
+    this.droppedInputBlocks = 0;
+    this.droppedInputSamples = 0;
+    this.inputsInFlight++;
+    const dispatchStart = performance.now();
+    this.worker.postMessage(message, [buffer]);
+    timings?.record("Spectrum dispatch", performance.now() - dispatchStart);
+  }
+
   private receiveSamples(block: SampleBlock, generation: number): void {
     if (generation !== this.generation) return;
     const length = Math.min(block.I.length, block.Q.length);
@@ -476,7 +555,8 @@ export class AnalysisPipeline {
     if (
       message.type === "samples-ack" ||
       message.type === "samples-ci8-ack" ||
-      message.type === "samples-sc16-ack"
+      message.type === "samples-sc16-ack" ||
+      message.type === "samples-usrp-sc16-ack"
     ) {
       if (message.type === "samples-ci8-ack") {
         if (this.returnedCi8.length < this.inputSlots)
@@ -484,6 +564,9 @@ export class AnalysisPipeline {
       } else if (message.type === "samples-sc16-ack") {
         if (this.returnedSc16.length < this.inputSlots)
           this.returnedSc16.push(message.bytes);
+      } else if (message.type === "samples-usrp-sc16-ack") {
+        if (this.returnedUsrpSc16.length < this.inputSlots)
+          this.returnedUsrpSc16.push(message.bytes);
       } else if (this.returnedBuffers.length < this.inputSlots)
         this.returnedBuffers.push([message.I, message.Q]);
       this.inputsInFlight = Math.max(0, this.inputsInFlight - 1);
@@ -570,6 +653,7 @@ export class AnalysisPipeline {
         metadata.source === "rtl-sdr" ||
         metadata.source === "hackrf" ||
         metadata.source === "bladerf" ||
+        metadata.source === "usrp-b205" ||
         metadata.source === "replay"
           ? 0
           : null,

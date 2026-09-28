@@ -6,6 +6,7 @@ import {
   WidebandChannelWorker,
   CHANNEL_WORKER_SLOTS,
   CHANNEL_SC16_MAX_SAMPLES,
+  CHANNEL_USRP_SC16_MAX_SAMPLES,
 } from "./widebandChannel";
 import { ChannelWorkerFixture } from "../testing/channelWorkerFixture";
 function tone(frequency: number, length = 32768, rate = WIDEBAND_RATE) {
@@ -319,6 +320,32 @@ it.each([4_800_000, 9_600_000, 19_200_000])(
     worker.close();
   },
 );
+
+it("decodes native USRP Q/I SC16 with full-scale normalization off-thread", async () => {
+  const fake = new ChannelWorkerFixture();
+  fake.auto = false;
+  const deliver = vi.fn();
+  const worker = new WidebandChannelWorker(deliver, vi.fn(), () => fake);
+  const ready = worker.configure(1, 0, 4_800_000, "usrp-sc16");
+  fake.flushOne();
+  await ready;
+  const bytes = new Uint8Array(CHANNEL_USRP_SC16_MAX_SAMPLES * 4);
+  const view = new DataView(bytes.buffer);
+  for (let n = 0; n < CHANNEL_USRP_SC16_MAX_SAMPLES; n++) {
+    view.setInt16(n * 4, -16_384, true); // Q is the low half-word.
+    view.setInt16(n * 4 + 2, 16_384, true); // I is the high half-word.
+  }
+  worker.receiveUsrpSc16(bytes, 100e6);
+  expect(fake.pending[0]).toMatchObject({
+    type: "usrp-sc16",
+    inputCount: CHANNEL_USRP_SC16_MAX_SAMPLES,
+  });
+  fake.flushOne();
+  const block = deliver.mock.calls[0]![0];
+  expect(block.I.at(-1)).toBeCloseTo(0.5, 3);
+  expect(block.Q.at(-1)).toBeCloseTo(-0.5, 3);
+  worker.close();
+});
 
 it("keeps bladeRF 19.2 MS/s buffering bounded at the intended 437 ms", async () => {
   const fake = new ChannelWorkerFixture();

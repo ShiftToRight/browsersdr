@@ -5,6 +5,7 @@ wasm/spectrum-analysis/target/
 coverage/
 playwright-report/
 test-results/
+.local/
 *.local
 .agents/
 .codex/

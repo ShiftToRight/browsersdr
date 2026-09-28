@@ -1,0 +1,16 @@
+{
+  "redistributed": false,
+  "decision": "not-approved-user-import-only",
+  "reservedBinaryUrl": "/assets/usrp-b205/uhd-4.9.0.0/usrp_b205mini_fpga.bin",
+  "uhdVersion": "4.9.0.0",
+  "uhdCommit": "006d7f7646fb66f2ae635cb44ef6442a6ad4fba7",
+  "sourceId": "uhd-c37b318",
+  "archiveFilename": "b2xx_b205mini_fpga_default-gc37b318.zip",
+  "archiveSha256": "dce96120e3512d6e21bb061811c4021cbc90ac4d787248ad821337b7389ff3c4",
+  "memberFilename": "usrp_b205mini_fpga.bin",
+  "memberBytes": 4223252,
+  "memberSha256": "f4da0becf906af957c954a7a1c276aa91f79ca369d7aedf7c2f5c7fdebf4c351",
+  "legacyHash": "0x1624155e",
+  "fpgaCompatibility": "7.0",
+  "notice": "The FPGA binary is not present. Release 1 requires verified user import. See docs/implementation/usrp-b205/PROTOCOL.md for licensing and provenance."
+}

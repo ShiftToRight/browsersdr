@@ -13,6 +13,9 @@ import {
 } from "./radio/receiverController";
 import { hackrfRecordingFixture } from "./testing/hackrfRecordingFixture";
 import type { SourceSessionMetadata } from "./radio/types";
+import { USRP_B205_IMAGE } from "./radio/usrpB205Images";
+import { usrpB205SessionDetails } from "./testing/usrpB205SessionFixture";
+import { usrpB205FirmwareFixture } from "./testing/usrpB205FirmwareFixture";
 vi.mock("./graphics/WebGpuSpectrum", () => ({ WebGpuSpectrum: () => null }));
 vi.mock("./ui/SpectrumExplorer", () => ({
   SpectrumExplorer: vi.fn(() => null),
@@ -27,10 +30,12 @@ let closes = 0;
 let hardwareCalls = 0;
 let analogCalls: Array<{ bandwidthHz: number; squelch: number }> = [];
 let backendEvents: ReceiverBackendEvents;
+let connectionWait: Promise<void> | undefined;
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   options = [];
+  connectionWait = undefined;
   closes = 0;
   closeFailures = 0;
   hardwareCalls = 0;
@@ -39,6 +44,24 @@ beforeEach(async () => {
   const backend: ReceiverBackend = {
     connect: async (value) => {
       options.push(value);
+      if (connectionWait) {
+        backendEvents.permissionGranted();
+        await connectionWait;
+      }
+      if (value.source === "usrp-b205") {
+        const details = usrpB205SessionDetails(value.channelFrequencyHz);
+        return {
+          ...metadata,
+          source: "usrp-b205",
+          requestedSampleRateHz: 4_800_000,
+          actualSampleRateHz: 4_800_000,
+          hardwareCenterFrequencyHz: value.channelFrequencyHz,
+          selectedChannelFrequencyHz: value.channelFrequencyHz,
+          gainDb: null,
+          hackrf: undefined,
+          usrpB205: details,
+        };
+      }
       return {
         ...metadata,
         hardwareCenterFrequencyHz: value.channelFrequencyHz,
@@ -102,6 +125,17 @@ beforeEach(async () => {
         controller={controller}
         analysis={analysis}
         replayRef={{ current: undefined }}
+        usrpImageRef={{
+          current: {
+            contract: USRP_B205_IMAGE,
+            bytes: new Uint8Array(),
+            importedAs: "official-member",
+            archiveSha256: null,
+            memberSha256: USRP_B205_IMAGE.memberSha256,
+            legacyHash: USRP_B205_IMAGE.legacyHash,
+          },
+        }}
+        usrpFirmwareRef={{ current: usrpB205FirmwareFixture() }}
       />,
     ),
   );
@@ -114,6 +148,7 @@ afterEach(async () => {
     root.unmount();
   });
   analysis.dispose();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
@@ -180,6 +215,65 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
     rfAmplifierEnabled: true,
     antennaPowerEnabled: false,
   });
+});
+it("renders only the receive-only B205 rates and never enables recording", async () => {
+  await change(control("Source"), "usrp-b205");
+  expect(control("Sample rate").value).toBe("4800000");
+  expect(control("Sample rate").disabled).toBe(false);
+  expect(
+    Array.from((control("Sample rate") as HTMLSelectElement).options).map(
+      (option) => option.value,
+    ),
+  ).toEqual(["4800000", "9600000", "19200000"]);
+  expect(
+    document.querySelector<HTMLOptionElement>('option[value="19200000"]')
+      ?.textContent,
+  ).toContain("experimental");
+  expect(document.body.textContent).toContain(
+    "RX2 antenna · internal clock/time · slow-attack AGC",
+  );
+  expect(document.body.textContent).toContain(
+    "TX and persistent device-storage writes are disabled",
+  );
+  expect(document.body.textContent).not.toContain("Local testing uses");
+  expect(document.body.textContent).not.toContain("DDC-calculated setting");
+  const acquire = document.querySelector(".acquire-stage")!;
+  expect(acquire.textContent).toContain("✓ Firmware verified");
+  expect(acquire.textContent).toContain("✓ FPGA image verified");
+  expect(
+    acquire.querySelector<HTMLDetailsElement>(".advanced-settings")?.open,
+  ).toBe(false);
+  expect(acquire.querySelectorAll(".setup-file-verified")).toHaveLength(2);
+  expect(acquire.querySelectorAll('input[type="file"]')).toHaveLength(2);
+  const checklist = acquire.querySelector(".setup-checklist")!;
+  expect(
+    checklist.compareDocumentPosition(
+      acquire.querySelector(".connection-stack")!,
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Requested manual gain");
+  await click("Connect");
+  expect(options.at(-1)).toMatchObject({
+    source: "usrp-b205",
+    sampleRateHz: 4_800_000,
+    usrpSettings: {
+      antenna: "RX2",
+      clockSource: "internal",
+      timeSource: "internal",
+      gainMode: "slow_agc",
+      gainDb: null,
+    },
+  });
+  const captureTab = Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent === "Capture & replay",
+  )!;
+  await act(async () => captureTab.click());
+  expect(
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Start I/Q recording")
+      ?.hasAttribute("disabled"),
+  ).toBe(true);
+  expect(document.body.textContent).toContain("SigMF hardware claims");
 });
 it("selects a source-compatible digital rate before connect and keeps stopped configuration editable", async () => {
   await change(control("Source"), "hackrf");
@@ -354,6 +448,25 @@ it("exposes a top-level help view with scoped compatibility evidence and a demo 
   expect(control("Source").value).toBe("synthetic");
 });
 
+it("exposes licence, driver provenance, and privacy information in About", async () => {
+  await act(async () =>
+    (document.querySelector("#about-tab") as HTMLButtonElement).click(),
+  );
+  expect(
+    document.querySelector("#about-tab")?.getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(document.querySelector<HTMLDivElement>("#about-view")?.hidden).toBe(
+    false,
+  );
+  expect(document.body.textContent).toContain("Licences, privacy & provenance");
+  expect(document.body.textContent).toContain(
+    "Automatic error reporting is off until you enable it in Diagnostics",
+  );
+  expect(document.body.textContent).toContain(
+    "Analog Devices no-OS · BSD-3-Clause",
+  );
+});
+
 it("integrates the signal path into the header and progressively reveals mode-aware settings", async () => {
   const rail = document.querySelector(".operational-rail");
   expect(rail?.textContent).toContain("RTL-SDR");
@@ -373,17 +486,16 @@ it("integrates the signal path into the header and progressively reveals mode-aw
   expect(channelSettings().open).toBe(false);
 
   await change(control("Source"), "hackrf");
-  expect(sourceSettings().open).toBe(true);
+  expect(sourceSettings().open).toBe(false);
   await change(control("Mode"), "AM");
   expect(channelSettings().open).toBe(true);
   expect(channelSettings().textContent).toContain("squelch 0.0");
 
   await click("Connect");
   await click("Start receiving");
-  const receptionLight = document.querySelector(
-    ".connection-row:nth-child(2) .connection-dot",
-  );
-  expect(receptionLight?.classList.contains("is-receiving")).toBe(true);
+  expect(
+    document.querySelector(".acquire-connection-status")?.textContent,
+  ).toBe("● Receiving");
 });
 
 it("applies AM bandwidth and squelch live while leaving Tune as the explicit action", async () => {
@@ -559,5 +671,78 @@ it("updates DAB audio telemetry without rebuilding the receiver controls or hidd
   await click("Stop receiving");
   expect(document.querySelector(".operational-rail")?.textContent).toContain(
     "connected",
+  );
+});
+
+it("shows connection activity until initialization finishes, then enables reception", async () => {
+  await change(control("Source"), "usrp-b205");
+  let finish!: () => void;
+  connectionWait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await click("Connect");
+  const button = document.querySelector<HTMLButtonElement>(".acquire-connect")!;
+  expect(button.textContent).toBe("Connecting & initializing…");
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(button.classList.contains("is-connecting")).toBe(true);
+  expect(button.disabled).toBe(true);
+  expect(
+    document.querySelector<HTMLButtonElement>(".acquire-receive")?.disabled,
+  ).toBe(true);
+  expect(document.querySelector(".setup-checklist")?.textContent).toContain(
+    "✓ Firmware verified",
+  );
+  await act(async () => {
+    finish();
+    await connectionWait;
+  });
+  expect(document.querySelector(".acquire-connect")).toBeNull();
+  expect(
+    document.querySelector(".acquire-connection-status")?.textContent,
+  ).toBe("✓ Connected");
+  expect(
+    document.querySelector<HTMLButtonElement>(".acquire-receive")?.disabled,
+  ).toBe(false);
+  await click("Disconnect");
+  expect(document.querySelector(".acquire-connect")?.textContent).toBe(
+    "Connect",
+  );
+  expect(document.querySelector(".setup-checklist")?.textContent).toContain(
+    "✓ Firmware verified",
+  );
+});
+
+it("uses the same verified checklist for bladeRF and keeps failed replacement errors visible", async () => {
+  const images = await import("./radio/bladerfImages");
+  vi.spyOn(images, "importBladeRfImage").mockResolvedValue(
+    images.BLADERF_HOSTED_IMAGES[0]!,
+  );
+  vi.spyOn(images, "storedBladeRfImageVersions").mockResolvedValue(["0.15.3"]);
+  await change(control("Source"), "bladerf");
+  const input = document.querySelector<HTMLInputElement>(
+    '.setup-checklist input[type="file"]',
+  )!;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: [new File(["fixture"], "image.rbf")],
+  });
+  await act(async () => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(document.querySelector(".setup-file-verified")?.textContent).toBe(
+    "✓ FPGA image verified",
+  );
+  expect(input.getAttribute("aria-label")).toBe("Replace fpga image");
+  vi.mocked(images.importBladeRfImage).mockRejectedValue(
+    new Error("Image checksum does not match"),
+  );
+  await act(async () => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(document.querySelector(".setup-file-error")?.textContent).toBe(
+    "Image checksum does not match",
+  );
+  expect(document.querySelector(".setup-file-verified")?.textContent).toBe(
+    "✓ FPGA image verified",
   );
 });

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>B205 WebUSB RX benchmark</title>
+    <style>
+      body { box-sizing: border-box; max-width: 70rem; margin: 2rem auto; padding: 0 1rem; font: 16px system-ui; color: #e8edf2; background: #10151b; }
+      label { display: inline-grid; gap: .35rem; margin: 0 1rem 1rem 0; }
+      input, button { font: inherit; padding: .5rem; }
+      pre { min-height: 24rem; padding: 1rem; overflow: auto; white-space: pre-wrap; background: #080b0f; }
+      .warning { color: #ffd479; }
+    </style>
+  </head>
+  <body>
+    <h1>B205-mini worker-owned WebUSB RX benchmark</h1>
+    <p class="warning">Development-only, receive-only test. Run the UHD 19.2 MS/s baseline immediately beforehand; it leaves the volatile RF/DDC configuration in place. Close every other device owner.</p>
+    <label>Duration (seconds)<input id="duration" type="number" min="1" value="60" /></label>
+    <label>Outstanding reads<input id="slots" type="number" min="1" max="256" value="256" /></label>
+    <button id="start">Run authorized device</button>
+    <button id="grant">Grant device and run</button>
+    <pre id="output" aria-live="polite"></pre>
+    <script type="module" src="./usrpB205WebUsbBenchmark.ts"></script>
+  </body>
+</html>

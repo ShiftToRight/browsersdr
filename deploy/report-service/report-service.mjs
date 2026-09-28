@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
@@ -80,7 +80,7 @@ const COMPATIBILITY_RECEIVER_FIELDS = new Set([
   "exactFrequencyHz",
 ]);
 const FORBIDDEN_KEYS =
-  /serial|iqSamples|sampleBuffer|audioData|spectrumBins|waterfall|decoded|fileName|metadataText|surveySite|latitude|longitude|urlQuery|cookie|localStorage/i;
+  /serial|iqSamples|sampleBuffer|audioData|spectrumBins|waterfall|decoded|fileName|metadataText|surveySite|latitude|longitude|urlQuery|cookie|localStorage|ipAddress|remoteAddress|clientAddress|forwardedFor|xForwardedFor|^ip$/i;
 
 function boundedString(value, maximum) {
   return typeof value === "string"
@@ -340,10 +340,11 @@ export function createReportServer(options = {}) {
   const retentionDays = Number(
     options.retentionDays ?? process.env.BROWSERSDR_REPORT_RETENTION_DAYS ?? 30,
   );
-  const rateSecret =
-    options.rateSecret ??
-    process.env.BROWSERSDR_REPORT_RATE_SECRET ??
-    randomBytes(32).toString("hex");
+  const maxReportsPerMinute = Number(
+    options.maxReportsPerMinute ??
+      process.env.BROWSERSDR_REPORT_MAX_REPORTS_PER_MINUTE ??
+      120,
+  );
   const aggregateDays = Number(
     options.aggregateDays ?? process.env.BROWSERSDR_REPORT_AGGREGATE_DAYS ?? 90,
   );
@@ -459,21 +460,18 @@ export function createReportServer(options = {}) {
           response.end(JSON.stringify({ error: validation }));
           return;
         }
-        const address = request.socket.remoteAddress ?? "unknown";
-        const day = new Date().toISOString().slice(0, 10);
-        const bucket = createHmac("sha256", `${rateSecret}:${day}`)
-          .update(address)
-          .digest("hex");
         const nowSeconds = Math.floor(Date.now() / 1000);
+        const minute = Math.floor(nowSeconds / 60);
+        const bucket = `global:${minute}`;
         const current = rateRead.get(bucket);
         const count =
           current && current.expires_at > nowSeconds ? current.count + 1 : 1;
-        if (count > 20) {
+        if (count > maxReportsPerMinute) {
           response.writeHead(429);
           response.end();
           return;
         }
-        rateWrite.run(bucket, count, nowSeconds + 86400);
+        rateWrite.run(bucket, count, (minute + 2) * 60);
         const sanitized = sanitizeReport(parsed);
         const reference = `${reportType === "compatibility" ? "BC" : "BR"}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${randomBytes(3).toString("hex").toUpperCase()}`;
         const receivedAt = new Date();

@@ -1,0 +1,54 @@
+{
+  "contract_version": "signalexplorer-browsersdr-integration-v1",
+  "schema_digest_sha256": "d00c6936ef6d743584eaf686a8ace0c72ff4bf286255e7b4d77fbeda8f6ef164",
+  "basename": "browsersdr-contract-lab-010006khz-synthetic-am-fixture-2026-09-08T00-00-00-000Z",
+  "data_base64": "1n+9vX/VRLstf0dHfzOzTMR/ra1/vFinTH9eXn9VmmWhf5SUf5lvj2t/c3N/b4p0j3+Kin+Qc4xrf29vf2aUa6F/mpp/qV6gTH9YWH9DrVHEf7Ozf8xHuC1/RER/Kr1C1n+9vX/VRLstf0dHfzOzTMR/ra1/vFinTH9eXn9VmmU=",
+  "data_byte_length": "128",
+  "data_sha256": "8bec224cee25842229ec7603ef8350b70b5c8e2cae76e79ea3facbcbfc5a02a7",
+  "data_sha512": "f0e619f6ec6696479fb7726993ab75a46b0a0b8691e0e7d6c86e8c328f761d36646f69ccf4bb2f5408aa3757c37d26171ba213c7c6e04c7ba8937fe13295a323",
+  "metadata": {
+    "global": {
+      "core:datatype": "cu8",
+      "core:version": "1.2.6",
+      "core:sample_rate": 48000,
+      "core:recorder": "BrowserSDR",
+      "core:sha512": "f0e619f6ec6696479fb7726993ab75a46b0a0b8691e0e7d6c86e8c328f761d36646f69ccf4bb2f5408aa3757c37d26171ba213c7c6e04c7ba8937fe13295a323",
+      "core:description": "BrowserSDR CU8 I/Q capture. Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round((float + 0.995) * 128), 0, 255). Amplitude is not calibrated. Provenance: BrowserSDR deterministic generator: AM carrier +6 kHz, 1 kHz tone, 48 ksample/s; no hardware capture. Survey site: Contract lab. Antenna: test dipole. Site notes: Synthetic fixture; no RF measurement.. Survey profile: BSD-01 deterministic survey."
+    },
+    "captures": [
+      {
+        "core:sample_start": 0,
+        "core:frequency": 10000000,
+        "core:datetime": "2026-09-08T00:00:00.000Z",
+        "core:global_index": 0,
+        "core:geolocation": {
+          "type": "Point",
+          "coordinates": [
+            11.7,
+            48.1
+          ]
+        }
+      }
+    ],
+    "annotations": [
+      {
+        "core:sample_start": 0,
+        "core:sample_count": 64,
+        "core:freq_lower_edge": 9998500,
+        "core:freq_upper_edge": 10013500,
+        "core:label": "AM",
+        "core:generator": "BrowserSDR",
+        "core:comment": "Receiver settings: selected channel 10006000 Hz; bandwidth 15000 Hz; source synthetic; automatic RF gain; squelch 0; stop reason user. These are receiver settings, not calibrated RF measurements."
+      },
+      {
+        "core:sample_start": 0,
+        "core:sample_count": 64,
+        "core:freq_lower_edge": 9998500,
+        "core:freq_upper_edge": 10013500,
+        "core:label": "Synthetic AM fixture",
+        "core:generator": "BrowserSDR",
+        "core:comment": "Survey annotation: modulation AM; encoding unknown; identification confidence low; survey band Contract band; detector average. Receiver mode is not treated as proof of over-the-air modulation."
+      }
+    ]
+  }
+}

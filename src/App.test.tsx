@@ -3,7 +3,7 @@
 import { StrictMode, act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { AppResourceOwner, waitForCaptureDelay, waitForRecordingCompletion } from "./App";
+import { AppResourceOwner, selectAuthorizedUsbDevice, usbDeviceMatchesSource, waitForCaptureDelay, waitForRecordingCompletion } from "./App";
 import { AnalysisPipeline } from "./dsp/analysisPipeline";
 import type { AnalysisWorkerInput, AnalysisWorkerOutput } from "./dsp/spectrumProtocol";
 
@@ -45,6 +45,49 @@ const METADATA = {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
+});
+
+it("matches authorized B205 reconnects only to the frozen VID/PID", () => {
+  expect(
+    usbDeviceMatchesSource(
+      { vendorId: 0x2500, productId: 0x0022 } as USBDevice,
+      "usrp-b205",
+    ),
+  ).toBe(true);
+  expect(
+    usbDeviceMatchesSource(
+      { vendorId: 0x2500, productId: 0x0021 } as USBDevice,
+      "usrp-b205",
+    ),
+  ).toBe(false);
+  expect(
+    usbDeviceMatchesSource(
+      { vendorId: 0x2500, productId: 0x0022 } as USBDevice,
+      "rtl-sdr",
+    ),
+  ).toBe(false);
+});
+
+it("prefers the re-enumerated B205 runtime identity over a retained bootloader permission", () => {
+  const configuration = (interfaces: number[]) => ({
+    configurationValue: 1,
+    interfaces: interfaces.map((interfaceNumber) => ({ interfaceNumber })),
+  }) as unknown as USBConfiguration;
+  const bootloader = {
+    vendorId: 0x2500,
+    productId: 0x0022,
+    serialNumber: "0000000004BE",
+    configurations: [configuration([0])],
+  } as unknown as USBDevice;
+  const runtime = {
+    vendorId: 0x2500,
+    productId: 0x0022,
+    serialNumber: "34BC216",
+    configurations: [configuration([0, 1, 2, 3, 4])],
+  } as unknown as USBDevice;
+
+  expect(selectAuthorizedUsbDevice([bootloader, runtime], "usrp-b205")).toBe(runtime);
+  expect(selectAuthorizedUsbDevice([bootloader], "usrp-b205")).toBe(bootloader);
 });
 
 it("recreates the analysis worker across a real StrictMode cleanup and leaves none after unmount", async () => {

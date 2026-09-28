@@ -77,6 +77,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private enabled = false;
   private outputEnabled = true;
   private centerFrequencyHz = 0;
+  private metadata?: SourceSessionMetadata;
   private closeTask?: Promise<void>;
   private closed = false;
   private closing = false;
@@ -227,6 +228,17 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.channel.receiveSc16(bytes, this.selectedFrequency);
     return true;
   }
+  receiveUsrpSc16(bytes: Uint8Array, frequency: number): boolean {
+    if (!this.enabled || frequency !== this.centerFrequencyHz) return true;
+    if (!this.outputEnabled) {
+      this.analysis?.receiveUsrpSc16(bytes, frequency, this.generation!, this.timings);
+      return true;
+    }
+    if (!this.channel) return false;
+    this.analysis?.receiveUsrpSc16(bytes, frequency, this.generation!, this.timings);
+    this.channel.receiveUsrpSc16(bytes, this.selectedFrequency);
+    return true;
+  }
   async prepare(metadata: SourceSessionMetadata): Promise<void> {
     this.requireOpen();
     const dabReady =
@@ -256,6 +268,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
           ? "ci8"
           : metadata.source === "bladerf"
             ? "sc16"
+            : metadata.source === "usrp-b205"
+              ? "usrp-sc16"
             : false,
       ),
       dabReady,
@@ -271,6 +285,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     );
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
+    this.metadata = structuredClone(metadata);
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
     this.generation = metadata.sessionGeneration;
     this.rawAnalysis = this.analysis?.begin(metadata);
@@ -287,6 +302,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     );
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
+    this.metadata = structuredClone(metadata);
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
     if (this.generation === undefined)
       this.rawAnalysis = this.analysis?.begin(metadata);
@@ -294,6 +310,24 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.generation = metadata.sessionGeneration;
     this.setSampleRate(metadata.actualSampleRateHz);
     this.enabled = true;
+  }
+  /** Reset stateful consumers at a proven source boundary without inventing a
+   * loss count or replacing the active acquisition generation. */
+  markDiscontinuity(missingSamples: number | null): void {
+    if (!this.enabled || !this.metadata) return;
+    this.analysis?.markDiscontinuity(missingSamples ?? 0);
+    this.player.reset();
+    this.rds.reset();
+    this.receiver.resetDigitalReceiver();
+    this.dabResources?.reset();
+    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(this.metadata.mode)) {
+      this.demodulator.setMode(createSignalsMode({
+        mode: this.metadata.mode,
+        bandwidthHz: this.metadata.channelBandwidthHz,
+        squelch: this.metadata.squelch,
+        beatToneHz: this.metadata.beatToneHz,
+      }));
+    }
   }
   selectDabService(key: string): void {
     this.dabResources?.ensemble?.selectService?.(key);
@@ -355,6 +389,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
           ? "ci8"
           : metadata.source === "bladerf"
             ? "sc16"
+            : metadata.source === "usrp-b205"
+              ? "usrp-sc16"
             : false,
       );
     }
@@ -394,6 +430,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.channel = undefined;
     if (this.generation !== undefined) this.analysis?.stop(this.generation);
     this.generation = undefined;
+    this.metadata = undefined;
     this.rds.reset();
     this.adsb.reset();
     this.ais.reset();

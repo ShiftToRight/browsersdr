@@ -1,11 +1,13 @@
 import type { HackrfBackendDependencies } from "../radio/hackrfBackend";
 import type { RtlSdrBackendDependencies } from "../radio/rtlSdrBackend";
 import type { BladeRfBackendDependencies } from "../radio/bladerfBackend";
+import type { Usrpb205BackendDependencies } from "../radio/usrpB205Backend";
 
 export interface BrowserSdrTestConfig {
   hackrfDependencies?: HackrfBackendDependencies;
   rtlDependencies?: RtlSdrBackendDependencies;
   bladerfDependencies?: BladeRfBackendDependencies;
+  usrpB205Dependencies?: Usrpb205BackendDependencies;
 }
 
 export interface BrowserSdrTestRuntime {

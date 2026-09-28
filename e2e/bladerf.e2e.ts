@@ -74,8 +74,9 @@ for (const rate of [9_600_000, 19_200_000])
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption("bladerf");
-    await expect(page.getByRole("note")).toContainText(
-      "never writes SPI flash",
+    await page.getByText("Device details & settings", { exact: true }).click();
+    await expect(page.locator(".device-setup-details")).toContainText(
+      "no flash writes",
     );
     await page
       .getByRole("combobox", { name: "Mode", exact: true })
@@ -85,7 +86,7 @@ for (const rate of [9_600_000, 19_200_000])
       .selectOption(String(rate));
     await page
       .getByRole("button", {
-        name: "Connect & load FPGA if needed",
+        name: "Connect",
         exact: true,
       })
       .click();

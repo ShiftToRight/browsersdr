@@ -69,6 +69,7 @@ async function openPro(page: Page) {
   await page
     .locator('select[aria-label="Signal source"]')
     .selectOption("hackrf");
+  await page.getByText("Device details & settings", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "Mode", exact: true })
     .selectOption("AM");
@@ -214,7 +215,7 @@ test("HackRF unsupported firmware fails with compatibility details before recept
     page.getByRole("button", { name: "Start receiving", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Connect", exact: true }),
+    page.getByRole("button", { name: "Retry connection", exact: true }),
   ).toBeEnabled();
 });
 
@@ -228,6 +229,7 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption("hackrf");
+    await page.getByText("Device details & settings", { exact: true }).click();
     await page
       .getByRole("combobox", { name: "Mode", exact: true })
       .selectOption("AM");

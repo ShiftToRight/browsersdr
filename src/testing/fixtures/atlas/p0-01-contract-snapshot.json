@@ -1,0 +1,28 @@
+{
+  "contract_version": "signalexplorer-browsersdr-integration-v1",
+  "schema_digest_sha256": "d00c6936ef6d743584eaf686a8ace0c72ff4bf286255e7b4d77fbeda8f6ef164",
+  "schema_artifact_sha256": "db022c55f8619a9850561bbe45112656cbd9fa1b63981bf06ed2b9111470f7ff",
+  "source_manifest_sha256": "8fa32081af849b788da1b4487c5bf1af7827e085b134b15608bbd09c453311ba",
+  "source": "contracts/integrations/manifest.json",
+  "examples": {
+    "contiguous_cu8": {
+      "artifact_sha256": "eb10d8d44129a07921f4aedcd5261c9b911caee360d7953069f6873b2797cddc",
+      "expected": {
+        "archive_eligible": true,
+        "analysis_eligible": true
+      }
+    },
+    "structured_gap": {
+      "artifact_sha256": "cb459b2e8e18437a52c485a01e2d87d5b1b79abdc5e3de92de9ea1673b0babc6",
+      "expected": {
+        "archive_eligible": true,
+        "analysis_eligible": false,
+        "error_code": "structured_gap_unsupported"
+      }
+    },
+    "upload_flow": {
+      "artifact_sha256": "aed9a9be8a939aabb9ca26ae4d79a13976911c4894b16618ee04e268b2b781a0"
+    }
+  },
+  "updated_at": "2026-09-27"
+}

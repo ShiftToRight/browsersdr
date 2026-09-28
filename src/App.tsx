@@ -1,4 +1,5 @@
 import { usePageVisible } from "./ui/usePageVisible";
+import { SetupFileRow } from "./ui/SetupFileRow";
 import { DabMetadata } from "./ui/DabMetadata";
 import { isWidebandRate } from "./radio/sourceCapabilities";
 import {
@@ -25,19 +26,42 @@ import {
 } from "./radio/receiverController";
 import { createHackrfBackend } from "./radio/hackrfBackend";
 import { createBladeRfBackend } from "./radio/bladerfBackend";
+import { createUsrpb205Backend } from "./radio/usrpB205Backend";
+import { createUsrpB205WorkerSession } from "./radio/usrpB205WorkerSession";
+import {
+  createLocalUsrpB205NoOsDriver,
+  localUsrpB205NoOsDriverAvailable,
+} from "./radio/usrpB205LocalNoOsDriver";
 import { HACKRF_USB_FILTER } from "./radio/hackrfProtocol";
 import { BLADERF_USB_FILTER } from "./radio/bladerfProtocol";
+import { USRP_B205_USB_FILTER } from "./radio/usrpB205Fx3";
 import {
   BLADERF_HOSTED_IMAGES,
   importBladeRfImage,
   storedBladeRfImageVersions,
 } from "./radio/bladerfImages";
 import {
+  USRP_B205_IMAGE,
+  importUsrpB205Image,
+  loadStoredUsrpB205Image,
+  type VerifiedUsrpB205Image,
+} from "./radio/usrpB205Images";
+import {
+  USRP_B205_FIRMWARE,
+  importUsrpB205Firmware,
+  loadStoredUsrpB205Firmware,
+  type VerifiedUsrpB205Firmware,
+} from "./radio/usrpB205Firmware";
+import {
   sourceCapabilities,
   validateSourceFrequency,
   DEFAULT_HACKRF_RX_SETTINGS,
   type HackrfRxSettings,
 } from "./radio/sourceCapabilities";
+import {
+  DEFAULT_USRP_B205_RX_SETTINGS,
+  type UsrpB205RxSettings,
+} from "./radio/usrpB205Capabilities";
 import {
   compatibleSourceRate,
   loadSourcePreferences,
@@ -64,6 +88,7 @@ import {
   RETAINED_CAPTURE_MAX_BYTES,
   type RecordingDownloadKind,
   type RecordingExportFormat,
+  type PreparedRecordingExport,
   type RecordingRetentionSnapshot,
   type RetainRecordingResult,
 } from "./radio/recordingExport";
@@ -94,6 +119,8 @@ import {
   OPEN_DIAGNOSTIC_REPORT_EVENT,
 } from "./ui/DiagnosticReportCard";
 import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
+import { AboutPage } from "./ui/AboutPage";
+import { AtlasSavePanel } from "./ui/AtlasSavePanel";
 import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
 interface Capability {
@@ -108,7 +135,7 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "receiver" | "explorer" | "diagnostics" | "help";
+type AppView = "receiver" | "explorer" | "diagnostics" | "help" | "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type CompatibilityDetailView = "modes" | "recording" | "browsers";
 type ReplayImportFormat = "browsersdr" | "sigmf";
@@ -145,7 +172,13 @@ const COMPATIBILITY_DETAILS: Record<
 > = {
   modes: {
     label: "Modes",
-    columns: ["RTL-SDR", "HackRF Pro", "bladeRF xA4", "Replay"],
+    columns: [
+      "RTL-SDR",
+      "HackRF Pro",
+      "bladeRF xA4",
+      "USRP B205-mini",
+      "Replay",
+    ],
     rows: [
       {
         label: "Spectrum only (OFF)",
@@ -153,6 +186,10 @@ const COMPATIBILITY_DETAILS: Record<
           { status: "validated", evidence: "Live WebGPU spectrum" },
           { status: "validated", evidence: "4.8 and 9.6 MS/s live paths" },
           { status: "available", evidence: "Initial physical reception only" },
+          {
+            status: "available",
+            evidence: "Mocked RX path; hardware proof pending",
+          },
           { status: "validated", evidence: "Capture span only; no retuning" },
         ],
       },
@@ -165,12 +202,20 @@ const COMPATIBILITY_DETAILS: Record<
             status: "available",
             evidence: "Decoder implemented; live proof pending",
           },
+          {
+            status: "available",
+            evidence: "Decoder implemented; live proof pending",
+          },
           { status: "validated", evidence: "Deterministic replay coverage" },
         ],
       },
       {
         label: "AM, NBFM, USB, LSB + CW",
         cells: [
+          {
+            status: "available",
+            evidence: "DSP covered; live-air matrix pending",
+          },
           {
             status: "available",
             evidence: "DSP covered; live-air matrix pending",
@@ -198,12 +243,20 @@ const COMPATIBILITY_DETAILS: Record<
             evidence: "Decoder covered; live ensemble pending",
           },
           { status: "available", evidence: "Compatible sample rate required" },
+          {
+            status: "available",
+            evidence: "4.8 MS/s capture; 2.4 MS/s channel",
+          },
           { status: "available", evidence: "Compatible sample rate required" },
         ],
       },
       {
         label: "ADS-B, AIS + SRD",
         cells: [
+          {
+            status: "available",
+            evidence: "Decoder fixtures; live RF pending",
+          },
           {
             status: "available",
             evidence: "Decoder fixtures; live RF pending",
@@ -237,13 +290,17 @@ const COMPATIBILITY_DETAILS: Record<
             status: "available",
             evidence: "Retune workflow; field survey pending",
           },
+          {
+            status: "available",
+            evidence: "Retune workflow; field survey pending",
+          },
           { status: "unsupported", evidence: "A recording cannot retune" },
         ],
       },
       {
         label: "19.2 MS/s wideband",
         cells: [
-          { status: "unsupported", evidence: "Profile tops out at 2.4 MS/s" },
+          { status: "unsupported", evidence: "Profile tops out at 4.8 MS/s" },
           {
             status: "experimental",
             evidence: "Offered with performance warnings",
@@ -252,6 +309,7 @@ const COMPATIBILITY_DETAILS: Record<
             status: "experimental",
             evidence: "Offered with performance warnings",
           },
+          { status: "unsupported", evidence: "Frozen at 4.8 MS/s" },
           {
             status: "available",
             evidence: "Depends on recording rate and browser",
@@ -263,7 +321,13 @@ const COMPATIBILITY_DETAILS: Record<
   },
   recording: {
     label: "Recording & export",
-    columns: ["RTL-SDR", "HackRF Pro", "bladeRF xA4", "Synthetic demo"],
+    columns: [
+      "RTL-SDR",
+      "HackRF Pro",
+      "bladeRF xA4",
+      "USRP B205-mini",
+      "Synthetic demo",
+    ],
     rows: [
       {
         label: "Native I/Q capture",
@@ -274,6 +338,7 @@ const COMPATIBILITY_DETAILS: Record<
             status: "unsupported",
             evidence: "Recording is disabled for this profile",
           },
+          { status: "unsupported", evidence: "Native SC16 recording deferred" },
           { status: "available", evidence: "Quantized CU8 samples" },
         ],
       },
@@ -282,6 +347,7 @@ const COMPATIBILITY_DETAILS: Record<
         cells: [
           { status: "validated", evidence: "Export and replay covered" },
           { status: "validated", evidence: "Export and replay covered" },
+          { status: "unsupported", evidence: "No I/Q capture" },
           { status: "unsupported", evidence: "No I/Q capture" },
           { status: "available", evidence: "Local export path" },
         ],
@@ -298,6 +364,10 @@ const COMPATIBILITY_DETAILS: Record<
             evidence: "Schema, export and import covered",
           },
           { status: "unsupported", evidence: "No I/Q capture" },
+          {
+            status: "unsupported",
+            evidence: "No SigMF hardware claim emitted",
+          },
           { status: "available", evidence: "Local export path" },
         ],
       },
@@ -306,6 +376,7 @@ const COMPATIBILITY_DETAILS: Record<
         cells: [
           { status: "validated", evidence: "Both delivery paths covered" },
           { status: "validated", evidence: "Both delivery paths covered" },
+          { status: "unsupported", evidence: "No I/Q capture" },
           { status: "unsupported", evidence: "No I/Q capture" },
           {
             status: "available",
@@ -319,6 +390,7 @@ const COMPATIBILITY_DETAILS: Record<
           { status: "available", evidence: "Survey metadata only" },
           { status: "available", evidence: "Survey metadata only" },
           { status: "available", evidence: "Survey metadata only" },
+          { status: "available", evidence: "Survey metadata identifies USRP" },
           { status: "available", evidence: "Survey metadata only" },
         ],
       },
@@ -409,14 +481,42 @@ export function usbDeviceMatchesSource(
       ? [HACKRF_USB_FILTER]
       : source === "bladerf"
         ? [BLADERF_USB_FILTER]
-        : source === "rtl-sdr"
-          ? RTL_USB_FILTERS
-          : [];
+        : source === "usrp-b205"
+          ? [USRP_B205_USB_FILTER]
+          : source === "rtl-sdr"
+            ? RTL_USB_FILTERS
+            : [];
   return filters.some(
     (filter) =>
       device.vendorId === filter.vendorId &&
       device.productId === filter.productId,
   );
+}
+
+function isUsrpb205RuntimeDescriptor(device: USBDevice): boolean {
+  return (
+    device.configurations?.some(
+      (configuration) =>
+        configuration.configurationValue === 1 &&
+        configuration.interfaces.length === 5 &&
+        configuration.interfaces.every(
+          (item, index) => item.interfaceNumber === index,
+        ),
+    ) ?? false
+  );
+}
+
+export function selectAuthorizedUsbDevice(
+  devices: readonly USBDevice[],
+  source: SourceKind,
+): USBDevice | undefined {
+  const matches = devices.filter((candidate) =>
+    usbDeviceMatchesSource(candidate, source),
+  );
+  if (source === "usrp-b205") {
+    return matches.find(isUsrpb205RuntimeDescriptor) ?? matches[0];
+  }
+  return matches[0];
 }
 
 function selectedSigmfModeSettings(mode: ReceiverMode | "") {
@@ -467,6 +567,8 @@ interface AppRuntime {
   analysis: AnalysisPipeline;
   controller: ReceiverController;
   replayRef: { current: IqRecording | undefined };
+  usrpImageRef?: { current: VerifiedUsrpB205Image | undefined };
+  usrpFirmwareRef?: { current: VerifiedUsrpB205Firmware | undefined };
 }
 
 interface AppResourceOwnerProps {
@@ -628,6 +730,12 @@ export function AppResourceOwner({
     const analysis = createAnalysis();
     const testConfig = browserTestConfig();
     const replayRef: AppRuntime["replayRef"] = { current: undefined };
+    const usrpImageRef: NonNullable<AppRuntime["usrpImageRef"]> = {
+      current: testConfig?.usrpB205Dependencies?.image,
+    };
+    const usrpFirmwareRef: NonNullable<AppRuntime["usrpFirmwareRef"]> = {
+      current: testConfig?.usrpB205Dependencies?.firmware,
+    };
     const controller = new ReceiverController((events, options, generation) =>
       options.source === "synthetic"
         ? new SyntheticBackend(events, analysis, generation)
@@ -657,15 +765,41 @@ export function AppResourceOwner({
                   generation,
                   testConfig?.bladerfDependencies,
                 )
-              : createRtlSdrBackend(
-                  events,
-                  analysis,
-                  generation,
-                  options.channelFrequencyHz,
-                  testConfig?.rtlDependencies,
-                ),
+              : options.source === "usrp-b205"
+                ? createUsrpb205Backend(events, analysis, generation, {
+                    ...testConfig?.usrpB205Dependencies,
+                    image:
+                      testConfig?.usrpB205Dependencies?.image ??
+                      usrpImageRef.current,
+                    firmware:
+                      testConfig?.usrpB205Dependencies?.firmware ??
+                      usrpFirmwareRef.current,
+                    createAd9364Driver:
+                      testConfig?.usrpB205Dependencies?.createAd9364Driver ??
+                      (localUsrpB205NoOsDriverAvailable()
+                        ? createLocalUsrpB205NoOsDriver
+                        : undefined),
+                    createWorkerSession:
+                      testConfig?.usrpB205Dependencies?.createWorkerSession ??
+                      (!testConfig && localUsrpB205NoOsDriverAvailable()
+                        ? createUsrpB205WorkerSession
+                        : undefined),
+                  })
+                : createRtlSdrBackend(
+                    events,
+                    analysis,
+                    generation,
+                    options.channelFrequencyHz,
+                    testConfig?.rtlDependencies,
+                  ),
     );
-    const owned = { analysis, controller, replayRef };
+    const owned = {
+      analysis,
+      controller,
+      replayRef,
+      usrpImageRef,
+      usrpFirmwareRef,
+    };
     setRuntime(owned);
     return () => {
       void controller.disconnect().finally(() => analysis.dispose());
@@ -710,7 +844,7 @@ function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
       label: "WebUSB API",
       available: webUsb,
       detail: webUsb
-        ? "RTL-SDR, HackRF and bladeRF access available"
+        ? "RTL-SDR, HackRF, bladeRF and USRP B205-mini access available"
         : "Required for live hardware; use a WebUSB-compatible browser",
     },
     {
@@ -756,7 +890,7 @@ function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
       label: "Web Crypto API",
       available: webCrypto,
       detail: webCrypto
-        ? "SigMF and bladeRF image verification available"
+        ? "SigMF, bladeRF and USRP image verification available"
         : "Required for recording and FPGA image integrity checks",
     },
     {
@@ -1898,7 +2032,13 @@ function ReceiverDecodePanel({
   );
 }
 
-export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
+export function ReceiverApp({
+  analysis,
+  controller,
+  replayRef,
+  usrpImageRef = { current: undefined },
+  usrpFirmwareRef = { current: undefined },
+}: AppRuntime) {
   const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
     controller.getSnapshot(),
   );
@@ -1910,9 +2050,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     loadSourcePreferences(preferenceStorage, initialSource),
   );
   const [mode, setMode] = useState(initialPreferences.modeSettings.mode);
-  const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(
-    initialSource === "hackrf" || initialSource === "bladerf",
-  );
+  const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
     !["OFF", "WBFM"].includes(initialPreferences.modeSettings.mode),
   );
@@ -1940,6 +2078,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(
     initialPreferences.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
   );
+  const [usrpSettings, setUsrpSettings] = useState<UsrpB205RxSettings>(
+    initialPreferences.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS },
+  );
   const [sampleRateHz, setSampleRateHz] = useState(
     initialPreferences.sampleRateHz,
   );
@@ -1947,9 +2088,11 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   const hardwareOptions =
     source === "hackrf"
       ? { hardwareSettings }
-      : source === "rtl-sdr"
-        ? { gainDb }
-        : {};
+      : source === "usrp-b205"
+        ? { usrpSettings }
+        : source === "rtl-sdr"
+          ? { gainDb }
+          : {};
   const currentModeSettings = useMemo(
     () => ({
       mode,
@@ -1969,7 +2112,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         ? { hardwareSettings }
         : source === "rtl-sdr"
           ? { gainDb }
-          : {}),
+          : source === "usrp-b205"
+            ? { usrpSettings }
+            : {}),
     });
   }, [
     currentModeSettings,
@@ -1983,6 +2128,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     sampleRateHz,
     hardwareSettings,
     gainDb,
+    usrpSettings,
   ]);
   const [loadedReplay, setLoadedReplay] = useState<IqRecording>();
   const [storedFpgaVersions, setStoredFpgaVersions] = useState<string[]>([]);
@@ -1990,6 +2136,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     "Download the official image from Nuand, then import the .rbf once.",
   );
   const [importingFpgaImage, setImportingFpgaImage] = useState(false);
+  const [fpgaImageError, setFpgaImageError] = useState<string>();
   const refreshStoredFpgaVersions = useCallback(async () => {
     try {
       setStoredFpgaVersions(await storedBladeRfImageVersions());
@@ -2009,6 +2156,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     event.currentTarget.value = "";
     if (!file) return;
     setImportingFpgaImage(true);
+    setFpgaImageError(undefined);
     setFpgaImageMessage(`Verifying ${file.name}…`);
     try {
       const image = await importBladeRfImage(file);
@@ -2017,6 +2165,11 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         `Verified and saved hostedxA4 ${image.version}. Connect the bladeRF again.`,
       );
     } catch (error) {
+      setFpgaImageError(
+        error instanceof Error
+          ? error.message
+          : "Could not import the FPGA image.",
+      );
       setFpgaImageMessage(
         error instanceof Error
           ? error.message
@@ -2024,6 +2177,149 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       );
     } finally {
       setImportingFpgaImage(false);
+    }
+  };
+  const [usrpImageChecked, setUsrpImageChecked] = useState(
+    Boolean(usrpImageRef.current),
+  );
+  const [usrpImageRevision, setUsrpImageRevision] = useState(0);
+  const [importingUsrpImage, setImportingUsrpImage] = useState(false);
+  const [usrpImageError, setUsrpImageError] = useState<string>();
+  const [usrpImageMessage, setUsrpImageMessage] = useState(
+    usrpImageRef.current
+      ? `Verified ${USRP_B205_IMAGE.memberFilename}.`
+      : "Import the pinned official archive or extracted FPGA member before connecting.",
+  );
+  useEffect(() => {
+    if (usrpImageRef.current) {
+      setUsrpImageChecked(true);
+      return;
+    }
+    let active = true;
+    void loadStoredUsrpB205Image()
+      .then((image) => {
+        if (!active) return;
+        usrpImageRef.current = image;
+        setUsrpImageMessage(
+          `Verified saved ${image.contract.memberFilename} (${image.memberSha256.slice(0, 12)}…).`,
+        );
+        setUsrpImageRevision((value) => value + 1);
+      })
+      .catch((error) => {
+        if (active)
+          setUsrpImageMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not inspect local USRP FPGA image storage.",
+          );
+      })
+      .finally(() => {
+        if (active) setUsrpImageChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [usrpImageRef]);
+  const importUsrpImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setImportingUsrpImage(true);
+    setUsrpImageError(undefined);
+    setUsrpImageMessage(`Verifying ${file.name}…`);
+    try {
+      const image = await importUsrpB205Image(file);
+      usrpImageRef.current = image;
+      autoConnectAttempted.current = false;
+      setUsrpImageRevision((value) => value + 1);
+      setUsrpImageMessage(
+        `Verified and saved ${image.contract.memberFilename}. The image is loaded into the FPGA only when needed and never written to flash.`,
+      );
+    } catch (error) {
+      setUsrpImageError(
+        error instanceof Error
+          ? error.message
+          : "Could not import the USRP FPGA image.",
+      );
+      setUsrpImageMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not import the USRP FPGA image.",
+      );
+    } finally {
+      setImportingUsrpImage(false);
+      setUsrpImageChecked(true);
+    }
+  };
+  const [usrpFirmwareChecked, setUsrpFirmwareChecked] = useState(
+    Boolean(usrpFirmwareRef.current),
+  );
+  const [importingUsrpFirmware, setImportingUsrpFirmware] = useState(false);
+  const [usrpFirmwareError, setUsrpFirmwareError] = useState<string>();
+  const [usrpFirmwareMessage, setUsrpFirmwareMessage] = useState(
+    usrpFirmwareRef.current
+      ? `Verified ${USRP_B205_FIRMWARE.memberFilename}.`
+      : "Import the pinned official FX3 firmware archive or extracted .hex before connecting.",
+  );
+  useEffect(() => {
+    if (usrpFirmwareRef.current) {
+      setUsrpFirmwareChecked(true);
+      return;
+    }
+    let active = true;
+    void loadStoredUsrpB205Firmware()
+      .then((firmware) => {
+        if (!active) return;
+        usrpFirmwareRef.current = firmware;
+        setUsrpFirmwareMessage(
+          `Verified saved ${firmware.contract.memberFilename} (${firmware.memberSha256.slice(0, 12)}…).`,
+        );
+      })
+      .catch((error) => {
+        if (active)
+          setUsrpFirmwareMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not inspect local USRP firmware storage.",
+          );
+      })
+      .finally(() => {
+        if (active) setUsrpFirmwareChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [usrpFirmwareRef]);
+  const importUsrpFirmwareFile = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setImportingUsrpFirmware(true);
+    setUsrpFirmwareError(undefined);
+    setUsrpFirmwareMessage(`Verifying ${file.name}…`);
+    try {
+      const firmware = await importUsrpB205Firmware(file);
+      usrpFirmwareRef.current = firmware;
+      autoConnectAttempted.current = false;
+      setUsrpFirmwareMessage(
+        `Verified and saved ${firmware.contract.memberFilename}. WestBridge recovery writes only volatile FX3 RAM.`,
+      );
+    } catch (error) {
+      setUsrpFirmwareError(
+        error instanceof Error
+          ? error.message
+          : "Could not import the USRP FX3 firmware.",
+      );
+      setUsrpFirmwareMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not import the USRP FX3 firmware.",
+      );
+    } finally {
+      setImportingUsrpFirmware(false);
+      setUsrpFirmwareChecked(true);
     }
   };
   const [replayBinary, setReplayBinary] = useState<File>();
@@ -2046,10 +2342,13 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
   useEffect(() => () => exportCoordinator.cancel(), [exportCoordinator]);
   const [retainedCapture, setRetainedCapture] =
     useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
+  const [atlasPrepared, setAtlasPrepared] = useState<PreparedRecordingExport>();
+  const [atlasTransferActive, setAtlasTransferActive] = useState(false);
   const [recordingFormatLatch] = useState(() => new RecordingFormatLatch());
   const capacityStopPending = useRef(false);
   const surveyCaptureActive = useRef(false);
   const autoConnectAttempted = useRef(false);
+  const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveView] = useState<AppView>("receiver");
   const [compatibilityDetailView, setCompatibilityDetailView] =
     useState<CompatibilityDetailView>("modes");
@@ -2108,7 +2407,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       validateSourceFrequency(
         source,
         frequencyMhz * 1_000_000,
-        source === "hackrf" || source === "bladerf" ? bandwidthHz : 0,
+        source === "hackrf" || source === "bladerf" || source === "usrp-b205"
+          ? bandwidthHz
+          : 0,
       );
       return true;
     } catch {
@@ -2116,7 +2417,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     }
   })();
   const encoding =
-    source === "bladerf"
+    source === "bladerf" || source === "usrp-b205"
       ? "sc16"
       : source === "hackrf"
         ? "ci8"
@@ -2125,8 +2426,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
             ? "ci8"
             : "cu8"
           : "cu8";
-  const recordingSupported = source !== "bladerf";
+  const recordingSupported = source !== "bladerf" && source !== "usrp-b205";
   const nativeRateHz =
+    receiver.session?.usrpB205?.nativeSampleRateHz ??
     receiver.session?.bladerf?.nativeSampleRateHz ??
     receiver.session?.hackrf?.nativeSampleRateHz ??
     receiver.session?.actualSampleRateHz ??
@@ -2145,11 +2447,10 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
         source === "replay",
     );
   const modeCaps = modeCapabilities(mode);
-  const captureSlotBlocked = ![
-    "empty",
-    "discarded",
-    "download-requested",
-  ].includes(retainedCapture.status);
+  const captureSlotBlocked =
+    !["empty", "discarded", "download-requested"].includes(
+      retainedCapture.status,
+    ) || atlasTransferActive;
   const retainedCapturePresent = !["empty", "discarded"].includes(
     retainedCapture.status,
   );
@@ -2164,6 +2465,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       setFileMessage("Preparing completed recording…");
       void attempt.then((result) => {
         if (result.status === "prepared") {
+          setAtlasPrepared(
+            result.prepared.format === "sigmf" ? result.prepared : undefined,
+          );
           const format =
             result.prepared.format === "sigmf" ? "SigMF" : "BrowserSDR replay";
           setFileMessage(
@@ -2187,6 +2491,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
 
   const retainCompletedRecording = useCallback(
     (recording: IqRecording) => {
+      setAtlasPrepared(undefined);
       const format = recordingFormatLatch.complete(recordingFormat);
       capacityStopPending.current = false;
       setRecordingStatus(undefined);
@@ -2220,6 +2525,14 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
 
   useEffect(() => {
     if (autoConnectAttempted.current) return;
+    if (
+      source === "usrp-b205" &&
+      (!usrpImageChecked ||
+        !usrpImageRef.current ||
+        !usrpFirmwareChecked ||
+        !usrpFirmwareRef.current)
+    )
+      return;
     if (!sourceCapabilities(source).requiresUsb || !navigator.usb?.getDevices) {
       autoConnectAttempted.current = true;
       return;
@@ -2230,10 +2543,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       .then((devices) => {
         if (!active || autoConnectAttempted.current) return;
         autoConnectAttempted.current = true;
-        const device = devices.find((candidate) =>
-          usbDeviceMatchesSource(candidate, source),
-        );
+        const device = selectAuthorizedUsbDevice(devices, source);
         if (!device) return;
+        authorizedUsbDevice.current = device;
         void controller.connectGranted(
           {
             source,
@@ -2244,7 +2556,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
               ? { hardwareSettings }
               : source === "rtl-sdr"
                 ? { gainDb }
-                : {}),
+                : source === "usrp-b205"
+                  ? { usrpSettings }
+                  : {}),
             sampleRateHz,
           },
           device,
@@ -2268,8 +2582,35 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     sampleRateHz,
     source,
     squelch,
+    usrpImageChecked,
+    usrpImageRef,
+    usrpImageRevision,
+    usrpFirmwareChecked,
+    usrpFirmwareRef,
+    usrpSettings,
     volume,
   ]);
+
+  useEffect(() => {
+    if (!sourceCapabilities(source).requiresUsb || !navigator.usb?.getDevices) {
+      authorizedUsbDevice.current = undefined;
+      return;
+    }
+    let active = true;
+    void navigator.usb
+      .getDevices()
+      .then((devices) => {
+        if (!active) return;
+        authorizedUsbDevice.current = selectAuthorizedUsbDevice(
+          devices,
+          source,
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [receiver.lifecycle, source]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2315,7 +2656,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
             ? { hardwareSettings }
             : source === "rtl-sdr"
               ? { gainDb }
-              : {}),
+              : source === "usrp-b205"
+                ? { usrpSettings }
+                : {}),
           sampleRateHz,
         });
       }
@@ -2328,18 +2671,23 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       hardwareSettings,
       sampleRateHz,
       source,
+      usrpSettings,
       volume,
     ]);
 
   const connectReceiver = () => {
-    void controller.connect({
+    const options = {
       source,
       channelFrequencyHz: frequencyMhz * 1_000_000,
       volume,
       modeSettings: currentModeSettings,
       ...hardwareOptions,
       sampleRateHz,
-    });
+    };
+    const granted = authorizedUsbDevice.current;
+    if (granted && usbDeviceMatchesSource(granted, source))
+      void controller.connectGranted(options, granted);
+    else void controller.connect(options);
   };
 
   const switchSource = async (nextSource: SourceKind) => {
@@ -2364,7 +2712,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     setHardwareSettings(
       next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
     );
-    setSourceAdvancedOpen(nextSource === "hackrf" || nextSource === "bladerf");
+    setUsrpSettings(next.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS });
+    setSourceAdvancedOpen(false);
+    autoConnectAttempted.current = false;
     if (nextSource === "replay" && loadedReplay) {
       setMode(loadedReplay.metadata.mode);
       setBandwidthHz(loadedReplay.metadata.channelBandwidthHz);
@@ -2542,6 +2892,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
 
   const discardPreparedRecording = () => {
     exportCoordinator.discard();
+    setAtlasPrepared(undefined);
     setRetainedCapture(exportCoordinator.getSnapshot());
     setFileMessage("Prepared recording discarded from memory.");
   };
@@ -2689,7 +3040,13 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     let nextView: AppView | undefined;
-    const views: AppView[] = ["receiver", "explorer", "diagnostics", "help"];
+    const views: AppView[] = [
+      "receiver",
+      "explorer",
+      "diagnostics",
+      "help",
+      "about",
+    ];
     const currentIndex = views.indexOf(activeView);
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const direction = event.key === "ArrowRight" ? 1 : -1;
@@ -2698,7 +3055,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     } else if (event.key === "Home") {
       nextView = "receiver";
     } else if (event.key === "End") {
-      nextView = "help";
+      nextView = "about";
     }
     if (!nextView) return;
     event.preventDefault();
@@ -2800,6 +3157,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     mode: activeSession?.mode ?? mode,
     sampleRateHz: activeSession?.actualSampleRateHz ?? sampleRateHz,
     nativeSampleRateHz:
+      activeSession?.usrpB205?.nativeSampleRateHz ??
       activeSession?.hackrf?.nativeSampleRateHz ??
       activeSession?.bladerf?.nativeSampleRateHz ??
       activeSession?.actualSampleRateHz ??
@@ -2809,13 +3167,15 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
     gainMode:
       activeSession?.source === "hackrf" || source === "hackrf"
         ? "staged"
-        : activeSession?.source === "bladerf" || source === "bladerf"
-          ? (activeSession?.bladerf?.gainMode ?? "slow-attack-agc")
-          : activeSession?.source === "rtl-sdr" || source === "rtl-sdr"
-            ? (activeSession?.gainDb ?? gainDb) === null
-              ? "automatic"
-              : "manual"
-            : "not-applicable",
+        : activeSession?.source === "usrp-b205" || source === "usrp-b205"
+          ? "slow-attack-agc"
+          : activeSession?.source === "bladerf" || source === "bladerf"
+            ? (activeSession?.bladerf?.gainMode ?? "slow-attack-agc")
+            : activeSession?.source === "rtl-sdr" || source === "rtl-sdr"
+              ? (activeSession?.gainDb ?? gainDb) === null
+                ? "automatic"
+                : "manual"
+              : "not-applicable",
     gainDb:
       activeSession?.source === "rtl-sdr" || source === "rtl-sdr"
         ? (activeSession?.gainDb ?? gainDb)
@@ -2834,6 +3194,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       (source === "hackrf" ? hardwareSettings.antennaPowerEnabled : null),
     firmwareVersion:
       activeSession?.hackrf?.capabilities.identity.firmwareVersion ??
+      (activeSession?.usrpB205
+        ? `${activeSession.usrpB205.capabilities.firmware.major}.${activeSession.usrpB205.capabilities.firmware.minor}`
+        : null) ??
       (activeSession?.bladerf
         ? `${activeSession.bladerf.identity.firmware.major}.${activeSession.bladerf.identity.firmware.minor}`
         : null),
@@ -2841,6 +3204,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
       activeSession?.hackrf?.capabilities.identity.usbApiVersion ?? null,
     protocolProfile:
       activeSession?.hackrf?.capabilities.protocolProfile ??
+      activeSession?.usrpB205?.capabilities.protocolProfile ??
       activeSession?.bladerf?.protocolProfile ??
       null,
     recordingActive: Boolean(recordingStatus),
@@ -2968,6 +3332,19 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
               <span>Help</span>
               <small>Setup & compatibility</small>
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="about-tab"
+              aria-selected={activeView === "about"}
+              aria-controls="about-view"
+              tabIndex={activeView === "about" ? 0 : -1}
+              onClick={() => setActiveView("about")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>About</span>
+              <small>Licences &amp; privacy</small>
+            </button>
           </div>
           <p>
             {activeView === "receiver"
@@ -2976,7 +3353,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                 ? "Wideband spectrum survey"
                 : activeView === "diagnostics"
                   ? "Session health and browser support"
-                  : "Answers, setup and compatibility"}
+                  : activeView === "help"
+                    ? "Answers, setup and compatibility"
+                    : "Licences, privacy and provenance"}
           </p>
         </nav>
       </div>
@@ -3038,79 +3417,228 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                     <option value="bladerf">
                       {sourceCapabilities("bladerf").label} device
                     </option>
+                    <option value="usrp-b205">
+                      {sourceCapabilities("usrp-b205").label} device
+                    </option>
                     <option value="synthetic">Synthetic spectrum demo</option>
                     <option value="replay">I/Q recording replay</option>
                   </select>
                 </label>
+                {(source === "usrp-b205" || source === "bladerf") && (
+                  <div className="setup-checklist" aria-label="Setup files">
+                    <p className="setup-caption">
+                      Setup files · saved in this browser
+                    </p>
+                    {source === "usrp-b205" ? (
+                      <>
+                        <SetupFileRow
+                          name="Firmware"
+                          verified={Boolean(usrpFirmwareRef.current)}
+                          checking={!usrpFirmwareChecked}
+                          importing={importingUsrpFirmware}
+                          disabled={
+                            transitioning ||
+                            hardwareConnected ||
+                            Boolean(receiver.cleanupRequired)
+                          }
+                          accept=".zip,.hex,application/zip,text/plain,application/octet-stream"
+                          error={usrpFirmwareError}
+                          onChange={(event) =>
+                            void importUsrpFirmwareFile(event)
+                          }
+                        />
+                        <SetupFileRow
+                          name="FPGA image"
+                          verified={Boolean(usrpImageRef.current)}
+                          checking={!usrpImageChecked}
+                          importing={importingUsrpImage}
+                          disabled={
+                            transitioning ||
+                            hardwareConnected ||
+                            Boolean(receiver.cleanupRequired)
+                          }
+                          accept=".zip,.bin,application/zip,application/octet-stream"
+                          error={usrpImageError}
+                          onChange={(event) => void importUsrpImage(event)}
+                        />
+                      </>
+                    ) : (
+                      <SetupFileRow
+                        name="FPGA image"
+                        verified={storedFpgaVersions.length > 0}
+                        importing={importingFpgaImage}
+                        disabled={
+                          transitioning ||
+                          hardwareConnected ||
+                          Boolean(receiver.cleanupRequired)
+                        }
+                        accept=".rbf,application/octet-stream"
+                        error={fpgaImageError}
+                        onChange={(event) => void importFpgaImage(event)}
+                      />
+                    )}
+                    <details className="setup-downloads">
+                      <summary>Get official files</summary>
+                      {source === "usrp-b205" ? (
+                        <div>
+                          <p>Download each archive, then import it above.</p>
+                          <a
+                            href={USRP_B205_FIRMWARE.archiveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Firmware from Ettus
+                          </a>
+                          <a
+                            href={USRP_B205_IMAGE.archiveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            FPGA image from Ettus
+                          </a>
+                        </div>
+                      ) : (
+                        <div>
+                          <p>
+                            Download the image matching your device firmware,
+                            then import the .rbf above.
+                          </p>
+                          {BLADERF_HOSTED_IMAGES.map((image) => (
+                            <a
+                              key={image.version}
+                              href={image.upstreamUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              FPGA v{image.version} · firmware{" "}
+                              {image.version === "0.15.3" ? "2.4" : "2.5+"}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </details>
+                  </div>
+                )}
                 {caps.persistentConnection ? (
                   <div className="connection-stack">
-                    <div className="connection-row">
-                      <span>
-                        <i
-                          className={`connection-dot ${hardwareConnected ? "is-active" : ""}`}
-                        />
-                        Hardware
-                      </span>
-                      <div className="transport">
-                        <button
-                          type="button"
-                          onClick={connectReceiver}
-                          disabled={
-                            receiver.lifecycle !== "idle" &&
-                            !(
-                              receiver.lifecycle === "error" &&
-                              !receiver.cleanupRequired
-                            )
-                          }
-                        >
-                          {source === "bladerf"
-                            ? "Connect & load FPGA if needed"
-                            : "Connect"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void disconnectReceiver()}
-                          disabled={
-                            scanActive ||
-                            receiver.lifecycle === "idle" ||
-                            receiver.lifecycle === "disconnecting" ||
-                            (receiver.lifecycle === "error" &&
-                              !receiver.cleanupRequired)
-                          }
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    </div>
-                    <div className="connection-row">
-                      <span>
-                        <i
-                          className={`connection-dot ${running ? "is-receiving" : ""}`}
-                        />
-                        Reception
-                      </span>
-                      <div className="transport">
-                        <button
-                          type="button"
-                          onClick={start}
-                          disabled={receiver.lifecycle !== "connected"}
-                        >
-                          Start receiving
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void stopReceiver()}
-                          disabled={
-                            scanActive ||
-                            (!running && receiver.lifecycle !== "tuning")
-                          }
-                        >
-                          Stop receiving
-                        </button>
-                      </div>
-                    </div>
+                    <span
+                      className={`acquire-connection-status ${hardwareConnected ? "is-connected" : ""}`}
+                      role="status"
+                    >
+                      {hardwareConnected
+                        ? running
+                          ? "● Receiving"
+                          : "✓ Connected"
+                        : receiver.lifecycle === "requesting-permission"
+                          ? "Choose your device in the USB dialog"
+                          : receiver.lifecycle === "connecting"
+                            ? "Preparing device"
+                            : receiver.lifecycle === "disconnecting"
+                              ? "Disconnecting…"
+                              : receiver.cleanupRequired
+                                ? "Disconnect to release the device"
+                                : receiver.lifecycle === "error"
+                                  ? "Device needs attention · see details below"
+                                  : "Not connected"}
+                    </span>
+                    {hardwareConnected ||
+                    receiver.cleanupRequired ||
+                    receiver.lifecycle === "disconnecting" ? (
+                      <button
+                        type="button"
+                        className="acquire-disconnect secondary"
+                        onClick={() => void disconnectReceiver()}
+                        disabled={
+                          scanActive || receiver.lifecycle === "disconnecting"
+                        }
+                      >
+                        {receiver.lifecycle === "disconnecting"
+                          ? "Disconnecting…"
+                          : "Disconnect"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`acquire-connect ${receiver.lifecycle === "connecting" ? "is-connecting" : ""}`}
+                        aria-busy={
+                          receiver.lifecycle === "connecting" ||
+                          receiver.lifecycle === "requesting-permission"
+                        }
+                        onClick={connectReceiver}
+                        disabled={
+                          importingUsrpImage ||
+                          importingUsrpFirmware ||
+                          importingFpgaImage ||
+                          (source === "usrp-b205" &&
+                            (!usrpImageChecked ||
+                              !usrpImageRef.current ||
+                              !usrpFirmwareChecked ||
+                              !usrpFirmwareRef.current)) ||
+                          (receiver.lifecycle !== "idle" &&
+                            receiver.lifecycle !== "error")
+                        }
+                      >
+                        <span>
+                          {receiver.lifecycle === "requesting-permission"
+                            ? "Choose USB device…"
+                            : receiver.lifecycle === "connecting"
+                              ? source === "usrp-b205"
+                                ? "Connecting & initializing…"
+                                : "Connecting…"
+                              : receiver.lifecycle === "error"
+                                ? "Retry connection"
+                                : "Connect"}
+                        </span>
+                      </button>
+                    )}
+                    {(receiver.lifecycle === "connecting" ||
+                      receiver.lifecycle === "requesting-permission") && (
+                      <button
+                        type="button"
+                        className="acquire-disconnect secondary"
+                        onClick={() => void disconnectReceiver()}
+                      >
+                        Cancel connection
+                      </button>
+                    )}
+                    {source === "usrp-b205" &&
+                    receiver.lifecycle === "connecting" ? (
+                      <p className="acquire-hint">
+                        This can take several seconds after reconnecting.
+                      </p>
+                    ) : source === "usrp-b205" &&
+                      (!usrpImageRef.current || !usrpFirmwareRef.current) ? (
+                      <p className="acquire-hint">
+                        Import both files to enable Connect.
+                      </p>
+                    ) : source === "bladerf" && !storedFpgaVersions.length ? (
+                      <p className="acquire-hint">
+                        Connect checks whether an FPGA image is needed.
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="acquire-receive"
+                      onClick={
+                        running || receiver.lifecycle === "tuning"
+                          ? () => void stopReceiver()
+                          : start
+                      }
+                      disabled={
+                        scanActive ||
+                        !["connected", "running", "tuning"].includes(
+                          receiver.lifecycle,
+                        )
+                      }
+                    >
+                      {receiver.lifecycle === "starting"
+                        ? "Starting…"
+                        : receiver.lifecycle === "stopping"
+                          ? "Stopping…"
+                          : running || receiver.lifecycle === "tuning"
+                            ? "Stop receiving"
+                            : "Start receiving"}
+                    </button>
                   </div>
                 ) : (
                   <div className="transport" aria-label="Receiver transport">
@@ -3143,7 +3671,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                     }
                   >
                     <summary>
-                      <span>Advanced source settings</span>
+                      <span>Device details &amp; settings</span>
                       <small>
                         {(sampleRateHz / 1_000_000).toFixed(3)} MS/s ·{" "}
                         {caps.gain.kind === "rtl-auto-manual"
@@ -3161,7 +3689,11 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                           Sample rate
                           <select
                             value={sampleRateHz}
-                            disabled={transitioning || running}
+                            disabled={
+                              transitioning ||
+                              running ||
+                              (source === "usrp-b205" && hardwareConnected)
+                            }
                             onChange={(event) =>
                               setSampleRateHz(Number(event.currentTarget.value))
                             }
@@ -3188,7 +3720,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                               ? "4.8, 9.6 and experimental 19.2 MS/s widen the spectrum and native recording; the selected channel is filtered to 2.4 MS/s. Stop reception to change rate without disconnecting."
                               : source === "bladerf"
                                 ? "The xA4 accepts native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
-                                : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses. Stop reception to change rate without disconnecting."}
+                                : source === "usrp-b205"
+                                  ? "Choose 4.8, 9.6 or 19.2 MS/s before connecting. Disconnect to change the rate; demodulation uses a 2.4 MS/s selected-channel path."
+                                  : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses. Stop reception to change rate without disconnecting."}
                           </small>
                         </label>
                       )}
@@ -3321,55 +3855,44 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                           )}
                         </div>
                       )}
+                      {source === "usrp-b205" && (
+                        <div className="device-setup-details">
+                          <p>
+                            RX2 antenna · internal clock/time · slow-attack AGC
+                            · automatic bandwidth · no calibrated gain.
+                          </p>
+                          <p>
+                            UHD 4.9.0.0 · FX3 8.x · FPGA 7.x · USB 3 required.
+                            TX and persistent device-storage writes are
+                            disabled.
+                          </p>
+                          <p>
+                            After power loss, Connect reloads firmware and FPGA
+                            into device memory as needed. Saved browser copies
+                            are reused.
+                          </p>
+                          <p>{usrpFirmwareMessage}</p>
+                          <p>{usrpImageMessage}</p>
+                        </div>
+                      )}
                       {source === "bladerf" && (
-                        <div className="fpga-load-note" role="note">
-                          <strong>One-time FPGA image import</strong>
-                          <span>
-                            Download the matching official image directly from
-                            Nuand, then import the <b>.rbf</b>. BrowserSDR
-                            verifies its exact size and SHA-256 and saves it in
-                            this browser. Firmware 2.4 uses v0.15.3; firmware
-                            2.5+ uses v0.16.0.
-                          </span>
-                          <div className="fpga-image-actions">
-                            {BLADERF_HOSTED_IMAGES.map((image) => (
-                              <a
-                                key={image.version}
-                                href={image.upstreamUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Download v{image.version} from Nuand
-                              </a>
-                            ))}
-                            <label className="fpga-import-button">
-                              <input
-                                className="visually-hidden"
-                                type="file"
-                                accept=".rbf,application/octet-stream"
-                                disabled={importingFpgaImage || transitioning}
-                                onChange={(event) =>
-                                  void importFpgaImage(event)
-                                }
-                              />
-                              {importingFpgaImage
-                                ? "Verifying image…"
-                                : "Import downloaded .rbf"}
-                            </label>
-                          </div>
-                          <span
-                            className="fpga-image-status"
-                            aria-live="polite"
-                          >
+                        <div className="device-setup-details">
+                          <p>
+                            Firmware 2.4 uses FPGA v0.15.3; firmware 2.5+ uses
+                            v0.16.0. Connect checks compatibility and loads the
+                            matching image if needed.
+                          </p>
+                          <p>
+                            Receive only · no flash writes. Device configuration
+                            disappears after power loss; saved browser copies
+                            are reused.
+                          </p>
+                          <p>
                             {storedFpgaVersions.length
-                              ? `Saved locally: ${storedFpgaVersions.map((version) => `v${version}`).join(", ")}. ${fpgaImageMessage}`
-                              : `No verified image saved yet. ${fpgaImageMessage}`}
-                          </span>
-                          <small>
-                            This never writes SPI flash and never enables TX.
-                            The FPGA configuration disappears when the bladeRF
-                            loses power; the verified browser copy is reused.
-                          </small>
+                              ? `Saved: ${storedFpgaVersions.map((version) => `v${version}`).join(", ")}.`
+                              : "No saved image."}{" "}
+                            {fpgaImageMessage}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -3750,57 +4273,61 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
             <div>
               <strong>{receiver.message}</strong>
               {(running || hardwareConnected) && receiver.session ? (
-                <p>
-                  Center{" "}
-                  {(
-                    receiver.session.hardwareCenterFrequencyHz / 1_000_000
-                  ).toFixed(6)}{" "}
-                  MHz · selected{" "}
-                  {(
-                    receiver.session.selectedChannelFrequencyHz / 1_000_000
-                  ).toFixed(6)}{" "}
-                  MHz · {receiver.session.mode} ·{" "}
-                  {receiver.session.mode === "OFF"
-                    ? "spectrum-only route"
-                    : `${receiver.session.channelBandwidthHz.toLocaleString()} Hz channel`}{" "}
-                  ·{" "}
-                  {receiver.session.source === "rtl-sdr"
-                    ? receiver.session.gainDb === null
-                      ? "automatic gain"
-                      : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
-                    : receiver.session.hackrf
-                      ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
-                      : receiver.session.bladerf
-                        ? "slow-attack AGC"
-                        : "no hardware gain control"}{" "}
-                  ·{" "}
-                  {isWidebandRate(receiver.session.actualSampleRateHz)
-                    ? "channel DSP rate"
-                    : "effective rate"}{" "}
-                  {(
-                    receiver.session.bladerf?.effectiveSampleRateHz ??
-                    receiver.session.hackrf?.effectiveSampleRateHz ??
-                    (isWidebandRate(receiver.session.actualSampleRateHz)
-                      ? 2_400_000
-                      : receiver.session.actualSampleRateHz)
-                  ).toLocaleString()}{" "}
-                  samples/s
-                  {receiver.session.hackrf &&
-                    ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
-                  {receiver.session.bladerf &&
-                    ` · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · volatile hostedxA4 ${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA"} (hardware validation pending)`}
-                </p>
-              ) : (
+                <details className="receiver-session-details">
+                  <summary>Session details</summary>
+                  <p>
+                    Center{" "}
+                    {(
+                      receiver.session.hardwareCenterFrequencyHz / 1_000_000
+                    ).toFixed(6)}{" "}
+                    MHz · selected{" "}
+                    {(
+                      receiver.session.selectedChannelFrequencyHz / 1_000_000
+                    ).toFixed(6)}{" "}
+                    MHz · {receiver.session.mode} ·{" "}
+                    {receiver.session.mode === "OFF"
+                      ? "spectrum-only route"
+                      : `${receiver.session.channelBandwidthHz.toLocaleString()} Hz channel`}{" "}
+                    ·{" "}
+                    {receiver.session.source === "rtl-sdr"
+                      ? receiver.session.gainDb === null
+                        ? "automatic gain"
+                        : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
+                      : receiver.session.hackrf
+                        ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
+                        : receiver.session.bladerf
+                          ? "slow-attack AGC"
+                          : receiver.session.usrpB205
+                            ? "slow-attack AGC; no calibrated gain readback"
+                            : "no hardware gain control"}{" "}
+                    ·{" "}
+                    {isWidebandRate(receiver.session.actualSampleRateHz)
+                      ? "channel DSP rate"
+                      : "effective rate"}{" "}
+                    {(
+                      receiver.session.usrpB205?.effectiveSampleRateHz ??
+                      receiver.session.bladerf?.effectiveSampleRateHz ??
+                      receiver.session.hackrf?.effectiveSampleRateHz ??
+                      (isWidebandRate(receiver.session.actualSampleRateHz)
+                        ? 2_400_000
+                        : receiver.session.actualSampleRateHz)
+                    ).toLocaleString()}{" "}
+                    samples/s
+                    {receiver.session.hackrf &&
+                      ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
+                    {receiver.session.bladerf &&
+                      ` · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · volatile hostedxA4 ${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA"} (hardware validation pending)`}
+                    {receiver.session.usrpB205 &&
+                      ` · native ${receiver.session.usrpB205.nativeSampleRateHz.toLocaleString()} samples/s CHDR/VRT SC16 LE · requested ${receiver.session.usrpB205.configuration.requested.requestedCenterFrequencyHz.toLocaleString()} Hz, synthesizer-calculated accepted ${receiver.session.usrpB205.configuration.acceptedCenterFrequencyHz.toLocaleString()} Hz · DDC-calculated ${receiver.session.usrpB205.configuration.acceptedSampleRateHz.toLocaleString()} samples/s · AD9361-read-back bandwidth ${receiver.session.usrpB205.configuration.acceptedBandwidthHz.toLocaleString()} Hz · FX3 ${receiver.session.usrpB205.capabilities.firmware.major}.${receiver.session.usrpB205.capabilities.firmware.minor}, FPGA ${receiver.session.usrpB205.capabilities.fpga.compatibilityMajor}.${receiver.session.usrpB205.capabilities.fpga.compatibilityMinor}, USB 3 · RX2/internal · timestamp ${receiver.session.usrpB205.observations.timestampRateValidation} (hardware validation pending)`}
+                  </p>
+                </details>
+              ) : source === "synthetic" || source === "replay" ? (
                 <p>
                   {source === "synthetic"
                     ? "Demo uses deterministic complex RF tones and no audio."
-                    : source === "replay"
-                      ? "Replay is paced from sample counts and never opens a USB chooser."
-                      : receiver.lifecycle === "connected"
-                        ? "The USB device remains open while sample transfers and audio are stopped."
-                        : "Connect opens the browser device chooser. Reception starts only when you request it."}
+                    : "Replay is paced from sample counts and never opens a USB chooser."}
                 </p>
-              )}
+              ) : null}
             </div>
             {receiver.lifecycle === "error" && (
               <button
@@ -3910,9 +4437,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                 </>
               ) : (
                 <>
-                  Native SC16 Q11 recording and replay are intentionally
-                  deferred from the first xA4 release; live reception remains
-                  available.
+                  {source === "usrp-b205"
+                    ? "Native CHDR/VRT SC16 recording, SigMF hardware claims, and replay are intentionally unavailable in the first B205-mini release; live receive-only processing remains available."
+                    : "Native SC16 Q11 recording and replay are intentionally deferred from the first xA4 release; live reception remains available."}
                 </>
               )}
             </p>
@@ -3943,7 +4470,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                     </>
                   ) : (
                     <option value={recordingFormat}>
-                      Unavailable for bladeRF first release
+                      Unavailable for this receive profile
                     </option>
                   )}
                 </select>
@@ -4002,6 +4529,7 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                 disabled={
                   !retainedCapturePresent ||
                   exportingRecording ||
+                  atlasTransferActive ||
                   Boolean(recordingStatus)
                 }
                 onClick={discardPreparedRecording}
@@ -4026,6 +4554,13 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
               after a download request, starting another capture replaces it
               under this disclosed latest-capture policy.
             </p>
+            {atlasPrepared && (
+              <AtlasSavePanel
+                prepared={atlasPrepared}
+                sourceKind={source === "synthetic" ? "synthetic" : "unknown"}
+                onActiveChange={setAtlasTransferActive}
+              />
+            )}
             <div className="replay-inputs">
               <label className="recording-format">
                 Replay pair format
@@ -4477,6 +5012,26 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                           </td>
                         </tr>
                         <tr>
+                          <th scope="row">
+                            USRP B205-mini / B205mini-i
+                            <br />
+                            <small>2500:0022 · FX3 8.x · FPGA 7.x</small>
+                          </th>
+                          <td>
+                            <span className="compat-status is-available">
+                              Software-integrated
+                            </span>
+                          </td>
+                          <td>
+                            Mocked browser lifecycle, volatile firmware/FPGA
+                            load, VRT/SC16 receive path and reconnect
+                          </td>
+                          <td>
+                            USB 3 hardware validation remains; RX only and no
+                            recording
+                          </td>
+                        </tr>
+                        <tr>
                           <th scope="row">Other SDR hardware</th>
                           <td>
                             <span className="compat-status is-unclear">
@@ -4674,10 +5229,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                         Live processing, recordings, replay, decoded content,
                         spectrum data and audio stay in the browser. The
                         Diagnostics view can send a separately reviewed error
-                        report. Errors and recent diagnostic logs are sent
-                        automatically by default, and you can turn automatic
-                        sending off there at any time. Reports exclude radio
-                        data, USB serial numbers and exact tuned frequency by
+                        report. Automatic sending is off by default and can be
+                        enabled there. Reports exclude radio data, USB serial
+                        numbers, IP addresses and exact tuned frequency by
                         default.
                       </p>
                     </details>
@@ -4686,11 +5240,14 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                         Can BrowserSDR transmit or change device firmware?
                       </summary>
                       <p>
-                        No. All supported hardware paths are receive-only. For
-                        an empty bladeRF xA4, BrowserSDR can load a verified
-                        official FPGA image into volatile RAM. It does not write
-                        flash, replace FX3 firmware or enable TX, and the
-                        temporary FPGA image disappears on power loss.
+                        All supported hardware paths are receive-only. For an
+                        empty bladeRF xA4, BrowserSDR can load an exact verified
+                        FPGA image into volatile RAM. For a USRP B205-mini in
+                        WestBridge mode, it can also load exact verified
+                        official FX3 firmware into RAM before the FPGA image. It
+                        never writes flash or EEPROM, changes persistent
+                        firmware, or enables TX; both USRP images disappear on
+                        power loss.
                       </p>
                     </details>
                     <details>
@@ -4722,8 +5279,9 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
                         Capture is intentionally bounded to 32 MiB in memory.
                         RTL-SDR uses CU8 and HackRF Pro uses CI8; both can be
                         exported in BrowserSDR or SigMF pairs where supported.
-                        bladeRF recording is not available yet. Replay never
-                        asks for USB permission.
+                        bladeRF and USRP B205-mini recording are not available
+                        yet. No B205 SigMF hardware description is emitted.
+                        Replay never asks for USB permission.
                       </p>
                     </details>
                   </div>
@@ -4834,6 +5392,15 @@ export function ReceiverApp({ analysis, controller, replayRef }: AppRuntime) {
             </div>
           </>
         )}
+      </div>
+
+      <div
+        id="about-view"
+        role="tabpanel"
+        aria-labelledby="about-tab"
+        hidden={activeView !== "about"}
+      >
+        {activeView === "about" && <AboutPage />}
       </div>
     </main>
   );

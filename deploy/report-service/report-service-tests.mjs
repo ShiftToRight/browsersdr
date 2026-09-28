@@ -22,6 +22,7 @@ function fixture() {
       sampleRateHz: 9600000,
       exactFrequencyHz: 91400000,
       usbSerial: "secret",
+      ipAddress: "192.0.2.12",
     },
     events: [
       {
@@ -31,7 +32,7 @@ function fixture() {
         severity: "error",
         count: 1,
         safeMessage: "stopped",
-        context: { fileName: "secret.cu8" },
+        context: { fileName: "secret.cu8", forwardedFor: "192.0.2.12" },
       },
     ],
     snapshots: [],
@@ -73,7 +74,9 @@ test("validates and applies server-side redaction", () => {
   const output = sanitizeReport(input);
   assert.equal(output.receiver.exactFrequencyHz, undefined);
   assert.equal(output.receiver.usbSerial, undefined);
+  assert.equal(output.receiver.ipAddress, undefined);
   assert.equal(output.events[0].context.fileName, undefined);
+  assert.equal(output.events[0].context.forwardedFor, undefined);
   assert.equal(fingerprint(output).length, 64);
 });
 
@@ -93,7 +96,6 @@ test("accepts, re-redacts and stores a report through the HTTP boundary", async 
   const service = createReportServer({
     database,
     allowedOrigin: "https://browsersdr.test",
-    rateSecret: "test-secret",
   });
   await new Promise((resolve, reject) => {
     service.server.once("error", reject);
@@ -119,11 +121,15 @@ test("accepts, re-redacts and stores a report through the HTTP boundary", async 
     assert.ok(stored);
     const body = JSON.parse(stored.body);
     assert.equal(body.receiver.usbSerial, undefined);
+    assert.equal(body.receiver.ipAddress, undefined);
     assert.equal(body.receiver.exactFrequencyHz, undefined);
     assert.equal(
       database.prepare("SELECT count FROM fingerprint_counts").get().count,
       1,
     );
+    const rateBucket = database.prepare("SELECT bucket FROM rate_limits").get();
+    assert.match(rateBucket.bucket, /^global:\d+$/);
+    assert.equal(rateBucket.bucket.includes("127.0.0.1"), false);
   } finally {
     await new Promise((resolve) => service.server.close(resolve));
     database.close();
@@ -135,7 +141,6 @@ test("accepts compatibility evidence on its dedicated endpoint", async () => {
   const service = createReportServer({
     database,
     allowedOrigin: "https://browsersdr.test",
-    rateSecret: "test-secret",
   });
   await new Promise((resolve, reject) => {
     service.server.once("error", reject);
@@ -179,7 +184,6 @@ test("rejects compatibility reports sent to the diagnostic endpoint", async () =
   const service = createReportServer({
     database,
     allowedOrigin: "https://browsersdr.test",
-    rateSecret: "test-secret",
   });
   await new Promise((resolve, reject) => {
     service.server.once("error", reject);
