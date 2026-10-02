@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
-import { decodeCu8, RECORDING_MAX_BYTES, SIGMF_CU8_NORMALIZATION } from "./iqRecording";
+import { CU8_NORMALIZATION, decodeCu8, RECORDING_MAX_BYTES } from "./iqRecording";
 import { defaultModeSettings } from "./receiverConfig";
 import { createSigmfExport } from "./sigmf";
 import { importSigmfRecording } from "./sigmfImport";
@@ -47,7 +47,7 @@ describe("bounded SigMF import", () => {
     expect(imported.data).toEqual(original.data);
     expect(imported.data).not.toBe(original.data);
     expect(imported.metadata).toMatchObject({
-      normalization: SIGMF_CU8_NORMALIZATION,
+      normalization: CU8_NORMALIZATION,
       sampleRateHz: original.metadata.sampleRateHz,
       centerFrequencyHz: original.metadata.centerFrequencyHz,
       selectedChannelFrequencyHz: original.metadata.centerFrequencyHz,
@@ -89,9 +89,9 @@ describe("bounded SigMF import", () => {
       { afterSample: 0, missingSamples: 20, reason: "SigMF global_index discontinuity" },
       { afterSample: 2, missingSamples: 3, reason: "SigMF global_index discontinuity" },
     ]);
-    const decoded = decodeCu8(imported.data, imported.metadata.normalization);
-    expect(decoded.I[0]).toBe(-1);
-    expect(decoded.Q[0]).toBe(1);
+    const decoded = decodeCu8(imported.data);
+    expect(decoded.I[0]).toBe(-0.99609375);
+    expect(decoded.Q[0]).toBe(0.99609375);
   });
 
   it("validates a supplied SHA-512 and rejects a mismatch", async () => {
@@ -105,7 +105,7 @@ describe("bounded SigMF import", () => {
   });
 
   it.each([
-    ["datatype", { global: { ...metadata().global, "core:datatype": "ci16_le" } }, /only.*cu8/i],
+    ["datatype", { global: { ...metadata().global, "core:datatype": "ci16_le" } }, /format\/scaling/i],
     ["channels", { global: { ...metadata().global, "core:num_channels": 2 } }, /exactly one/],
     ["offset", { global: { ...metadata().global, "core:offset": 1 } }, /offset/],
     ["non-conforming data", { global: { ...metadata().global, "core:dataset": "other.bin" } }, /non-conforming/],

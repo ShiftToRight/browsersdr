@@ -4,6 +4,7 @@ import {
   DemodWBFMStage1,
 } from "@jtarrio/signals/demod/demod-wbfm.js";
 import { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
+import { DemodAM } from "@jtarrio/signals/demod/demod-am.js";
 import { SharedWbfmDemodulator } from "./sharedWbfmDemodulator";
 import {
   AudioFirstRdsReceiver,
@@ -33,6 +34,81 @@ function block(rate: number, start: number, count: number, offset: number) {
   return { I, Q, frequency: 100e6 };
 }
 describe("shared WBFM multiplex", () => {
+  it("keeps short white-noise blocks muted above the measured noise and admits a sustained AM carrier", () => {
+    const sink = player(),
+      meter = vi.fn();
+    const shared = new SharedWbfmDemodulator(sink, vi.fn(), meter);
+    shared.setSampleRate(48_000);
+    shared.setMode({
+      scheme: "AM", bandwidth: 8_000, squelch: 1.5,
+    } as Parameters<Demodulator["setMode"]>[0]);
+    let seed = 321,
+      now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const random = () => {
+      seed = (1664525 * seed + 1013904223) >>> 0;
+      return (seed / 0xffffffff) * 2 - 1;
+    };
+    const receive = (carrier = false) => {
+      const I = Float32Array.from({ length: 164 }, () => carrier ? 1 : random());
+      const Q = Float32Array.from({ length: 164 }, () => carrier ? 0 : random());
+      now += I.length / 48;
+      shared.receiveSamples({ I, Q, frequency: 120_025_000 });
+    };
+    try {
+      // The previous raw-block gate opens six times in this deterministic noise
+      // stream, all while its separately smoothed meter is below the threshold.
+      for (let n = 0; n < 3_000; n++) {
+        receive();
+        expect(sink.play.mock.lastCall![0]).toEqual(new Float32Array(164));
+      }
+      expect(meter.mock.calls.every(([state]) => !state.open)).toBe(true);
+      for (let n = 0; n < 20; n++) receive(true);
+      const opening = meter.mock.calls.find(([state]) => state.open)?.[0];
+      expect(opening).toMatchObject({ open: true });
+      expect(opening.level).toBeGreaterThan(1.6);
+      for (let n = 0; n < 100; n++) receive();
+      expect(meter.mock.lastCall?.[0]).toMatchObject({ open: false });
+      expect(sink.play.mock.lastCall![0]).toEqual(new Float32Array(164));
+      for (let n = 0; n < 20; n++) receive(true);
+      shared.setFrequencyOffset(0);
+      receive();
+      expect(meter.mock.lastCall?.[0]).toMatchObject({ open: false });
+      expect(sink.play.mock.lastCall![0]).toEqual(new Float32Array(164));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("uses the same gate response for different USB block sizes and output sample rates", () => {
+    const demodulate = vi.spyOn(DemodAM.prototype, "demodulate").mockImplementation((I, Q) => ({
+      left: I.fill(0.25), right: Q.fill(0.25), stereo: false, snr: 2,
+    }));
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now += 200);
+    const levels: number[] = [];
+    try {
+      for (const [rate, frames] of [[48_000, 48], [48_000, 480], [24_000, 240]] as const) {
+        const sink = player(rate), meter = vi.fn();
+        const shared = new SharedWbfmDemodulator(sink, vi.fn(), meter);
+        shared.setSampleRate(rate);
+        shared.setMode({ scheme: "AM", bandwidth: 8_000, squelch: 1.5 } as Parameters<Demodulator["setMode"]>[0]);
+        for (let elapsed = 0; elapsed < rate * 0.05; elapsed += frames)
+          shared.receiveSamples({ I: new Float32Array(frames), Q: new Float32Array(frames), frequency: 120_025_000 });
+        const opening = meter.mock.calls.find(([state]) => state.open)?.[0];
+        expect(opening).toBeDefined();
+        expect(opening.level).toBeGreaterThan(1.6);
+        levels.push(meter.mock.lastCall![0].level);
+        expect(sink.play.mock.lastCall![0][0]).toBe(0.25);
+      }
+      // Fifty milliseconds of input gives the same measurement regardless of
+      // the USB partition or the player's sample rate.
+      expect(levels[1]).toBeCloseTo(levels[2]!, 12);
+      expect(levels[0]).toBeCloseTo(levels[1]!, 12);
+    } finally {
+      demodulate.mockRestore();
+      clock.mockRestore();
+    }
+  });
   it.each([1_024_000, 2_400_000])(
     "matches independent audio/RDS stages at %i with offsets, irregular blocks and resets",
     (rate) => {

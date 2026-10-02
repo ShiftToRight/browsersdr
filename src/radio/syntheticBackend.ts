@@ -1,10 +1,11 @@
+import type { RecordingOptions } from "./channelRecording";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { SyntheticComplexTone, SYNTHETIC_DEMO_SESSION } from "../testing/syntheticTone";
 import type { ReceiverBackend, ReceiverBackendEvents, ReceiverStartOptions } from "./receiverController";
 import type { SourceSessionMetadata } from "./types";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import { defaultModeSettings, normalizeModeSettings, planChannelTune, type ReceiverModeSettings } from "./receiverConfig";
-import { IqRecorder, type IqRecording, type RecordingStatus } from "./iqRecording";
+import { IqRecorder, preferredRecordingStorageMode, type IqRecording, type RecordingStatus } from "./iqRecording";
 
 const DEMO_BLOCK_SIZE = 8192;
 
@@ -145,9 +146,9 @@ export class SyntheticBackend implements ReceiverBackend {
     return Promise.resolve(null);
   }
 
-  startRecording(survey?: import("./fieldSurvey").SurveyCaptureContext): RecordingStatus {
+  startRecording(survey?: import("./fieldSurvey").SurveyCaptureContext, options?: RecordingOptions): RecordingStatus {
     if (!this.metadata) throw new Error("Synthetic source is not running");
-    this.recorder = new IqRecorder(this.metadata, undefined, undefined, "BrowserSDR deterministic synthetic spectrum generator; quantized to CU8 for replay.", survey);
+    this.recorder = new IqRecorder(this.metadata, undefined, undefined, "BrowserSDR deterministic synthetic spectrum generator; quantized to CU8 for replay.", survey, undefined, preferredRecordingStorageMode(options?.storageMode), options);
     return this.recorder.status();
   }
 

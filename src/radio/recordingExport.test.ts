@@ -4,7 +4,8 @@ import { createDeterministicRecordingFixture } from "../testing/recordingFixture
 import { parseRecording } from "./iqRecording";
 import {
   createRecordingArchive, formatControlDisabled, prepareRecordingExport,
-  RecordingExportCoordinator, RecordingFormatLatch, triggerRecordingDownloads,
+  RECORDING_DOWNLOAD_URL_LIFETIME_MS, RecordingExportCoordinator,
+  RecordingFormatLatch, triggerRecordingDownloads,
 } from "./recordingExport";
 
 /** Minimal independent ZIP store reader used only to verify fflate output. */
@@ -77,6 +78,27 @@ describe("recording export lifecycle", () => {
     expect((await coordinator.retryPreparation()).status).toBe("prepared");
   });
 
+  it("downloads separate files on the page when worker preparation failed", async () => {
+    const coordinator = new RecordingExportCoordinator(
+      vi.fn().mockRejectedValue(new Error("network error")),
+    );
+    const recording = createDeterministicRecordingFixture(64);
+    expect(await coordinator.retain(recording, "sigmf")).toMatchObject({
+      status: "failure",
+    });
+    const downloadPair = vi.fn();
+    expect(
+      await coordinator.requestDirectFileDownload(downloadPair),
+    ).toMatchObject({ status: "download-requested", kind: "separate" });
+    expect(downloadPair).toHaveBeenCalledOnce();
+    expect(downloadPair.mock.calls[0]?.[0].files).toHaveLength(2);
+    expect(coordinator.getSnapshot()).toMatchObject({
+      status: "download-requested",
+      downloadRequests: 1,
+      basename: expect.any(String),
+    });
+  });
+
   it("keeps prepared bytes after repeated download requests and labels requests truthfully", async () => {
     const coordinator = new RecordingExportCoordinator();
     const recording = createDeterministicRecordingFixture(64);
@@ -87,6 +109,7 @@ describe("recording export lifecycle", () => {
     expect(download).toHaveBeenCalledTimes(2);
     expect(coordinator.getSnapshot()).toMatchObject({ status: "download-requested", downloadRequests: 2, sampleCount: recording.metadata.sampleCount });
     expect(coordinator.getSnapshot().retainedBytes).toBeGreaterThan(recording.data.byteLength);
+    expect(coordinator.getSnapshot().sampleRateHz).toBe(recording.metadata.sampleRateHz);
   });
 
   it("allows disclosed replacement only after a download was requested, and supports discard", async () => {
@@ -109,7 +132,10 @@ describe("recording export lifecycle", () => {
     ] });
     expect(createObjectURL).toHaveBeenCalledTimes(2);
     expect(click).toHaveBeenCalledTimes(2);
-    vi.runAllTimers();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(RECORDING_DOWNLOAD_URL_LIFETIME_MS - 1);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
     expect(revokeObjectURL).toHaveBeenCalledTimes(2);
     vi.restoreAllMocks(); vi.useRealTimers();
   });
@@ -122,4 +148,16 @@ it("does not publish a completed preparation after discard", async () => {
   const task = coordinator.retain(recording, "browsersdr"); coordinator.discard();
   resolve(await prepareRecordingExport(recording, "browsersdr"));
   expect((await task).status).toBe("duplicate"); expect(coordinator.getSnapshot().status).toBe("discarded");
+});
+
+
+it("reports failed capture storage as unrecoverable rather than offering preparation retries", async () => {
+  const recording = createDeterministicRecordingFixture(100);
+  recording.dataBlob = Promise.reject(new DOMException("write failed", "QuotaExceededError"));
+  const coordinator = new RecordingExportCoordinator();
+  await expect(coordinator.retain(recording, "sigmf")).resolves.toMatchObject({ status: "failure" });
+  expect(coordinator.getSnapshot()).toMatchObject({ status: "storage-failed", error: "write failed" });
+  await expect(coordinator.retryPreparation()).resolves.toMatchObject({ status: "failure" });
+  coordinator.discard();
+  expect(coordinator.blocksNewCapture).toBe(false);
 });

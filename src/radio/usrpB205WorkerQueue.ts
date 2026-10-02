@@ -2,6 +2,7 @@ export interface UsrpB205WorkerSampleBatch {
   readonly generation: number;
   readonly frequency: number;
   readonly packets: ArrayBuffer[];
+  readonly gapsBefore?: readonly { missingSamples: number | null; reason: string }[];
 }
 
 export interface UsrpB205WorkerQueueDrop {
@@ -34,9 +35,8 @@ export class UsrpB205WorkerSampleQueue {
   pushLatest(batch: UsrpB205WorkerSampleBatch): UsrpB205WorkerQueueDrop | null {
     let dropped: UsrpB205WorkerSampleBatch[] = [];
     if (this.blocks.length >= this.capacity) dropped = this.blocks.splice(0);
-    this.blocks.push(batch);
-    if (dropped.length === 0) return null;
-    return {
+    if (dropped.length === 0) { this.blocks.push(batch); return null; }
+    const result = {
       blocks: dropped.length,
       samples: dropped.reduce(
         (total, block) => total + block.packets.reduce(
@@ -46,5 +46,19 @@ export class UsrpB205WorkerSampleQueue {
         0,
       ),
     };
+    const inherited = dropped.flatMap((block) => block.gapsBefore ?? []);
+    const knownMissing = inherited.reduce((sum, gap) => sum + (gap.missingSamples ?? 0), 0);
+    const unknown = inherited.some((gap) => gap.missingSamples === null);
+    this.blocks.push({
+      ...batch,
+      gapsBefore: [
+        {
+          missingSamples: unknown ? null : result.samples + knownMissing,
+          reason: `Main thread stalled; discarded ${result.blocks} stale USRP SC16 batches to catch up${inherited.length ? "; includes an earlier receive discontinuity" : ""}`,
+        },
+        ...(batch.gapsBefore ?? []),
+      ],
+    });
+    return result;
   }
 }

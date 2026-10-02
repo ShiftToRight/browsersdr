@@ -52,6 +52,7 @@ interface USBAlternateInterface {
   readonly endpoints: readonly USBEndpoint[];
 }
 interface USBInterface {
+  readonly claimed?: boolean;
   readonly interfaceNumber: number;
   readonly alternate: USBAlternateInterface;
   readonly alternates?: readonly USBAlternateInterface[];

@@ -36,11 +36,11 @@ async function prepareSyntheticSigmf(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   await expect
     .poll(async () => {
-      const text = await page.locator(".recording-controls").textContent();
-      return Number(text?.match(/([0-9.]+) \/ 32 MiB/)?.[1] ?? 0);
+      const text = await page.locator(".recording-state").textContent();
+      return Number(text?.match(/([0-9.]+) \/ (?:32|2048) MiB/)?.[1] ?? 0);
     })
     .toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Stop & prepare" }).click();
+  await page.getByRole("button", { name: "Stop recording" }).click();
   await expect(
     page.getByRole("heading", { name: "Save to SigIntAtlas" }),
   ).toBeVisible();
@@ -329,7 +329,7 @@ function highRateReplayFiles() {
     sampleEncoding: "unsigned-8-bit",
     sampleOrder: "interleaved-iq",
     bytesPerComplexSample: 2,
-    normalization: "float = byte / 128 - 0.995",
+    normalization: "float = (byte - 127.5) / 128",
     sampleRateHz,
     centerFrequencyHz: 200_000_000,
     selectedChannelFrequencyHz: 200_000_000,
@@ -617,6 +617,7 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
       await expect(
         page.getByRole("heading", { name: "Short-range devices" }),
       ).toBeVisible();
+      await page.locator(".decoder-details > summary").click();
       await expect(
         page.getByText("Unknown signals remain inspector-only."),
       ).toBeVisible();
@@ -639,7 +640,7 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
   await page.getByRole("tab", { name: "Audio & decode" }).click();
   await expect(
     page.getByRole("heading", { name: "Radio Data System" }),
-  ).toBeVisible();
+  ).not.toBeVisible();
 });
 
 test("imports a bounded SigMF pair into paced replay without requesting USB", async ({
@@ -709,6 +710,9 @@ test("survey measurements progress without animation callbacks and freeze proven
   await gotoApp(page);
   await selectSyntheticAndStart(page);
   await page.getByRole("tab", { name: /Explorer/ }).click();
+  await page.getByText("Site & profile", { exact: true }).click();
+  await page.getByText("Edit profile bands", { exact: true }).click();
+  await page.getByText("Detector settings", { exact: true }).click();
 
   await page
     .getByRole("textbox", { name: "Profile name" })
@@ -794,9 +798,17 @@ test("survey measurements progress without animation callbacks and freeze proven
 
   await page.reload();
   await page.getByRole("tab", { name: /Explorer/ }).click();
+  await page.getByText("Site & profile", { exact: true }).click();
+  await page.getByText("Edit profile bands", { exact: true }).click();
+  await page.getByText("Detector settings", { exact: true }).click();
   await expect(
     page.locator(".explorer-results .diagnostic-message"),
   ).toContainText("Restored");
+  await page
+    .locator(".candidate-review-card")
+    .first()
+    .locator("summary")
+    .click();
   await expect(
     page.locator(".candidate-review-card").first().getByRole("textbox", {
       name: "Label",
@@ -810,6 +822,9 @@ test("survey cancellation preserves progress and restores controls", async ({
   await gotoApp(page);
   await selectSyntheticAndStart(page);
   await page.getByRole("tab", { name: /Explorer/ }).click();
+  await page.getByText("Site & profile", { exact: true }).click();
+  await page.getByText("Edit profile bands", { exact: true }).click();
+  await page.getByText("Detector settings", { exact: true }).click();
   await page.getByLabel("Scan scope").selectOption("band-plan");
   await page.getByRole("spinbutton", { name: /Start frequency/ }).fill("98");
   await page.getByRole("spinbutton", { name: /End frequency/ }).fill("102");
@@ -889,11 +904,11 @@ test("recording preparation retries and the paired archive remains truthfully do
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByLabel("Recording export format").selectOption("sigmf");
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
-  const recordingControls = page.locator(".recording-controls");
+  const recordingControls = page.locator(".recording-state");
   await expect
     .poll(async () => {
       const text = await recordingControls.textContent();
-      const match = text?.match(/([0-9.]+) \/ 32 MiB/);
+      const match = text?.match(/([0-9.]+) \/ (?:32|2048) MiB/);
       return Number(match?.[1] ?? 0);
     })
     .toBeGreaterThan(0);
@@ -902,18 +917,23 @@ test("recording preparation retries and the paired archive remains truthfully do
       window as Window & { __failNextPreparation?: boolean }
     ).__failNextPreparation = true;
   });
-  await page.getByRole("button", { name: "Stop & prepare" }).click();
-  await expect(page.locator(".file-message")).toContainText(
+  await page.getByRole("button", { name: "Stop recording" }).click();
+  await expect(page.locator(".recording-error")).toContainText(
     "Injected worker preparation failure",
   );
   await expect(
     page.getByRole("button", { name: "Retry preparation" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Download files to disk" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Retry preparation" }).click();
-  await expect(page.locator(".file-message")).toContainText("Prepared");
+  await expect(page.locator(".recording-state")).toContainText(
+    "Recording ready",
+  );
 
   const firstDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download paired ZIP" }).click();
+  await page.getByRole("button", { name: "Download ZIP" }).click();
   const archiveDownload = await firstDownload;
   const archive = new Uint8Array(await readFile(await archiveDownload.path()));
   const entries = readStoredZip(archive);
@@ -937,18 +957,18 @@ test("recording preparation retries and the paired archive remains truthfully do
   expect(metadata.global["core:sha512"]).toBe(
     createHash("sha512").update(entries[0]!.data).digest("hex"),
   );
-  await expect(page.locator(".file-message")).toContainText(
+  await expect(page.locator(".recording-message")).toContainText(
     "do not confirm that the file was stored",
   );
-  await expect(page.locator(".capture-panel > .display-note")).toContainText(
-    "State: download requested",
+  await expect(page.locator("#record-panel > .display-note")).toContainText(
+    "Download requested",
   );
 
   const repeatedDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download paired ZIP" }).click();
+  await page.getByRole("button", { name: "Download ZIP" }).click();
   await repeatedDownload;
   await expect(
-    page.getByRole("button", { name: "Download paired ZIP" }),
+    page.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
 });
 
@@ -965,7 +985,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   await page
     .getByLabel("SigIntAtlas recording title")
     .fill("Deterministic browser acceptance");
-  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
   await page.getByLabel(/Analyze after save when the live capability/).check();
   const save = page.getByRole("button", { name: "Save to SigIntAtlas" });
   await save.dblclick();
@@ -985,7 +1005,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   ).toHaveAttribute("href", /#\/runs\/50000000-/);
   expect(atlas.recordingCreates()).toBe(1);
   await expect(
-    page.getByRole("button", { name: "Download paired ZIP" }),
+    page.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1012,7 +1032,7 @@ test("SigIntAtlas cancellation rejects late work, auth expiry retries, and recei
   });
   await gotoApp(page);
   await prepareSyntheticSigmf(page);
-  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
   await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
   await expect(page.getByText(/Checking the same-origin/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel transfer" }).click();
@@ -1043,13 +1063,14 @@ test("SigIntAtlas offline failure leaves local download fallback available", asy
   await installAtlasMock(page, { offline: true });
   await gotoApp(page);
   await prepareSyntheticSigmf(page);
-  await page.getByLabel("SigIntAtlas operator token").fill("t".repeat(32));
+  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
   await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
   await expect(page.getByText(/Transfer failed/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry save" })).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "Download paired ZIP" }),
+    page.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
+  await page.getByText("More options", { exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Download separate files" }),
   ).toBeEnabled();
@@ -1166,7 +1187,7 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
   ).toContainText("Use a WebGPU-compatible browser");
 });
 
-test("diagnostic reports require opt-in and remain reviewable and downloadable", async ({
+test("diagnostic reports default on and remain reviewable and downloadable", async ({
   page,
 }) => {
   await gotoApp(page);
@@ -1176,9 +1197,29 @@ test("diagnostic reports require opt-in and remain reviewable and downloadable",
   ).toBeVisible();
   await expect(
     page.getByLabel(/Automatically send errors and recent diagnostic logs/),
-  ).not.toBeChecked();
+  ).toBeChecked();
   await page.getByRole("button", { name: "Create diagnostic report" }).click();
   const dialog = page.getByRole("dialog", { name: /Diagnostic report/ });
+  await expect(dialog).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.closest("dialog") !== null,
+    ),
+  ).toBe(true);
+  // Native modal focus cannot reach the background even after wrapping at Cancel.
+  await dialog.getByRole("button", { name: "Cancel" }).focus();
+  await page.keyboard.press("Tab");
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.closest("dialog") !== null,
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create diagnostic report" }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "Create diagnostic report" }).click();
   await expect(dialog).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: "Send report" }),
@@ -1211,13 +1252,59 @@ test("About exposes licence, driver provenance, and privacy boundaries", async (
     page.getByRole("heading", { name: "Licences, privacy & provenance" }),
   ).toBeVisible();
   await expect(
-    page.getByText(
-      "Automatic error reporting is off until you enable it in Diagnostics.",
-    ),
+    page
+      .locator("#about-view")
+      .getByText(/Automatic error reporting is on by default/),
   ).toBeVisible();
   await expect(
     page.getByRole("row", { name: /AD9364 receive driver/ }),
   ).toContainText("BSD-3-Clause");
+});
+
+test("automatic diagnostics send by default, deduplicate errors, and respect a saved opt-out", async ({
+  page,
+}) => {
+  const submissions: Array<{
+    trigger: string;
+    autoSubmitted: boolean;
+    receiver: Record<string, unknown>;
+  }> = [];
+  await page.route("**/api/v1/diagnostic-reports", async (route) => {
+    submissions.push(route.request().postDataJSON());
+    await route.fulfill({ json: { reference: "BR-TEST-AUTOMATIC" } });
+  });
+  await gotoApp(page);
+  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  const toggle = page.getByLabel(
+    /Automatically send errors and recent diagnostic logs/,
+  );
+  await expect(toggle).toBeChecked();
+  const emit = (message: string) =>
+    page.evaluate((value) => {
+      window.dispatchEvent(new ErrorEvent("error", { message: value }));
+    }, message);
+  await emit("Automatic diagnostic default regression");
+  await expect(page.locator(".diagnostic-report-status")).toContainText(
+    "BR-TEST-AUTOMATIC",
+  );
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0]).toMatchObject({
+    trigger: "automatic",
+    autoSubmitted: true,
+  });
+  expect(submissions[0]?.receiver).not.toHaveProperty("exactFrequencyHz");
+  await emit("Automatic diagnostic default regression");
+  expect(submissions).toHaveLength(1);
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  await page.reload();
+  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await expect(toggle).not.toBeChecked();
+  await emit("Opt-out diagnostic regression");
+  await expect(
+    page.getByText(/Last detected issue: uncaught exception/),
+  ).toBeVisible();
+  expect(submissions).toHaveLength(1);
 });
 
 test("compatibility reports capture reviewed service evidence and receiver state", async ({
@@ -1254,4 +1341,121 @@ test("compatibility reports capture reviewed service evidence and receiver state
   ]);
   expect(report.receiver).not.toHaveProperty("exactFrequencyHz");
   expect(report.redaction).toMatchObject({ exactFrequencyIncluded: false });
+});
+
+test("current-channel capture downloads reduced I/Q and replays the exported pair", async ({
+  page,
+}) => {
+  await gotoApp(page);
+  await selectSyntheticAndStart(page);
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  const toggle = page.getByLabel("Capture current channel only");
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(page.locator("#record-panel")).toContainText(
+    "Auto: 256,000 samples/s",
+  );
+  await expect(page.locator("#record-panel")).toContainText("30.72 MB/min");
+  await page.getByRole("button", { name: "Start I/Q recording" }).click();
+  await expect(toggle).toBeDisabled();
+  await expect
+    .poll(async () =>
+      Number(
+        (await page.locator(".recording-state").textContent())?.match(
+          /([0-9.]+) s/,
+        )?.[1] ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0.2);
+  await page.getByRole("button", { name: "Stop recording" }).click();
+  await expect(page.locator(".recording-state")).toContainText(
+    "Recording ready",
+  );
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP" }).click();
+  const download = await downloading;
+  const entries = readStoredZip(
+    new Uint8Array(await readFile(await download.path())),
+  );
+  const data = entries.find((entry) => entry.name.endsWith(".ci8"))!;
+  const sidecar = entries.find((entry) => entry.name.endsWith(".json"))!;
+  const metadata = JSON.parse(new TextDecoder().decode(sidecar.data));
+  expect(metadata).toMatchObject({
+    format: "browsersdr-channel-iq-v1",
+    sampleRateHz: 256_000,
+    source: "synthetic",
+    channelCapture: { inputSampleRateHz: 1_024_000, decimation: 4 },
+  });
+  expect(data.data.length).toBe(metadata.sampleCount * 2);
+  expect(metadata.durationSeconds).toBeGreaterThan(0.2);
+  await page
+    .locator('select[aria-label="Signal source"]')
+    .selectOption("replay");
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await page
+    .locator(".file-picker-input")
+    .nth(0)
+    .setInputFiles({
+      name: data.name,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from(data.data),
+    });
+  await page
+    .locator(".file-picker-input")
+    .nth(1)
+    .setInputFiles({
+      name: sidecar.name,
+      mimeType: "application/json",
+      buffer: Buffer.from(sidecar.data),
+    });
+  await page.getByRole("button", { name: "Load files" }).click();
+  await expect(page.locator(".file-message")).toContainText("Loaded");
+  await page.getByRole("button", { name: "Start replay" }).click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Replaying WBFM capture",
+  );
+});
+
+test("unwritable browser recording storage falls back to bounded memory and exports worker channel data", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.storage, "getDirectory", {
+      configurable: true,
+      value: async () => {
+        throw new DOMException("Storage quota exhausted", "QuotaExceededError");
+      },
+    });
+  });
+  await gotoApp(page);
+  await selectSyntheticAndStart(page);
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  await page.getByLabel("Capture current channel only").check();
+  await page
+    .getByRole("button", { name: "Start I/Q recording", exact: true })
+    .click();
+  await expect(page.locator(".recording-state")).toContainText("/ 32 MiB");
+  await expect
+    .poll(async () => {
+      const text = await page.locator(".recording-state").textContent();
+      return Number(text?.match(/([0-9.]+) \/ 32 MiB/)?.[1] ?? 0);
+    })
+    .toBeGreaterThan(0);
+  await page
+    .getByRole("button", { name: "Stop recording", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Download ZIP", exact: true }),
+  ).toBeEnabled();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  expect((await readFile(path!)).byteLength).toBeGreaterThan(1024);
+  await expect(
+    page.getByText(/The recording remains in browser storage/),
+  ).toHaveCount(0);
 });

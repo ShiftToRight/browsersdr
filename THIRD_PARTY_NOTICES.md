@@ -1,5 +1,29 @@
 # Third-party notices
 
+## Natural Earth map data
+
+The map assets under `src/assets/natural-earth-*` are derived from Natural
+Earth Vector data downloaded from the Natural Earth Vector repository and
+converted to equirectangular SVG and compact label JSON by
+`scripts/generate-natural-earth-map.mjs`. The empty map uses the 1:110m land
+overview. Auto-framed maps use the 1:10m land, lakes, national boundary,
+state/province boundary and populated-place layers.
+
+The source GeoJSON files used for the current conversion had these SHA-256
+digests:
+
+- `ne_110m_land`: `9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9`
+- `ne_10m_land`: `1ac90796408bc6ad6911d69448485d3c4dbf2190370080368a09976e1c9f7416`
+- `ne_10m_lakes`: `2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9`
+- `ne_10m_rivers_lake_centerlines_scale_rank`: `65dca1bd1729a347dda0837f41b5d152252e33abd2d7ff3370a0539c33bdf89b`
+- `ne_10m_admin_0_boundary_lines_land`: `74d9c16229c095fde65943a9919e337682f044bcebccb120764f38edf3b70f4a`
+- `ne_10m_admin_1_states_provinces_lines`: `1a1f30ccaaf4cc9c4bde34266f0b8cbb955d3a4cf254b756912255f2ec7c75b6`
+- `ne_10m_populated_places`: `9b8e3de09048ef00dfc70357dbb9fa324493f214b5e0ae4daf1aa79a8d10116b`
+
+Natural Earth raster and vector map data is in the public domain. Permission
+and attribution are not required. See
+<https://www.naturalearthdata.com/about/terms-of-use/>.
+
 ## Browser libraries
 
 BrowserSDR bundles `@jtarrio/webrtlsdr` 3.0.6 and `@jtarrio/signals`

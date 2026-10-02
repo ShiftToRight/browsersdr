@@ -1,3 +1,4 @@
+import type { RecordingOptions } from "./channelRecording";
 import {
   LiveReceiverPipeline,
   type LiveReceiverDependencies,
@@ -19,6 +20,7 @@ import {
 import type { SourceSessionMetadata } from "./types";
 import {
   IqRecorder,
+  preferredRecordingStorageMode,
   type IqRecording,
   type RecordingStatus,
 } from "./iqRecording";
@@ -34,6 +36,19 @@ import {
 
 const PARALLEL_TRANSFERS = 2;
 const BUFFERS_PER_SECOND = 20;
+
+function isDeviceUnavailableError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    name === "NetworkError" ||
+    name === "InvalidStateError" ||
+    name.includes("UsbTransferError") ||
+    /unplug|disconnect|device.*(?:gone|removed|unavailable)|transfer error/i.test(
+      message,
+    )
+  );
+}
 
 class IdempotentSource implements SignalSource {
   private closed = false;
@@ -178,6 +193,7 @@ export class RtlSdrBackend implements ReceiverBackend {
   private disconnectTask?: Promise<void>;
   private streamTasks: Promise<void>[] = [];
   private streamFailureReported = false;
+  private sourceUnavailable = false;
 
   constructor(
     private readonly events: ReceiverBackendEvents,
@@ -224,9 +240,17 @@ export class RtlSdrBackend implements ReceiverBackend {
       );
     if (this.source) return this.configureConnectedSource(options);
     if (this.connectTask) return this.connectTask;
-    const task = this.acquireAndConfigure(options).finally(() => {
-      if (this.connectTask === task) this.connectTask = undefined;
-    });
+    const task = this.acquireAndConfigure(options)
+      .catch((error: unknown) => {
+        // A device can disappear, be re-enumerated, or become inaccessible
+        // before streaming begins. Remember that the owned USB handle is dead
+        // so graceful close register writes cannot pin this backend forever.
+        if (isDeviceUnavailableError(error)) this.sourceUnavailable = true;
+        throw error;
+      })
+      .finally(() => {
+        if (this.connectTask === task) this.connectTask = undefined;
+      });
     this.connectTask = task;
     return task;
   }
@@ -285,10 +309,16 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.modeSettings = modeSettings;
     this.pipeline.begin({ ...metadata, sessionGeneration }, options.volume);
     this.pipeline.requireRunning();
-    await this.source!.startReceiving();
+    try {
+      await this.source!.startReceiving();
+    } catch (error) {
+      if (isDeviceUnavailableError(error)) this.sourceUnavailable = true;
+      throw error;
+    }
     this.throwIfDisconnectRequested();
     this.receiving = true;
     this.streamFailureReported = false;
+    this.sourceUnavailable = false;
     const samplesPerBuffer =
       512 * Math.ceil(metadata.actualSampleRateHz / BUFFERS_PER_SECOND / 512);
     this.streamTasks = Array.from({ length: PARALLEL_TRANSFERS }, () =>
@@ -444,6 +474,7 @@ export class RtlSdrBackend implements ReceiverBackend {
 
   startRecording(
     survey?: import("./fieldSurvey").SurveyCaptureContext,
+    options?: RecordingOptions,
   ): RecordingStatus {
     if (!this.receiving || !this.metadata)
       throw new Error("RTL-SDR source is not receiving");
@@ -453,6 +484,9 @@ export class RtlSdrBackend implements ReceiverBackend {
       undefined,
       undefined,
       survey,
+      undefined,
+      preferredRecordingStorageMode(options?.storageMode),
+      options,
     );
     return this.recorder.status();
   }
@@ -533,9 +567,19 @@ export class RtlSdrBackend implements ReceiverBackend {
 
     const source = this.source;
     const sourceRelease = source
-      ? source.close().then(() => {
-          if (this.source === source) this.source = undefined;
-        })
+      ? source
+          .close()
+          .catch((error) => {
+            // An unplugged RTL2832U cannot perform WebRTLSDR's graceful tuner
+            // shutdown writes. The browser/OS has already revoked the physical
+            // device, so that expected close failure must not retain a dead
+            // backend forever. Other close failures remain retryable.
+            if (!this.sourceUnavailable || !isDeviceUnavailableError(error))
+              throw error;
+          })
+          .then(() => {
+            if (this.source === source) this.source = undefined;
+          })
       : Promise.resolve();
     const [sourceResult, settledAudioResult] = await Promise.all([
       Promise.allSettled([sourceRelease]),
@@ -554,8 +598,18 @@ export class RtlSdrBackend implements ReceiverBackend {
 
   private async pump(samplesPerBuffer: number): Promise<void> {
     while (this.receiving) {
+      let block: Awaited<ReturnType<SignalSource["readSamples"]>>;
       try {
-        const block = await this.source!.readSamples(samplesPerBuffer);
+        block = await this.source!.readSamples(samplesPerBuffer);
+      } catch (error) {
+        if (isDeviceUnavailableError(error)) this.sourceUnavailable = true;
+        if (this.receiving && !this.streamFailureReported) {
+          this.streamFailureReported = true;
+          this.events.runtimeError(error);
+        }
+        return;
+      }
+      try {
         if (this.receiving) this.pipeline.receiveSamples(block);
       } catch (error) {
         if (this.receiving && !this.streamFailureReported) {

@@ -16,6 +16,9 @@ import type { SquelchMeterState } from "./types";
 
 const SQUELCH_TAIL_SECONDS = 0.1;
 const SQUELCH_HYSTERESIS = 0.1;
+// Average short-block power estimates in sample time. A single noisy 3 ms USB
+// block must not open a 100 ms audio tail while the displayed meter stays low.
+const SQUELCH_LEVEL_SECONDS = 0.025;
 const METER_INTERVAL_MS = 200;
 const PEAK_HOLD_MS = 1_500;
 
@@ -64,6 +67,18 @@ export class SharedWbfmDemodulator {
       });
     if (this.otherMode)
       this.other = getDemod(this.rate, this.player.sampleRate, this.otherMode);
+    this.resetSquelch();
+  }
+
+  private resetSquelch(): void {
+    this.squelchOpen =
+      !this.otherMode || modeParameters(this.otherMode).getSquelch() === 0;
+    this.squelchTail = 0;
+    this.smoothedLevel = 0;
+    this.peakLevel = 0;
+    this.peakAt = 0;
+    this.meterAt = 0;
+    this.reportedSquelchOpen = undefined;
   }
   setMode(mode: Mode): void {
     if (mode.scheme === "WBFM") {
@@ -83,8 +98,7 @@ export class SharedWbfmDemodulator {
         this.other.setMode(mode);
       else this.other = getDemod(this.rate, this.player.sampleRate, mode);
       this.otherMode = mode;
-      this.squelchOpen = true;
-      this.squelchTail = 0;
+      this.resetSquelch();
     }
   }
   setCwToneFrequency(frequencyHz: number): void {
@@ -135,6 +149,10 @@ export class SharedWbfmDemodulator {
   ): void {
     const threshold = modeParameters(this.otherMode!).getSquelch();
     const finiteLevel = Number.isFinite(level) ? Math.max(0, level) : 0;
+    const alpha = -Math.expm1(
+      -left.length / (this.player.sampleRate * SQUELCH_LEVEL_SECONDS),
+    );
+    this.smoothedLevel += alpha * (finiteLevel - this.smoothedLevel);
     if (threshold === 0) {
       this.squelchOpen = true;
       this.squelchTail = 0;
@@ -142,7 +160,7 @@ export class SharedWbfmDemodulator {
       const boundary = this.squelchOpen
         ? Math.max(0, threshold - SQUELCH_HYSTERESIS)
         : threshold + SQUELCH_HYSTERESIS;
-      if (finiteLevel > boundary) {
+      if (this.smoothedLevel > boundary) {
         this.squelchOpen = true;
         this.squelchTail = SQUELCH_TAIL_SECONDS * this.player.sampleRate;
       } else if (this.squelchTail > 0) {
@@ -153,11 +171,10 @@ export class SharedWbfmDemodulator {
         right.fill(0);
       }
     }
-    this.updateMeter(finiteLevel);
+    this.updateMeter();
   }
 
-  private updateMeter(level: number): void {
-    this.smoothedLevel += 0.2 * (level - this.smoothedLevel);
+  private updateMeter(): void {
     const now = performance.now();
     if (
       this.smoothedLevel >= this.peakLevel ||

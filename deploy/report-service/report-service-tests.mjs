@@ -209,3 +209,33 @@ test("rejects compatibility reports sent to the diagnostic endpoint", async () =
     database.close();
   }
 });
+
+test("expires reports and aggregates while idle and clears its retention timer on close", async (t) => {
+  const database = new DatabaseSync(":memory:");
+  const { server } = createReportServer({ database, cleanupIntervalMs: 10 });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    database.close();
+  });
+  database
+    .prepare(
+      "INSERT INTO reports(reference, received_at, expires_at, fingerprint, trigger, body) VALUES(?,?,?,?,?,?)",
+    )
+    .run("expired", "2000-01-01", "2000-01-02", "old", "manual", "{}");
+  database
+    .prepare(
+      "INSERT INTO fingerprint_counts(fingerprint,first_seen,last_seen,expires_at,count) VALUES(?,?,?,?,?)",
+    )
+    .run("old", "2000-01-01", "2000-01-01", "2000-01-02", 1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(
+    database.prepare("SELECT count(*) AS count FROM reports").get().count,
+    0,
+  );
+  assert.equal(
+    database.prepare("SELECT count(*) AS count FROM fingerprint_counts").get()
+      .count,
+    0,
+  );
+});

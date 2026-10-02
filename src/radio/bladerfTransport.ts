@@ -64,6 +64,7 @@ export class BladeRfTransport {
   private session?: BladeRfConfiguredSession;
   private state:
     | "idle"
+    | "opening"
     | "open"
     | "configured"
     | "starting"
@@ -72,6 +73,10 @@ export class BladeRfTransport {
     | "closing"
     | "closed" = "idle";
   private token = 0;
+  private openingGeneration = 0;
+  private opening?: { generation: number; task: Promise<BladeRfIdentity> };
+  private readonly openingOwners = new Map<USBDevice, object>();
+  private readonly cleanupOwners = new Map<USBDevice, object>();
   private sequence = 0;
   private sampleIndex = 0;
   private reads = new Set<Promise<void>>();
@@ -108,32 +113,126 @@ export class BladeRfTransport {
         "This browser does not support WebUSB.",
         "RadioError.NoUsbSupport",
       );
-    if (this.device) return this.identity!;
-    const device = await usb.requestDevice({
-      filters: [{ ...BLADERF_USB_FILTER }],
-    });
-    return this.open(device);
+    return this.beginOpen(() =>
+      usb.requestDevice({ filters: [{ ...BLADERF_USB_FILTER }] }),
+    );
   }
 
   async open(device: USBDevice): Promise<BladeRfIdentity> {
-    if (this.device) return structuredClone(this.identity!);
+    return this.beginOpen(async () => device);
+  }
+
+  private beginOpen(
+    selectDevice: () => Promise<USBDevice>,
+  ): Promise<BladeRfIdentity> {
+    if (this.closeTask || this.stopTask) return Promise.reject(abortError());
+    if (this.state === "closing" || this.cleanupOwners.size)
+      return Promise.reject(
+        new DOMException(
+          "bladeRF USB cleanup is incomplete; retry disconnect before reopening.",
+          "InvalidStateError",
+        ),
+      );
+    if (this.device) return Promise.resolve(structuredClone(this.identity!));
+    if (this.opening?.generation === this.openingGeneration)
+      return this.opening.task;
+    const generation = ++this.openingGeneration;
+    this.state = "opening";
+    const task = this.openSelected(selectDevice, generation).finally(() => {
+      if (this.opening?.task === task) {
+        this.opening = undefined;
+        if (!this.device)
+          this.state = this.cleanupOwners.size ? "closing" : "closed";
+      }
+    });
+    this.opening = { generation, task };
+    return task;
+  }
+
+  private async openSelected(
+    selectDevice: () => Promise<USBDevice>,
+    generation: number,
+  ): Promise<BladeRfIdentity> {
+    let opening = true;
+    const checkCurrent = () => {
+      if (opening && generation !== this.openingGeneration) throw abortError();
+    };
+    const current = async <T>(operation: () => Promise<T>): Promise<T> => {
+      checkCurrent();
+      try {
+        return await operation();
+      } finally {
+        checkCurrent();
+      }
+    };
+    // A cancelled chooser never owns, opens or closes the returned device.
+    const device = await current(selectDevice);
+    const owner = {};
+    if (this.openingOwners.has(device))
+      throw new DOMException(
+        "A previous bladeRF opening operation is still cleaning up this device.",
+        "InvalidStateError",
+      );
+    // Bound retained devices even if canceled WebUSB operations never settle.
+    if (this.openingOwners.size >= 8)
+      throw new DOMException(
+        "Too many bladeRF opening operations are still pending cleanup.",
+        "InvalidStateError",
+      );
+    this.openingOwners.set(device, owner);
+    let owned = device.opened;
     try {
-      if (!device.opened) await device.open();
-      if (!device.configuration) await device.selectConfiguration(1);
-      await device.claimInterface(0);
+      if (!device.opened) {
+        // open() may succeed in the browser before its promise rejects/cancels.
+        owned = true;
+        await current(() => device.open());
+      }
+      if (device.configuration?.configurationValue !== 1)
+        await current(() => device.selectConfiguration(1));
+      checkCurrent();
+      owned = true;
+      await current(() => device.claimInterface(0));
       const protocol = new BladeRfProtocol(device, {
         statusChanged: this.events.statusChanged,
         loadImage: this.events.loadImage,
+        checkCurrent,
       });
       const identity = await protocol.open();
+      try {
+        checkCurrent();
+      } catch (error) {
+        if (identity.volatileImage && error instanceof DOMException)
+          throw new DOMException(
+            `${error.message} Volatile FPGA state may have changed; reconnect or power-cycle before retrying. No rollback was performed.`,
+            error.name,
+          );
+        throw error;
+      }
       this.device = device;
       this.protocol = protocol;
       this.identity = identity;
       this.state = "open";
+      opening = false;
       return structuredClone(identity);
     } catch (error) {
-      await device.close().catch(() => undefined);
+      // Cleanup is local: a stale attempt cannot erase a newer published session.
+      if (owned && this.openingOwners.get(device) === owner) {
+        if (
+          device.configuration?.interfaces.find(
+            (iface) => iface.interfaceNumber === 0,
+          )?.claimed
+        )
+          await device.releaseInterface?.(0).catch(() => undefined);
+        await device.close().catch(() => undefined);
+        if (device.opened) this.cleanupOwners.set(device, owner);
+      }
       throw error;
+    } finally {
+      if (
+        this.openingOwners.get(device) === owner &&
+        this.cleanupOwners.get(device) !== owner
+      )
+        this.openingOwners.delete(device);
     }
   }
 
@@ -142,6 +241,7 @@ export class BladeRfTransport {
     generation: number,
   ): Promise<BladeRfConfiguredSession> {
     if (
+      this.cleanupOwners.size ||
       !this.protocol ||
       !this.identity ||
       !["open", "configured"].includes(this.state)
@@ -150,7 +250,10 @@ export class BladeRfTransport {
         "Open and stop the bladeRF before configuring it.",
         "InvalidStateError",
       );
-    const details = await this.protocol.configure(configuration);
+    const protocol = this.protocol;
+    const token = this.token;
+    const details = await protocol.configure(configuration);
+    if (token !== this.token || this.protocol !== protocol) throw abortError();
     this.session = {
       generation,
       hardwareCenterFrequencyHz: details.acceptedCenterFrequencyHz,
@@ -165,6 +268,7 @@ export class BladeRfTransport {
     ready: (session: BladeRfConfiguredSession) => void,
   ): Promise<void> {
     if (
+      this.cleanupOwners.size ||
       !this.device ||
       !this.protocol ||
       !this.session ||
@@ -249,31 +353,42 @@ export class BladeRfTransport {
   }
 
   stopRx(): Promise<void> {
+    ++this.openingGeneration;
     if (this.stopTask) return this.stopTask;
     if (!this.protocol || !["starting", "running"].includes(this.state))
       return Promise.resolve();
-    ++this.token;
+    const token = ++this.token;
+    const protocol = this.protocol;
+    const device = this.device!;
+    const checkCurrent = () => {
+      if (token !== this.token || this.protocol !== protocol)
+        throw abortError();
+    };
     this.state = "stopping";
     this.callback = undefined;
     const task = (async () => {
-      await this.protocol!.setRxEnabled(false);
+      await protocol.setRxEnabled(false);
+      checkCurrent();
       // Disabling RX does not guarantee that Chrome's already-submitted bulk
       // reads settle. Changing away from the RF-link alternate explicitly
       // aborts every transfer on its endpoints per WebUSB, then restores the
       // command/sample endpoints for reconfiguration or restart.
-      await this.device!.selectAlternateInterface(
+      await device.selectAlternateInterface(
         BLADERF_USB_INTERFACE,
         BLADERF_USB_ALT_IDLE,
       );
-      await this.device!.selectAlternateInterface(
+      checkCurrent();
+      await device.selectAlternateInterface(
         BLADERF_USB_INTERFACE,
         BLADERF_USB_ALT_RF_LINK,
       );
+      checkCurrent();
       if (this.reads.size)
         await Promise.race([
           Promise.allSettled([...this.reads]),
           timeout(1_500),
         ]);
+      checkCurrent();
       this.reads.clear();
       this.state = "configured";
     })().finally(() => {
@@ -284,27 +399,70 @@ export class BladeRfTransport {
   }
 
   close(): Promise<void> {
+    ++this.openingGeneration;
     if (this.closeTask) return this.closeTask;
-    if (!this.device) {
-      this.state = "closed";
-      return Promise.resolve();
-    }
     ++this.token;
     this.state = "closing";
     this.callback = undefined;
     const device = this.device;
     const protocol = this.protocol;
+    // Published identity and configuration cease to be usable on first close,
+    // while the actual USB device remains owned until closure is confirmed.
+    this.protocol = undefined;
+    this.identity = undefined;
+    this.session = undefined;
     const task = (async () => {
-      if (protocol) await protocol.setRxEnabled(false).catch(() => undefined);
-      await device.close();
-      this.reads.clear();
-      this.device = undefined;
-      this.protocol = undefined;
-      this.identity = undefined;
-      this.session = undefined;
-      this.state = "closed";
+      let failure: unknown;
+      if (device) {
+        if (protocol) await protocol.setRxEnabled(false).catch(() => undefined);
+        try {
+          await device.close();
+          if (device.opened)
+            throw new DOMException(
+              "bladeRF USB device is still open after close.",
+              "NetworkError",
+            );
+        } catch (error) {
+          if (device.opened) failure = error;
+        } finally {
+          if (!device.opened && this.device === device) {
+            this.reads.clear();
+            this.device = undefined;
+          }
+        }
+      }
+      // Each explicit close makes one bounded retry for each failed opening.
+      for (const [pending, owner] of this.cleanupOwners) {
+        if (this.openingOwners.get(pending) !== owner) continue;
+        if (
+          pending.configuration?.interfaces.find(
+            (iface) => iface.interfaceNumber === 0,
+          )?.claimed
+        )
+          await pending.releaseInterface?.(0).catch(() => undefined);
+        try {
+          await pending.close();
+          if (pending.opened)
+            throw new DOMException(
+              "bladeRF opening cleanup left the USB device open.",
+              "NetworkError",
+            );
+        } catch (error) {
+          if (pending.opened) failure ??= error;
+        } finally {
+          if (!pending.opened && this.cleanupOwners.get(pending) === owner) {
+            this.cleanupOwners.delete(pending);
+            this.openingOwners.delete(pending);
+          }
+        }
+      }
+      if (failure) throw failure;
     })().finally(() => {
-      if (this.closeTask === task) this.closeTask = undefined;
+      if (this.closeTask === task) {
+        this.closeTask = undefined;
+        this.state =
+          this.device || this.cleanupOwners.size ? "closing" : "closed";
+      }
     });
     this.closeTask = task;
     return task;

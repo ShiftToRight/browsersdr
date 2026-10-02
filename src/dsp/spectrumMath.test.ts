@@ -77,18 +77,36 @@ describe("RF spectrum analysis", () => {
     expect(processor.accept(data.I.subarray(0, FFT_SIZE), data.Q.subarray(0, FFT_SIZE), 100, true, 1)).toHaveLength(0);
   });
 
-  it("holds one publication until a slow renderer returns credit", () => {
+  it("absorbs a bounded publication burst before a slow renderer returns batched credit", () => {
     const tone = new SyntheticComplexTone({ sampleRateHz: SAMPLE_RATE, toneOffsetHz: 32_000 });
-    const processor = new SpectrumProcessor();
+    const processor = new SpectrumProcessor(new SpectrumAccumulator(), false, 3);
     const first = tone.generate(FFT_SIZE * 4);
     const second = tone.generate(FFT_SIZE * 4);
-    expect(processor.accept(first.I, first.Q, 0)).toHaveLength(1);
-    expect(processor.accept(second.I, second.Q, 100)).toHaveLength(0);
-    processor.grantPublicationCredit();
     const third = tone.generate(FFT_SIZE * 4);
-    const resumed = processor.accept(third.I, third.Q, 200);
+    const fourth = tone.generate(FFT_SIZE * 4);
+    expect(processor.accept(first.I, first.Q, 0)).toHaveLength(1);
+    expect(processor.accept(second.I, second.Q, 100)).toHaveLength(1);
+    expect(processor.accept(third.I, third.Q, 200)).toHaveLength(1);
+    expect(processor.accept(fourth.I, fourth.Q, 300)).toHaveLength(0);
+    processor.grantPublicationCredit(3);
+    const fifth = tone.generate(FFT_SIZE * 4);
+    const resumed = processor.accept(fifth.I, fifth.Q, 400);
     expect(resumed).toHaveLength(1);
     expect(resumed[0]?.droppedBefore).toBe(1);
+  });
+
+  it("keeps three 9.6 MS/s rows from a burst without a credit round trip", () => {
+    const rate = 9_600_000, windows = spectrumWindowsPerAverage(rate);
+    let accumulated = 0;
+    const processor = new SpectrumProcessor({
+      size: FFT_SIZE,
+      reset: () => { accumulated = 0; },
+      addWindow: () => (++accumulated % windows === 0 ? new Float32Array(FFT_SIZE) : undefined),
+    }, true);
+    const I = new Float32Array(16_384), Q = new Float32Array(16_384), frames = [];
+    for (let index = 0; index < 72; index += 1) frames.push(...processor.accept(I, Q, index));
+    expect(frames).toHaveLength(3);
+    expect(frames.map(frame => frame.skippedSpectrumFramesBefore)).toEqual([0, 0, 0]);
   });
 
   it("reports exact missing source samples separately from skipped publications", () => {

@@ -1,3 +1,4 @@
+import { SignalCenterEstimator } from "../dsp/signalCenter";
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
 import { decodeUsrpB205Sc16Into } from "../radio/usrpB205RxVrt";
@@ -11,6 +12,7 @@ const workerScope = self as unknown as {
   postMessage(message: AnalysisWorkerOutput, transfer: Transferable[]): void;
 };
 let processorPromise: Promise<{ processor: SpectrumProcessor; selection: AnalysisBackendSelection }> | undefined;
+let centerMeasurement: { estimator: SignalCenterEstimator; requestId: number; minimumSampleIndex: number } | undefined;
 let generation = 0;
 let centerFrequencyHz = 0;
 let sampleRateHz = 0;
@@ -19,6 +21,7 @@ let ci8Scratch: [Float32Array, Float32Array] | undefined;
 
 async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   if (message.type === "configure") {
+    centerMeasurement = undefined;
     const previous = processorPromise;
     if (previous) void previous.then(({ processor }) => processor.dispose());
     generation = message.sessionGeneration;
@@ -30,7 +33,16 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
     return;
   }
   if (message.sessionGeneration !== generation) return;
+  if (message.type === "center-start") {
+    centerMeasurement = { estimator: new SignalCenterEstimator(message.metadata), requestId: message.requestId, minimumSampleIndex: message.minimumSampleIndex };
+    return;
+  }
+  if (message.type === "center-cancel") {
+    if (centerMeasurement?.requestId === message.requestId) centerMeasurement = undefined;
+    return;
+  }
   if (message.type === "stop") {
+    centerMeasurement = undefined;
     const stopped = processorPromise;
     processorPromise = undefined;
     if (stopped) void stopped.then(({ processor }) => processor.dispose());
@@ -39,7 +51,7 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   }
   if (message.type === "spectrum-credit") {
     const current = processorPromise;
-    if (current) (await current).processor.grantPublicationCredit();
+    if (current) (await current).processor.grantPublicationCredit(message.credits);
     return;
   }
 
@@ -63,6 +75,19 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
         : decodeUsrpB205Sc16Into(bytes, ...ci8Scratch);
     I = ci8Scratch[0].subarray(0, count); Q = ci8Scratch[1].subarray(0, count);
   } else { I = new Float32Array(message.I); Q = new Float32Array(message.Q); }
+  const measurement = centerMeasurement;
+  if (measurement) {
+    const start = message.sampleIndex;
+    const skip = start === undefined ? I.length : Math.max(0, measurement.minimumSampleIndex - start);
+    if (skip < I.length) {
+      const mismatch = message.centerFrequencyHz !== measurement.estimator.metadata.hardwareCenterFrequencyHz || message.sampleRateHz !== measurement.estimator.metadata.actualSampleRateHz;
+      const result = measurement.estimator.accept(I.subarray(skip), Q.subarray(skip), message.discontinuity || mismatch);
+      if (result) {
+        centerMeasurement = undefined;
+        workerScope.postMessage({ type: "center-result", sessionGeneration: generation, requestId: measurement.requestId, result }, []);
+      }
+    }
+  }
   const frames = processor.accept(
     I, Q,
     performance.now(),

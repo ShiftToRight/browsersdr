@@ -1,3 +1,4 @@
+import { BLADERF_SC16_RECORDING_FORMAT } from "./bladerfRecording";
 import { sha512Hex, type SigmfMetadata } from "./sigmf";
 
 export const ATLAS_INTEGRATION_CONTRACT_VERSION = "signalexplorer-browsersdr-integration-v1" as const;
@@ -5,6 +6,7 @@ export const ATLAS_INTEGRATION_SCHEMA_DIGEST_SHA256 = "d00c6936ef6d743584eaf686a
 export const ATLAS_INTEGRATION_SCHEMA_ARTIFACT_SHA256 = "db022c55f8619a9850561bbe45112656cbd9fa1b63981bf06ed2b9111470f7ff" as const;
 
 export type AtlasSigmfIssueCode =
+  | "q11_analysis_unsupported"
   | "datatype_unsupported"
   | "integrity_failed"
   | "layout_invalid"
@@ -31,7 +33,8 @@ export type AtlasSigmfLayoutCompatibility = Omit<AtlasSigmfCompatibility, "compu
 
 export function inspectBrowserSigmfLayoutForAtlas(metadata: SigmfMetadata, dataByteLength: number): AtlasSigmfLayoutCompatibility {
   const issues: AtlasSigmfIssue[] = [];
-  const sampleCount = dataByteLength / 2;
+  const bytesPerComplexSample = metadata.global["core:datatype"] === "ci16_le" ? 4 : 2;
+  const sampleCount = dataByteLength / bytesPerComplexSample;
   if (!Number.isSafeInteger(sampleCount) || sampleCount <= 0) {
     issues.push({ code: "layout_invalid", message: "The dataset must contain complete, non-empty interleaved I/Q pairs." });
   }
@@ -61,8 +64,11 @@ export function inspectBrowserSigmfLayoutForAtlas(metadata: SigmfMetadata, dataB
       issues.push({ code: "structured_gap_unsupported", message: "A BrowserSDR gap annotation makes the original archive-only, including when its duration is unknown." });
     }
   }
-  if (metadata.global["core:datatype"] !== "cu8") {
-    issues.push({ code: "datatype_unsupported", message: "First-release SignalExplorer analysis does not support BrowserSDR native ci8." });
+  if (!["cu8", "ci16_le"].includes(metadata.global["core:datatype"])) {
+    issues.push({ code: "datatype_unsupported", message: "SignalExplorer analysis does not support BrowserSDR native ci8." });
+  }
+  if (metadata.global["browsersdr:sample_format"]?.format === BLADERF_SC16_RECORDING_FORMAT) {
+    issues.push({ code: "q11_analysis_unsupported", message: "bladeRF native SC16 Q11 is archive-only until SignalExplorer explicitly supports its /2048 scale and clipping interpretation." });
   }
   const uniqueIssues = issues.filter((issue, index) => issues.findIndex(candidate => candidate.code === issue.code) === index);
   const invalid = uniqueIssues.some(issue => issue.code === "layout_invalid");

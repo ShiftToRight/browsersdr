@@ -2,18 +2,18 @@
   "contract_version": "signalexplorer-browsersdr-integration-v1",
   "schema_digest_sha256": "d00c6936ef6d743584eaf686a8ace0c72ff4bf286255e7b4d77fbeda8f6ef164",
   "basename": "browsersdr-contract-lab-010006khz-synthetic-am-fixture-2026-09-08T00-00-00-000Z",
-  "data_base64": "1n+9vX/VRLstf0dHfzOzTMR/ra1/vFinTH9eXn9VmmWhf5SUf5lvj2t/c3N/b4p0j3+Kin+Qc4xrf29vf2aUa6F/mpp/qV6gTH9YWH9DrVHEf7Ozf8xHuC1/RER/Kr1C1n+9vX/VRLstf0dHfzOzTMR/ra1/vFinTH9eXn9VmmU=",
+  "data_base64": "14C9vYDVRLstgEdHfzOzTMV/ra2AvFinTIBfX39WmmWhf5SUgJlvkGuAc3N/b4t0j3+Li4CQc4xrgG9vf2aUa6F/mpqAqV+gTIBYWH9DrVLFf7OzgMxHuC2ARER/Kr1C13+9vYDVRLstgEdHfzOzTMV/ra2AvFinTIBfX39WmmU=",
   "data_byte_length": "128",
-  "data_sha256": "8bec224cee25842229ec7603ef8350b70b5c8e2cae76e79ea3facbcbfc5a02a7",
-  "data_sha512": "f0e619f6ec6696479fb7726993ab75a46b0a0b8691e0e7d6c86e8c328f761d36646f69ccf4bb2f5408aa3757c37d26171ba213c7c6e04c7ba8937fe13295a323",
+  "data_sha256": "7750873717b3f524838de2c73671938493e2853f210500d9660fc10c4f703994",
+  "data_sha512": "b521e6b53e55f7e05632778beea8cb8e0828642fe7363386758ddc3e2e71b1f114ea0ec0da4f53991b25728be27b3e283122100c12f592dbb191c5209f752b77",
   "metadata": {
     "global": {
       "core:datatype": "cu8",
       "core:version": "1.2.6",
       "core:sample_rate": 48000,
       "core:recorder": "BrowserSDR",
-      "core:sha512": "f0e619f6ec6696479fb7726993ab75a46b0a0b8691e0e7d6c86e8c328f761d36646f69ccf4bb2f5408aa3757c37d26171ba213c7c6e04c7ba8937fe13295a323",
-      "core:description": "BrowserSDR CU8 I/Q capture. Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round((float + 0.995) * 128), 0, 255). Amplitude is not calibrated. Provenance: BrowserSDR deterministic generator: AM carrier +6 kHz, 1 kHz tone, 48 ksample/s; no hardware capture. Survey site: Contract lab. Antenna: test dipole. Site notes: Synthetic fixture; no RF measurement.. Survey profile: BSD-01 deterministic survey."
+      "core:sha512": "b521e6b53e55f7e05632778beea8cb8e0828642fe7363386758ddc3e2e71b1f114ea0ec0da4f53991b25728be27b3e283122100c12f592dbb191c5209f752b77",
+      "core:description": "BrowserSDR CU8 I/Q capture. Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round(float * 128 + 127.5), 0, 255). Amplitude is not calibrated. Provenance: BrowserSDR deterministic generator: AM carrier +6 kHz, 1 kHz tone, 48 ksample/s; no hardware capture. Survey site: Contract lab. Antenna: test dipole. Site notes: Synthetic fixture; no RF measurement.. Survey profile: BSD-01 deterministic survey."
     },
     "captures": [
       {

@@ -16,6 +16,8 @@ import { encodeUsrpB205RxData } from "../testing/usrpB205RxFixture";
 import { decodeUsrpB205RxPacket } from "./usrpB205RxVrt";
 import { usrpB205FirmwareFixture } from "../testing/usrpB205FirmwareFixture";
 import type { UsrpB205WorkerSessionEvents, UsrpB205WorkerSessionPort } from "./usrpB205WorkerSession";
+import { createSigmfExport } from "./sigmf";
+import { CI16_RECORDING_FORMAT } from "./ci16Recording";
 
 const OPTIONS: ReceiverStartOptions = {
   source: "usrp-b205",
@@ -222,14 +224,28 @@ describe("USRP B205-mini backend integration", () => {
     await backend.connectGranted(OPTIONS, { serialNumber: "FIXTURE" } as USBDevice);
     expect(worker.calls).toEqual(["initialize:FIXTURE"]);
     await backend.start(OPTIONS, 4);
+    backend.startRecording();
     worker.samples();
     expect(pipeline.usrpSc16).toEqual([{ bytes: Uint8Array.of(0, 192, 0, 64), frequency: 100_000_000 }]);
+    expect(backend.stopRecording()!.data).toEqual(Uint8Array.of(0, 64, 0, 192));
     await backend.tune(101_000_000, 5);
     worker.samples();
     expect(pipeline.usrpSc16.at(-1)?.frequency).toBe(101_000_000);
     await backend.stop();
+    const originalWorker = worker;
+    for (const sampleRateHz of [9_600_000, 19_200_000, 4_800_000]) {
+      const previousWorker = worker;
+      const restarted = await backend.start({ ...OPTIONS, sampleRateHz }, 6);
+      expect(previousWorker.calls.at(-1)).toBe("close");
+      expect(worker).not.toBe(previousWorker);
+      expect(restarted).toMatchObject({ actualSampleRateHz: sampleRateHz, requestedSampleRateHz: sampleRateHz });
+      expect(worker.calls[0]).toBe("initialize:FIXTURE");
+      worker.samples();
+      expect(pipeline.usrpSc16.at(-1)?.frequency).toBe(OPTIONS.channelFrequencyHz);
+      await backend.stop();
+    }
     await backend.disconnect();
-    expect(worker.calls).toEqual([
+    expect(originalWorker.calls).toEqual([
       "initialize:FIXTURE", "start:1", "retune:101000000", "stop", "close",
     ]);
   });
@@ -251,6 +267,34 @@ describe("USRP B205-mini backend integration", () => {
     expect(f.pipeline.sessions).toContain(9);
     await f.backend.disconnect();
     expect(f.transport.calls).toContain("close");
+  });
+
+  it("reopens the authorized stopped device for a new rate without a chooser", async () => {
+    const f = fixture();
+    const device = { serialNumber: "FIXTURE" } as USBDevice;
+    await f.backend.connectGranted(OPTIONS, device);
+    await f.backend.start(OPTIONS, 1);
+    await f.backend.stop();
+    const oldTransport = f.transport;
+    const metadata = await f.backend.start({ ...OPTIONS, sampleRateHz: 9_600_000 }, 2);
+    expect(oldTransport.calls).toContain("close");
+    expect(f.connection.open).toHaveBeenCalledTimes(2);
+    expect(f.connection.requestAndOpen).not.toHaveBeenCalled();
+    expect(metadata.actualSampleRateHz).toBe(9_600_000);
+    expect(f.configurator.initialize).toHaveBeenLastCalledWith(expect.objectContaining({requestedSampleRateHz: 9_600_000}));
+    await f.backend.disconnect();
+  });
+
+  it("retains the old owner if closing for a rate change fails", async () => {
+    const f = fixture();
+    await f.backend.connectGranted(OPTIONS, { serialNumber: "FIXTURE" } as USBDevice);
+    await f.backend.start(OPTIONS, 1);
+    await f.backend.stop();
+    const close = vi.spyOn(f.transport, "close").mockRejectedValueOnce(new Error("USB close failed"));
+    await expect(f.backend.start({ ...OPTIONS, sampleRateHz: 9_600_000 }, 2)).rejects.toThrow("USB close failed");
+    expect(f.connection.open).toHaveBeenCalledOnce();
+    await f.backend.disconnect();
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   it("passes the selected 9.6 MS/s profile through configuration, metadata and pipeline budgeting", async () => {
@@ -326,10 +370,34 @@ describe("USRP B205-mini backend integration", () => {
     expect(f.transport.calls.filter((call) => call === "close")).toHaveLength(2);
   });
 
-  it("rejects recording and manual gain without creating a legacy encoding", async () => {
+  it("records native B205 samples as SigMF ci16_le I/Q without changing sample values", async () => {
     const f = fixture();
     await f.backend.start(OPTIONS, 1);
-    expect(() => f.backend.startRecording()).toThrow(/unavailable in release 1/);
+    expect(f.backend.startRecording()).toMatchObject({ state: "recording", sampleCount: 0 });
+    f.transport.callback!({
+      ...native(f.transport.generation),
+      discontinuityBefore: {
+        generation: f.transport.generation,
+        missingSamples: 7,
+        reason: "fixture timestamp gap",
+      },
+    });
+    const recording = f.backend.stopRecording()!;
+    expect(recording.data).toEqual(Uint8Array.of(0xff, 0x7f, 0x00, 0x80));
+    expect(recording.metadata).toMatchObject({
+      format: CI16_RECORDING_FORMAT,
+      source: "usrp-b205",
+      sampleEncoding: "signed-16-bit-little-endian",
+      bytesPerComplexSample: 4,
+      sampleCount: 1,
+      knownGaps: [{ afterSample: 0, missingSamples: 7, reason: "fixture timestamp gap" }],
+    });
+    const exported = await createSigmfExport(recording);
+    expect(exported.metadata.global).toMatchObject({
+      "core:datatype": "ci16_le",
+      "core:sample_rate": 4_800_000,
+      "core:hw": expect.stringContaining("USRP B205-mini"),
+    });
     await expect(f.backend.setGain(10)).rejects.toThrow(/slow-attack AGC/);
     expect(f.backend.getRecordingStatus()).toBeUndefined();
   });
@@ -341,4 +409,23 @@ describe("USRP B205-mini backend integration", () => {
     const backend = new Usrpb205Backend(events, undefined, 0, { createPipeline: () => pipeline });
     await expect(backend.connect(OPTIONS)).rejects.toThrow(/Import and verify/);
   });
+});
+
+it.each([4_800_000, 9_600_000, 19_200_000] as const)("captures a B205 channel from native Q/I at %i", async (rate) => {
+  const f = fixture();
+  await f.backend.start({ ...OPTIONS, sampleRateHz: rate }, 1);
+  f.backend.startRecording(undefined, { captureCurrentChannel: true });
+  for (let sequence = 0; sequence < 32; sequence++) {
+    const packet = decodeUsrpB205RxPacket(encodeUsrpB205RxData(sequence, BigInt(sequence * 2048), Array.from({ length: 2048 }, () => [16384, -8192] as const)));
+    if (packet.kind !== "data") throw new Error("expected data packet");
+    f.transport.callback!({ ...native(f.transport.generation, sequence), nativePacketBytes: packet.packetBytes, bytes: packet.payloadBytes,
+      nativeSampleRateHz: rate, complexSampleCount: 2048, firstSampleIndex: sequence * 2048 });
+  }
+  const recording = f.backend.stopRecording()!;
+  expect(recording.metadata).toMatchObject({ format: "browsersdr-channel-iq-v1", source: "usrp-b205", sampleRateHz: 75_000, sampleEncoding: "signed-16-bit-little-endian" });
+  const data = new DataView(recording.data.buffer);
+  expect(data.getInt16(recording.data.length - 4, true)).toBeGreaterThan(15000);
+  expect(data.getInt16(recording.data.length - 2, true)).toBeLessThan(-7000);
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+  await f.backend.disconnect();
 });

@@ -7,7 +7,7 @@ import schema from "../../docs/vendor/sigmf-v1.2.6/sigmf-schema.json";
 import { hackrfRecordingFixture } from "../testing/hackrfRecordingFixture";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { HackrfSampleAdapter } from "./hackrfSource";
-import { IqRecorder, decodeRecordingSamples, parseRecording, recordingMetadataJson, validateRecordingMetadata, RECORDING_FORMAT, RECORDING_MAX_BYTES, type RecordingSampleFormat } from "./iqRecording";
+import { IqRecorder, decodeRecordingSamples, parseRecording, recordingMetadataJson, validateRecordingMetadata, RECORDING_MAX_BYTES, type RecordingSampleFormat } from "./iqRecording";
 import { CI8_NORMALIZATION, CI8_RECORDING_FORMAT } from "./ci8Recording";
 import { fftInPlace } from "../dsp/spectrumMath";
 import { createSigmfExport } from "./sigmf";
@@ -30,7 +30,7 @@ describe("versioned native CI8 capture", () => {
     const parsed = parseRecording(recordingMetadataJson(captured), captured.data);
     expect(parsed.data).toEqual(recording.data); expect(parsed.metadata).toEqual(captured.metadata);
     expect(parsed.metadata).not.toHaveProperty("gainDb");
-    if (parsed.metadata.format === RECORDING_FORMAT || !parsed.metadata.hardware || !parsed.metadata.captureSettings) throw new Error("fixture");
+    if (parsed.metadata.format !== CI8_RECORDING_FORMAT || !parsed.metadata.hardware || !parsed.metadata.captureSettings) throw new Error("fixture");
     const frozen = structuredClone(parsed.metadata);
     delete frozen.hardware!.platformSupport; delete frozen.captureSettings!.kind;
     expect(() => validateRecordingMetadata(frozen, parsed.data.length)).not.toThrow();
@@ -79,7 +79,7 @@ describe("versioned native CI8 capture", () => {
   it("validates stage steps, profile identity, fixed point readback and evidence claims", async () => {
     const { recording } = await hackrfRecordingFixture();
     const metadata = recording.metadata;
-    if (metadata.format === RECORDING_FORMAT || !metadata.hardware) throw new Error("fixture");
+    if (metadata.format !== CI8_RECORDING_FORMAT || !metadata.hardware) throw new Error("fixture");
     for (const patch of [{ rxLnaGainCode: 8 }, { rxVgaGainDb: 3 }, { rfAmplifierEnabled: 1 }, { antennaPowerEnabled: true }, { appliedRateFixed36: "18446744073709551616" }]) {
       expect(() => validateRecordingMetadata({ ...metadata, captureSettings: { ...metadata.captureSettings, ...patch } }, recording.data.length)).toThrow();
     }

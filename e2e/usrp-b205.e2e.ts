@@ -2,7 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function installUsrpb205(page: Page, authorized = false) {
   await page.addInitScript((hasAuthorization) => {
-    const device = { vendorId: 0x2500, productId: 0x0022 };
+    const device = {
+      vendorId: 0x2500,
+      productId: 0x0022,
+      serialNumber: "FIXTURE",
+    };
     const state = {
       chooserCalls: 0,
       chooserHadActivation: false,
@@ -17,6 +21,7 @@ async function installUsrpb205(page: Page, authorized = false) {
       requestDevice: () => {
         state.chooserCalls++;
         state.chooserHadActivation = navigator.userActivation.isActive;
+        hasAuthorization = true;
         return Promise.resolve(device);
       },
       getDevices: () => Promise.resolve(hasAuthorization ? [device] : []),
@@ -308,11 +313,23 @@ test("B205-mini mocked browser flow keeps permission synchronous and receive-onl
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await expect(
     page.getByRole("button", { name: "Start I/Q recording" }),
-  ).toBeDisabled();
-  await expect(page.getByText(/SigMF hardware claims/)).toBeVisible();
+  ).toBeEnabled();
+  await expect(sampleRate).toBeDisabled();
   await page.getByRole("button", { name: "Stop receiving" }).click();
+  await expect(sampleRate).toBeEnabled();
+  await sampleRate.selectOption("19200000");
+  await expect(
+    page.getByText("Change pending · applies when reception starts", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Start receiving" }).click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "native 19,200,000 samples/s",
+  );
+  await expect(sampleRate).toBeDisabled();
   await page.getByRole("button", { name: "Stop receiving" }).click();
+  await expect(sampleRate).toBeEnabled();
   await page.getByRole("button", { name: "Disconnect" }).click();
   const state = await page.evaluate(
     () => (window as unknown as { __usrpB205: unknown }).__usrpB205,

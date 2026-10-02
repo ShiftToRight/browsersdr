@@ -44,14 +44,18 @@ it("bounds, deduplicates and isolates diagnostic history", () => {
   expect(recorder.getSnapshots()[0]!.analysis.index).not.toBe(-1);
 });
 
-it("keeps automatic reports off until the user opts in", () => {
-  expect(loadAutoReportPreference()).toBe(false);
+it("enables automatic reports by default and preserves explicit preferences", () => {
+  expect(loadAutoReportPreference()).toBe(true);
   saveAutoReportPreference(true);
   expect(localStorage.getItem(AUTO_REPORT_KEY)).toBe("true");
   expect(loadAutoReportPreference()).toBe(true);
   saveAutoReportPreference(false);
   expect(localStorage.getItem(AUTO_REPORT_KEY)).toBe("false");
   expect(loadAutoReportPreference()).toBe(false);
+});
+
+it("uses the enabled default when storage is unavailable", () => {
+  expect(loadAutoReportPreference({ getItem: () => { throw new Error("Storage blocked"); } })).toBe(true);
 });
 
 it("builds a bounded redacted report and includes frequency only by request", () => {

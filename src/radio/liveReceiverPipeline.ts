@@ -65,6 +65,9 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private readonly player: PcmBatchPlayer;
   private readonly rds: RdsMultiplexReceiver;
   private dabResources?: ReturnType<LiveReceiverPipeline["createDabResources"]>;
+  private selectedDabServiceKey?: string;
+  private selectedDabFrequencyHz?: number;
+  private requestedDabServiceKey?: string;
   private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
@@ -143,7 +146,34 @@ export class LiveReceiverPipeline implements SampleReceiver {
           pcm.reset(); output.reset(); this.player.reset(); receiver.resetProgramme();
         },
       ));
-    const receiver = new DabReceiver((value) => { if (active) this.events.dabChanged?.(value); }, ensemble);
+    const receiver = new DabReceiver((value) => {
+      if (!active) return;
+      const selectedKey = this.selectedDabServiceKey;
+      const activeServiceKey =
+        value.serviceId === undefined || value.subchannelId === undefined
+          ? undefined
+          : `${value.serviceId}:${value.subchannelId}`;
+      if (
+        selectedKey &&
+        selectedKey !== activeServiceKey &&
+        this.requestedDabServiceKey !== selectedKey &&
+        value.stations?.some(
+          (station) => station.key === selectedKey && station.playable,
+        )
+      ) {
+        this.requestedDabServiceKey = selectedKey;
+        ensemble?.selectService?.(selectedKey);
+      } else if (!selectedKey && activeServiceKey) {
+        // The DAB decoder may choose its primary service without an explicit
+        // UI selection. Remember that active choice across source reconfigure.
+        this.selectedDabServiceKey = activeServiceKey;
+        this.selectedDabFrequencyHz =
+          this.metadata?.selectedChannelFrequencyHz ??
+          this.selectedFrequency;
+        this.requestedDabServiceKey = activeServiceKey;
+      }
+      this.events.dabChanged?.(value);
+    }, ensemble);
     return {
       receiver, ensemble, output,
       reset: () => { programme.reset(); pcm.reset(); output.reset(); },
@@ -157,6 +187,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private releaseDabResources(): void {
     this.dabResources?.close();
     this.dabResources = undefined;
+    this.requestedDabServiceKey = undefined;
   }
 
   get channelDiagnostics() {
@@ -330,6 +361,9 @@ export class LiveReceiverPipeline implements SampleReceiver {
     }
   }
   selectDabService(key: string): void {
+    this.selectedDabServiceKey = key;
+    this.selectedDabFrequencyHz = this.metadata?.selectedChannelFrequencyHz;
+    this.requestedDabServiceKey = key;
     this.dabResources?.ensemble?.selectService?.(key);
   }
 
@@ -342,6 +376,15 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
 
   private route(metadata: SourceSessionMetadata): void {
+    if (
+      metadata.mode !== "DAB" ||
+      (this.selectedDabFrequencyHz !== undefined &&
+        this.selectedDabFrequencyHz !== metadata.selectedChannelFrequencyHz)
+    ) {
+      this.selectedDabServiceKey = undefined;
+      this.selectedDabFrequencyHz = undefined;
+      this.requestedDabServiceKey = undefined;
+    }
     if (metadata.mode === "DAB") this.ensureDabResources().reset();
     const wideband = isWidebandRate(metadata.actualSampleRateHz);
     const rate = channelSampleRate(metadata.actualSampleRateHz);

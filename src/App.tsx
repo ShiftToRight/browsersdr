@@ -1,7 +1,17 @@
+import { CenterSignalControl } from "./ui/CenterSignalControl";
+import { operatingSystem, usbAvailability, type OperatingSystem } from "./platform/browserEnvironment";
+import { ConnectionReadiness, ReceiverRecovery } from "./ui/ReceiverConnectionHelp";
+import { planChannelCapture } from "./radio/channelRecording";
+import { BLADERF_SC16_RECORDING_FORMAT } from "./radio/bladerfRecording";
+import { DEFAULT_BLADERF_RX_SETTINGS, BLADERF_GAIN_MODES, type BladeRfRxSettings } from "./radio/bladerfSettings";
+import { BladeRfControls } from "./ui/BladeRfControls";
 import { usePageVisible } from "./ui/usePageVisible";
+import { PositionMap } from "./ui/PositionMap";
 import { SetupFileRow } from "./ui/SetupFileRow";
+import { DabStationControl, FmStationSummary } from "./ui/ChannelProgramme";
+import { ReceiverHealth } from "./ui/ReceiverHealth";
 import { DabMetadata } from "./ui/DabMetadata";
-import { isWidebandRate } from "./radio/sourceCapabilities";
+import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
 import {
   memo,
   useCallback,
@@ -18,7 +28,10 @@ import {
   AnalysisPipeline,
   type AnalysisDiagnostics,
 } from "./dsp/analysisPipeline";
-import { WebGpuSpectrum } from "./graphics/WebGpuSpectrum";
+import {
+  WebGpuSpectrum,
+  type SpectrumDisplayStatus,
+} from "./graphics/WebGpuSpectrum";
 import { SpectrumExplorer } from "./ui/SpectrumExplorer";
 import {
   ReceiverController,
@@ -38,8 +51,11 @@ import { USRP_B205_USB_FILTER } from "./radio/usrpB205Fx3";
 import {
   BLADERF_HOSTED_IMAGES,
   importBladeRfImage,
-  storedBladeRfImageVersions,
+  selectBladeRfImage,
+  storedBladeRfImages,
+  type BladeRfHostedImage,
 } from "./radio/bladerfImages";
+import { bladeRfModelLabel } from "./radio/bladerfModels";
 import {
   USRP_B205_IMAGE,
   importUsrpB205Image,
@@ -75,16 +91,20 @@ import { ReplayBackend } from "./radio/replayBackend";
 import type { SourceKind } from "./radio/types";
 import {
   parseRecording,
+  preferredRecordingStorageMode,
   recordingCapacitySeconds,
+  recordingRoutingSampleRate,
   RECORDING_MAX_BYTES,
   RECORDING_METADATA_MAX_BYTES,
   type IqRecording,
   type RecordingStatus,
 } from "./radio/iqRecording";
+import { cleanupAbandonedRecordings, prepareRecordingStorage, STREAMING_RECORDING_MAX_BYTES } from "./radio/recordingSpool";
 import {
   formatControlDisabled,
   RecordingExportCoordinator,
   RecordingFormatLatch,
+  RECORDING_ARCHIVE_INPUT_MAX_BYTES,
   RETAINED_CAPTURE_MAX_BYTES,
   type RecordingDownloadKind,
   type RecordingExportFormat,
@@ -175,7 +195,7 @@ const COMPATIBILITY_DETAILS: Record<
     columns: [
       "RTL-SDR",
       "HackRF Pro",
-      "bladeRF xA4",
+      "bladeRF 2.0 Micro (xA4 validated)",
       "USRP B205-mini",
       "Replay",
     ],
@@ -309,7 +329,7 @@ const COMPATIBILITY_DETAILS: Record<
             status: "experimental",
             evidence: "Offered with performance warnings",
           },
-          { status: "unsupported", evidence: "Frozen at 4.8 MS/s" },
+          { status: "experimental", evidence: "9.6 and 19.2 MS/s require hardware validation" },
           {
             status: "available",
             evidence: "Depends on recording rate and browser",
@@ -324,7 +344,7 @@ const COMPATIBILITY_DETAILS: Record<
     columns: [
       "RTL-SDR",
       "HackRF Pro",
-      "bladeRF xA4",
+      "bladeRF 2.0 Micro (xA4 validated)",
       "USRP B205-mini",
       "Synthetic demo",
     ],
@@ -335,10 +355,10 @@ const COMPATIBILITY_DETAILS: Record<
           { status: "validated", evidence: "CU8 samples" },
           { status: "validated", evidence: "CI8 samples" },
           {
-            status: "unsupported",
-            evidence: "Recording is disabled for this profile",
+            status: "available",
+            evidence: SOURCE_RECORDING_DESCRIPTIONS.bladerf,
           },
-          { status: "unsupported", evidence: "Native SC16 recording deferred" },
+          { status: "validated", evidence: SOURCE_RECORDING_DESCRIPTIONS["usrp-b205"] },
           { status: "available", evidence: "Quantized CU8 samples" },
         ],
       },
@@ -347,8 +367,8 @@ const COMPATIBILITY_DETAILS: Record<
         cells: [
           { status: "validated", evidence: "Export and replay covered" },
           { status: "validated", evidence: "Export and replay covered" },
-          { status: "unsupported", evidence: "No I/Q capture" },
-          { status: "unsupported", evidence: "No I/Q capture" },
+          { status: "unsupported", evidence: "SigMF export only" },
+          { status: "unsupported", evidence: "SigMF export only" },
           { status: "available", evidence: "Local export path" },
         ],
       },
@@ -363,10 +383,10 @@ const COMPATIBILITY_DETAILS: Record<
             status: "validated",
             evidence: "Schema, export and import covered",
           },
-          { status: "unsupported", evidence: "No I/Q capture" },
+          { status: "available", evidence: SOURCE_RECORDING_DESCRIPTIONS.bladerf },
           {
-            status: "unsupported",
-            evidence: "No SigMF hardware claim emitted",
+            status: "validated",
+            evidence: SOURCE_RECORDING_DESCRIPTIONS["usrp-b205"],
           },
           { status: "available", evidence: "Local export path" },
         ],
@@ -376,8 +396,8 @@ const COMPATIBILITY_DETAILS: Record<
         cells: [
           { status: "validated", evidence: "Both delivery paths covered" },
           { status: "validated", evidence: "Both delivery paths covered" },
-          { status: "unsupported", evidence: "No I/Q capture" },
-          { status: "unsupported", evidence: "No I/Q capture" },
+          { status: "available", evidence: "ZIP up to 32 MiB; separate files above" },
+          { status: "available", evidence: "ZIP up to 32 MiB; separate files above" },
           {
             status: "available",
             evidence: "Browser download behavior applies",
@@ -395,7 +415,7 @@ const COMPATIBILITY_DETAILS: Record<
         ],
       },
     ],
-    note: "I/Q capture is retained locally in browser memory and capped at 32 MiB. A successful download request does not guarantee that the browser or operating system saved the file.",
+    note: "I/Q capture streams to private browser storage when available, with a bounded-memory fallback. A successful download request does not guarantee that the browser or operating system saved the file.",
   },
   browsers: {
     label: "Browsers",
@@ -940,55 +960,6 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
-function PositionPlot({
-  targets,
-  label,
-}: {
-  targets: {
-    latitude: number | null;
-    longitude: number | null;
-    label: string;
-  }[];
-  label: string;
-}) {
-  const positioned = targets.filter(
-    (
-      target,
-    ): target is { latitude: number; longitude: number; label: string } =>
-      target.latitude !== null && target.longitude !== null,
-  );
-  return (
-    <div className="target-plot">
-      <svg
-        viewBox="0 0 720 280"
-        role="img"
-        aria-label={`${label}: ${positioned.length} positioned targets`}
-      >
-        <rect width="720" height="280" />
-        {[90, 180, 270, 360, 450, 540, 630].map((x) => (
-          <line key={`x${x}`} x1={x} x2={x} y1="0" y2="280" />
-        ))}
-        {[70, 140, 210].map((y) => (
-          <line key={`y${y}`} x1="0" x2="720" y1={y} y2={y} />
-        ))}
-        {positioned.map((target) => (
-          <g
-            key={target.label}
-            transform={`translate(${(target.longitude + 180) * 2} ${((90 - target.latitude) * 280) / 180})`}
-          >
-            <circle r="4" />
-            <title>{target.label}</title>
-          </g>
-        ))}
-      </svg>
-      <small>
-        License-free equirectangular position plot · transmitted coordinates
-        only
-      </small>
-    </div>
-  );
-}
-
 function downloadDecodedTargets(mode: string, targets: unknown[]): void {
   const url = URL.createObjectURL(
     new Blob(
@@ -1046,6 +1017,7 @@ function downloadSrdSnapshot(receiver: ReceiverSnapshot): void {
 }
 
 function DiagnosticsPanel({
+  health,
   active,
   pipeline,
   receiver,
@@ -1055,6 +1027,7 @@ function DiagnosticsPanel({
   pipeline: AnalysisPipeline;
   receiver: ReceiverSnapshot;
   controller: ReceiverController;
+  health: ReactNode;
 }) {
   const visible = usePageVisible(active);
   const [diagnostics, setDiagnostics] = useState<AnalysisDiagnostics>(() =>
@@ -1250,127 +1223,132 @@ function DiagnosticsPanel({
     >
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Bounded telemetry</p>
+          <p className="eyebrow">Session health</p>
           <h2 id="diagnostics-heading">Session diagnostics</h2>
         </div>
       </div>
-      <DiagnosticReportCard context={reportContext} />
-      <dl className="diagnostics-grid">
-        <div>
-          <dt>Received bytes</dt>
-          <dd>
-            {diagnostics.receivedBytes === null
-              ? diagnostics.source === "synthetic"
-                ? "not applicable to generated demo"
-                : "unavailable until a source starts"
-              : formatCount(diagnostics.receivedBytes)}
-          </dd>
-        </div>
-        <div>
-          <dt>Complex samples</dt>
-          <dd>{formatCount(diagnostics.receivedComplexSamples)}</dd>
-        </div>
-        <div>
-          <dt>Worker processing</dt>
-          <dd>{processing}</dd>
-        </div>
-        {channel && (
-          <>
-            <div>
-              <dt>Channel queue</dt>
-              <dd>
-                {channel.queuedBlocks}/{channel.capacityBlocks} blocks · peak{" "}
-                {channel.peakQueuedBlocks}
-              </dd>
-            </div>
-            <div>
-              <dt>Channel processing</dt>
-              <dd>
-                {channel.computeAverageMs.toFixed(2)} ms avg ·{" "}
-                {channel.computeMaximumMs.toFixed(2)} ms max ·{" "}
-                {channel.computeBudgetPercent.toFixed(1)}% of sample time · last{" "}
-                {channel.recentBlocks} blocks
-              </dd>
-            </div>
-            <div>
-              <dt>Channel delivery</dt>
-              <dd>
-                {channel.deliveryAverageMs.toFixed(2)} ms avg ·{" "}
-                {channel.turnaroundMaximumMs.toFixed(2)} ms maximum round trip
-              </dd>
-            </div>
-          </>
-        )}
-        {ingress && (
-          <>
-            <div>
-              <dt>Transport lag budget</dt>
-              <dd>
-                {ingress.debtMs.toFixed(2)} / {ingress.budgetMs.toFixed(2)} ms ·
-                estimated callback debt
-              </dd>
-            </div>
-            {Object.entries(ingress.stages).map(([name, value]) => (
-              <div key={name}>
-                <dt>{name}</dt>
+      {health}
+      <details className="diagnostics-details">
+        <summary>Raw counters &amp; performance</summary>
+        <dl className="diagnostics-grid">
+          <div>
+            <dt>Received bytes</dt>
+            <dd>
+              {diagnostics.receivedBytes === null
+                ? diagnostics.source === "synthetic"
+                  ? "not applicable to generated demo"
+                  : "unavailable until a source starts"
+                : formatCount(diagnostics.receivedBytes)}
+            </dd>
+          </div>
+          <div>
+            <dt>Complex samples</dt>
+            <dd>{formatCount(diagnostics.receivedComplexSamples)}</dd>
+          </div>
+          <div>
+            <dt>Worker processing</dt>
+            <dd>{processing}</dd>
+          </div>
+          {channel && (
+            <>
+              <div>
+                <dt>Channel queue</dt>
                 <dd>
-                  {value.meanMs.toFixed(3)} ms avg · {value.p99Ms.toFixed(3)} ms
-                  p99 · {value.maxMs.toFixed(3)} ms recent max ·{" "}
-                  {value.lifetimeMaxMs.toFixed(3)} ms run max · last{" "}
-                  {value.count}
+                  {channel.queuedBlocks}/{channel.capacityBlocks} blocks · peak{" "}
+                  {channel.peakQueuedBlocks}
                 </dd>
               </div>
-            ))}
-          </>
-        )}
-        <div>
-          <dt>Analysis backend</dt>
-          <dd>
-            {diagnostics.analysisBackend ?? "initializing when a source starts"}
-            {diagnostics.backendStartupMs === null
-              ? ""
-              : ` · ${diagnostics.backendStartupMs.toFixed(2)} ms startup`}
-            {diagnostics.backendFallbackReason
-              ? ` · ${diagnostics.backendFallbackReason}`
-              : ""}
-          </dd>
-        </div>
-        <div>
-          <dt>Analysis blocks</dt>
-          <dd>{formatCount(diagnostics.processedBlocks)}</dd>
-        </div>
-        <div>
-          <dt>Display frames delivered</dt>
-          <dd>{formatCount(diagnostics.deliveredDisplayFrames)}</dd>
-        </div>
-        <div>
-          <dt>Display frames skipped</dt>
-          <dd>{formatCount(diagnostics.skippedSpectrumFrames)}</dd>
-        </div>
-        <div>
-          <dt>Input blocks skipped</dt>
-          <dd>
-            {formatCount(diagnostics.skippedInputBlocks)} ·{" "}
-            {formatCount(diagnostics.skippedInputSamples)} samples
-          </dd>
-        </div>
-        <div>
-          <dt>Known app discontinuities</dt>
-          <dd>{formatCount(diagnostics.knownApplicationDiscontinuities)}</dd>
-        </div>
-        <div>
-          <dt>Audio output state</dt>
-          <dd>{audio}</dd>
-        </div>
-        <div>
-          <dt>Audio underruns</dt>
-          <dd>unavailable (upstream player exposes no counter)</dd>
-        </div>
-        <div>
-          <dt>Hardware sample loss</dt>
-          <dd>unavailable (USB byte streams have no sequence numbers)</dd>
-        </div>
-      </dl>
+              <div>
+                <dt>Channel processing</dt>
+                <dd>
+                  {channel.computeAverageMs.toFixed(2)} ms avg ·{" "}
+                  {channel.computeMaximumMs.toFixed(2)} ms max ·{" "}
+                  {channel.computeBudgetPercent.toFixed(1)}% of sample time ·
+                  last {channel.recentBlocks} blocks
+                </dd>
+              </div>
+              <div>
+                <dt>Channel delivery</dt>
+                <dd>
+                  {channel.deliveryAverageMs.toFixed(2)} ms avg ·{" "}
+                  {channel.turnaroundMaximumMs.toFixed(2)} ms maximum round trip
+                </dd>
+              </div>
+            </>
+          )}
+          {ingress && (
+            <>
+              <div>
+                <dt>Transport lag budget</dt>
+                <dd>
+                  {ingress.debtMs.toFixed(2)} / {ingress.budgetMs.toFixed(2)} ms
+                  · estimated callback debt
+                </dd>
+              </div>
+              {Object.entries(ingress.stages).map(([name, value]) => (
+                <div key={name}>
+                  <dt>{name}</dt>
+                  <dd>
+                    {value.meanMs.toFixed(3)} ms avg · {value.p99Ms.toFixed(3)}{" "}
+                    ms p99 · {value.maxMs.toFixed(3)} ms recent max ·{" "}
+                    {value.lifetimeMaxMs.toFixed(3)} ms run max · last{" "}
+                    {value.count}
+                  </dd>
+                </div>
+              ))}
+            </>
+          )}
+          <div>
+            <dt>Analysis backend</dt>
+            <dd>
+              {diagnostics.analysisBackend ??
+                "initializing when a source starts"}
+              {diagnostics.backendStartupMs === null
+                ? ""
+                : ` · ${diagnostics.backendStartupMs.toFixed(2)} ms startup`}
+              {diagnostics.backendFallbackReason
+                ? ` · ${diagnostics.backendFallbackReason}`
+                : ""}
+            </dd>
+          </div>
+          <div>
+            <dt>Analysis blocks</dt>
+            <dd>{formatCount(diagnostics.processedBlocks)}</dd>
+          </div>
+          <div>
+            <dt>Display frames delivered</dt>
+            <dd>{formatCount(diagnostics.deliveredDisplayFrames)}</dd>
+          </div>
+          <div>
+            <dt>Display frames skipped</dt>
+            <dd>{formatCount(diagnostics.skippedSpectrumFrames)}</dd>
+          </div>
+          <div>
+            <dt>Input blocks skipped</dt>
+            <dd>
+              {formatCount(diagnostics.skippedInputBlocks)} ·{" "}
+              {formatCount(diagnostics.skippedInputSamples)} samples
+            </dd>
+          </div>
+          <div>
+            <dt>Known app discontinuities</dt>
+            <dd>{formatCount(diagnostics.knownApplicationDiscontinuities)}</dd>
+          </div>
+          <div>
+            <dt>Audio output state</dt>
+            <dd>{audio}</dd>
+          </div>
+          <div>
+            <dt>Audio underruns</dt>
+            <dd>unavailable (upstream player exposes no counter)</dd>
+          </div>
+          <div>
+            <dt>Hardware sample loss</dt>
+            <dd>unavailable (USB byte streams have no sequence numbers)</dd>
+          </div>
+        </dl>
+      </details>
+      <DiagnosticReportCard context={reportContext} />
     </section>
   );
 }
@@ -1394,6 +1372,11 @@ function ReceiverDecodePanel({
     controller.subscribe,
     controller.getSnapshot,
   );
+  // A mode switch publishes the selected mode before the new decoder has
+  // finished configuring. Avoid pairing that mode with the previous decoder's
+  // last status during the tuning window.
+  const modeChangePending =
+    receiver.lifecycle === "tuning" && receiver.message.startsWith("Applying ");
   return (
     <section
       className="control-panel rds-panel decode-panel receiver-dock-panel"
@@ -1406,52 +1389,58 @@ function ReceiverDecodePanel({
           <h2 id="decode-heading">Decoded data</h2>
         </div>
         <span
-          className={`status-pill ${(mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
         >
-          {mode === "OFF"
-            ? "spectrum only"
-            : mode === "DAB"
-              ? (receiver.dab?.state ?? "not started")
-              : mode === "ADS-B"
-                ? `${receiver.adsb?.validFrames ?? 0} valid frames`
-                : mode === "AIS"
-                  ? `${receiver.ais?.validFrames ?? 0} valid frames`
-                  : mode === "SRD"
-                    ? `${receiver.srd?.counters.bursts ?? 0} bursts`
-                    : receiver.rds?.validGroups
-                      ? `${receiver.rds.validGroups} valid groups`
-                      : source === "synthetic"
-                        ? "no audio"
-                        : `${mode} audio`}
+          {modeChangePending
+            ? "reconfiguring"
+            : mode === "OFF"
+              ? "spectrum only"
+              : mode === "DAB"
+                ? (receiver.dab?.state ?? "not started")
+                : mode === "ADS-B"
+                  ? `${receiver.adsb?.validFrames ?? 0} valid frames`
+                  : mode === "AIS"
+                    ? `${receiver.ais?.validFrames ?? 0} valid frames`
+                    : mode === "SRD"
+                      ? `${receiver.srd?.counters.bursts ?? 0} bursts`
+                      : receiver.rds?.validGroups
+                        ? `${receiver.rds.validGroups} valid groups`
+                        : source === "synthetic"
+                          ? "no audio"
+                          : `${mode} audio`}
         </span>
       </div>
       <div className="decode-layout">
         <div className="audio-summary">
           <span>
-            {mode === "OFF"
-              ? "Demodulation disabled"
-              : mode === "DAB"
-                ? "DAB+ audio output"
-                : mode === "ADS-B" || mode === "AIS" || mode === "SRD"
-                  ? "Data acquisition"
-                  : "Audio output"}
+            {modeChangePending
+              ? "Mode change"
+              : mode === "OFF"
+                ? "Demodulation disabled"
+                : mode === "DAB"
+                  ? "DAB+ audio output"
+                  : mode === "ADS-B" || mode === "AIS" || mode === "SRD"
+                    ? "Data acquisition"
+                    : "Audio output"}
           </span>
           <strong>
-            {mode === "OFF"
-              ? "No audio or decoder output"
-              : mode === "DAB"
-                ? (receiver.dab?.message ?? "Not active")
-                : mode === "ADS-B"
-                  ? (receiver.adsb?.message ?? "Not active")
-                  : mode === "AIS"
-                    ? (receiver.ais?.message ?? "Not active")
-                    : mode === "SRD"
-                      ? receiver.srd
-                        ? `${receiver.srd.devices.length} validated device(s)`
-                        : "Not active"
-                      : source === "synthetic"
-                        ? "Not available in demo"
-                        : (receiver.audioState ?? "Not active")}
+            {modeChangePending
+              ? receiver.message
+              : mode === "OFF"
+                ? "No audio or decoder output"
+                : mode === "DAB"
+                  ? (receiver.dab?.message ?? "Not active")
+                  : mode === "ADS-B"
+                    ? (receiver.adsb?.message ?? "Not active")
+                    : mode === "AIS"
+                      ? (receiver.ais?.message ?? "Not active")
+                      : mode === "SRD"
+                        ? receiver.srd
+                          ? `${receiver.srd.devices.length} validated device(s)`
+                          : "Not active"
+                        : source === "synthetic"
+                          ? "Not available in demo"
+                          : (receiver.audioState ?? "Not active")}
           </strong>
           <small>
             {mode === "OFF"
@@ -1469,564 +1458,572 @@ function ReceiverDecodePanel({
                         : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
           </small>
         </div>
-        <div className="rds-content">
-          <h3>
-            {mode === "OFF"
-              ? "Spectrum explorer"
-              : mode === "DAB"
-                ? "Digital Audio Broadcasting"
-                : mode === "ADS-B"
-                  ? "Aircraft targets"
-                  : mode === "AIS"
-                    ? "Vessel targets"
-                    : mode === "SRD"
-                      ? "Short-range devices"
-                      : "Radio Data System"}
-          </h3>
-          {mode === "OFF" ? (
-            <p className="rds-empty">
-              Spectrum-only mode keeps RF acquisition and analysis active
-              without sending samples to an audio or digital decoder.
-            </p>
-          ) : mode === "SRD" ? (
-            <>
-              <dl className="rds-grid">
-                <div>
-                  <dt>Bursts</dt>
-                  <dd>{receiver.srd?.counters.bursts ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Validated readings</dt>
-                  <dd>{receiver.srd?.counters.validatedReadings ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Unknown / rejected</dt>
-                  <dd>{receiver.srd?.counters.rejectedProtocolFrames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Queue drops</dt>
-                  <dd>{receiver.srdWorker?.droppedInputBlocks ?? 0}</dd>
-                </div>
-              </dl>
-              <div
-                className="srd-trace"
-                aria-label="Bounded SRD pulse inspector"
-              >
-                {(receiver.srd?.trace ?? []).slice(-512).map((point, index) => (
-                  <i
-                    key={`${point.inputSampleIndex}:${index}`}
-                    className={point.level ? "high" : "low"}
-                    title={`${point.inputSampleIndex}: envelope ${point.envelope.toFixed(3)}, discriminator ${point.discriminatorHz.toFixed(0)} Hz`}
-                  />
-                ))}
-              </div>
-              <p className="display-note">
-                {receiver.srd?.activeBurst
-                  ? "Burst in progress…"
-                  : receiver.srd?.bursts.length
-                    ? `${receiver.srd.bursts.length} recent burst(s); truncated bursts are marked below.`
-                    : "Waiting for a bounded burst. Unknown signals remain inspector-only."}
-              </p>
-              <div className="target-table-wrap">
-                <table className="target-table">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Protocol / integrity</th>
-                      <th>Measurements</th>
-                      <th>Last sample</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(receiver.srd?.devices ?? [])
-                      .slice(0, 32)
-                      .map((device) => {
-                        const reading = device.reading;
-                        return (
-                          <tr key={device.key}>
-                            <td>
-                              <strong>{reading.deviceId}</strong>
-                              <small>
-                                {device.readings} validated reading(s)
-                              </small>
-                            </td>
-                            <td>
-                              {reading.protocol}
-                              <small>{reading.integrity}</small>
-                            </td>
-                            <td>
-                              {reading.protocol === "acurite-592txr"
-                                ? `${reading.temperatureC.toFixed(1)} °C${reading.humidityPercent == null ? "" : ` · ${reading.humidityPercent}% RH`}`
-                                : `${reading.moisturePercent}% moisture · ${reading.batteryMillivolts} mV`}
-                            </td>
-                            <td>
-                              {device.lastInputSampleIndex.toLocaleString()}
+        {source !== "synthetic" &&
+          ["WBFM", "DAB", "ADS-B", "AIS", "SRD"].includes(mode) && (
+            <div className="rds-content">
+              <h3>
+                {mode === "OFF"
+                  ? "Spectrum explorer"
+                  : mode === "DAB"
+                    ? "Digital Audio Broadcasting"
+                    : mode === "ADS-B"
+                      ? "Aircraft targets"
+                      : mode === "AIS"
+                        ? "Vessel targets"
+                        : mode === "SRD"
+                          ? "Short-range devices"
+                          : "Radio Data System"}
+              </h3>
+              {mode === "OFF" ? (
+                <p className="rds-empty">
+                  Spectrum-only mode keeps RF acquisition and analysis active
+                  without sending samples to an audio or digital decoder.
+                </p>
+              ) : mode === "SRD" ? (
+                <>
+                  <div className="target-table-wrap">
+                    <table className="target-table">
+                      <thead>
+                        <tr>
+                          <th>Device</th>
+                          <th>Protocol / integrity</th>
+                          <th>Measurements</th>
+                          <th>Last sample</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(receiver.srd?.devices ?? [])
+                          .slice(0, 32)
+                          .map((device) => {
+                            const reading = device.reading;
+                            return (
+                              <tr key={device.key}>
+                                <td>
+                                  <strong>{reading.deviceId}</strong>
+                                  <small>
+                                    {device.readings} validated reading(s)
+                                  </small>
+                                </td>
+                                <td>
+                                  {reading.protocol}
+                                  <small>{reading.integrity}</small>
+                                </td>
+                                <td>
+                                  {reading.protocol === "acurite-592txr"
+                                    ? `${reading.temperatureC.toFixed(1)} °C${reading.humidityPercent == null ? "" : ` · ${reading.humidityPercent}% RH`}`
+                                    : `${reading.moisturePercent}% moisture · ${reading.batteryMillivolts} mV`}
+                                </td>
+                                <td>
+                                  {device.lastInputSampleIndex.toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {!receiver.srd?.devices.length && (
+                          <tr>
+                            <td colSpan={4}>
+                              No integrity-validated sensor reading yet.
                             </td>
                           </tr>
-                        );
-                      })}
-                    {!receiver.srd?.devices.length && (
-                      <tr>
-                        <td colSpan={4}>
-                          No integrity-validated sensor reading yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <details>
-                <summary>Recent pulse bursts</summary>
-                <ul className="srd-burst-list">
-                  {(receiver.srd?.bursts ?? []).slice(-4).map((burst) => (
-                    <li key={burst.id}>
-                      Burst {burst.id}: {burst.pulses.length} pulses
-                      {burst.truncated
-                        ? ` · truncated (${burst.truncationReason ?? "unknown"})`
-                        : ""}
-                      {burst.timingCandidates[0]
-                        ? ` · candidate ${burst.timingCandidates[0].symbolUs.toFixed(0)} µs (${burst.timingCandidates[0].basis})`
-                        : ""}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!receiver.srd}
-                onClick={() => downloadSrdSnapshot(receiver)}
-              >
-                Export bounded SRD JSON
-              </button>
-            </>
-          ) : mode === "DAB" ? (
-            <>
-              <p className="display-note">
-                Ensemble:{" "}
-                <strong>
-                  {receiver.dab?.ensemble?.label ||
-                    "Waiting for ensemble name…"}
-                </strong>
-              </p>
-              <label>
-                <span>DAB station</span>
-                <select
-                  aria-label="DAB station"
-                  disabled={
-                    receiver.lifecycle !== "running" ||
-                    !receiver.dab?.stations?.some((station) => station.playable)
-                  }
-                  value={
-                    receiver.dab?.serviceId == null
-                      ? ""
-                      : `${receiver.dab.serviceId}:${receiver.dab.subchannelId}`
-                  }
-                  onChange={(event) =>
-                    controller.selectDabService(event.target.value)
-                  }
-                >
-                  {receiver.dab?.serviceId == null && (
-                    <option value="">Discovering stations…</option>
-                  )}
-                  {receiver.dab?.stations?.map((station) => (
-                    <option
-                      key={station.key}
-                      value={station.key}
-                      disabled={!station.playable}
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={!receiver.srd}
+                    onClick={() => downloadSrdSnapshot(receiver)}
+                  >
+                    Export bounded SRD JSON
+                  </button>
+                  <details className="decoder-details">
+                    <summary>Decoder details</summary>{" "}
+                    <dl className="rds-grid">
+                      <div>
+                        <dt>Bursts</dt>
+                        <dd>{receiver.srd?.counters.bursts ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Validated readings</dt>
+                        <dd>{receiver.srd?.counters.validatedReadings ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Unknown / rejected</dt>
+                        <dd>
+                          {receiver.srd?.counters.rejectedProtocolFrames ?? 0}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Queue drops</dt>
+                        <dd>{receiver.srdWorker?.droppedInputBlocks ?? 0}</dd>
+                      </div>
+                    </dl>{" "}
+                    <div
+                      className="srd-trace"
+                      aria-label="Bounded SRD pulse inspector"
                     >
-                      {station.label ||
-                        `Service 0x${station.serviceId.toString(16).toUpperCase()}`}
-                      {!station.primary
-                        ? ` · subchannel ${station.subchannelId}`
+                      {(receiver.srd?.trace ?? [])
+                        .slice(-512)
+                        .map((point, index) => (
+                          <i
+                            key={`${point.inputSampleIndex}:${index}`}
+                            className={point.level ? "high" : "low"}
+                            title={`${point.inputSampleIndex}: envelope ${point.envelope.toFixed(3)}, discriminator ${point.discriminatorHz.toFixed(0)} Hz`}
+                          />
+                        ))}
+                    </div>
+                    <p className="display-note">
+                      {receiver.srd?.activeBurst
+                        ? "Burst in progress…"
+                        : receiver.srd?.bursts.length
+                          ? `${receiver.srd.bursts.length} recent burst(s); truncated bursts are marked below.`
+                          : "Waiting for a bounded burst. Unknown signals remain inspector-only."}
+                    </p>
+                    <details>
+                      <summary>Recent pulse bursts</summary>
+                      <ul className="srd-burst-list">
+                        {(receiver.srd?.bursts ?? []).slice(-4).map((burst) => (
+                          <li key={burst.id}>
+                            Burst {burst.id}: {burst.pulses.length} pulses
+                            {burst.truncated
+                              ? ` · truncated (${burst.truncationReason ?? "unknown"})`
+                              : ""}
+                            {burst.timingCandidates[0]
+                              ? ` · candidate ${burst.timingCandidates[0].symbolUs.toFixed(0)} µs (${burst.timingCandidates[0].basis})`
+                              : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </details>
+                </>
+              ) : mode === "DAB" ? (
+                <>
+                  <p className="display-note">
+                    Ensemble:{" "}
+                    <strong>
+                      {receiver.dab?.ensemble?.label ||
+                        "Waiting for ensemble name…"}
+                    </strong>
+                  </p>
+                  <DabMetadata metadata={receiver.dab?.programmeMetadata} />
+                  <details className="decoder-details">
+                    <summary>Decoder details</summary>
+                    <p className="display-note">
+                      Broadcast metadata:{" "}
+                      {receiver.dab?.padStatistics?.padUnits ?? 0} PAD units ·{" "}
+                      {receiver.dab?.padStatistics?.labelGroups ?? 0} text
+                      segments · {receiver.dab?.padStatistics?.motGroups ?? 0}{" "}
+                      image segments ·{" "}
+                      {receiver.dab?.padStatistics?.motObjects ?? 0} completed
+                      images
+                      {receiver.dab?.padStatistics?.motBytes
+                        ? ` · ${(receiver.dab.padStatistics.motBytes / 1024).toFixed(1)} KB assembling`
                         : ""}
-                      {station.bitrateKbps
-                        ? ` · ${station.bitrateKbps} kbps`
-                        : ""}
-                      {!station.dabPlus
-                        ? " · DAB (unsupported)"
-                        : !station.playable
-                          ? " · waiting for configuration"
-                          : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="display-note">
-                {receiver.dab?.stations?.length ?? 0} stations discovered.
-                Choose a station without retuning the channel.
-              </p>
-              <DabMetadata metadata={receiver.dab?.programmeMetadata} />
-              <p className="display-note">
-                Broadcast metadata: {receiver.dab?.padStatistics?.padUnits ?? 0}{" "}
-                PAD units · {receiver.dab?.padStatistics?.labelGroups ?? 0} text
-                segments · {receiver.dab?.padStatistics?.motGroups ?? 0} image
-                segments · {receiver.dab?.padStatistics?.motObjects ?? 0}{" "}
-                completed images
-                {receiver.dab?.padStatistics?.motBytes
-                  ? ` · ${(receiver.dab.padStatistics.motBytes / 1024).toFixed(1)} KB assembling`
-                  : ""}
-              </p>
-              <dl className="rds-grid">
-                <div>
-                  <dt>Transmission frames</dt>
-                  <dd>{receiver.dab?.frameCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Null symbols</dt>
-                  <dd>{receiver.dab?.nullSymbolCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Estimated signal/null</dt>
-                  <dd>
-                    {receiver.dab?.estimatedSnrDb == null
-                      ? "—"
-                      : `${receiver.dab.estimatedSnrDb.toFixed(1)} dB`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Coarse frequency offset</dt>
-                  <dd>
-                    {receiver.dab?.coarseFrequencyOffsetHz == null
-                      ? "—"
-                      : `${receiver.dab.coarseFrequencyOffsetHz.toFixed(0)} Hz`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Valid FIC blocks</dt>
-                  <dd>
-                    {receiver.dab?.ficBlockCount ?? 0} /{" "}
-                    {receiver.dab?.ficBlockAttempts ?? 0}
-                  </dd>
-                </div>
-                <div>
-                  <dt>FIC-bearing frames</dt>
-                  <dd>
-                    {receiver.dab?.ficFramesWithAny ?? 0} /{" "}
-                    {receiver.dab?.ficFrameCount ?? 0} (
-                    {receiver.dab?.ficCompleteFrames ?? 0} complete)
-                  </dd>
-                </div>
-                <div>
-                  <dt>FIBs per frame</dt>
-                  <dd>
-                    {receiver.dab?.ficSuccessHistogram
-                      ?.map((count, valid) =>
-                        count > 0 ? `${valid}:${count}` : "",
+                    </p>
+                    <dl className="rds-grid">
+                      <div>
+                        <dt>Transmission frames</dt>
+                        <dd>{receiver.dab?.frameCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Null symbols</dt>
+                        <dd>{receiver.dab?.nullSymbolCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Estimated signal/null</dt>
+                        <dd>
+                          {receiver.dab?.estimatedSnrDb == null
+                            ? "—"
+                            : `${receiver.dab.estimatedSnrDb.toFixed(1)} dB`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Coarse frequency offset</dt>
+                        <dd>
+                          {receiver.dab?.coarseFrequencyOffsetHz == null
+                            ? "—"
+                            : `${receiver.dab.coarseFrequencyOffsetHz.toFixed(0)} Hz`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Valid FIC blocks</dt>
+                        <dd>
+                          {receiver.dab?.ficBlockCount ?? 0} /{" "}
+                          {receiver.dab?.ficBlockAttempts ?? 0}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>FIC-bearing frames</dt>
+                        <dd>
+                          {receiver.dab?.ficFramesWithAny ?? 0} /{" "}
+                          {receiver.dab?.ficFrameCount ?? 0} (
+                          {receiver.dab?.ficCompleteFrames ?? 0} complete)
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>FIBs per frame</dt>
+                        <dd>
+                          {receiver.dab?.ficSuccessHistogram
+                            ?.map((count, valid) =>
+                              count > 0 ? `${valid}:${count}` : "",
+                            )
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Valid FIBs by coding group</dt>
+                        <dd>
+                          {receiver.dab?.ficGroupBlocks?.join(" · ") || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Decoder frequency correction</dt>
+                        <dd>
+                          {receiver.dab?.decoderCoarseCarrierOffsetHz ?? 0} Hz
+                          coarse
+                          {receiver.dab?.decoderCoarseCarrierLocked
+                            ? " (locked)"
+                            : ""}
+                          ,{" "}
+                          {receiver.dab?.decoderFineFrequencyCorrectionHz?.toFixed(
+                            1,
+                          ) ?? "0.0"}{" "}
+                          Hz fine
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Decoder timing start</dt>
+                        <dd>
+                          {receiver.dab?.decoderTimingStartSamples ?? 0} samples
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Frame interval / missed frames</dt>
+                        <dd>
+                          {(
+                            (receiver.dab?.frameIntervalSamples ?? 0) / 2048
+                          ).toFixed(1)}{" "}
+                          ms / {receiver.dab?.missedFrames ?? 0}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>OFDM/FEC processing (last / peak)</dt>
+                        <dd>
+                          {receiver.dab?.processingMs?.toFixed(1) ?? "0"} /{" "}
+                          {receiver.dab?.maxProcessingMs?.toFixed(1) ?? "0"} ms
+                          per 96 ms frame
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Q convention</dt>
+                        <dd>{receiver.dab?.quadraturePolarity ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Selected service</dt>
+                        <dd>
+                          {receiver.dab?.serviceId == null
+                            ? "—"
+                            : `0x${receiver.dab.serviceId.toString(16).toUpperCase()}`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>MSC subchannel</dt>
+                        <dd>{receiver.dab?.subchannelId ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>MSC logical frames</dt>
+                        <dd>{receiver.dab?.logicalFrameCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>DAB+ superframes</dt>
+                        <dd>{receiver.dab?.superframeCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Superframe candidates</dt>
+                        <dd>{receiver.dab?.superframeCandidateCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>RS-rejected candidates</dt>
+                        <dd>{receiver.dab?.reedSolomonFailureCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>RS columns (last / best)</dt>
+                        <dd>
+                          {receiver.dab?.lastCorrectedRsColumns ?? 0} /{" "}
+                          {receiver.dab?.bestCorrectedRsColumns ?? 0}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Fire-code failures</dt>
+                        <dd>{receiver.dab?.fireCodeFailureCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Audio format</dt>
+                        <dd>
+                          {receiver.dab?.audioFormat
+                            ? `DAB+ · ${receiver.dab.audioFormat.dacRate ? "48" : "32"} kHz · ${receiver.dab.audioFormat.stereo || receiver.dab.audioFormat.parametricStereo ? "Stereo" : "Mono"}${receiver.dab.audioFormat.sbr ? " · SBR" : ""}${receiver.dab.audioFormat.parametricStereo ? " · PS" : ""}`
+                            : "Waiting for audio format…"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Browser audio decoder</dt>
+                        <dd>
+                          {receiver.dab?.audioDecoderMessage ??
+                            "Waiting for validated audio"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Decoded PCM audio</dt>
+                        <dd>
+                          {receiver.dab?.decodedAudioSeconds?.toFixed(2) ??
+                            "0.00"}{" "}
+                          s
+                          {receiver.dab?.pcmSampleRateHz
+                            ? ` at ${receiver.dab.pcmSampleRateHz.toLocaleString()} Hz`
+                            : ""}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>AAC access units</dt>
+                        <dd>{receiver.dab?.accessUnitCount ?? 0}</dd>
+                      </div>
+                    </dl>
+                    <p className="display-note">
+                      The first available DAB+ station plays automatically. Use
+                      the station selector above to change programmes. Legacy
+                      MPEG Layer II DAB and encrypted services are not sent to
+                      the HE-AAC output path.
+                    </p>
+                  </details>
+                </>
+              ) : mode === "ADS-B" ? (
+                <>
+                  <PositionMap
+                    label="ADS-B target positions"
+                    points={(receiver.adsb?.targets ?? []).map((target) => ({
+                      latitude: target.latitude,
+                      longitude: target.longitude,
+                      label: target.callsign ?? target.icao,
+                    }))}
+                  />
+                  <div className="target-table-wrap">
+                    <table className="target-table">
+                      <thead>
+                        <tr>
+                          <th>Aircraft</th>
+                          <th>Altitude</th>
+                          <th>Speed / track</th>
+                          <th>Position</th>
+                          <th>Messages</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(receiver.adsb?.targets ?? [])
+                          .slice(0, 50)
+                          .map((target) => (
+                            <tr key={target.icao}>
+                              <td>
+                                <strong>{target.callsign ?? "—"}</strong>
+                                <small>{target.icao}</small>
+                              </td>
+                              <td>
+                                {target.altitudeFt == null
+                                  ? "—"
+                                  : `${target.altitudeFt.toLocaleString()} ft`}
+                              </td>
+                              <td>
+                                {target.groundSpeedKt == null
+                                  ? "—"
+                                  : `${target.groundSpeedKt.toFixed(0)} kt · ${target.trackDegrees?.toFixed(0) ?? "—"}°`}
+                              </td>
+                              <td>
+                                {target.latitude == null
+                                  ? "—"
+                                  : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
+                              </td>
+                              <td>{target.messages}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={!receiver.adsb?.targets.length}
+                    onClick={() =>
+                      downloadDecodedTargets(
+                        "ADS-B",
+                        receiver.adsb?.targets ?? [],
                       )
-                      .filter(Boolean)
-                      .join(" · ") || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Valid FIBs by coding group</dt>
-                  <dd>{receiver.dab?.ficGroupBlocks?.join(" · ") || "—"}</dd>
-                </div>
-                <div>
-                  <dt>Decoder frequency correction</dt>
-                  <dd>
-                    {receiver.dab?.decoderCoarseCarrierOffsetHz ?? 0} Hz coarse
-                    {receiver.dab?.decoderCoarseCarrierLocked
-                      ? " (locked)"
-                      : ""}
-                    ,{" "}
-                    {receiver.dab?.decoderFineFrequencyCorrectionHz?.toFixed(
-                      1,
-                    ) ?? "0.0"}{" "}
-                    Hz fine
-                  </dd>
-                </div>
-                <div>
-                  <dt>Decoder timing start</dt>
-                  <dd>
-                    {receiver.dab?.decoderTimingStartSamples ?? 0} samples
-                  </dd>
-                </div>
-                <div>
-                  <dt>Frame interval / missed frames</dt>
-                  <dd>
-                    {((receiver.dab?.frameIntervalSamples ?? 0) / 2048).toFixed(
-                      1,
-                    )}{" "}
-                    ms / {receiver.dab?.missedFrames ?? 0}
-                  </dd>
-                </div>
-                <div>
-                  <dt>OFDM/FEC processing (last / peak)</dt>
-                  <dd>
-                    {receiver.dab?.processingMs?.toFixed(1) ?? "0"} /{" "}
-                    {receiver.dab?.maxProcessingMs?.toFixed(1) ?? "0"} ms per 96
-                    ms frame
-                  </dd>
-                </div>
-                <div>
-                  <dt>Q convention</dt>
-                  <dd>{receiver.dab?.quadraturePolarity ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>Selected service</dt>
-                  <dd>
-                    {receiver.dab?.serviceId == null
-                      ? "—"
-                      : `0x${receiver.dab.serviceId.toString(16).toUpperCase()}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>MSC subchannel</dt>
-                  <dd>{receiver.dab?.subchannelId ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>MSC logical frames</dt>
-                  <dd>{receiver.dab?.logicalFrameCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>DAB+ superframes</dt>
-                  <dd>{receiver.dab?.superframeCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Superframe candidates</dt>
-                  <dd>{receiver.dab?.superframeCandidateCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>RS-rejected candidates</dt>
-                  <dd>{receiver.dab?.reedSolomonFailureCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>RS columns (last / best)</dt>
-                  <dd>
-                    {receiver.dab?.lastCorrectedRsColumns ?? 0} /{" "}
-                    {receiver.dab?.bestCorrectedRsColumns ?? 0}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Fire-code failures</dt>
-                  <dd>{receiver.dab?.fireCodeFailureCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Audio format</dt>
-                  <dd>
-                    {receiver.dab?.audioFormat
-                      ? `DAB+ · ${receiver.dab.audioFormat.dacRate ? "48" : "32"} kHz · ${receiver.dab.audioFormat.stereo || receiver.dab.audioFormat.parametricStereo ? "Stereo" : "Mono"}${receiver.dab.audioFormat.sbr ? " · SBR" : ""}${receiver.dab.audioFormat.parametricStereo ? " · PS" : ""}`
-                      : "Waiting for audio format…"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Browser audio decoder</dt>
-                  <dd>
-                    {receiver.dab?.audioDecoderMessage ??
-                      "Waiting for validated audio"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Decoded PCM audio</dt>
-                  <dd>
-                    {receiver.dab?.decodedAudioSeconds?.toFixed(2) ?? "0.00"} s
-                    {receiver.dab?.pcmSampleRateHz
-                      ? ` at ${receiver.dab.pcmSampleRateHz.toLocaleString()} Hz`
-                      : ""}
-                  </dd>
-                </div>
-                <div>
-                  <dt>AAC access units</dt>
-                  <dd>{receiver.dab?.accessUnitCount ?? 0}</dd>
-                </div>
-              </dl>
-              <p className="display-note">
-                The first available DAB+ station plays automatically. Use the
-                station selector above to change programmes. Legacy MPEG Layer
-                II DAB and encrypted services are not sent to the HE-AAC output
-                path.
-              </p>
-            </>
-          ) : mode === "ADS-B" ? (
-            <>
-              <dl className="rds-grid">
-                <div>
-                  <dt>Candidate frames</dt>
-                  <dd>{receiver.adsb?.frames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Valid frames</dt>
-                  <dd>{receiver.adsb?.validFrames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Rejected</dt>
-                  <dd>{receiver.adsb?.rejectedFrames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Targets</dt>
-                  <dd>{receiver.adsb?.targets.length ?? 0}</dd>
-                </div>
-              </dl>
-              <PositionPlot
-                label="ADS-B target positions"
-                targets={(receiver.adsb?.targets ?? []).map((target) => ({
-                  latitude: target.latitude,
-                  longitude: target.longitude,
-                  label: target.callsign ?? target.icao,
-                }))}
-              />
-              <div className="target-table-wrap">
-                <table className="target-table">
-                  <thead>
-                    <tr>
-                      <th>Aircraft</th>
-                      <th>Altitude</th>
-                      <th>Speed / track</th>
-                      <th>Position</th>
-                      <th>Messages</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(receiver.adsb?.targets ?? [])
-                      .slice(0, 50)
-                      .map((target) => (
-                        <tr key={target.icao}>
-                          <td>
-                            <strong>{target.callsign ?? "—"}</strong>
-                            <small>{target.icao}</small>
-                          </td>
-                          <td>
-                            {target.altitudeFt == null
-                              ? "—"
-                              : `${target.altitudeFt.toLocaleString()} ft`}
-                          </td>
-                          <td>
-                            {target.groundSpeedKt == null
-                              ? "—"
-                              : `${target.groundSpeedKt.toFixed(0)} kt · ${target.trackDegrees?.toFixed(0) ?? "—"}°`}
-                          </td>
-                          <td>
-                            {target.latitude == null
-                              ? "—"
-                              : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
-                          </td>
-                          <td>{target.messages}</td>
+                    }
+                  >
+                    Export targets JSON
+                  </button>
+                  <details className="decoder-details">
+                    <summary>Decoder details</summary>{" "}
+                    <dl className="rds-grid">
+                      <div>
+                        <dt>Preamble candidates</dt>
+                        <dd>{receiver.adsb?.preamblesDetected ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>CRC-valid Mode S</dt>
+                        <dd>{receiver.adsb?.crcValidFrames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Supported DF17/DF18</dt>
+                        <dd>{receiver.adsb?.validFrames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>CRC-valid unsupported DF</dt>
+                        <dd>{receiver.adsb?.unsupportedFrames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>CRC failures</dt>
+                        <dd>{receiver.adsb?.crcFailures ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Ambiguous bit decisions</dt>
+                        <dd>{receiver.adsb?.ambiguousFrames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Targets</dt>
+                        <dd>{receiver.adsb?.targets.length ?? 0}</dd>
+                      </div>
+                    </dl>
+                    <p className="display-note">
+                      CRC-valid counts zero-remainder parity. Address- or
+                      interrogator-overlaid Mode S replies cannot be
+                      independently validated here.
+                    </p>
+                  </details>
+                </>
+              ) : mode === "AIS" ? (
+                <>
+                  <PositionMap
+                    label="AIS vessel positions"
+                    points={(receiver.ais?.targets ?? []).map((target) => ({
+                      latitude: target.latitude,
+                      longitude: target.longitude,
+                      label: target.name ?? String(target.mmsi),
+                    }))}
+                  />
+                  <div className="target-table-wrap">
+                    <table className="target-table">
+                      <thead>
+                        <tr>
+                          <th>Vessel</th>
+                          <th>Channel</th>
+                          <th>Speed / course</th>
+                          <th>Position</th>
+                          <th>Messages</th>
                         </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!receiver.adsb?.targets.length}
-                onClick={() =>
-                  downloadDecodedTargets("ADS-B", receiver.adsb?.targets ?? [])
-                }
-              >
-                Export targets JSON
-              </button>
-            </>
-          ) : mode === "AIS" ? (
-            <>
-              <dl className="rds-grid">
-                <div>
-                  <dt>AIS 1 frames</dt>
-                  <dd>{receiver.ais?.channel1Frames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>AIS 2 frames</dt>
-                  <dd>{receiver.ais?.channel2Frames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Rejected</dt>
-                  <dd>{receiver.ais?.rejectedFrames ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Vessels</dt>
-                  <dd>{receiver.ais?.targets.length ?? 0}</dd>
-                </div>
-              </dl>
-              <PositionPlot
-                label="AIS vessel positions"
-                targets={(receiver.ais?.targets ?? []).map((target) => ({
-                  latitude: target.latitude,
-                  longitude: target.longitude,
-                  label: target.name ?? String(target.mmsi),
-                }))}
-              />
-              <div className="target-table-wrap">
-                <table className="target-table">
-                  <thead>
-                    <tr>
-                      <th>Vessel</th>
-                      <th>Channel</th>
-                      <th>Speed / course</th>
-                      <th>Position</th>
-                      <th>Messages</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(receiver.ais?.targets ?? [])
-                      .slice(0, 50)
-                      .map((target) => (
-                        <tr key={target.mmsi}>
-                          <td>
-                            <strong>{target.name ?? "—"}</strong>
-                            <small>{target.callSign ?? target.mmsi}</small>
-                          </td>
-                          <td>{target.channel}</td>
-                          <td>
-                            {target.speedKnots == null
-                              ? "—"
-                              : `${target.speedKnots.toFixed(1)} kt · ${target.courseDegrees?.toFixed(1) ?? "—"}°`}
-                          </td>
-                          <td>
-                            {target.latitude == null
-                              ? "—"
-                              : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
-                          </td>
-                          <td>{target.messages}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!receiver.ais?.targets.length}
-                onClick={() =>
-                  downloadDecodedTargets("AIS", receiver.ais?.targets ?? [])
-                }
-              >
-                Export targets JSON
-              </button>
-            </>
-          ) : mode !== "WBFM" ? (
-            <p className="rds-empty">
-              RDS decoding is available only in WBFM. Audio remains available
-              for the selected mode.
-            </p>
-          ) : !receiver.rds?.validGroups ? (
-            <p className="rds-empty">No validated station data decoded yet.</p>
-          ) : (
-            <dl className="rds-grid">
-              <div>
-                <dt>PI identifier</dt>
-                <dd>{receiver.rds.pi ?? "—"}</dd>
-              </div>
-              <div>
-                <dt>Programme Service</dt>
-                <dd>
-                  {receiver.rds.programmeService ??
-                    "Waiting for all PS segments…"}
-                </dd>
-              </div>
-              <div className="rds-text">
-                <dt>RadioText</dt>
-                <dd>{receiver.rds.radioText ?? "Waiting for RadioText…"}</dd>
-              </div>
-            </dl>
+                      </thead>
+                      <tbody>
+                        {(receiver.ais?.targets ?? [])
+                          .slice(0, 50)
+                          .map((target) => (
+                            <tr key={target.mmsi}>
+                              <td>
+                                <strong>{target.name ?? "—"}</strong>
+                                <small>{target.callSign ?? target.mmsi}</small>
+                              </td>
+                              <td>{target.channel}</td>
+                              <td>
+                                {target.speedKnots == null
+                                  ? "—"
+                                  : `${target.speedKnots.toFixed(1)} kt · ${target.courseDegrees?.toFixed(1) ?? "—"}°`}
+                              </td>
+                              <td>
+                                {target.latitude == null
+                                  ? "—"
+                                  : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
+                              </td>
+                              <td>{target.messages}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={!receiver.ais?.targets.length}
+                    onClick={() =>
+                      downloadDecodedTargets("AIS", receiver.ais?.targets ?? [])
+                    }
+                  >
+                    Export targets JSON
+                  </button>
+                  <details className="decoder-details">
+                    <summary>Decoder details</summary>{" "}
+                    <dl className="rds-grid">
+                      <div>
+                        <dt>AIS 1 frames</dt>
+                        <dd>{receiver.ais?.channel1Frames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>AIS 2 frames</dt>
+                        <dd>{receiver.ais?.channel2Frames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Rejected</dt>
+                        <dd>{receiver.ais?.rejectedFrames ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Vessels</dt>
+                        <dd>{receiver.ais?.targets.length ?? 0}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                </>
+              ) : mode !== "WBFM" ? (
+                <p className="rds-empty">
+                  RDS decoding is available only in WBFM. Audio remains
+                  available for the selected mode.
+                </p>
+              ) : !receiver.rds?.validGroups ? (
+                <p className="rds-empty">
+                  No validated station data decoded yet.
+                </p>
+              ) : (
+                <dl className="rds-grid">
+                  <div>
+                    <dt>PI identifier</dt>
+                    <dd>{receiver.rds.pi ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Programme Service</dt>
+                    <dd>
+                      {receiver.rds.programmeService ??
+                        "Waiting for all PS segments…"}
+                    </dd>
+                  </div>
+                  <div className="rds-text">
+                    <dt>RadioText</dt>
+                    <dd>
+                      {receiver.rds.radioText ?? "Waiting for RadioText…"}
+                    </dd>
+                  </div>
+                </dl>
+              )}
+              {mode === "WBFM" && (
+                <details className="decoder-details">
+                  <summary>Decoder details</summary>
+                  <p className="display-note">
+                    Text appears only after CRC and block-offset validation.
+                    Retuning, changing station PI, or leaving WBFM clears prior
+                    data.
+                  </p>
+                </details>
+              )}
+            </div>
           )}
-          {mode === "WBFM" && (
-            <p className="display-note">
-              Text appears only after CRC and block-offset validation. Retuning,
-              changing station PI, or leaving WBFM clears prior data.
-            </p>
-          )}
-        </div>
       </div>
     </section>
   );
@@ -2042,10 +2039,14 @@ export function ReceiverApp({
   const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
     controller.getSnapshot(),
   );
+  const [appliedSession, setAppliedSession] = useState(
+    () => controller.getSnapshot().session,
+  );
   const [initialSource] = useState(() =>
     loadSourceSelection(preferenceStorage),
   );
   const [source, setSource] = useState<SourceKind>(initialSource);
+  const [helpOs, setHelpOs] = useState<OperatingSystem>(() => operatingSystem());
   const [initialPreferences] = useState(() =>
     loadSourcePreferences(preferenceStorage, initialSource),
   );
@@ -2078,6 +2079,7 @@ export function ReceiverApp({
   const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(
     initialPreferences.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
   );
+  const [bladerfSettings, setBladeRfSettings] = useState<BladeRfRxSettings>(initialPreferences.bladerfSettings ?? { ...DEFAULT_BLADERF_RX_SETTINGS });
   const [usrpSettings, setUsrpSettings] = useState<UsrpB205RxSettings>(
     initialPreferences.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS },
   );
@@ -2090,9 +2092,11 @@ export function ReceiverApp({
       ? { hardwareSettings }
       : source === "usrp-b205"
         ? { usrpSettings }
-        : source === "rtl-sdr"
-          ? { gainDb }
-          : {};
+        : source === "bladerf"
+          ? { bladerfSettings }
+          : source === "rtl-sdr"
+            ? { gainDb }
+            : {};
   const currentModeSettings = useMemo(
     () => ({
       mode,
@@ -2114,7 +2118,9 @@ export function ReceiverApp({
           ? { gainDb }
           : source === "usrp-b205"
             ? { usrpSettings }
-            : {}),
+            : source === "bladerf"
+              ? { bladerfSettings }
+              : {}),
     });
   }, [
     currentModeSettings,
@@ -2129,17 +2135,18 @@ export function ReceiverApp({
     hardwareSettings,
     gainDb,
     usrpSettings,
+    bladerfSettings,
   ]);
   const [loadedReplay, setLoadedReplay] = useState<IqRecording>();
-  const [storedFpgaVersions, setStoredFpgaVersions] = useState<string[]>([]);
+  const [storedFpgaImages, setStoredFpgaImages] = useState<BladeRfHostedImage[]>([]);
   const [fpgaImageMessage, setFpgaImageMessage] = useState(
-    "Download the official image from Nuand, then import the .rbf once.",
+    "Import an official hosted image. Connect identifies the model and firmware and requires their matching image.",
   );
   const [importingFpgaImage, setImportingFpgaImage] = useState(false);
   const [fpgaImageError, setFpgaImageError] = useState<string>();
-  const refreshStoredFpgaVersions = useCallback(async () => {
+  const refreshStoredFpgaImages = useCallback(async () => {
     try {
-      setStoredFpgaVersions(await storedBladeRfImageVersions());
+      setStoredFpgaImages(await storedBladeRfImages());
     } catch (error) {
       setFpgaImageMessage(
         error instanceof Error
@@ -2149,8 +2156,8 @@ export function ReceiverApp({
     }
   }, []);
   useEffect(() => {
-    void refreshStoredFpgaVersions();
-  }, [refreshStoredFpgaVersions]);
+    void refreshStoredFpgaImages();
+  }, [refreshStoredFpgaImages]);
   const importFpgaImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
@@ -2160,9 +2167,9 @@ export function ReceiverApp({
     setFpgaImageMessage(`Verifying ${file.name}…`);
     try {
       const image = await importBladeRfImage(file);
-      await refreshStoredFpgaVersions();
+      await refreshStoredFpgaImages();
       setFpgaImageMessage(
-        `Verified and saved hostedxA4 ${image.version}. Connect the bladeRF again.`,
+        `Verified and saved official hosted${image.model} v${image.version}. Connect checks whether this exact model and firmware need it.`,
       );
     } catch (error) {
       setFpgaImageError(
@@ -2332,14 +2339,21 @@ export function ReceiverApp({
   >("center");
   const [sigmfChannelMhz, setSigmfChannelMhz] = useState("");
   const [fileMessage, setFileMessage] = useState(
-    "Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.",
+    "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or use the deterministic fixture.",
   );
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>();
+  const [captureCurrentChannel, setCaptureCurrentChannel] = useState(false);
   const [recordingFormat, setRecordingFormat] =
     useState<RecordingExportFormat>("browsersdr");
+  useEffect(() => {
+    if (source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT)) setRecordingFormat("sigmf");
+  }, [source, loadedReplay]);
   const [exportingRecording, setExportingRecording] = useState(false);
   const [exportCoordinator] = useState(() => new RecordingExportCoordinator());
-  useEffect(() => () => exportCoordinator.cancel(), [exportCoordinator]);
+  useEffect(() => {
+    void cleanupAbandonedRecordings().catch(() => undefined);
+    return () => exportCoordinator.discard();
+  }, [exportCoordinator]);
   const [retainedCapture, setRetainedCapture] =
     useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
   const [atlasPrepared, setAtlasPrepared] = useState<PreparedRecordingExport>();
@@ -2356,6 +2370,13 @@ export function ReceiverApp({
     useState<ReceiverDockView>("decode");
   const [receiverDockExpanded, setReceiverDockExpanded] = useState(true);
   const [scanActive, setScanActive] = useState(false);
+  const [spectrumStatus, setSpectrumStatus] = useState<SpectrumDisplayStatus>({
+    kind: "checking",
+    hasFrame: false,
+    paused: false,
+  });
+  const [captureView, setCaptureView] = useState<"record" | "open">("record");
+  const [recordingMessage, setRecordingMessage] = useState("");
   const [dabPlusAudioAvailable, setDabPlusAudioAvailable] = useState<
     boolean | null
   >(null);
@@ -2417,22 +2438,39 @@ export function ReceiverApp({
     }
   })();
   const encoding =
-    source === "bladerf" || source === "usrp-b205"
-      ? "sc16"
+    captureCurrentChannel && source !== "usrp-b205" && source !== "bladerf" && !(source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? "ci8" : source === "usrp-b205" || source === "bladerf"
+      ? "ci16_le"
       : source === "hackrf"
         ? "ci8"
         : source === "replay" && loadedReplay
-          ? loadedReplay.metadata.sampleEncoding === "signed-8-bit"
-            ? "ci8"
-            : "cu8"
+          ? loadedReplay.metadata.sampleEncoding === "signed-16-bit-little-endian"
+            ? "ci16_le"
+            : loadedReplay.metadata.sampleEncoding === "signed-8-bit"
+              ? "ci8"
+              : "cu8"
           : "cu8";
-  const recordingSupported = source !== "bladerf" && source !== "usrp-b205";
+  const recordingSupported = true;
   const nativeRateHz =
     receiver.session?.usrpB205?.nativeSampleRateHz ??
+    receiver.session?.bladerf?.acceptedSampleRateHz ??
     receiver.session?.bladerf?.nativeSampleRateHz ??
     receiver.session?.hackrf?.nativeSampleRateHz ??
     receiver.session?.actualSampleRateHz ??
     sampleRateHz;
+  const channelCapturePreview = (() => {
+    try {
+      return { plan: planChannelCapture({
+        actualSampleRateHz: nativeRateHz,
+        hardwareCenterFrequencyHz: receiver.session?.hardwareCenterFrequencyHz ?? frequencyMhz * 1_000_000,
+        selectedChannelFrequencyHz: receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000,
+        channelBandwidthHz: receiver.session?.channelBandwidthHz ?? bandwidthHz,
+        mode: receiver.session?.mode ?? mode,
+        bladerf: receiver.session?.bladerf,
+      }) };
+    } catch (error) { return { error: error instanceof Error ? error.message : "Channel capture is unavailable." }; }
+  })();
+  const captureRateHz = captureCurrentChannel && channelCapturePreview.plan ? channelCapturePreview.plan.outputSampleRateHz : nativeRateHz;
+  const captureBytesPerSample = source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? 4 : 2;
   const modeUnavailable = (candidate: ReceiverMode) =>
     sourceModeUnavailableReason(
       source,
@@ -2446,6 +2484,19 @@ export function ReceiverApp({
       (!sourceConfigurationEditable && hardwareConnected) ||
         source === "replay",
     );
+  const liveSession =
+    appliedSession?.source === source ? appliedSession : undefined;
+  const liveMode = liveSession?.mode ?? mode;
+  const displayedFrequencyHz = liveSession?.selectedChannelFrequencyHz;
+  const frequencyPending =
+    Boolean(liveSession) &&
+    (!Number.isFinite(frequencyMhz) ||
+      Math.round(frequencyMhz * 1_000_000) !==
+        Math.round(liveSession!.selectedChannelFrequencyHz));
+  const modePending = Boolean(liveSession && liveSession.mode !== mode);
+  const bandwidthPending = Boolean(
+    liveSession && liveSession.channelBandwidthHz !== bandwidthHz,
+  );
   const modeCaps = modeCapabilities(mode);
   const captureSlotBlocked =
     !["empty", "discarded", "download-requested"].includes(
@@ -2455,14 +2506,16 @@ export function ReceiverApp({
     retainedCapture.status,
   );
   const preparedCaptureAvailable =
-    ["prepared", "download-requested", "retry-available"].includes(
+    ["prepared", "download-requested", "retry-available", "storage-failed"].includes(
       retainedCapture.status,
     ) && Boolean(retainedCapture.basename);
+  const preparedCaptureNeedsSeparateFiles =
+    retainedCapture.retainedBytes > RECORDING_ARCHIVE_INPUT_MAX_BYTES;
 
   const settlePreparation = useCallback(
     (attempt: Promise<RetainRecordingResult>) => {
       setExportingRecording(true);
-      setFileMessage("Preparing completed recording…");
+      setRecordingMessage("Preparing completed recording…");
       void attempt.then((result) => {
         if (result.status === "prepared") {
           setAtlasPrepared(
@@ -2470,15 +2523,15 @@ export function ReceiverApp({
           );
           const format =
             result.prepared.format === "sigmf" ? "SigMF" : "BrowserSDR replay";
-          setFileMessage(
+          setRecordingMessage(
             `Prepared ${result.prepared.sampleCount.toLocaleString()} samples as ${format}. Choose one ZIP download or request the two compatible files.`,
           );
         } else if (result.status === "failure") {
-          setFileMessage(
-            `${result.error.message} The completed recording remains in memory; retry preparation.`,
+          setRecordingMessage(
+            `${result.error.message} ${exportCoordinator.getSnapshot().status === "storage-failed" ? "Capture storage failed; this recording cannot be exported. Discard it and start a new recording." : "The completed recording is available in this tab; retry preparation."}`,
           );
         } else if (result.status === "blocked") {
-          setFileMessage(
+          setRecordingMessage(
             "A prepared recording is still retained. Request its download or discard it before completing another capture.",
           );
         }
@@ -2518,6 +2571,11 @@ export function ReceiverApp({
       )
         return;
       previous = next;
+      // Controller transition snapshots include requested settings. Keep the
+      // last acknowledged session on live displays until the operation succeeds.
+      if (next.lifecycle === "running" || next.lifecycle === "connected")
+        setAppliedSession(next.session);
+      else if (!next.session) setAppliedSession(undefined);
       setReceiver(next);
     });
     return unsubscribe;
@@ -2558,7 +2616,9 @@ export function ReceiverApp({
                 ? { gainDb }
                 : source === "usrp-b205"
                   ? { usrpSettings }
-                  : {}),
+                  : source === "bladerf"
+                    ? { bladerfSettings }
+                    : {}),
             sampleRateHz,
           },
           device,
@@ -2588,6 +2648,7 @@ export function ReceiverApp({
     usrpFirmwareChecked,
     usrpFirmwareRef,
     usrpSettings,
+    bladerfSettings,
     volume,
   ]);
 
@@ -2658,7 +2719,9 @@ export function ReceiverApp({
               ? { gainDb }
               : source === "usrp-b205"
                 ? { usrpSettings }
-                : {}),
+                : source === "bladerf"
+                  ? { bladerfSettings }
+                  : {}),
           sampleRateHz,
         });
       }
@@ -2672,6 +2735,7 @@ export function ReceiverApp({
       sampleRateHz,
       source,
       usrpSettings,
+      bladerfSettings,
       volume,
     ]);
 
@@ -2691,11 +2755,7 @@ export function ReceiverApp({
   };
 
   const switchSource = async (nextSource: SourceKind) => {
-    if (
-      receiver.lifecycle !== "idle" &&
-      (receiver.lifecycle !== "error" || receiver.cleanupRequired)
-    )
-      await controller.disconnect();
+    if (receiver.lifecycle !== "idle") await controller.disconnect();
     if (controller.getSnapshot().cleanupRequired) return;
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
@@ -2713,7 +2773,13 @@ export function ReceiverApp({
       next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
     );
     setUsrpSettings(next.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS });
+    setBladeRfSettings(next.bladerfSettings ?? { ...DEFAULT_BLADERF_RX_SETTINGS });
     setSourceAdvancedOpen(false);
+    if (nextSource === "replay") {
+      setReceiverDockView("capture");
+      setReceiverDockExpanded(true);
+      setCaptureView("open");
+    }
     autoConnectAttempted.current = false;
     if (nextSource === "replay" && loadedReplay) {
       setMode(loadedReplay.metadata.mode);
@@ -2727,7 +2793,7 @@ export function ReceiverApp({
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
       );
-      setSampleRateHz(loadedReplay.metadata.sampleRateHz);
+      setSampleRateHz(recordingRoutingSampleRate(loadedReplay.metadata));
     }
     setSource(nextSource);
   };
@@ -2740,19 +2806,27 @@ export function ReceiverApp({
 
   const tune = useCallback(
     (frequencyHz: number) => {
+      analysis.cancelSignalCenter();
       if (sourceCapabilities(source).frequency.integerHz)
         frequencyHz = Math.round(frequencyHz);
       const nextMhz = frequencyHz / 1_000_000;
       setFrequencyMhz(nextMhz);
+      const previousGeneration = controller.getSnapshot().sessionGeneration;
       void controller.tune(frequencyHz).then(() => {
-        const accepted = controller.getSnapshot().session;
-        if (accepted)
+        const snapshot = controller.getSnapshot();
+        const accepted = snapshot.session;
+        if (
+          accepted &&
+          snapshot.lifecycle === "running" &&
+          snapshot.sessionGeneration !== previousGeneration
+        )
           setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
+        if (accepted?.bladerf?.rxSettings) setBladeRfSettings({ ...accepted.bladerf.rxSettings });
         const completed = controller.takeCompletedRecording();
         if (completed) retainCompletedRecording(completed);
       });
     },
-    [controller, retainCompletedRecording, source],
+    [analysis, controller, retainCompletedRecording, source],
   );
 
   const applyModeSettings = (rawSettings: ReceiverModeSettings) => {
@@ -2769,10 +2843,12 @@ export function ReceiverApp({
         controller.updateAnalogMode(settings);
         return;
       }
+      const hadFrequencyEdit = frequencyPending;
       void controller.configureMode(settings).then(() => {
         const accepted = controller.getSnapshot().session;
-        if (accepted)
+        if (accepted && !hadFrequencyEdit)
           setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
+        if (accepted?.bladerf?.rxSettings) setBladeRfSettings({ ...accepted.bladerf.rxSettings });
         const completed = controller.takeCompletedRecording();
         if (completed) retainCompletedRecording(completed);
       });
@@ -2820,6 +2896,14 @@ export function ReceiverApp({
     });
   };
 
+  const applyBladeRfHardware = async () => {
+    await controller.configureBladeRf(bladerfSettings);
+    const accepted = controller.getSnapshot().session?.bladerf?.rxSettings;
+    if (accepted) setBladeRfSettings({ ...accepted });
+    const completed = controller.takeCompletedRecording();
+    if (completed) retainCompletedRecording(completed);
+  };
+
   const applyHardware = async () => {
     await controller.configureHardware(hardwareSettings);
     const accepted = controller.getSnapshot().session?.hackrf?.captureSettings;
@@ -2849,15 +2933,27 @@ export function ReceiverApp({
     setRecordingStatus(undefined);
   };
 
-  const startRecording = () => {
-    const status = controller.startRecording();
+  const recordingStartPending = useRef(false);
+  const startRecording = async () => {
+    if (recordingStartPending.current) return;
+    recordingStartPending.current = true;
+    let status: RecordingStatus | undefined;
+    try {
+      const storageMode = await prepareRecordingStorage();
+      status = controller.startRecording(undefined, { captureCurrentChannel, storageMode });
+    }
+    catch (error) { setRecordingMessage(error instanceof Error ? error.message : "Recording could not start."); return; }
+    finally { recordingStartPending.current = false; }
     setRecordingStatus(status);
     if (status) {
       recordingFormatLatch.begin(recordingFormat);
-      setFileMessage(
+      const destination = status.storage === "opfs"
+        ? "private browser storage"
+        : "bounded memory";
+      setRecordingMessage(
         recordingFormat === "sigmf"
-          ? `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare paired SigMF data and metadata.`
-          : `Recording ${encoding.toUpperCase()} I/Q in bounded memory. Stop to prepare the BrowserSDR binary and JSON sidecar.`,
+          ? `Recording ${encoding.toUpperCase()} I/Q to ${destination}. Stop to prepare paired SigMF data and metadata.`
+          : `Recording ${encoding.toUpperCase()} I/Q to ${destination}. Stop to prepare the BrowserSDR binary and JSON sidecar.`,
       );
     }
   };
@@ -2874,18 +2970,37 @@ export function ReceiverApp({
   const retryRecordingPreparation = () =>
     settlePreparation(exportCoordinator.retryPreparation());
 
+  const downloadRecordingFilesDirectly = async () => {
+    setRecordingMessage(
+      "Preparing separate files in this page, without the recording worker…",
+    );
+    setExportingRecording(true);
+    const result = await exportCoordinator.requestDirectFileDownload();
+    setExportingRecording(false);
+    setRetainedCapture(exportCoordinator.getSnapshot());
+    if (result.status === "download-requested") {
+      setRecordingMessage(
+        `Separate-file downloads requested for ${result.name}. This recovery path does not contact SigIntAtlas. Browser download requests do not confirm that the files were stored.`,
+      );
+    } else if (result.status === "failure") {
+      setRecordingMessage(
+        `${result.error.message} The completed recording is available in this tab.`,
+      );
+    }
+  };
+
   const requestRecordingDownload = async (kind: RecordingDownloadKind) => {
-    setFileMessage("Preparing recording download…");
+    setRecordingMessage("Preparing recording download…");
     setExportingRecording(true);
     const result = await exportCoordinator.requestDownload(kind);
     setExportingRecording(false);
     setRetainedCapture(exportCoordinator.getSnapshot());
     if (result.status === "download-requested") {
-      setFileMessage(
+      setRecordingMessage(
         `${kind === "archive" ? "Archive" : "Separate-file"} download requested for ${result.name}. Browser download requests do not confirm that the file was stored; the prepared capture remains available for retry.`,
       );
     } else if (result.status === "failure")
-      setFileMessage(
+      setRecordingMessage(
         `${result.error.message} The prepared capture remains available.`,
       );
   };
@@ -2894,7 +3009,7 @@ export function ReceiverApp({
     exportCoordinator.discard();
     setAtlasPrepared(undefined);
     setRetainedCapture(exportCoordinator.getSnapshot());
-    setFileMessage("Prepared recording discarded from memory.");
+    setRecordingMessage("Prepared recording discarded from memory.");
   };
 
   const captureSurveyCandidates = useCallback(
@@ -2950,6 +3065,7 @@ export function ReceiverApp({
           const requestedSeconds = band?.captureSeconds ?? 10;
           const captureSeconds = Math.min(requestedSeconds, maximumSeconds);
           recordingFormatLatch.begin("sigmf");
+          const storageMode = await prepareRecordingStorage();
           const status = controller.startRecording({
             sessionId,
             profileName: profile.name,
@@ -2957,7 +3073,7 @@ export function ReceiverApp({
             bandName: candidate.bandName,
             detector: candidate.detector,
             signal: candidate.annotation,
-          });
+          }, { storageMode });
           if (!status) {
             recordingFormatLatch.complete("sigmf");
             throw new Error(
@@ -3102,7 +3218,7 @@ export function ReceiverApp({
     setBandwidthHz(recording.metadata.channelBandwidthHz);
     setSquelch(recording.metadata.squelch);
     setBeatToneHz(recording.metadata.beatToneHz ?? 600);
-    setSampleRateHz(recording.metadata.sampleRateHz);
+    setSampleRateHz(recordingRoutingSampleRate(recording.metadata));
     setSource("replay");
     setFileMessage(message);
   };
@@ -3221,13 +3337,15 @@ export function ReceiverApp({
   };
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell${activeView === "receiver" ? " receiver-workspace" : ""}`}
+    >
       <div className="app-topbar">
         <header className="app-header">
           <div className="brand-lockup">
             <img
               className="brand-logo"
-              src="/brand/logo-observatory-dish-v3-theme-aligned.png"
+              src={`${import.meta.env.BASE_URL}brand/logo-observatory-dish-v3-theme-aligned.png`}
               alt=""
               width="1254"
               height="1254"
@@ -3255,9 +3373,15 @@ export function ReceiverApp({
           </span>
           <i aria-hidden="true">→</i>
           <span className="operational-stage">
-            <small>Channel · {mode}</small>
+            <small>
+              {liveSession ? "Channel" : "Configured"} · {liveMode}
+            </small>
             <strong>
-              {Number.isFinite(frequencyMhz) ? frequencyMhz.toFixed(6) : "—"}{" "}
+              {displayedFrequencyHz !== undefined
+                ? (displayedFrequencyHz / 1_000_000).toFixed(6)
+                : Number.isFinite(frequencyMhz)
+                  ? frequencyMhz.toFixed(6)
+                  : "—"}{" "}
               MHz
             </strong>
           </span>
@@ -3267,13 +3391,13 @@ export function ReceiverApp({
             <strong>
               {source === "synthetic"
                 ? "Spectrum only"
-                : mode === "OFF"
+                : liveMode === "OFF"
                   ? "Spectrum only"
-                  : ["ADS-B", "AIS", "SRD"].includes(mode)
-                    ? `${mode} data`
-                    : mode === "DAB"
+                  : ["ADS-B", "AIS", "SRD"].includes(liveMode)
+                    ? `${liveMode} data`
+                    : liveMode === "DAB"
                       ? "DAB+ audio"
-                      : `${mode} audio`}
+                      : `${liveMode} audio`}
             </strong>
           </span>
         </div>
@@ -3465,7 +3589,7 @@ export function ReceiverApp({
                     ) : (
                       <SetupFileRow
                         name="FPGA image"
-                        verified={storedFpgaVersions.length > 0}
+                        verified={storedFpgaImages.length > 0}
                         importing={importingFpgaImage}
                         disabled={
                           transitioning ||
@@ -3505,12 +3629,12 @@ export function ReceiverApp({
                           </p>
                           {BLADERF_HOSTED_IMAGES.map((image) => (
                             <a
-                              key={image.version}
+                              key={`${image.model}-${image.version}`}
                               href={image.upstreamUrl}
                               target="_blank"
                               rel="noreferrer"
                             >
-                              FPGA v{image.version} · firmware{" "}
+                              hosted{image.model} v{image.version} · firmware{" "}
                               {image.version === "0.15.3" ? "2.4" : "2.5+"}
                             </a>
                           ))}
@@ -3519,6 +3643,17 @@ export function ReceiverApp({
                     </details>
                   </div>
                 )}
+                {caps.requiresUsb &&
+                  !hardwareConnected &&
+                  !transitioning &&
+                  !receiver.cleanupRequired && (
+                    <ConnectionReadiness
+                      source={source}
+                      availability={usbAvailability()}
+                      os={helpOs}
+                      onOsChange={setHelpOs}
+                    />
+                  )}
                 {caps.persistentConnection ? (
                   <div className="connection-stack">
                     <span
@@ -3537,10 +3672,28 @@ export function ReceiverApp({
                               ? "Disconnecting…"
                               : receiver.cleanupRequired
                                 ? "Disconnect to release the device"
-                                : receiver.lifecycle === "error"
-                                  ? "Device needs attention · see details below"
-                                  : "Not connected"}
+                                : receiver.issue?.code === "selection-cancelled"
+                                  ? "Not connected"
+                                  : receiver.lifecycle === "error"
+                                    ? "Device needs attention · see details below"
+                                    : "Not connected"}
                     </span>
+                    {receiver.issue && receiver.issue.code !== "selection-cancelled" && (
+                      <button
+                        type="button"
+                        className="acquire-recovery-link secondary"
+                        onClick={() => {
+                          const details = document.querySelector<HTMLDetailsElement>(".receiver-recovery .connection-help-details");
+                          if (details) {
+                            details.open = true;
+                            details.querySelector<HTMLElement>("summary")?.focus();
+                            details.scrollIntoView({ block: "nearest" });
+                          }
+                        }}
+                      >
+                        Recovery help
+                      </button>
+                    )}
                     {hardwareConnected ||
                     receiver.cleanupRequired ||
                     receiver.lifecycle === "disconnecting" ? (
@@ -3585,7 +3738,7 @@ export function ReceiverApp({
                               ? source === "usrp-b205"
                                 ? "Connecting & initializing…"
                                 : "Connecting…"
-                              : receiver.lifecycle === "error"
+                              : receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled"
                                 ? "Retry connection"
                                 : "Connect"}
                         </span>
@@ -3611,7 +3764,7 @@ export function ReceiverApp({
                       <p className="acquire-hint">
                         Import both files to enable Connect.
                       </p>
-                    ) : source === "bladerf" && !storedFpgaVersions.length ? (
+                    ) : source === "bladerf" && !storedFpgaImages.length ? (
                       <p className="acquire-hint">
                         Connect checks whether an FPGA image is needed.
                       </p>
@@ -3680,7 +3833,9 @@ export function ReceiverApp({
                             : `${gainDb.toFixed(1)} dB gain`
                           : caps.gain.kind === "hackrf-stages"
                             ? `LNA ${hardwareSettings.rxLnaGainCode} · VGA ${hardwareSettings.rxVgaGainDb} dB`
-                            : "slow-attack AGC"}
+                            : source === "bladerf"
+                              ? `${receiver.session?.bladerf?.rxInput ?? bladerfSettings.rxInput} · ${BLADERF_GAIN_MODES[receiver.session?.bladerf?.gainMode ?? bladerfSettings.gainMode].label}`
+                              : "slow-attack AGC"}
                       </small>
                     </summary>
                     <div className="advanced-settings-body">
@@ -3689,11 +3844,7 @@ export function ReceiverApp({
                           Sample rate
                           <select
                             value={sampleRateHz}
-                            disabled={
-                              transitioning ||
-                              running ||
-                              (source === "usrp-b205" && hardwareConnected)
-                            }
+                            disabled={transitioning || running}
                             onChange={(event) =>
                               setSampleRateHz(Number(event.currentTarget.value))
                             }
@@ -3715,13 +3866,20 @@ export function ReceiverApp({
                               </option>
                             ))}
                           </select>
+                          {hardwareConnected &&
+                            receiver.session?.actualSampleRateHz !==
+                              sampleRateHz && (
+                              <small className="pending-change">
+                                Change pending · applies when reception starts
+                              </small>
+                            )}
                           <small>
                             {source === "hackrf"
                               ? "4.8, 9.6 and experimental 19.2 MS/s widen the spectrum and native recording; the selected channel is filtered to 2.4 MS/s. Stop reception to change rate without disconnecting."
                               : source === "bladerf"
-                                ? "The xA4 accepts native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
+                                ? "All supported bladeRF 2.0 Micro variants use native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
                                 : source === "usrp-b205"
-                                  ? "Choose 4.8, 9.6 or 19.2 MS/s before connecting. Disconnect to change the rate; demodulation uses a 2.4 MS/s selected-channel path."
+                                  ? "Stop reception to change rate. The new rate is applied when reception starts; the USRP is reinitialized automatically. Demodulation uses a 2.4 MS/s selected-channel path."
                                   : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses. Stop reception to change rate without disconnecting."}
                           </small>
                         </label>
@@ -3871,27 +4029,59 @@ export function ReceiverApp({
                             into device memory as needed. Saved browser copies
                             are reused.
                           </p>
-                          <p>{usrpFirmwareMessage}</p>
-                          <p>{usrpImageMessage}</p>
+                          {!usrpFirmwareRef.current && (
+                            <p>{usrpFirmwareMessage}</p>
+                          )}
+                          {!usrpImageRef.current && (
+                            <p>{usrpImageMessage}</p>
+                          )}
                         </div>
                       )}
+                      {source === "bladerf" && <BladeRfControls
+                        settings={bladerfSettings} onChange={setBladeRfSettings}
+                        onApply={() => void applyBladeRfHardware()}
+                        connected={hardwareConnected} busy={transitioning}
+                        frequencyHz={receiver.session?.hardwareCenterFrequencyHz ?? frequencyMhz * 1_000_000}
+                        accepted={receiver.session?.bladerf}
+                      />}
                       {source === "bladerf" && (
                         <div className="device-setup-details">
                           <p>
-                            Firmware 2.4 uses FPGA v0.15.3; firmware 2.5+ uses
-                            v0.16.0. Connect checks compatibility and loads the
-                            matching image if needed.
+                            Firmware 2.4 requires hosted model image v0.15.3;
+                            firmware 2.5 or newer requires v0.16.0. Connect
+                            detects the exact model and firmware. Missing or
+                            mismatched images stop connection before FPGA
+                            programming.
                           </p>
+                          {receiver.session?.bladerf && (() => {
+                            const details = receiver.session.bladerf;
+                            const identity = details.identity;
+                            const requiredImage = selectBladeRfImage(identity.model, identity.firmware);
+                            return (
+                              <p role="status" aria-label="Detected bladeRF model and image">
+                                Detected {bladeRfModelLabel(identity.model)} · firmware {identity.firmware.major}.{identity.firmware.minor} · required hosted{requiredImage.model} v{requiredImage.version}.{" "}
+                                {identity.variantValidation === "experimental"
+                                  ? "This xA5/xA9 receive profile is experimental and awaits owner hardware validation. "
+                                  : "Existing xA4 receive profile. "}
+                                {identity.volatileImage
+                                  ? `Verified volatile image: hosted${identity.volatileImage.model} v${identity.volatileImage.version} (SHA-256 ${identity.volatileImage.sha256.slice(0, 12)}…).`
+                                  : `Preconfigured FPGA v${identity.fpga.major}.${identity.fpga.minor}.${identity.fpga.patch}; exact image provenance is unknown.`}
+                              </p>
+                            );
+                          })()}
                           <p>
                             Receive only · no flash writes. Device configuration
                             disappears after power loss; saved browser copies
                             are reused.
                           </p>
                           <p>
-                            {storedFpgaVersions.length
-                              ? `Saved: ${storedFpgaVersions.map((version) => `v${version}`).join(", ")}.`
+                            {storedFpgaImages.length
+                              ? `Saved: ${storedFpgaImages.map((image) => `hosted${image.model} v${image.version}`).join(", ")}.`
                               : "No saved image."}{" "}
                             {fpgaImageMessage}
+                          </p>
+                          <p>
+                            xA5 and xA9 are experimental pending owner hardware validation. The larger FPGA does not increase supported reception rates.
                           </p>
                         </div>
                       )}
@@ -3940,7 +4130,51 @@ export function ReceiverApp({
                       </option>
                     ))}
                   </select>
+                  {modePending ? (
+                    <small className="pending-change">
+                      Change pending ·{" "}
+                      {running || receiver.lifecycle === "tuning"
+                        ? "applying…"
+                        : "applies when reception starts"}
+                    </small>
+                  ) : (
+                    running && <small>Applies immediately</small>
+                  )}
                 </label>
+                {mode === "DAB" && (
+                  <label>
+                    Band III channel
+                    <select
+                      value={
+                        dabChannelAt(frequencyMhz * 1_000_000)?.label ??
+                        "custom"
+                      }
+                      disabled={transitioning}
+                      onChange={(event) => {
+                        const channel = DAB_BAND_III_CHANNELS.find(
+                          (candidate) =>
+                            candidate.label === event.currentTarget.value,
+                        );
+                        if (!channel) return;
+                        setFrequencyMhz(channel.frequencyHz / 1_000_000);
+                        if (running) tune(channel.frequencyHz);
+                      }}
+                    >
+                      {!dabChannelAt(frequencyMhz * 1_000_000) && (
+                        <option value="custom">Custom frequency</option>
+                      )}
+                      {DAB_BAND_III_CHANNELS.map((channel) => (
+                        <option key={channel.label} value={channel.label}>
+                          {channel.label} ·{" "}
+                          {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {mode === "DAB" && (
+                  <DabStationControl controller={controller} />
+                )}
                 <label>
                   Channel frequency
                   <span className="unit-input">
@@ -3958,54 +4192,84 @@ export function ReceiverApp({
                         if (event.key === "Enter" && running && frequencyValid)
                           tune(frequencyMhz * 1_000_000);
                       }}
-                      aria-describedby="frequency-help"
+                      aria-label="Channel frequency"
+                      aria-describedby="frequency-help frequency-state"
                     />
                     <span>MHz</span>
                   </span>
                   <small id="frequency-help">
-                    {caps.frequency.limitsDiscoveredAtTune
-                      ? "Checked by the connected tuner"
-                      : `${caps.label}: ${caps.frequency.minimumHz / 1_000_000}–${caps.frequency.maximumHz / 1_000_000} MHz`}{" "}
-                    · stored internally as Hz
+                    {source === "synthetic"
+                      ? "Demo centre frequency in MHz"
+                      : caps.frequency.limitsDiscoveredAtTune
+                        ? "Checked by the connected tuner"
+                        : `${caps.label}: ${caps.frequency.minimumHz / 1_000_000}–${caps.frequency.maximumHz / 1_000_000} MHz`}{" "}
+                  </small>
+                  <small
+                    id="frequency-state"
+                    className={frequencyPending ? "pending-change" : ""}
+                    role="status"
+                  >
+                    {!frequencyValid
+                      ? "Enter a frequency within the supported range"
+                      : frequencyPending
+                        ? receiver.lifecycle === "tuning"
+                          ? "Applying frequency…"
+                          : running
+                            ? "Change pending · press Tune or Enter"
+                            : "Change pending · applies when reception starts"
+                        : liveSession
+                          ? "✓ Tuned"
+                          : "Applies when reception starts"}
                   </small>
                 </label>
+                <div className="channel-tune-actions">
                 <button
                   type="button"
                   className="secondary tune-button"
-                  disabled={!running || !frequencyValid}
+                  disabled={
+                    !running ||
+                    !frequencyValid ||
+                    transitioning ||
+                    !frequencyPending
+                  }
                   onClick={() => tune(frequencyMhz * 1_000_000)}
                 >
                   Tune
                 </button>
-                <label>
-                  Volume <output>{Math.round(volume * 100)}%</output>
-                  <input
-                    className="volume-slider"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={volume}
-                    disabled={
-                      source === "synthetic" ||
-                      ["OFF", "ADS-B", "AIS", "SRD"].includes(mode)
-                    }
-                    onChange={(event) =>
-                      updateVolume(event.currentTarget.valueAsNumber)
-                    }
-                  />
-                  <small>
-                    {source === "synthetic"
-                      ? "Demo has no audio output"
-                      : mode === "OFF"
-                        ? "Demodulation and audio are disabled"
-                        : ["ADS-B", "AIS", "SRD"].includes(mode)
-                          ? `${mode} is a data receiver`
-                          : mode === "DAB"
-                            ? "DAB+ audio"
-                            : `${mode} audio`}
-                  </small>
-                </label>
+                {["AM", "NBFM", "WBFM"].includes(mode) && <CenterSignalControl
+                  controller={controller}
+                  analysis={analysis}
+                  disabled={!running || transitioning || scanActive || Boolean(recordingStatus) || frequencyPending || !frequencyValid || source === "synthetic"}
+                  contextKey={`${source}:${mode}:${bandwidthHz}:${frequencyMhz}`}
+                  onAccepted={(frequencyHz) => setFrequencyMhz(frequencyHz / 1_000_000)}
+                />}
+                </div>
+                {mode === "WBFM" && (
+                  <FmStationSummary controller={controller} />
+                )}
+                {source !== "synthetic" &&
+                  !["OFF", "ADS-B", "AIS", "SRD"].includes(mode) && (
+                    <>
+                      <label>
+                        Volume <output>{Math.round(volume * 100)}%</output>
+                        <input
+                          className="volume-slider"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={volume}
+                          onChange={(event) =>
+                            updateVolume(event.currentTarget.valueAsNumber)
+                          }
+                        />
+                        <small>
+                          {mode === "DAB" ? "DAB+ audio" : `${mode} audio`} ·
+                          Applies immediately
+                        </small>
+                      </label>
+                    </>
+                  )}
               </div>
               <details
                 className="advanced-settings channel-advanced-settings"
@@ -4034,37 +4298,6 @@ export function ReceiverApp({
                   className="stage-controls demodulation-controls"
                   aria-label="Channel demodulation settings"
                 >
-                  {mode === "DAB" && (
-                    <label>
-                      Band III channel
-                      <select
-                        value={
-                          dabChannelAt(frequencyMhz * 1_000_000)?.label ??
-                          "custom"
-                        }
-                        disabled={transitioning}
-                        onChange={(event) => {
-                          const channel = DAB_BAND_III_CHANNELS.find(
-                            (candidate) =>
-                              candidate.label === event.currentTarget.value,
-                          );
-                          if (!channel) return;
-                          setFrequencyMhz(channel.frequencyHz / 1_000_000);
-                          if (running) tune(channel.frequencyHz);
-                        }}
-                      >
-                        {!dabChannelAt(frequencyMhz * 1_000_000) && (
-                          <option value="custom">Custom frequency</option>
-                        )}
-                        {DAB_BAND_III_CHANNELS.map((channel) => (
-                          <option key={channel.label} value={channel.label}>
-                            {channel.label} ·{" "}
-                            {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
                   {mode === "OFF" ? (
                     <p className="display-note">
                       No channel filter, audio demodulator, or digital decoder
@@ -4125,6 +4358,17 @@ export function ReceiverApp({
                       <small>
                         {modeCaps.minimumBandwidthHz.toLocaleString()}–
                         {modeCaps.maximumBandwidthHz.toLocaleString()} Hz
+                      </small>
+                      <small
+                        className={bandwidthPending ? "pending-change" : ""}
+                      >
+                        {bandwidthPending
+                          ? running
+                            ? "Change pending"
+                            : "Change pending · applies when reception starts"
+                          : running
+                            ? "Applies immediately"
+                            : "Applies when reception starts"}
                       </small>
                     </label>
                   ) : (
@@ -4266,12 +4510,32 @@ export function ReceiverApp({
           </div>
 
           <div
-            className={`receiver-status receiver-status-${receiver.lifecycle}`}
-            role={receiver.lifecycle === "error" ? "alert" : "status"}
+            className={`receiver-status receiver-status-${receiver.issue?.code === "selection-cancelled" ? "idle" : receiver.lifecycle}${receiver.issue ? " has-recovery" : ""}`}
+            role={receiver.issue?.code === "selection-cancelled" ? "status" : receiver.lifecycle === "error" || receiver.issue ? "alert" : "status"}
           >
             <span className="status-light" />
             <div>
               <strong>{receiver.message}</strong>
+              {receiver.issue && (
+                <ReceiverRecovery
+                  key={`${receiver.sessionGeneration}-${receiver.issue.code}`}
+                  issue={receiver.issue}
+                  cleanupRequired={Boolean(receiver.cleanupRequired)}
+                  activeConnection={hardwareConnected}
+                  os={helpOs}
+                  onOsChange={setHelpOs}
+                  onRelease={() => void disconnectReceiver()}
+                  onRetry={() => {
+                    if (receiver.issue?.code === "audio-blocked" || !caps.persistentConnection) start();
+                    else connectReceiver();
+                  }}
+                  onReviewSettings={() => {
+                    document.querySelector<HTMLSelectElement>('[aria-label="Signal source"]')?.focus();
+                    document.querySelector(".acquire-stage")?.scrollIntoView({ block: "nearest" });
+                  }}
+                  disabled={transitioning || scanActive}
+                />
+              )}
               {(running || hardwareConnected) && receiver.session ? (
                 <details className="receiver-session-details">
                   <summary>Session details</summary>
@@ -4296,7 +4560,7 @@ export function ReceiverApp({
                       : receiver.session.hackrf
                         ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
                         : receiver.session.bladerf
-                          ? "slow-attack AGC"
+                          ? `${receiver.session.bladerf.rxInput ?? "RX1"} · ${BLADERF_GAIN_MODES[receiver.session.bladerf.gainMode].label}${receiver.session.bladerf.gainMode === "manual" ? ` · ${receiver.session.bladerf.acceptedGainDb} dB gain readback` : ""}`
                           : receiver.session.usrpB205
                             ? "slow-attack AGC; no calibrated gain readback"
                             : "no hardware gain control"}{" "}
@@ -4316,7 +4580,7 @@ export function ReceiverApp({
                     {receiver.session.hackrf &&
                       ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
                     {receiver.session.bladerf &&
-                      ` · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · volatile hostedxA4 ${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA"} (hardware validation pending)`}
+                      ` · ${bladeRfModelLabel(receiver.session.bladerf.identity.model)} · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · verified volatile hosted${receiver.session.bladerf.identity.volatileImage.model} v${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA; exact image provenance unknown"} (${receiver.session.bladerf.identity.variantValidation === "experimental" ? "experimental; hardware validation pending" : "hardware validation pending"})`}
                     {receiver.session.usrpB205 &&
                       ` · native ${receiver.session.usrpB205.nativeSampleRateHz.toLocaleString()} samples/s CHDR/VRT SC16 LE · requested ${receiver.session.usrpB205.configuration.requested.requestedCenterFrequencyHz.toLocaleString()} Hz, synthesizer-calculated accepted ${receiver.session.usrpB205.configuration.acceptedCenterFrequencyHz.toLocaleString()} Hz · DDC-calculated ${receiver.session.usrpB205.configuration.acceptedSampleRateHz.toLocaleString()} samples/s · AD9361-read-back bandwidth ${receiver.session.usrpB205.configuration.acceptedBandwidthHz.toLocaleString()} Hz · FX3 ${receiver.session.usrpB205.capabilities.firmware.major}.${receiver.session.usrpB205.capabilities.firmware.minor}, FPGA ${receiver.session.usrpB205.capabilities.fpga.compatibilityMajor}.${receiver.session.usrpB205.capabilities.fpga.compatibilityMinor}, USB 3 · RX2/internal · timestamp ${receiver.session.usrpB205.observations.timestampRateValidation} (hardware validation pending)`}
                   </p>
@@ -4329,7 +4593,7 @@ export function ReceiverApp({
                 </p>
               ) : null}
             </div>
-            {receiver.lifecycle === "error" && (
+            {receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled" && (
               <button
                 type="button"
                 className="secondary report-error-button"
@@ -4347,8 +4611,16 @@ export function ReceiverApp({
         <WebGpuSpectrum
           active={activeView === "receiver"}
           pipeline={analysis}
-          session={receiver.session}
+          session={liveSession}
           onTune={running && !scanActive ? tune : undefined}
+          onStatusChange={setSpectrumStatus}
+          onOpenAcquire={() => {
+            setActiveView("receiver");
+            document
+              .getElementById("acquire-heading")
+              ?.scrollIntoView({ block: "start" });
+          }}
+          onOpenDiagnostics={() => setActiveView("diagnostics")}
         />
 
         <section
@@ -4408,7 +4680,7 @@ export function ReceiverApp({
           <ReceiverDecodePanel
             controller={controller}
             source={source}
-            mode={mode}
+            mode={liveMode}
             volume={volume}
             active={receiverDockExpanded && receiverDockView === "decode"}
           />
@@ -4424,313 +4696,459 @@ export function ReceiverApp({
                 <h2 id="recording-heading">I/Q recordings</h2>
               </div>
             </div>
-            <p>
-              {recordingSupported ? (
-                <>
-                  {encoding.toUpperCase()} stores interleaved{" "}
-                  {encoding === "ci8" ? "signed" : "unsigned"} 8-bit I,Q;
-                  hardware recordings preserve native transport bytes. The 32
-                  MiB memory cap is{" "}
-                  {recordingCapacitySeconds(nativeRateHz).toFixed(1)} seconds at
-                  the current/default rate; at 2.4 MS/s it is{" "}
-                  {recordingCapacitySeconds(2_400_000).toFixed(1)} seconds.
-                </>
-              ) : (
-                <>
-                  {source === "usrp-b205"
-                    ? "Native CHDR/VRT SC16 recording, SigMF hardware claims, and replay are intentionally unavailable in the first B205-mini release; live receive-only processing remains available."
-                    : "Native SC16 Q11 recording and replay are intentionally deferred from the first xA4 release; live reception remains available."}
-                </>
-              )}
-            </p>
-            <div className="recording-controls">
-              <label className="recording-format">
-                Export format
-                <select
-                  aria-label="Recording export format"
-                  value={recordingFormat}
-                  disabled={
-                    !recordingSupported ||
-                    formatControlDisabled(recordingStatus, exportingRecording)
-                  }
-                  onChange={(event) =>
-                    setRecordingFormat(
-                      event.currentTarget.value as RecordingExportFormat,
-                    )
-                  }
-                >
-                  {recordingSupported ? (
-                    <>
-                      <option value="browsersdr">
-                        BrowserSDR replay (.{encoding} + .json)
-                      </option>
-                      <option value="sigmf">
-                        SigMF (.sigmf-data + .sigmf-meta)
-                      </option>
-                    </>
-                  ) : (
-                    <option value={recordingFormat}>
-                      Unavailable for this receive profile
-                    </option>
-                  )}
-                </select>
+            <div
+              className="workspace-subtabs"
+              role="tablist"
+              aria-label="Recording workspace"
+              onKeyDown={(event) => {
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? "record"
+                    : event.key === "End"
+                      ? "open"
+                      : captureView === "record"
+                        ? "open"
+                        : "record";
+                setCaptureView(next);
+                document
+                  .getElementById(
+                    next === "record" ? "record-tab" : "open-recording-tab",
+                  )
+                  ?.focus();
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                id="record-tab"
+                aria-controls="record-panel"
+                aria-selected={captureView === "record"}
+                tabIndex={captureView === "record" ? 0 : -1}
+                onClick={() => setCaptureView("record")}
+              >
+                Record
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="open-recording-tab"
+                aria-controls="open-recording-panel"
+                aria-selected={captureView === "open"}
+                tabIndex={captureView === "open" ? 0 : -1}
+                onClick={() => setCaptureView("open")}
+              >
+                Open recording
+              </button>
+            </div>
+            <div
+              id="record-panel"
+              role="tabpanel"
+              aria-labelledby="record-tab"
+              hidden={captureView !== "record"}
+            >
+              <div
+                className={`recording-state ${preparedCaptureAvailable && !recordingStatus && !exportingRecording ? "is-ready" : ""}`}
+                role="status"
+              >
+                <strong>
+                  {exportingRecording
+                    ? "Preparing…"
+                    : recordingStatus
+                      ? "Recording"
+                      : preparedCaptureAvailable
+                        ? "✓ Recording ready"
+                        : retainedCapture.status === "storage-failed"
+                          ? "Capture storage failed"
+                        : retainedCapture.status === "retry-available"
+                          ? "Preparation failed"
+                          : !recordingSupported
+                            ? "Recording unavailable for this receiver"
+                            : "Ready to record"}
+                </strong>
+                {(recordingStatus ||
+                  retainedCapture.sampleCount !== undefined) && (
+                  <span>
+                    {(
+                      (recordingStatus?.sampleCount ??
+                        retainedCapture.sampleCount ??
+                        0) /
+                      (recordingStatus
+                        ? (recordingStatus.sampleRateHz ?? nativeRateHz)
+                        : (retainedCapture.sampleRateHz ?? nativeRateHz))
+                    ).toFixed(2)}{" "}
+                    s ·{" "}
+                    {(recordingStatus
+                      ? recordingStatus.bytes / (1024 * 1024)
+                      : retainedCapture.retainedBytes / (1024 * 1024)
+                    ).toFixed(2)}
+                    {recordingStatus
+                      ? ` / ${recordingStatus.maxBytes / (1024 * 1024)}`
+                      : ""}{" "}
+                    MiB
+                  </span>
+                )}
+              </div>
+              {retainedCapture.captureWarning && <p className="display-note" role="status">{retainedCapture.captureWarning}</p>}
+              {recordingSupported &&
+                !retainedCapturePresent &&
+                !recordingStatus && (
+                  <p className="display-note">
+                    Up to {Math.min(3600, recordingCapacitySeconds(captureRateHz, preferredRecordingStorageMode() === "opfs" ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES, captureBytesPerSample)).toFixed(1)} s
+                    at this sample rate · {preferredRecordingStorageMode() === "opfs" ? "2 GiB private browser storage limit" : "32 MiB memory fallback"}
+                    {!running ? " · start reception to record" : ""}.
+                  </p>
+                )}
+              <label className="checkbox-control channel-capture-toggle">
+                <input type="checkbox" checked={captureCurrentChannel}
+                  disabled={Boolean(recordingStatus) || exportingRecording}
+                  onChange={event => setCaptureCurrentChannel(event.currentTarget.checked)} />
+                Capture current channel only
               </label>
-              <button
-                type="button"
-                disabled={
-                  !recordingSupported ||
-                  !running ||
-                  scanActive ||
-                  Boolean(recordingStatus) ||
-                  exportingRecording ||
-                  captureSlotBlocked
-                }
-                onClick={startRecording}
-              >
-                Start I/Q recording
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!recordingStatus || exportingRecording}
-                onClick={stopRecording}
-              >
-                Stop & prepare
-              </button>
-              {retainedCapture.status === "retry-available" && (
+              {captureCurrentChannel && (
+                <p className="display-note" aria-live="polite">
+                  {channelCapturePreview.plan
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${channelCapturePreview.plan.outputSampleRateHz.toLocaleString()} samples/s · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    : channelCapturePreview.error}
+                </p>
+              )}
+              <div className="recording-controls">
+                <label className="recording-format">
+                  Export format
+                  <select
+                    aria-label="Recording export format"
+                    value={recordingFormat}
+                    disabled={
+                      !recordingSupported ||
+                      formatControlDisabled(recordingStatus, exportingRecording)
+                    }
+                    onChange={(event) =>
+                      setRecordingFormat(
+                        event.currentTarget.value as RecordingExportFormat,
+                      )
+                    }
+                  >
+                    {source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT) ? (
+                      <option value="sigmf">
+                        SigMF ci16_le (.sigmf-data + .sigmf-meta)
+                      </option>
+                    ) : recordingSupported ? (
+                      <>
+                        <option value="browsersdr">
+                          BrowserSDR replay (.{encoding} + .json)
+                        </option>
+                        <option value="sigmf">
+                          SigMF (.sigmf-data + .sigmf-meta)
+                        </option>
+                      </>
+                    ) : (
+                      <option value={recordingFormat}>
+                        Unavailable for this receive profile
+                      </option>
+                    )}
+                  </select>
+                </label>
+                {recordingStatus ? (
+                  <button
+                    type="button"
+                    disabled={exportingRecording}
+                    onClick={stopRecording}
+                  >
+                    Stop recording
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      !recordingSupported ||
+                      !running ||
+                      (captureCurrentChannel && !channelCapturePreview.plan) ||
+                      scanActive ||
+                      exportingRecording ||
+                      captureSlotBlocked
+                    }
+                    onClick={startRecording}
+                  >
+                    Start I/Q recording
+                  </button>
+                )}
+                {preparedCaptureAvailable && (
+                  <button
+                    type="button"
+                    disabled={exportingRecording}
+                    onClick={() => requestRecordingDownload(preparedCaptureNeedsSeparateFiles ? "separate" : "archive")}
+                  >
+                    {preparedCaptureNeedsSeparateFiles ? "Download separate files" : "Download ZIP"}
+                  </button>
+                )}
+                {retainedCapture.status === "retry-available" && (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={exportingRecording}
+                      onClick={retryRecordingPreparation}
+                    >
+                      Retry preparation
+                    </button>
+                    <button
+                      type="button"
+                      disabled={exportingRecording}
+                      onClick={downloadRecordingFilesDirectly}
+                    >
+                      Download files to disk
+                    </button>
+                  </>
+                )}
+              </div>
+              {retainedCapture.error && (
+                <p className="recording-error" role="alert">
+                  {retainedCapture.error} {retainedCapture.status === "storage-failed"
+                    ? "Capture storage failed; this recording cannot be exported. Discard it and start a new recording."
+                    : "The recording is available in this tab. Download before reloading or closing the page."}
+                </p>
+              )}
+              {retainedCapture.status === "download-requested" && (
+                <p className="display-note">
+                  Download requested. Download before reloading or closing this tab. Starting another recording replaces this
+                  prepared capture.
+                </p>
+              )}
+              {retainedCapturePresent && (
+                <details className="recording-more">
+                  <summary>More options</summary>
+                  <div className="recording-controls">
+                    {preparedCaptureAvailable && !preparedCaptureNeedsSeparateFiles && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={exportingRecording}
+                        onClick={() => requestRecordingDownload("separate")}
+                      >
+                        Download separate files
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={
+                        exportingRecording ||
+                        atlasTransferActive ||
+                        Boolean(recordingStatus)
+                      }
+                      onClick={discardPreparedRecording}
+                    >
+                      Discard prepared capture
+                    </button>
+                  </div>
+                  <small>
+                    Discard releases the prepared capture from browser storage. Download before reloading or closing this tab; prepared captures are not restored after reload.
+                  </small>
+                </details>
+              )}
+              <details className="recording-details">
+                <summary>Recording details</summary>
+                <p className="display-note">
+                  {encoding.toUpperCase()} I/Q ·{" "}
+                  {(RETAINED_CAPTURE_MAX_BYTES / (1024 * 1024 * 1024)).toFixed(0)} GiB
+                  retained-capture storage limit. ZIP is limited to 32 MiB;
+                  use separate files for larger captures. The format is fixed for each
+                  recording. A download request does not confirm that the
+                  browser saved the file.
+                </p>
+                <p className="recording-message">{recordingMessage}</p>
+              </details>
+              {atlasPrepared && (
+                <AtlasSavePanel
+                  prepared={atlasPrepared}
+                  sourceKind={source === "synthetic" ? "synthetic" : "unknown"}
+                  onActiveChange={setAtlasTransferActive}
+                />
+              )}
+            </div>
+            <div
+              id="open-recording-panel"
+              role="tabpanel"
+              aria-labelledby="open-recording-tab"
+              hidden={captureView !== "open"}
+            >
+              <div className="replay-inputs">
+                <label className="recording-format">
+                  Replay pair format
+                  <select
+                    aria-label="Replay pair format"
+                    value={replayImportFormat}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const next = event.currentTarget
+                        .value as ReplayImportFormat;
+                      setReplayImportFormat(next);
+                      setReplayBinary(undefined);
+                      setReplayMetadata(undefined);
+                      setFileMessage(
+                        next === "sigmf"
+                          ? "Choose a local .sigmf-data/.sigmf-meta pair and an explicit replay mode. The RF-center channel is selected unless you choose a custom channel."
+                          : "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or use the deterministic fixture.",
+                      );
+                    }}
+                  >
+                    <option value="browsersdr">
+                      BrowserSDR (.cu8, .ci8 or .ci16 + .json)
+                    </option>
+                    <option value="sigmf">
+                      SigMF (.sigmf-data + .sigmf-meta)
+                    </option>
+                  </select>
+                </label>
+                {replayImportFormat === "sigmf" && (
+                  <>
+                    <label className="recording-format">
+                      SigMF replay mode
+                      <select
+                        aria-label="SigMF replay mode"
+                        value={sigmfReplayMode}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setSigmfReplayMode(
+                            event.currentTarget.value as ReceiverMode | "",
+                          )
+                        }
+                      >
+                        <option value="">Choose mode…</option>
+                        {RECEIVER_MODES.map((candidate) => (
+                          <option key={candidate} value={candidate}>
+                            {candidate}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="recording-format">
+                      SigMF replay channel
+                      <select
+                        aria-label="SigMF replay channel"
+                        value={sigmfChannelChoice}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setSigmfChannelChoice(
+                            event.currentTarget.value as "center" | "custom",
+                          )
+                        }
+                      >
+                        <option value="center">RF center from metadata</option>
+                        <option value="custom">Custom frequency</option>
+                      </select>
+                    </label>
+                    {sigmfChannelChoice === "custom" && (
+                      <label>
+                        Custom replay channel (MHz)
+                        <input
+                          aria-label="Custom replay channel (MHz)"
+                          type="number"
+                          min="0.000001"
+                          max={Number.MAX_SAFE_INTEGER / 1_000_000}
+                          step="0.001"
+                          value={sigmfChannelMhz}
+                          disabled={busy}
+                          onChange={(event) =>
+                            setSigmfChannelMhz(event.currentTarget.value)
+                          }
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+                <label className="file-picker">
+                  {replayImportFormat === "sigmf"
+                    ? "SigMF dataset"
+                    : "BrowserSDR I/Q binary"}
+                  <span className="file-picker-control">
+                    <input
+                      className="file-picker-input"
+                      type="file"
+                      accept={
+                        replayImportFormat === "sigmf"
+                          ? ".sigmf-data,application/octet-stream"
+                          : ".cu8,.ci8,.ci16,application/octet-stream"
+                      }
+                      onChange={(event) =>
+                        setReplayBinary(event.currentTarget.files?.[0])
+                      }
+                    />
+                    <span className="file-picker-button" aria-hidden="true">
+                      Choose file
+                    </span>
+                    <span className="file-picker-name" aria-hidden="true">
+                      {replayBinary?.name ?? "No file chosen"}
+                    </span>
+                  </span>
+                </label>
+                <label className="file-picker">
+                  {replayImportFormat === "sigmf"
+                    ? "SigMF metadata"
+                    : "BrowserSDR JSON sidecar"}
+                  <span className="file-picker-control">
+                    <input
+                      className="file-picker-input"
+                      type="file"
+                      accept={
+                        replayImportFormat === "sigmf"
+                          ? ".sigmf-meta,application/json"
+                          : ".json,application/json"
+                      }
+                      onChange={(event) =>
+                        setReplayMetadata(event.currentTarget.files?.[0])
+                      }
+                    />
+                    <span className="file-picker-button" aria-hidden="true">
+                      Choose file
+                    </span>
+                    <span className="file-picker-name" aria-hidden="true">
+                      {replayMetadata?.name ?? "No file chosen"}
+                    </span>
+                  </span>
+                </label>
                 <button
                   type="button"
                   className="secondary"
-                  disabled={exportingRecording}
-                  onClick={retryRecordingPreparation}
+                  disabled={
+                    !replayBinary ||
+                    !replayMetadata ||
+                    busy ||
+                    (replayImportFormat === "sigmf" &&
+                      (!sigmfReplayMode ||
+                        (sigmfChannelChoice === "custom" &&
+                          !(Number(sigmfChannelMhz) > 0))))
+                  }
+                  onClick={() => void loadReplayFiles()}
                 >
-                  Retry preparation
+                  {replayImportFormat === "sigmf"
+                    ? "Load SigMF pair"
+                    : "Load files"}
                 </button>
-              )}
-              <button
-                type="button"
-                className="secondary"
-                disabled={!preparedCaptureAvailable || exportingRecording}
-                onClick={() => requestRecordingDownload("archive")}
-              >
-                Download paired ZIP
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!preparedCaptureAvailable || exportingRecording}
-                onClick={() => requestRecordingDownload("separate")}
-              >
-                Download separate files
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={
-                  !retainedCapturePresent ||
-                  exportingRecording ||
-                  atlasTransferActive ||
-                  Boolean(recordingStatus)
-                }
-                onClick={discardPreparedRecording}
-              >
-                Discard prepared capture
-              </button>
-              <span>
-                {recordingStatus
-                  ? `${(recordingStatus.bytes / (1024 * 1024)).toFixed(2)} / ${(RECORDING_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB · ${recordingStatus.state.replace("-", " ")}`
-                  : "Not recording"}
-              </span>
-            </div>
-            <p className="display-note">
-              The chosen format is locked for each segment. State:{" "}
-              {retainedCapture.status.replace("-", " ")}
-              {retainedCapture.sampleCount === undefined
-                ? ""
-                : ` · ${retainedCapture.sampleCount.toLocaleString()} samples · ${(retainedCapture.retainedBytes / (1024 * 1024)).toFixed(2)} MiB retained`}
-              . A download request cannot confirm browser storage. One prepared
-              capture is retained within{" "}
-              {(RETAINED_CAPTURE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MiB;
-              after a download request, starting another capture replaces it
-              under this disclosed latest-capture policy.
-            </p>
-            {atlasPrepared && (
-              <AtlasSavePanel
-                prepared={atlasPrepared}
-                sourceKind={source === "synthetic" ? "synthetic" : "unknown"}
-                onActiveChange={setAtlasTransferActive}
-              />
-            )}
-            <div className="replay-inputs">
-              <label className="recording-format">
-                Replay pair format
-                <select
-                  aria-label="Replay pair format"
-                  value={replayImportFormat}
+                <button
+                  type="button"
+                  className="secondary"
                   disabled={busy}
-                  onChange={(event) => {
-                    const next = event.currentTarget
-                      .value as ReplayImportFormat;
-                    setReplayImportFormat(next);
-                    setReplayBinary(undefined);
-                    setReplayMetadata(undefined);
-                    setFileMessage(
-                      next === "sigmf"
-                        ? "Choose a local .sigmf-data/.sigmf-meta pair and an explicit replay mode. The RF-center channel is selected unless you choose a custom channel."
-                        : "Load a .cu8 or .ci8 binary and its .json sidecar, or use the deterministic fixture.",
-                    );
-                  }}
+                  onClick={() =>
+                    void activateReplay(
+                      createDeterministicRecordingFixture(),
+                      "Loaded generated 0.5 s AM fixture: +6 kHz carrier, 1 kHz audio tone, 48 ksample/s.",
+                    )
+                  }
                 >
-                  <option value="browsersdr">
-                    BrowserSDR (.cu8 or .ci8 + .json)
-                  </option>
-                  <option value="sigmf">
-                    SigMF (.sigmf-data + .sigmf-meta)
-                  </option>
-                </select>
-              </label>
-              {replayImportFormat === "sigmf" && (
-                <>
-                  <label className="recording-format">
-                    SigMF replay mode
-                    <select
-                      aria-label="SigMF replay mode"
-                      value={sigmfReplayMode}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setSigmfReplayMode(
-                          event.currentTarget.value as ReceiverMode | "",
-                        )
-                      }
-                    >
-                      <option value="">Choose mode…</option>
-                      {RECEIVER_MODES.map((candidate) => (
-                        <option key={candidate} value={candidate}>
-                          {candidate}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="recording-format">
-                    SigMF replay channel
-                    <select
-                      aria-label="SigMF replay channel"
-                      value={sigmfChannelChoice}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setSigmfChannelChoice(
-                          event.currentTarget.value as "center" | "custom",
-                        )
-                      }
-                    >
-                      <option value="center">RF center from metadata</option>
-                      <option value="custom">Custom frequency</option>
-                    </select>
-                  </label>
-                  {sigmfChannelChoice === "custom" && (
-                    <label>
-                      Custom replay channel (MHz)
-                      <input
-                        aria-label="Custom replay channel (MHz)"
-                        type="number"
-                        min="0.000001"
-                        max={Number.MAX_SAFE_INTEGER / 1_000_000}
-                        step="0.001"
-                        value={sigmfChannelMhz}
-                        disabled={busy}
-                        onChange={(event) =>
-                          setSigmfChannelMhz(event.currentTarget.value)
-                        }
-                      />
-                    </label>
-                  )}
-                </>
-              )}
-              <label className="file-picker">
-                {replayImportFormat === "sigmf"
-                  ? "SigMF dataset"
-                  : "BrowserSDR I/Q binary"}
-                <span className="file-picker-control">
-                  <input
-                    className="file-picker-input"
-                    type="file"
-                    accept={
-                      replayImportFormat === "sigmf"
-                        ? ".sigmf-data,application/octet-stream"
-                        : ".cu8,.ci8,application/octet-stream"
-                    }
-                    onChange={(event) =>
-                      setReplayBinary(event.currentTarget.files?.[0])
-                    }
-                  />
-                  <span className="file-picker-button" aria-hidden="true">
-                    Choose file
-                  </span>
-                  <span className="file-picker-name" aria-hidden="true">
-                    {replayBinary?.name ?? "No file chosen"}
-                  </span>
-                </span>
-              </label>
-              <label className="file-picker">
-                {replayImportFormat === "sigmf"
-                  ? "SigMF metadata"
-                  : "BrowserSDR JSON sidecar"}
-                <span className="file-picker-control">
-                  <input
-                    className="file-picker-input"
-                    type="file"
-                    accept={
-                      replayImportFormat === "sigmf"
-                        ? ".sigmf-meta,application/json"
-                        : ".json,application/json"
-                    }
-                    onChange={(event) =>
-                      setReplayMetadata(event.currentTarget.files?.[0])
-                    }
-                  />
-                  <span className="file-picker-button" aria-hidden="true">
-                    Choose file
-                  </span>
-                  <span className="file-picker-name" aria-hidden="true">
-                    {replayMetadata?.name ?? "No file chosen"}
-                  </span>
-                </span>
-              </label>
-              <button
-                type="button"
-                className="secondary"
-                disabled={
-                  !replayBinary ||
-                  !replayMetadata ||
-                  busy ||
-                  (replayImportFormat === "sigmf" &&
-                    (!sigmfReplayMode ||
-                      (sigmfChannelChoice === "custom" &&
-                        !(Number(sigmfChannelMhz) > 0))))
-                }
-                onClick={() => void loadReplayFiles()}
-              >
-                {replayImportFormat === "sigmf"
-                  ? "Load SigMF pair"
-                  : "Load files"}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() =>
-                  void activateReplay(
-                    createDeterministicRecordingFixture(),
-                    "Loaded generated 0.5 s AM fixture: +6 kHz carrier, 1 kHz audio tone, 48 ksample/s.",
-                  )
-                }
-              >
-                Use deterministic fixture
-              </button>
+                  Open example recording
+                </button>
+              </div>
+              <p className="file-message" role="status">
+                {fileMessage}
+              </p>
             </div>
-            <p className="file-message" role="status">
-              {fileMessage}
-            </p>
           </section>
 
           <section
@@ -4752,14 +5170,14 @@ export function ReceiverApp({
               <div>
                 <dt>Selected channel</dt>
                 <dd>
-                  {Number.isFinite(frequencyMhz)
-                    ? `${frequencyMhz.toFixed(6)} MHz`
-                    : "—"}
+                  {displayedFrequencyHz !== undefined
+                    ? `${(displayedFrequencyHz / 1_000_000).toFixed(6)} MHz`
+                    : "Not connected"}
                 </dd>
               </div>
               <div>
                 <dt>Mode</dt>
-                <dd>{mode}</dd>
+                <dd>{liveMode}</dd>
               </div>
               <div>
                 <dt>Source</dt>
@@ -4799,6 +5217,14 @@ export function ReceiverApp({
             Boolean(recordingStatus) || exportingRecording || captureSlotBlocked
           }
           startReceptionForScan={startReceptionForScan}
+          onOpenReceiver={() => {
+            setActiveView("receiver");
+            requestAnimationFrame(() =>
+              document
+                .getElementById("acquire-heading")
+                ?.scrollIntoView({ block: "start" }),
+            );
+          }}
           onScanningChange={setScanActive}
           onCaptureCandidates={captureSurveyCandidates}
           onInvestigate={(frequencyHz) => {
@@ -4824,6 +5250,43 @@ export function ReceiverApp({
         hidden={activeView !== "diagnostics"}
       >
         <DiagnosticsPanel
+          health={
+            <ReceiverHealth
+              receiver={receiver}
+              spectrum={spectrumStatus}
+              recording={recordingStatus}
+              preparing={exportingRecording}
+              retained={retainedCapture}
+              recordingSupported={recordingSupported}
+              onReceiver={() => {
+                setActiveView("receiver");
+                requestAnimationFrame(() =>
+                  document
+                    .querySelector(".acquire-stage")
+                    ?.scrollIntoView({ block: "start" }),
+                );
+              }}
+              onRecording={() => {
+                setActiveView("receiver");
+                setReceiverDockExpanded(true);
+                setReceiverDockView("capture");
+                setCaptureView("record");
+                requestAnimationFrame(() =>
+                  document
+                    .getElementById("recording-heading")
+                    ?.scrollIntoView({ block: "start" }),
+                );
+              }}
+              onSpectrum={() => {
+                setActiveView("receiver");
+                requestAnimationFrame(() =>
+                  document
+                    .getElementById("graphics-heading")
+                    ?.scrollIntoView({ block: "start" }),
+                );
+              }}
+            />
+          }
           active={activeView === "diagnostics"}
           pipeline={analysis}
           receiver={receiver}
@@ -4837,9 +5300,14 @@ export function ReceiverApp({
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Environment</p>
-              <h2 id="capabilities-heading">Capability checks</h2>
+              <h2 id="capabilities-heading">Browser API availability</h2>
             </div>
           </div>
+          <p className="display-note">
+            These checks detect browser APIs. They do not establish that a
+            receiver, audio output, or GPU display is working; see session
+            health above.
+          </p>
           <ul className="capability-list">
             {detectedCapabilities.map((capability) => (
               <li key={capability.label}>
@@ -4930,10 +5398,12 @@ export function ReceiverApp({
                     </div>
                   </div>
                   <p className="matrix-intro">
-                    <strong>Validated</strong> means the listed path has direct
-                    automated or physical evidence. <strong>Unclear</strong>{" "}
-                    means support may be plausible, but there is not enough
-                    evidence to recommend it yet.
+                    Evidence applies only to the listed scope.{" "}
+                    <strong>Physical tests</strong> exercise a real receiver and
+                    RF signal. <strong>Software tests</strong> use generated
+                    data or mocked USB and do not establish physical reception.{" "}
+                    <strong>Unclear</strong> means evidence is insufficient. See
+                    each row and the detailed compatibility notes.
                   </p>
                   <div className="compatibility-table-wrap compatibility-overview">
                     <table className="compatibility-table">
@@ -4941,7 +5411,7 @@ export function ReceiverApp({
                         <tr>
                           <th>Source</th>
                           <th>Status</th>
-                          <th>Validated scope</th>
+                          <th>Tested scope</th>
                           <th>Known limits</th>
                         </tr>
                       </thead>
@@ -4949,8 +5419,8 @@ export function ReceiverApp({
                         <tr>
                           <th scope="row">Synthetic demo</th>
                           <td>
-                            <span className="compat-status is-validated">
-                              Validated
+                            <span className="compat-status is-available">
+                              Software-tested
                             </span>
                           </td>
                           <td>
@@ -4996,7 +5466,7 @@ export function ReceiverApp({
                           </td>
                         </tr>
                         <tr>
-                          <th scope="row">bladeRF 2.0 Micro xA4</th>
+                          <th scope="row">bladeRF 2.0 Micro (xA4 validated)</th>
                           <td>
                             <span className="compat-status is-validated">
                               Validated
@@ -5007,8 +5477,8 @@ export function ReceiverApp({
                             initial reception
                           </td>
                           <td>
-                            Recording and TX are unavailable; sustained/two-rate
-                            checks remain
+                            {SOURCE_RECORDING_DESCRIPTIONS.bladerf}. TX is unavailable.
+                            Sustained hardware checks remain
                           </td>
                         </tr>
                         <tr>
@@ -5019,7 +5489,7 @@ export function ReceiverApp({
                           </th>
                           <td>
                             <span className="compat-status is-available">
-                              Software-integrated
+                              Software-tested
                             </span>
                           </td>
                           <td>
@@ -5027,8 +5497,8 @@ export function ReceiverApp({
                             load, VRT/SC16 receive path and reconnect
                           </td>
                           <td>
-                            USB 3 hardware validation remains; RX only and no
-                            recording
+                            USB 3 hardware validation remains; RX only.
+                            {SOURCE_RECORDING_DESCRIPTIONS["usrp-b205"]}
                           </td>
                         </tr>
                         <tr>
@@ -5229,8 +5699,8 @@ export function ReceiverApp({
                         Live processing, recordings, replay, decoded content,
                         spectrum data and audio stay in the browser. The
                         Diagnostics view can send a separately reviewed error
-                        report. Automatic sending is off by default and can be
-                        enabled there. Reports exclude radio data, USB serial
+                        report. Automatic error reporting is on by default and
+                        can be turned off there. Reports exclude radio data, USB serial
                         numbers, IP addresses and exact tuned frequency by
                         default.
                       </p>
@@ -5241,8 +5711,9 @@ export function ReceiverApp({
                       </summary>
                       <p>
                         All supported hardware paths are receive-only. For an
-                        empty bladeRF xA4, BrowserSDR can load an exact verified
-                        FPGA image into volatile RAM. For a USRP B205-mini in
+                        bladeRF 2.0 Micro with an empty FPGA, BrowserSDR can load
+                        the exact verified model and firmware image
+                        into volatile RAM. For a USRP B205-mini in
                         WestBridge mode, it can also load exact verified
                         official FX3 firmware into RAM before the FPGA image. It
                         never writes flash or EEPROM, changes persistent
@@ -5276,11 +5747,12 @@ export function ReceiverApp({
                     <details>
                       <summary>How do recording and replay work?</summary>
                       <p>
-                        Capture is intentionally bounded to 32 MiB in memory.
+                        Capture streams to private browser storage up to 2 GiB
+                        when OPFS is available, with a 32 MiB memory fallback.
                         RTL-SDR uses CU8 and HackRF Pro uses CI8; both can be
                         exported in BrowserSDR or SigMF pairs where supported.
-                        bladeRF and USRP B205-mini recording are not available
-                        yet. No B205 SigMF hardware description is emitted.
+                        USRP B205-mini: {SOURCE_RECORDING_DESCRIPTIONS["usrp-b205"]}.
+                        bladeRF: {SOURCE_RECORDING_DESCRIPTIONS.bladerf}.
                         Replay never asks for USB permission.
                       </p>
                     </details>

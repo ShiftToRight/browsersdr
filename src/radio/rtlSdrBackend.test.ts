@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SignalSource } from "@jtarrio/signals/radio/signal_source.js";
+import { RadioError, RadioErrorType } from "@jtarrio/webrtlsdr/errors.js";
 import {
   ReceiverController,
   type ReceiverBackendEvents,
@@ -203,6 +204,130 @@ describe("RtlSdrBackend teardown", () => {
     await backend.disconnect();
     expect(close).toHaveBeenCalledTimes(2);
     expect(audioClose).toHaveBeenCalledOnce();
+  });
+
+  it("releases ownership when graceful close fails after physical removal", async () => {
+    vi.stubGlobal("navigator", { usb: {} });
+    const close = vi.fn(async () => {
+      throw new RadioError(
+        "setRegBuffer failed block=0x1 reg=120",
+        RadioErrorType.UsbTransferError,
+      );
+    });
+    const source = sourceWith(close);
+    source.readSamples = async () => {
+      throw new DOMException(
+        "Failed to execute 'transferIn' on 'USBDevice': A transfer error has occurred.",
+        "NetworkError",
+      );
+    };
+    const backendEvents = events();
+    backendEvents.runtimeError = vi.fn();
+    const backend = new RtlSdrBackend(
+      backendEvents,
+      undefined,
+      1,
+      OPTIONS.channelFrequencyHz,
+      dependencies(source, audioContextWith(async () => {})),
+    );
+
+    await backend.start(OPTIONS);
+    await vi.waitFor(() =>
+      expect(backendEvents.runtimeError).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "NetworkError" }),
+      ),
+    );
+
+    await expect(backend.disconnect()).resolves.toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("releases a stale device when setup and graceful close both report transfer failure", async () => {
+    vi.stubGlobal("navigator", { usb: {} });
+    let creations = 0;
+    const staleClose = vi.fn(async () => {
+      throw new RadioError(
+        "setRegBuffer failed block=0x1 reg=120",
+        RadioErrorType.UsbTransferError,
+      );
+    });
+    const controller = new ReceiverController(
+      (backendEvents, options, generation) => {
+        creations += 1;
+        const source = sourceWith(
+          creations === 1 ? staleClose : async () => {},
+        );
+        if (creations === 1)
+          source.setSampleRate = async () => {
+            throw new RadioError(
+              "setRegBuffer failed block=0x1 reg=9f20",
+              RadioErrorType.UsbTransferError,
+            );
+          };
+        return new RtlSdrBackend(
+          backendEvents,
+          undefined,
+          generation,
+          options.channelFrequencyHz,
+          dependencies(source, audioContextWith(async () => {})),
+        );
+      },
+    );
+
+    await controller.connect(OPTIONS);
+    expect(controller.getSnapshot()).toMatchObject({
+      lifecycle: "error",
+      cleanupRequired: false,
+    });
+    expect(staleClose).toHaveBeenCalledOnce();
+
+    await controller.connect(OPTIONS);
+    expect(creations).toBe(2);
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "connected" });
+    await controller.disconnect();
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "idle" });
+  });
+
+  it("lets the controller return to idle after an unplugged stream", async () => {
+    vi.stubGlobal("navigator", { usb: {} });
+    type Block = import("@jtarrio/signals/radio/sample_block.js").SampleBlock;
+    const read = deferred<Block>();
+    const close = vi.fn(async () => {
+      throw new RadioError(
+        "setRegBuffer failed block=0x1 reg=120",
+        RadioErrorType.UsbTransferError,
+      );
+    });
+    const source = sourceWith(close);
+    source.readSamples = () => read.promise;
+    const controller = new ReceiverController(
+      (backendEvents, options, generation) =>
+        new RtlSdrBackend(
+          backendEvents,
+          undefined,
+          generation,
+          options.channelFrequencyHz,
+          dependencies(source, audioContextWith(async () => {})),
+        ),
+    );
+
+    await controller.start(OPTIONS);
+    read.reject(
+      new DOMException(
+        "Failed to execute 'transferIn' on 'USBDevice': A transfer error has occurred.",
+        "NetworkError",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(controller.getSnapshot()).toMatchObject({
+        lifecycle: "error",
+        cleanupRequired: false,
+      }),
+    );
+
+    await controller.disconnect();
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "idle" });
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("attempts audio cleanup independently and retries only the failed audio release", async () => {
@@ -415,4 +540,26 @@ it("keeps RTL raw fan-out, acknowledged centers and route validation through the
   lateTune.resolve(102_000_017);
   await rejected;
   expect(analysis.begin).toHaveBeenCalledTimes(begins);
+});
+
+it.each([1_024_000, 2_400_000])("records only the selected RTL channel at source rate %i", async (rate) => {
+  vi.stubGlobal("navigator", { usb: {} });
+  type Block = import("@jtarrio/signals/radio/sample_block.js").SampleBlock;
+  const reads: ReturnType<typeof deferred<Block>>[] = [];
+  const source = sourceWith(async () => {});
+  source.readSamples = () => { const read = deferred<Block>(); reads.push(read); return read.promise; };
+  let capture!: (input: ArrayBuffer) => void;
+  const backend = new RtlSdrBackend(events(), undefined, 1, OPTIONS.channelFrequencyHz, {
+    ...dependencies(source, audioContextWith(async () => {})),
+    createSourceProvider: (_permission, callback) => { capture = callback!; return { get: async () => source }; },
+  });
+  await backend.start({ ...OPTIONS, sampleRateHz: rate, modeSettings: { mode: "AM", bandwidthHz: 15_000, squelch: 0 } });
+  backend.startRecording(undefined, { captureCurrentChannel: true });
+  capture(new Uint8Array(65_536).fill(140).buffer);
+  const recording = backend.stopRecording()!;
+  expect(recording.metadata).toMatchObject({ format: "browsersdr-channel-iq-v1", source: "rtl-sdr", centerFrequencyHz: OPTIONS.channelFrequencyHz });
+  expect(recording.data.length).toBeLessThan(65_536 / 8);
+  const disconnecting = backend.disconnect();
+  for (const read of reads.splice(0)) read.resolve({ I: new Float32Array(0), Q: new Float32Array(0), frequency: OPTIONS.channelFrequencyHz });
+  await disconnecting;
 });

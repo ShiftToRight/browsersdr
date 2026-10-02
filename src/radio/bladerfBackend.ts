@@ -1,3 +1,18 @@
+import type { RecordingOptions } from "./channelRecording";
+import {
+  IqRecorder,
+  preferredRecordingStorageMode,
+  type IqRecording,
+  type RecordingStatus,
+} from "./iqRecording";
+import { bladeRfSc16RecordingFormat } from "./bladerfRecording";
+import type { SurveyCaptureContext } from "./fieldSurvey";
+import {
+  DEFAULT_BLADERF_RX_SETTINGS,
+  bladeRfSettingsAtFrequency,
+  validateBladeRfRxSettings,
+  type BladeRfRxSettings,
+} from "./bladerfSettings";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { ADSB_FREQUENCY_HZ } from "../adsb/adsbReceiver";
 import {
@@ -23,7 +38,7 @@ import {
   type BladeRfConfiguredSession,
   type BladeRfTransportEvents,
 } from "./bladerfTransport";
-import { BladeRfSampleAdapter } from "./bladerfSource";
+import { BladeRfSampleAdapter, validateBladeRfBlock } from "./bladerfSource";
 import {
   LiveReceiverPipeline,
   type LiveReceiverDependencies,
@@ -51,16 +66,19 @@ interface Selection {
   channel: number;
   mode: ReceiverModeSettings;
   rate: BladeRfSampleRateHz;
+  rxSettings: BladeRfRxSettings;
 }
 
 const cancelled = () =>
   new DOMException("bladeRF receiver operation was cancelled.", "AbortError");
 
-/** First-release xA4 backend: RX0, slow-attack AGC, SC16 Q11, no persistent image writes. */
+/** Receive-only bladeRF 2.0 Micro backend: one selected RX input, native SC16 Q11. */
 export class BladeRfBackend implements ReceiverBackend {
   private readonly pipeline: LiveReceiverPipeline;
   private readonly transport: BladeRfTransportPort;
   private readonly adapter: BladeRfSampleAdapter;
+  private recorder?: IqRecorder;
+  private completedRecording?: IqRecording;
   private acquired = false;
   private configured?: BladeRfConfiguredSession;
   private selection?: Selection;
@@ -160,6 +178,10 @@ export class BladeRfBackend implements ReceiverBackend {
       channel,
       mode,
       rate: (options.sampleRateHz ?? 2_400_000) as BladeRfSampleRateHz,
+      rxSettings: validateBladeRfRxSettings(
+        options.bladerfSettings ?? DEFAULT_BLADERF_RX_SETTINGS,
+        channel,
+      ),
     };
   }
 
@@ -180,11 +202,13 @@ export class BladeRfBackend implements ReceiverBackend {
       this.check(token);
       this.acquired = true;
       this.events.permissionGranted();
+      this.check(token);
     }
     const prior = this.configured?.details;
     if (
       prior?.requestedCenterFrequencyHz === center &&
-      prior.nativeSampleRateHz === selection.rate
+      prior.nativeSampleRateHz === selection.rate &&
+      JSON.stringify(prior.rxSettings) === JSON.stringify(selection.rxSettings)
     )
       return;
     this.configured = await this.transport.configure(
@@ -192,6 +216,7 @@ export class BladeRfBackend implements ReceiverBackend {
         centerFrequencyHz: center,
         sampleRateHz: selection.rate,
         bandwidthHz: selection.rate,
+        rxSettings: bladeRfSettingsAtFrequency(selection.rxSettings, center),
       },
       ++this.transportGeneration,
     );
@@ -208,11 +233,20 @@ export class BladeRfBackend implements ReceiverBackend {
     this.check(token);
     await this.transport.startRx(
       (block) => {
-        if (this.receiving && this.metadata)
-          this.adapter.receive({
-            ...block,
-            generation: this.configured!.generation,
-          });
+        if (
+          !this.receiving ||
+          !this.metadata ||
+          !this.configured ||
+          block.generation !== this.configured.generation
+        )
+          return;
+        validateBladeRfBlock(block, this.configured.details);
+        if (this.recorder) {
+          if (this.recorder.status().sampleCount === 0)
+            this.recorder.setCaptureStartedAt(new Date().toISOString());
+          this.recorder.appendBladeRfSc16(block.bytes);
+        }
+        this.adapter.receive(block);
       },
       (session) => {
         this.check(token);
@@ -261,7 +295,7 @@ export class BladeRfBackend implements ReceiverBackend {
       squelch: selection.mode.squelch,
       beatToneHz: selection.mode.beatToneHz,
       srd: selection.mode.srd,
-      gainDb: null,
+      gainDb: session.details.acceptedGainDb ?? null,
       sampleFormat: "planar-f32-iq-normalized",
       bladerf: structuredClone(session.details),
     };
@@ -286,8 +320,39 @@ export class BladeRfBackend implements ReceiverBackend {
   }
   setGain(): Promise<number | null> {
     return Promise.reject(
-      new Error("bladeRF xA4 uses slow-attack AGC in this first release."),
+      new Error("Use bladeRF RX settings to choose gain mode and manual gain."),
     );
+  }
+
+  configureBladeRf(
+    settings: BladeRfRxSettings,
+    generation: number,
+  ): Promise<Metadata> {
+    if (!this.selection || !this.metadata)
+      return Promise.reject(
+        new Error("Connect bladeRF before applying RX settings."),
+      );
+    const center = this.metadata.hardwareCenterFrequencyHz;
+    const selection = {
+      ...this.selection,
+      rxSettings: validateBladeRfRxSettings(settings, center),
+    };
+    return this.run(async (token) => {
+      this.finishRecording("metadata-change");
+      const wasReceiving = this.receiving;
+      this.receiving = false;
+      this.adapter.reset();
+      this.pipeline.reset();
+      await this.transport.stopRx();
+      this.check(token);
+      this.sessionGeneration = generation;
+      this.configured = undefined;
+      await this.prepare(selection, token, center);
+      this.selection = selection;
+      return wasReceiving
+        ? this.startConfigured(selection, token)
+        : this.publish(this.configured!, selection);
+    });
   }
 
   tune(channelFrequencyHz: number, generation: number): Promise<Metadata> {
@@ -327,6 +392,7 @@ export class BladeRfBackend implements ReceiverBackend {
     const mode = normalizeModeSettings(settings);
     if (mode.mode !== this.metadata.mode)
       throw new Error("Live analog settings cannot change receiver mode.");
+    this.finishRecording("metadata-change");
     this.selection = { ...this.selection, mode };
     this.metadata = {
       ...this.metadata,
@@ -381,7 +447,13 @@ export class BladeRfBackend implements ReceiverBackend {
       !isWidebandRate(this.metadata.actualSampleRateHz) &&
       (mode.mode === "DAB" || mode.mode === "ADS-B");
     const hardware = scan || plan.hardwareRetuneRequired || mustCenter;
+    if (hardware)
+      selection.rxSettings = bladeRfSettingsAtFrequency(
+        selection.rxSettings,
+        channel,
+      );
     return this.run(async (token) => {
+      this.finishRecording("metadata-change");
       this.sessionGeneration = generation;
       if (!hardware) {
         this.selection = selection;
@@ -418,9 +490,56 @@ export class BladeRfBackend implements ReceiverBackend {
     if (token !== this.cancelled || this.disconnectRequested) throw cancelled();
   }
 
+  startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus {
+    if (
+      !this.receiving ||
+      !this.metadata ||
+      !this.configured ||
+      this.command ||
+      this.disconnectRequested
+    )
+      throw new Error("bladeRF must be receiving before recording native IQ.");
+    if (this.recorder || this.completedRecording)
+      throw new Error("Finish or retrieve the existing recording first.");
+    const details = this.configured.details;
+    this.recorder = new IqRecorder(
+      { ...this.metadata, actualSampleRateHz: details.acceptedSampleRateHz },
+      undefined,
+      undefined,
+      `bladeRF ${details.identity.model} receive-only native SC16 Q11 I/Q bytes unchanged. Host timestamps and sample accounting do not prove hardware continuity.`,
+      survey,
+      bladeRfSc16RecordingFormat(details),
+      preferredRecordingStorageMode(options?.storageMode),
+      options,
+    );
+    return this.recorder.status();
+  }
+
+  stopRecording(
+    reason: "user" | "source-stop" | "metadata-change" = "user",
+  ): IqRecording | undefined {
+    this.finishRecording(reason);
+    const recording = this.completedRecording;
+    this.completedRecording = undefined;
+    return recording;
+  }
+
+  getRecordingStatus(): RecordingStatus | undefined {
+    return this.recorder?.status();
+  }
+
+  private finishRecording(
+    reason: "user" | "source-stop" | "metadata-change",
+  ): void {
+    if (!this.recorder) return;
+    this.completedRecording = this.recorder.finish(reason);
+    this.recorder = undefined;
+  }
+
   stop(): Promise<void> {
     if (this.stopTask) return this.stopTask;
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.receiving = false;
     this.adapter.reset();
     this.pipeline.reset();
@@ -444,6 +563,7 @@ export class BladeRfBackend implements ReceiverBackend {
     if (this.disconnectTask) return this.disconnectTask;
     this.disconnectRequested = true;
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.receiving = false;
     this.adapter.reset();
     this.pipeline.reset();
@@ -454,6 +574,9 @@ export class BladeRfBackend implements ReceiverBackend {
         this.pipeline.close(),
       ]);
       await pending?.catch(() => undefined);
+      // A canceled open can acquire cleanup ownership after the first close.
+      // Drain it only after that command settles; propagate retry failure.
+      if (pending) await this.transport.close();
       const failure = results.find((result) => result.status === "rejected");
       if (failure?.status === "rejected") throw failure.reason;
     })().finally(() => {
@@ -465,7 +588,12 @@ export class BladeRfBackend implements ReceiverBackend {
 
   private readonly runtimeError = (error: unknown): void => {
     if (this.disconnectRequested) return;
+    this.recorder?.addGap(
+      null,
+      "bladeRF receive error; missing sample duration unknown.",
+    );
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.receiving = false;
     this.adapter.reset();
     this.pipeline.reset();

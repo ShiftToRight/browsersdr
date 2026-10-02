@@ -20,6 +20,7 @@ export interface DabPcmSink {
 export class DabAudioPlayer implements Player {
   readonly sampleRate = 48_000;
   private readonly sources = new Set<AudioBufferSourceNode>();
+  private readonly idle = new Set<() => void>();
   private gain?: GainNode;
   private volume = 0;
   private nextTime = 0;
@@ -51,11 +52,15 @@ export class DabAudioPlayer implements Player {
     source.onended = () => {
       this.sources.delete(source);
       source.disconnect();
+      if (!this.sources.size) { for (const resolve of this.idle) resolve(); this.idle.clear(); }
     };
     this.sources.add(source);
     const start = Math.max(this.nextTime, now + 0.05);
     source.start(start);
     this.nextTime = start + left.length / this.sampleRate;
+  }
+  whenIdle(): Promise<void> {
+    return this.sources.size ? new Promise(resolve => this.idle.add(resolve)) : Promise.resolve();
   }
   dispose(): void {
     this.reset();
@@ -68,6 +73,8 @@ export class DabAudioPlayer implements Player {
       source.disconnect();
     }
     this.sources.clear();
+    for (const resolve of this.idle) resolve();
+    this.idle.clear();
     this.nextTime = 0;
   }
 }

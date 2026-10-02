@@ -1,0 +1,51 @@
+import { ChannelCaptureFilter } from "../radio/channelRecording";
+import { decodeRecordingSamples, type RecordingSampleFormat } from "../radio/iqRecording";
+import { CHANNEL_MAX_SAMPLES } from "../radio/widebandChannel";
+import type { ChannelRecordingInput, ChannelRecordingOutput } from "../radio/channelRecordingWorker";
+
+let filter: ChannelCaptureFilter;
+let encoding: RecordingSampleFormat;
+let stride: 2 | 4;
+function post(message: ChannelRecordingOutput, transfer: Transferable[] = []) {
+  self.postMessage(message, { transfer });
+}
+function process(I: Float32Array, Q: Float32Array, limit: number): number {
+  const result = filter.process(I, Q);
+  const count = Math.min(limit, result.I.length);
+  const bytes = new Uint8Array(count * stride);
+  const view = new DataView(bytes.buffer);
+  for (let n = 0; n < count; n++) {
+    if (stride === 4) {
+      view.setInt16(n * 4, Math.max(-32768, Math.min(32767, Math.round(result.I[n]! * 32768))), true);
+      view.setInt16(n * 4 + 2, Math.max(-32768, Math.min(32767, Math.round(result.Q[n]! * 32768))), true);
+    } else {
+      view.setInt8(n * 2, Math.max(-128, Math.min(127, Math.round(result.I[n]! * 128))));
+      view.setInt8(n * 2 + 1, Math.max(-128, Math.min(127, Math.round(result.Q[n]! * 128))));
+    }
+  }
+  if (count) post({ type: "bytes", bytes }, [bytes.buffer]);
+  return count;
+}
+self.onmessage = (event: MessageEvent<ChannelRecordingInput>) => {
+  try {
+    const message = event.data;
+    if (message.type === "configure") { filter = new ChannelCaptureFilter(message.plan); encoding = message.encoding; stride = message.stride; }
+    else if (message.type === "reset") filter.reset();
+    else if (message.type === "finish") post({ type: "finished" });
+    else {
+      let remaining = message.outputLimit;
+      if (message.type === "bytes") {
+        const inputStride = encoding.bytesPerComplexSample;
+        for (let offset = 0; offset < message.bytes.length; offset += CHANNEL_MAX_SAMPLES * inputStride) {
+          const decoded = decodeRecordingSamples(message.bytes.subarray(offset, offset + CHANNEL_MAX_SAMPLES * inputStride), encoding);
+          remaining -= process(decoded.I, decoded.Q, remaining);
+        }
+        post({ type: "consumed", inputBytes: message.bytes.byteLength });
+      } else {
+        for (let offset = 0; offset < message.I.length; offset += CHANNEL_MAX_SAMPLES)
+          remaining -= process(message.I.subarray(offset, offset + CHANNEL_MAX_SAMPLES), message.Q.subarray(offset, offset + CHANNEL_MAX_SAMPLES), remaining);
+        post({ type: "consumed", inputBytes: message.I.byteLength + message.Q.byteLength });
+      }
+    }
+  } catch (error) { post({ type: "error", message: error instanceof Error ? error.message : String(error) }); }
+};

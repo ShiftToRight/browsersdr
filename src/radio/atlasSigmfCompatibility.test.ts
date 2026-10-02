@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import contractSnapshot from "../../docs/implementation/atlas-integration/fixtures/p0-01-contract-snapshot.json";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { unknownCi8Format } from "./ci8Recording";
-import type { IqRecording } from "./iqRecording";
+import { IqRecorder, type IqRecording } from "./iqRecording";
+import { usrpB205Ci16RecordingFormat } from "./ci16Recording";
+import { usrpB205SessionDetails } from "../testing/usrpB205SessionFixture";
 import {
   ATLAS_INTEGRATION_CONTRACT_VERSION,
   ATLAS_INTEGRATION_SCHEMA_ARTIFACT_SHA256,
@@ -156,6 +158,35 @@ describe("SigIntAtlas BrowserSDR contract parity", () => {
       archiveEligible: true,
       analysisEligible: false,
       issues: [{ code: "datatype_unsupported" }],
+    });
+  });
+
+  it("accepts contiguous USRP ci16_le for Atlas analysis", async () => {
+    const details = usrpB205SessionDetails();
+    const recorder = new IqRecorder({
+      source: "usrp-b205",
+      sessionGeneration: 1,
+      requestedSampleRateHz: details.nativeSampleRateHz,
+      actualSampleRateHz: details.nativeSampleRateHz,
+      hardwareCenterFrequencyHz: details.configuration.acceptedCenterFrequencyHz,
+      selectedChannelFrequencyHz: details.configuration.acceptedCenterFrequencyHz,
+      mode: "AM",
+      channelBandwidthHz: 10_000,
+      squelch: 0,
+      gainDb: null,
+      sampleFormat: "planar-f32-iq-normalized",
+      usrpB205: details,
+    }, undefined, 1024, undefined, undefined, usrpB205Ci16RecordingFormat(details));
+    recorder.appendUsrpSc16(Uint8Array.of(0x00, 0x80, 0xff, 0x7f, 0x34, 0x12, 0xcc, 0xed));
+    const recording = recorder.finish();
+    const exported = await createSigmfExport(recording);
+    expect(exported.data).toEqual(Uint8Array.of(0xff, 0x7f, 0x00, 0x80, 0xcc, 0xed, 0x34, 0x12));
+    expect(exported.metadata.global["core:datatype"]).toBe("ci16_le");
+    await expect(inspectBrowserSigmfForAtlas(exported.metadata, exported.data)).resolves.toMatchObject({
+      archiveEligible: true,
+      analysisEligible: true,
+      sampleCount: "2",
+      issues: [],
     });
   });
 

@@ -1,3 +1,4 @@
+import { ReportDialog } from "./ReportDialog";
 import { useEffect, useRef, useState } from "react";
 import { buildDiagnosticReport } from "../diagnostics/reportBuilder";
 import {
@@ -198,19 +199,13 @@ export function DiagnosticReportCard({
             Automatically send errors and recent diagnostic logs
           </label>
           <small>
-            Automatic sending is off by default and starts only after you enable
-            it here.
+            Automatic error reporting is on by default. You can turn it off
+            here; your choice is saved for this browser.
           </small>
         </div>
       </section>
       {report && (
-        <div className="diagnostic-dialog-backdrop" role="presentation">
-          <section
-            className="diagnostic-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="diagnostic-dialog-heading"
-          >
+        <ReportDialog labelledBy="diagnostic-dialog-heading" onDismiss={() => setReport(undefined)}>
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Review before sending</p>
@@ -298,8 +293,7 @@ export function DiagnosticReportCard({
                 Cancel
               </button>
             </div>
-          </section>
-        </div>
+          </ReportDialog>
       )}
     </>
   );

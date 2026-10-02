@@ -1,3 +1,6 @@
+import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
+import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
+import { CI16_RECORDING_FORMAT, type UsrpB205Ci16RecordingFormat } from "./ci16Recording";
 import { channelSampleRate } from "./sourceCapabilities";
 import { unknownCi8Format } from "./ci8Recording";
 import {
@@ -5,7 +8,7 @@ import {
   RECORDING_FORMAT,
   RECORDING_MAX_BYTES,
   RECORDING_METADATA_MAX_BYTES,
-  SIGMF_CU8_NORMALIZATION,
+  CU8_NORMALIZATION,
   validateRecordingMetadata,
   type IqRecording,
   type RecordingGap,
@@ -55,9 +58,9 @@ function parseMetadata(metadataText: string): JsonObject {
   }
 }
 
-function validateGlobal(global: JsonObject): { sampleRateHz: number; encoding: "cu8" | "ci8"; expectedHash?: string } {
+function validateGlobal(global: JsonObject): { sampleRateHz: number; encoding: "cu8" | "ci8" | "ci16_le"; expectedHash?: string } {
   const encoding = global["core:datatype"];
-  if (encoding !== "cu8" && encoding !== "ci8") throw new Error("SigMF import supports only one-channel complex 8-bit interleaved I/Q (cu8 or ci8).");
+  if (encoding !== "cu8" && encoding !== "ci8" && encoding !== "ci16_le") throw new Error("SigMF import supports one-channel cu8, ci8, or explicitly described BrowserSDR ci16_le.");
   if (global["core:version"] !== SIGMF_VERSION) throw new Error(`SigMF import supports metadata version ${SIGMF_VERSION}.`);
   const sampleRateHz = finite(global["core:sample_rate"], "sample rate");
   if (sampleRateHz <= 0) throw new Error("SigMF sample rate must be positive.");
@@ -174,10 +177,16 @@ export async function importSigmfRecording(
   const global = object(root.global, "global object");
   if (!Array.isArray(root.annotations)) throw new Error("SigMF annotations must be an array.");
   const { sampleRateHz, encoding, expectedHash } = validateGlobal(global);
-  const sampleCount = binary.byteLength / BYTES_PER_COMPLEX_SAMPLE;
+  const bytesPerComplexSample = encoding === "ci16_le" ? 4 : BYTES_PER_COMPLEX_SAMPLE;
+  if (binary.byteLength % bytesPerComplexSample) throw new Error("SigMF dataset is truncated: CI16 requires complete I/Q word pairs.");
+  const extension = global["browsersdr:sample_format"];
+  const nativeFormat = encoding === "ci16_le" || (extension && typeof extension === "object" && (extension as JsonObject).format === CHANNEL_RECORDING_FORMAT) ? object(extension, "sample format/scaling") : undefined;
+  if (nativeFormat && nativeFormat.format !== BLADERF_SC16_RECORDING_FORMAT && nativeFormat.format !== CI16_RECORDING_FORMAT && nativeFormat.format !== CHANNEL_RECORDING_FORMAT)
+    throw new Error("SigMF CI16 needs a supported explicit sample format/scaling; Q11 is never inferred.");
+  const sampleCount = binary.byteLength / bytesPerComplexSample;
   const { centerFrequencyHz, captureStartedAt, knownGaps } = captureDetails(root.captures, sampleCount);
   const mode = normalizeModeSettings(options.modeSettings);
-  validateModeSampleRate(mode.mode, encoding === "ci8" ? channelSampleRate(sampleRateHz) : sampleRateHz);
+  validateModeSampleRate(mode.mode, encoding === "ci16_le" || encoding === "ci8" ? channelSampleRate(nativeFormat?.format === CHANNEL_RECORDING_FORMAT ? finite(object(nativeFormat.channelCapture, "channel capture").dspSampleRateHz, "channel DSP sample rate") : nativeFormat?.format === BLADERF_SC16_RECORDING_FORMAT ? finite(nativeFormat.nativeSampleRateHz, "nominal bladeRF sample rate") : sampleRateHz) : sampleRateHz);
   const selectedChannelFrequencyHz = options.selectedChannelFrequencyHz ?? centerFrequencyHz;
 
   const sourceBytes = binary instanceof Uint8Array
@@ -185,9 +194,9 @@ export async function importSigmfRecording(
     : new Uint8Array(binary);
 
   const metadata = validateRecordingMetadata({
-    ...(encoding === "ci8" ? unknownCi8Format(sampleRateHz) : {
+    ...(nativeFormat ? nativeFormat as unknown as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat : encoding === "ci8" ? unknownCi8Format(sampleRateHz) : {
       format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: BYTES_PER_COMPLEX_SAMPLE,
-      normalization: SIGMF_CU8_NORMALIZATION, gainDb: null,
+      normalization: CU8_NORMALIZATION, gainDb: null,
     }),
     sampleRateHz,
     centerFrequencyHz,
@@ -199,6 +208,7 @@ export async function importSigmfRecording(
     mode: mode.mode,
     channelBandwidthHz: mode.bandwidthHz,
     squelch: mode.squelch,
+    ...(mode.beatToneHz !== undefined ? { beatToneHz: mode.beatToneHz } : {}),
     ...(mode.srd ? { srd: mode.srd } : {}),
     knownGaps: importGapAnnotations(root.annotations, knownGaps, sampleCount),
     stopReason: "import",

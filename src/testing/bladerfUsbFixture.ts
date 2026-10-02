@@ -26,6 +26,7 @@ export class FakeBladeRfUsb implements USBDevice {
   deviceVersionSubminor = 0;
   readonly lifecycle: string[] = [];
   readonly vendorRequests: number[] = [];
+  readonly controlOutRequests: USBControlTransferParameters[] = [];
   readonly niosRequests: Uint8Array[] = [];
   readonly rfic = new Map<number, bigint>([
     [0x0f01, 0n],
@@ -36,7 +37,11 @@ export class FakeBladeRfUsb implements USBDevice {
     [0x0006, 3n],
   ]);
   gpio = 0;
+  model: "xA4" | "xA5" | "xA9" = "xA4";
+  calibration?: Uint8Array;
+  flashId = 0xc236;
   fpgaConfigured = true;
+  claimed = false;
   firmware = { major: 2, minor: 4 };
   fpga = { major: 0, minor: 15, patch: 3 };
   sampleRateReadbackOffset = 0;
@@ -100,6 +105,7 @@ export class FakeBladeRfUsb implements USBDevice {
   async close() {
     this.lifecycle.push("close");
     this.opened = false;
+    this.claimed = false;
     for (const read of this.reads.splice(0))
       read.reject(new DOMException("closed", "AbortError"));
   }
@@ -107,11 +113,42 @@ export class FakeBladeRfUsb implements USBDevice {
     this.lifecycle.push(`configuration:${value}`);
     this.configuration = {
       configurationValue: value,
-      interfaces: [{ interfaceNumber: 0, alternate: this.alternate(0) }],
+      interfaces: [
+        {
+          interfaceNumber: 0,
+          claimed: this.claimed,
+          alternate: this.alternate(0),
+        },
+      ],
     };
   }
   async claimInterface(value: number) {
     this.lifecycle.push(`claim:${value}`);
+    this.claimed = true;
+    this.configuration = {
+      configurationValue: 1,
+      interfaces: [
+        {
+          interfaceNumber: 0,
+          claimed: true,
+          alternate: this.alternate(this.currentAlternate),
+        },
+      ],
+    };
+  }
+  async releaseInterface(value: number) {
+    this.lifecycle.push(`release:${value}`);
+    this.claimed = false;
+    this.configuration = {
+      configurationValue: 1,
+      interfaces: [
+        {
+          interfaceNumber: 0,
+          claimed: false,
+          alternate: this.alternate(this.currentAlternate),
+        },
+      ],
+    };
   }
   async selectAlternateInterface(_interfaceNumber: number, setting: number) {
     if (this.currentAlternate === 1 && setting !== 1) {
@@ -124,7 +161,13 @@ export class FakeBladeRfUsb implements USBDevice {
     this.currentAlternate = setting;
     this.configuration = {
       configurationValue: 1,
-      interfaces: [{ interfaceNumber: 0, alternate: this.alternate(setting) }],
+      interfaces: [
+        {
+          interfaceNumber: 0,
+          claimed: this.claimed,
+          alternate: this.alternate(setting),
+        },
+      ],
     };
   }
   async controlTransferIn(
@@ -132,10 +175,25 @@ export class FakeBladeRfUsb implements USBDevice {
     length: number,
   ): Promise<USBInTransferResult> {
     this.vendorRequests.push(setup.request);
+    this.lifecycle.push(`vendor:${setup.request}:${setup.index}`);
     let result: Uint8Array;
     if (setup.request === 0)
       result = Uint8Array.of(this.firmware.major, 0, this.firmware.minor, 0);
-    else if (setup.request === 1)
+    else if (setup.request === 7)
+      result = new Uint8Array(new Uint32Array([this.flashId]).buffer);
+    else if (setup.request === 110) {
+      // Independent phase-01 literals (WIRE-VECTORS.json/upstream zcrc), not the production parser.
+      const page = this.calibration ?? new Uint8Array(256).fill(0xff);
+      if (!this.calibration)
+        page.set(
+          this.model === "xA4"
+            ? [3, 0x42, 0x41, 0x34, 0x3b, 0xa0]
+            : this.model === "xA5"
+              ? [3, 0x42, 0x41, 0x35, 0x1a, 0xb0]
+              : [3, 0x42, 0x41, 0x39, 0x96, 0x71],
+        );
+      result = page.slice(setup.index, setup.index + length);
+    } else if (setup.request === 1)
       result = new Uint8Array(
         new Int32Array([this.fpgaConfigured ? 1 : 0]).buffer,
       );
@@ -156,9 +214,11 @@ export class FakeBladeRfUsb implements USBDevice {
     return { status: "ok", data: viewOf(result) };
   }
   async controlTransferOut(
-    _setup: USBControlTransferParameters,
+    setup: USBControlTransferParameters,
     data?: BufferSource,
   ): Promise<USBOutTransferResult> {
+    this.controlOutRequests.push({ ...setup });
+    this.lifecycle.push(`vendor-out:${setup.request}:${setup.index}`);
     const size = data
       ? ArrayBuffer.isView(data)
         ? data.byteLength
@@ -182,6 +242,9 @@ export class FakeBladeRfUsb implements USBDevice {
       return { status: "ok", bytesWritten: request.byteLength };
     }
     this.niosRequests.push(request);
+    this.lifecycle.push(
+      `nios:${request[0]}:${request[1]}:${request[2]}:${request[4]}:${request[5]}`,
+    );
     const response = Uint8Array.from(request);
     response[2] = response[2]! | 0x02;
     if (request[0] === 0x43) {
@@ -200,9 +263,9 @@ export class FakeBladeRfUsb implements USBDevice {
       if (request[2]! & 1) {
         const value = new DataView(request.buffer).getBigUint64(6, true);
         const adjustment =
-          address === 0x0003
+          (address & 0xff) === 0x03
             ? this.sampleRateReadbackOffset
-            : address === 0x0004
+            : (address & 0xff) === 0x04
               ? this.frequencyReadbackOffset
               : 0;
         this.rfic.set(address, value + BigInt(adjustment));

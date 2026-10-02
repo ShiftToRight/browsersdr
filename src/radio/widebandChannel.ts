@@ -20,7 +20,7 @@ export const CHANNEL_USRP_SC16_MAX_SAMPLES = 65_536;
  * Fixed storage, no per-sample allocation. State/oscillator reset at each generation/gap.
  * The original 95-tap stage at 4.8 MS/s preserves ±1 MHz, rejecting from ±1.4 MHz;
  * its 1.0–1.2 MHz output edge is a guard band. Delay is (tapCount - 1) / 2 input samples. */
-class HalfBandStage {
+export class HalfBandStage {
   private readonly taps: Float64Array;
   private readonly historyI: Float64Array;
   private readonly historyQ: Float64Array;

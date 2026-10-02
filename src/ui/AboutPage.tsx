@@ -58,11 +58,12 @@ export function AboutPage() {
         >
           <p className="eyebrow">Privacy</p>
           <h3 id="privacy-heading">
-            Data stays local unless you report an issue
+            Radio data stays local; error reports are optional
           </h3>
           <p>
-            Diagnostic and compatibility reporting is optional. Automatic error
-            reporting is off until you enable it in Diagnostics. Reports can
+            Automatic error reporting is on by default. You can turn it off in
+            Diagnostics; a saved opt-out is respected. Compatibility reports
+            require review and manual submission. Reports can
             contain app errors, bounded performance counters, a coarse browser
             and operating-system description, receiver configuration and an
             optional description. Exact tuned frequency is excluded unless you

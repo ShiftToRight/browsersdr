@@ -54,6 +54,7 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
   private readonly ready: Promise<void>;
+  private readonly drains = new Set<{ resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private readonly readyTimer: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -77,8 +78,10 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
       5_000,
     );
     this.worker = factory();
-    this.worker.onerror = () =>
-      this.fail(new Error("DAB decoder worker failed."));
+    this.worker.onerror = (event) =>
+      this.fail(new Error(event.message
+        ? `DAB decoder worker failed: ${event.message}`
+        : "DAB decoder worker failed."));
     this.worker.onmessage = (event: MessageEvent<DabWorkerOutput>) => {
       if (this.closed) return;
       const message = event.data;
@@ -98,6 +101,7 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
         this.programme.pushLogicalFrame(message.data);
       } else {
         this.pool.push([message.I.buffer, message.Q.buffer]);
+        this.finishDrains();
       }
     };
   }
@@ -141,6 +145,21 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
     }
   }
 
+  drain(): Promise<void> {
+    if (this.closed) return Promise.reject(new Error("DAB decoder worker closed."));
+    if (this.stagingCount) this.dispatchStaging();
+    if (this.pool.length + (this.stagingI ? 1 : 0) === DabEnsembleWorkerDecoder.BUFFER_SLOTS) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.drains.delete(waiter); reject(new Error("DAB decoder drain timed out.")); }, 15_000);
+      const waiter = { resolve, reject, timer }; this.drains.add(waiter);
+    });
+  }
+  private finishDrains(): void {
+    if (this.pool.length + (this.stagingI ? 1 : 0) !== DabEnsembleWorkerDecoder.BUFFER_SLOTS) return;
+    for (const waiter of this.drains) { clearTimeout(waiter.timer); waiter.resolve(); }
+    this.drains.clear();
+  }
+
   selectService(key: string): void {
     if (this.closed) return;
     this.generation += 1;
@@ -167,6 +186,8 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.readyTimer);
+    for (const waiter of this.drains) { clearTimeout(waiter.timer); waiter.reject(new Error("DAB decoder worker closed.")); }
+    this.drains.clear();
     this.rejectReady(new Error("DAB decoder worker closed."));
     this.worker.terminate();
     this.pool.length = 0;
@@ -176,6 +197,9 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
 
   private fail(error: Error): void {
     if (this.closed) return;
+    // Preserve the failure for callers awaiting startup before close rejects it
+    // with the generic cancellation error.
+    this.rejectReady(error);
     defaultDiagnosticRecorder.record({
       area: "decoder",
       code: "DAB_WORKER_FAILURE",
@@ -205,8 +229,8 @@ export class DabEnsembleWorkerDecoder implements DabEnsembleDecoder {
   }
 
   private dispatchStaging(): void {
-    const I = this.stagingI!,
-      Q = this.stagingQ!;
+    const I = this.stagingI!.subarray(0, this.stagingCount),
+      Q = this.stagingQ!.subarray(0, this.stagingCount);
     this.stagingI = undefined;
     this.stagingQ = undefined;
     this.stagingCount = 0;

@@ -134,7 +134,7 @@ function controller(pair: PreparedRecordingExport, atlas: FakeAtlas, retryAttemp
   return new AtlasTransferController(pair, { client: new AtlasClient({ fetch: atlas.fetch, retryAttempts, delay: async () => undefined }),
     pollDelay: async () => undefined, maxPolls: 5, idFactory: () => `pair-${++ids}` });
 }
-const request = { operatorToken: "token".repeat(8), title: "BSD-02 fixture", sourceKind: "synthetic" as const };
+const request = { userToken: "token".repeat(8), title: "BSD-02 fixture", sourceKind: "synthetic" as const };
 
 describe("incremental SHA-256", () => {
   it.each(["", "abc", "BrowserSDR bounded hashing"])("matches the standard vector for %j", value => {
@@ -151,13 +151,27 @@ describe("incremental SHA-256", () => {
 });
 
 describe("bounded authenticated SigIntAtlas transfer", () => {
+  it("uploads file-backed SigMF data in bounded slices", async () => {
+    const pair = await prepared();
+    const dataFile = pair.files.find(file => file.name.endsWith(".sigmf-data"))!;
+    const expected = dataFile.contents as Uint8Array<ArrayBuffer>;
+    dataFile.contents = new Blob([expected]);
+    const atlas = new FakeAtlas();
+    await expect(controller(pair, atlas).start(request)).resolves.toMatchObject({ recordingId: expect.any(String) });
+    const upload = Array.from(atlas.uploads.values()).find(item => item.role === "data")!;
+    const actual = Uint8Array.from(Array.from(upload.parts.entries())
+      .sort(([left], [right]) => left - right)
+      .flatMap(([, part]) => Array.from(part.bytes)));
+    expect(actual).toEqual(expected);
+  });
+
   it("saves an exact pair, schedules optional analysis, and obeys concurrency/buffer bounds", async () => {
     const atlas = new FakeAtlas(), transfer = controller(await prepared(), atlas);
     const result = await transfer.start({ ...request, analyzeAfterSave: true });
     expect(result).toMatchObject({ recordingId: "30000000-0000-4000-8000-000000000001", recordingRevisionId: "40000000-0000-4000-8000-000000000001", analysis: { status: "scheduled" } });
     expect(atlas.registrations).toBe(1); expect(atlas.analysisRequests).toBe(1);
-    expect(atlas.requestUrls.every(url => !url.includes(request.operatorToken))).toBe(true);
-    expect(atlas.loginBodies).toEqual([JSON.stringify({ operator_token: request.operatorToken })]);
+    expect(atlas.requestUrls.every(url => !url.includes(request.userToken))).toBe(true);
+    expect(atlas.loginBodies).toEqual([JSON.stringify({ operator_token: request.userToken })]);
     expect(atlas.peakParts).toBeLessThanOrEqual(2);
     expect(transfer.getSnapshot()).toMatchObject({ state: "saved", activeParts: 0, peakActiveParts: 2 });
     const metadata = (await prepared()).files.find(file => file.name.endsWith(".sigmf-meta"))!.contents as string;
@@ -275,4 +289,32 @@ describe("Atlas origin configuration", () => {
   it("rejects a secret-bearing cross-origin API configuration", () => {
     expect(() => new AtlasClient({ basePath: "https://other.example/api/v1", fetch: new FakeAtlas().fetch })).toThrow(/same browser origin/);
   });
+});
+
+it("stops hashing at the first chunk boundary after cancellation", async () => {
+  const atlas = new FakeAtlas();
+  atlas.partSize = 1024 * 1024; atlas.maxData = 8 * 1024 * 1024;
+  let release!: () => void, started!: () => void;
+  const firstRead = new Promise<void>(resolve => { started = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let reads = 0;
+  class SlowBlob extends Blob {
+    override slice(start?: number, end?: number): Blob {
+      const part = super.slice(start, end);
+      const original = part.arrayBuffer.bind(part);
+      part.arrayBuffer = async () => { reads++; started(); await gate; return original(); };
+      return part;
+    }
+  }
+  const prepared = await prepareRecordingExport(createDeterministicRecordingFixture(100), "sigmf");
+  prepared.files[0].contents = new SlowBlob([new Uint8Array(4 * 1024 * 1024)]);
+  const transfer = controller(prepared, atlas);
+  const operation = transfer.start(request);
+  const rejected = expect(operation).rejects.toMatchObject({ code: "cancelled" });
+  await firstRead;
+  await transfer.cancel();
+  release();
+  await rejected;
+  expect(reads).toBe(1);
+  expect(atlas.uploads.size).toBe(0);
 });

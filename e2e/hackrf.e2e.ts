@@ -113,15 +113,15 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   );
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
-  await expect(page.locator(".recording-controls")).toContainText(
-    /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ 32 MiB · recording/,
+  await expect(page.locator(".recording-state")).toContainText(
+    /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ (?:32|2048) MiB/,
   );
-  await page.getByRole("button", { name: "Stop & prepare" }).click();
+  await page.getByRole("button", { name: "Stop recording" }).click();
   await expect(
-    page.getByRole("button", { name: "Download paired ZIP" }),
+    page.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download paired ZIP" }).click();
+  await page.getByRole("button", { name: "Download ZIP" }).click();
   const capture = await download;
   expect(capture.suggestedFilename()).toMatch(/\.zip$/);
   const files = unzipSync(await readFile((await capture.path())!));
@@ -132,9 +132,11 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
     ),
   );
   expect(sidecar.format).toBe("browsersdr-ci8-v2");
+  await page.getByText("More options", { exact: true }).click();
   await page.getByRole("button", { name: "Discard prepared capture" }).click();
 
   await page.getByRole("tab", { name: /Explorer/ }).click();
+  await page.getByText("Edit profile bands", { exact: true }).click();
   await page.getByLabel("Start frequency").fill("4300");
   await page.getByLabel("End frequency").fill("4300.5");
   await page
@@ -147,11 +149,9 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
     .locator('.candidate-select input[type="checkbox"]')
     .first()
     .check();
-  await page
-    .getByRole("button", { name: "Capture selected", exact: true })
-    .click();
-  await expect(page.locator(".recording-controls")).toContainText(
-    /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ 32 MiB · recording/,
+  await page.getByRole("button", { name: /Capture selected \(/ }).click();
+  await expect(page.locator(".recording-state")).toContainText(
+    /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ (?:32|2048) MiB/,
   );
   const partialDownload = page.waitForEvent("download");
   await page
@@ -254,6 +254,7 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
       page.getByRole("meter", { name: "Current channel quality" }),
     ).not.toHaveAttribute("aria-valuenow", "0");
     await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+    await page.getByText("Raw counters & performance", { exact: true }).click();
     await expect(page.getByText("USB callback", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Spectrum copy", { exact: true }),
@@ -280,15 +281,15 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await page
       .getByRole("button", { name: "Start I/Q recording", exact: true })
       .click();
-    await expect(page.locator(".recording-controls")).toContainText(
-      /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ 32 MiB · recording/,
+    await expect(page.locator(".recording-state")).toContainText(
+      /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ (?:32|2048) MiB/,
     );
     await page
-      .getByRole("button", { name: "Stop & prepare", exact: true })
+      .getByRole("button", { name: "Stop recording", exact: true })
       .click();
     const download = page.waitForEvent("download");
     await page
-      .getByRole("button", { name: "Download paired ZIP", exact: true })
+      .getByRole("button", { name: "Download ZIP", exact: true })
       .click();
     const entries = unzipSync(await readFile((await (await download).path())!));
     const metadata = JSON.parse(

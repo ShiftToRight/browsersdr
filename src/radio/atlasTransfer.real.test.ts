@@ -48,7 +48,7 @@ describe.skipIf(!configured)("configured real SigIntAtlas transfer", () => {
         signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
       }),
     });
-    const saved = await controller.start({ operatorToken: operatorToken!, title: "BSD-02 isolated real-backend fixture", sourceKind: "synthetic" });
+    const saved = await controller.start({ userToken: operatorToken!, title: "BSD-02 isolated real-backend fixture", sourceKind: "synthetic" });
     expect(injectedLoss).toBe(true);
     expect(saved.dataSha256).toBe(fixture.data_sha256);
     const download = await browserFetch(`/api/v1/recordings/${saved.recordingId}/files/data?revision_id=${saved.recordingRevisionId}`);

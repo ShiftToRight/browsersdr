@@ -1,3 +1,4 @@
+import { DEFAULT_BLADERF_RX_SETTINGS, type BladeRfRxSettings } from "./bladerfSettings";
 import { defaultModeSettings, normalizeModeSettings, validateModeSampleRate, type ReceiverMode, type ReceiverModeSettings } from "./receiverConfig";
 import { channelSampleRate, DEFAULT_HACKRF_RX_SETTINGS, sourceCapabilities, validateSourceConfiguration, type HackrfRxSettings } from "./sourceCapabilities";
 import { DEFAULT_USRP_B205_RX_SETTINGS, type UsrpB205RxSettings } from "./usrpB205Capabilities";
@@ -11,6 +12,7 @@ export interface SourcePreferences {
   gainDb?: number | null;
   hardwareSettings?: HackrfRxSettings;
   usrpSettings?: UsrpB205RxSettings;
+  bladerfSettings?: BladeRfRxSettings;
 }
 const key = (source: SourceKind) => `browsersdr.source.v1.${source}`;
 export function compatibleSourceRate(source: SourceKind, mode: ReceiverMode, preferred: number): number | undefined {
@@ -25,15 +27,17 @@ export function compatibleSourceRate(source: SourceKind, mode: ReceiverMode, pre
 export function sourcePreferenceDefaults(source: SourceKind): SourcePreferences {
   const caps = sourceCapabilities(source);
   return { frequencyHz: 100_000_000, modeSettings: defaultModeSettings("WBFM"), sampleRateHz: caps.rates.kind === "choices" ? caps.rates.defaultHz : 1_024_000,
+    ...(source === "bladerf" ? { bladerfSettings: { ...DEFAULT_BLADERF_RX_SETTINGS } } : {}),
     ...(source === "rtl-sdr" ? { gainDb: null } : {}),
     ...(source === "hackrf" ? { hardwareSettings: { ...DEFAULT_HACKRF_RX_SETTINGS } } : {}),
     ...(source === "usrp-b205" ? { usrpSettings: { ...DEFAULT_USRP_B205_RX_SETTINGS } } : {}) };
 }
 function validate(source: SourceKind, value: SourcePreferences): SourcePreferences {
   if (!value || !value.modeSettings || typeof value.sampleRateHz !== "number") throw new Error("Invalid source preferences");
-  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings });
+  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings, bladerfSettings: value.bladerfSettings });
   if (compatibleSourceRate(source, value.modeSettings.mode, value.sampleRateHz) !== value.sampleRateHz) throw new Error("Incompatible saved rate");
   return { frequencyHz: value.frequencyHz, modeSettings: normalizeModeSettings(value.modeSettings), sampleRateHz: value.sampleRateHz,
+    ...(source === "bladerf" ? { bladerfSettings: { ...(value.bladerfSettings ?? DEFAULT_BLADERF_RX_SETTINGS) } } : {}),
     ...(source === "rtl-sdr" ? { gainDb: value.gainDb ?? null } : {}),
     ...(source === "hackrf" ? { hardwareSettings: { ...(value.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS) } } : {}),
     ...(source === "usrp-b205" ? { usrpSettings: { ...(value.usrpSettings ?? DEFAULT_USRP_B205_RX_SETTINGS) } } : {}) };

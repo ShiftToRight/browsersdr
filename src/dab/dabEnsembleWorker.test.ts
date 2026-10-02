@@ -22,6 +22,39 @@ class FakeWorker implements DabWorkerPort {
 }
 
 describe("DAB ensemble worker endpoint", () => {
+  it("preserves a startup failure for prepare callers", async () => {
+    const worker = new FakeWorker();
+    const onError = vi.fn();
+    const decoder = new DabEnsembleWorkerDecoder(
+      {} as DabPlusProgrammeDecoder, undefined, onError, () => worker,
+    );
+    const ready = expect(decoder.prepare()).rejects.toThrow("decoder initialization failed");
+    worker.emit({ type: "error", message: "decoder initialization failed" });
+    await ready;
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "decoder initialization failed" }));
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("includes the browser error detail in startup failures", async () => {
+    const worker = new FakeWorker();
+    const decoder = new DabEnsembleWorkerDecoder(
+      {} as DabPlusProgrammeDecoder, undefined, undefined, () => worker,
+    );
+    const ready = expect(decoder.prepare()).rejects.toThrow("DAB decoder worker failed: Failed to load module");
+    worker.onerror?.call({} as Worker, { message: "Failed to load module" } as ErrorEvent);
+    await ready;
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects pending startup when explicitly closed", async () => {
+    const decoder = new DabEnsembleWorkerDecoder(
+      {} as DabPlusProgrammeDecoder, undefined, undefined, () => new FakeWorker(),
+    );
+    const ready = expect(decoder.prepare()).rejects.toThrow("DAB decoder worker closed.");
+    decoder.close();
+    await ready;
+  });
+
   it("waits for readiness, batches small IQ blocks, and delivers decoded frames", async () => {
     const worker = new FakeWorker(),
       pushLogicalFrame = vi.fn(),
@@ -169,5 +202,22 @@ it("rejects audio from previous selections, resets programme state and keeps con
   decoder.reset();
   worker.emit({ type: "logical-frame", generation: 2, data: Uint8Array.of(4) });
   expect(pushLogicalFrame).toHaveBeenCalledTimes(1);
+  decoder.close();
+});
+
+it("flushes a short final block without padding and waits for worker consumption", async () => {
+  const worker = new FakeWorker();
+  const decoder = new DabEnsembleWorkerDecoder({} as DabPlusProgrammeDecoder, undefined, undefined, () => worker);
+  worker.emit({ type: "ready" });
+  decoder.receiveSamples({ I: Float32Array.of(1, 2, 3), Q: Float32Array.of(4, 5, 6), frequency: 220_352_000 });
+  let drained = false;
+  const completion = decoder.drain().then(() => { drained = true; });
+  const message = worker.postMessage.mock.calls.at(-1)![0];
+  expect(message).toMatchObject({ type: "samples", I: Float32Array.of(1, 2, 3), Q: Float32Array.of(4, 5, 6) });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+  worker.emit({ type: "consumed", I: message.I, Q: message.Q });
+  await completion;
+  expect(drained).toBe(true);
   decoder.close();
 });

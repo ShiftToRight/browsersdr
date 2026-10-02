@@ -16,7 +16,13 @@ describe("USRP B205-mini worker-to-main sample queue", () => {
 
     expect(queue.pushLatest(batch(4, 40))).toEqual({ blocks: 2, samples: 60 });
     expect(queue.length).toBe(1);
-    expect(queue.shift()).toEqual(batch(4, 40));
+    expect(queue.shift()).toEqual({
+      ...batch(4, 40),
+      gapsBefore: [{
+        missingSamples: 60,
+        reason: "Main thread stalled; discarded 2 stale USRP SC16 batches to catch up",
+      }],
+    });
   });
 
   it("clears generation state and rejects malformed packet accounting", () => {

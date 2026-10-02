@@ -24,7 +24,7 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx}"],
   })),
   {
-    files: ["deploy/report-service/**/*.mjs"],
+    files: ["deploy/report-service/**/*.mjs", "scripts/**/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {

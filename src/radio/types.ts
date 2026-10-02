@@ -1,5 +1,9 @@
-export type SourceKind = "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
-import type { HackrfRxSettings, HackrfSessionDetails } from "./sourceCapabilities";
+export type SourceKind =
+  "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
+import type {
+  HackrfRxSettings,
+  HackrfSessionDetails,
+} from "./sourceCapabilities";
 import type { BladeRfSessionDetails } from "./bladerfProtocol";
 import type { UsrpB205SessionDetails } from "./usrpB205Capabilities";
 import type { ReceiverMode } from "./receiverConfig";
@@ -70,7 +74,7 @@ export interface SourceSessionMetadata {
   gainDb: number | null;
   /** Required by the HackRF backend; legacy constructors need no new fields. */
   hackrf?: HackrfSessionDetails;
-  /** Present only for the receive-only bladeRF 2.0 Micro xA4 backend. */
+  /** Present only for the receive-only bladeRF 2.0 Micro backend. */
   bladerf?: BladeRfSessionDetails;
   /** Present only for the frozen receive-only USRP B205-mini profile. */
   usrpB205?: UsrpB205SessionDetails;

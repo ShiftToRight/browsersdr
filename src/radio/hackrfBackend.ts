@@ -1,7 +1,9 @@
+import type { RecordingOptions } from "./channelRecording";
 import { IngressTimings } from "./ingressTimings";
 import { isWidebandRate } from "./sourceCapabilities";
 import {
   IqRecorder,
+  preferredRecordingStorageMode,
   type IqRecording,
   type RecordingStatus,
 } from "./iqRecording";
@@ -509,7 +511,7 @@ export class HackrfBackend implements ReceiverBackend {
       return this.publishMetadata(this.transportSession!, selection);
     });
   }
-  startRecording(survey?: SurveyCaptureContext): RecordingStatus {
+  startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus {
     if (!this.receiving || !this.metadata)
       throw new Error("HackRF is not receiving.");
     if (this.recorder || this.completedRecording)
@@ -521,6 +523,8 @@ export class HackrfBackend implements ReceiverBackend {
       undefined,
       survey,
       hackrfRecordingFormat(this.metadata.hackrf),
+      preferredRecordingStorageMode(options?.storageMode),
+      options,
     );
     return this.recorder.status();
   }

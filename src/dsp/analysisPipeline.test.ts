@@ -12,6 +12,7 @@ import {
 } from "./analysisPipeline";
 
 import { WaterfallHistory } from "../graphics/waterfallHistory";
+import { RECEIVER_MODES } from "../radio/receiverConfig";
 
 class FakeWorker {
   onmessage: ((event: MessageEvent<AnalysisWorkerOutput>) => void) | null =
@@ -42,7 +43,69 @@ const METADATA = {
 
 afterEach(() => vi.unstubAllGlobals());
 
+const RECEIVER_RATE_BURSTS = [
+  { source: "rtl-sdr", rates: [1_024_000, 2_400_000], input: "samples", burst: 4 },
+  { source: "hackrf", rates: [1_024_000], input: "samples", burst: 4 },
+  { source: "hackrf", rates: [2_400_000, 4_800_000, 9_600_000, 19_200_000], input: "ci8", burst: 64 },
+  { source: "bladerf", rates: [2_400_000, 4_800_000, 9_600_000], input: "sc16", burst: 64 },
+  { source: "bladerf", rates: [19_200_000], input: "sc16", burst: 368 },
+  { source: "usrp-b205", rates: [4_800_000, 9_600_000, 19_200_000], input: "usrp-sc16", burst: 4 },
+] as const;
+
+const RECEIVER_MODE_RATE_MATRIX = RECEIVER_RATE_BURSTS.flatMap(profile =>
+  profile.rates.flatMap(rate => RECEIVER_MODES.map(mode => ({ ...profile, rate, mode }))));
+
 describe("AnalysisPipeline credits", () => {
+  it.each(RECEIVER_MODE_RATE_MATRIX)(
+    "keeps $source $rate $mode analysis lossless across its bounded callback burst",
+    ({ source, rate, mode, input, burst }) => {
+      const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker);
+      const receiver = pipeline.begin({
+        ...METADATA, source, mode, requestedSampleRateHz: rate, actualSampleRateHz: rate,
+      });
+      for (let index = 0; index < burst; index += 1) {
+        if (input === "ci8") pipeline.receiveCi8(Uint8Array.of(128, 128), 100_000_000, 7);
+        else if (input === "sc16") pipeline.receiveSc16(Uint8Array.of(0, 0, 0, 0), 100_000_000, 7);
+        else if (input === "usrp-sc16") pipeline.receiveUsrpSc16(Uint8Array.of(0, 0, 0, 0), 100_000_000, 7);
+        else receiver.receiveSamples({ I: new Float32Array(1), Q: new Float32Array(1), frequency: 100_000_000 });
+      }
+      expect(pipeline.getDiagnostics()).toMatchObject({
+        skippedInputBlocks: 0,
+        knownApplicationDiscontinuities: 0,
+      });
+      expect(worker.sent.filter(message => message.type.startsWith("samples")).length).toBe(burst);
+      pipeline.stop();
+    },
+  );
+
+  it.each([
+    [1_024_000, 4],
+    [2_400_000, 4],
+    [4_800_000, 96],
+    [9_600_000, 96],
+    [19_200_000, 128],
+  ])("bounds the %i samples/s analysis input pool to %i blocks", (rate, slots) => {
+    expect(analysisInputSlots(rate)).toBe(slots);
+  });
+
+  it.each([
+    ["rtl-sdr", 2_400_000, 4],
+    ["hackrf", 1_024_000, 4],
+    ["hackrf", 2_400_000, 96],
+    ["hackrf", 4_800_000, 96],
+    ["hackrf", 9_600_000, 96],
+    ["hackrf", 19_200_000, 96],
+    ["bladerf", 2_400_000, 96],
+    ["bladerf", 4_800_000, 96],
+    ["bladerf", 9_600_000, 96],
+    ["bladerf", 19_200_000, 512],
+    ["usrp-b205", 4_800_000, 96],
+    ["usrp-b205", 9_600_000, 96],
+    ["usrp-b205", 19_200_000, 128],
+  ] as const)("uses a source-aware %s %i samples/s pool of %i blocks", (source, rate, slots) => {
+    expect(analysisInputSlots(rate, source)).toBe(slots);
+  });
+
   it("buffers the bounded wideband credit window before marking overflow", () => {
     const worker = new FakeWorker();
     const pipeline = new AnalysisPipeline(worker as unknown as Worker);
@@ -222,7 +285,7 @@ describe("AnalysisPipeline credits", () => {
     });
   });
 
-  it("delivers measurements and returns credits while display animation is withheld", () => {
+  it("delivers measurements and returns batched credits after display animation drains", () => {
     const worker = new FakeWorker();
     let animationCallback: FrameRequestCallback | undefined;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -252,7 +315,7 @@ describe("AnalysisPipeline credits", () => {
     expect(listener).not.toHaveBeenCalled();
     expect(
       worker.sent.filter((message) => message.type === "spectrum-credit"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     worker.emit({
       type: "spectrum",
       sessionGeneration: 7,
@@ -268,7 +331,7 @@ describe("AnalysisPipeline credits", () => {
     expect(measurement).toHaveBeenCalledTimes(2);
     expect(
       worker.sent.filter((message) => message.type === "spectrum-credit"),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
     animationCallback?.(2);
     expect(listener).toHaveBeenCalledOnce();
     expect(listener.mock.calls[0]?.[0]).toMatchObject({
@@ -278,6 +341,9 @@ describe("AnalysisPipeline credits", () => {
     expect(measurement.mock.calls[1]?.[0]).toMatchObject({
       missingSamplesBefore: 0,
     });
+    expect(
+      worker.sent.filter((message) => message.type === "spectrum-credit"),
+    ).toEqual([{ type: "spectrum-credit", sessionGeneration: 7, credits: 2 }]);
   });
 
   it("rejects stale worker frames after a retune generation", () => {
@@ -564,5 +630,67 @@ describe("batched waterfall delivery", () => {
     else pipeline[action]({ ...METADATA, sessionGeneration: 8 });
     flush();
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+
+it("replaces a crashed worker, discards late replies and restores credits for the active source", () => {
+  const old = new FakeWorker(), replacement = new FakeWorker();
+  const factory = vi.fn(() => replacement as unknown as Worker);
+  const pipeline = new AnalysisPipeline(old as unknown as Worker, "javascript", factory);
+  const receiver = pipeline.begin(METADATA);
+  const block = { I: new Float32Array(8), Q: new Float32Array(8), frequency: METADATA.hardwareCenterFrequencyHz };
+  receiver.receiveSamples(block);
+  (old as unknown as Worker).onerror?.({ message: "crash" } as ErrorEvent);
+  expect(factory).toHaveBeenCalledOnce();
+  expect(old.onmessage).toBeNull();
+  expect(replacement.sent[0]).toMatchObject({ type: "configure", sessionGeneration: 7 });
+  receiver.receiveSamples(block);
+  expect(replacement.sent.at(-1)).toMatchObject({ type: "samples", sessionGeneration: 7 });
+  expect(pipeline.getDiagnostics().knownApplicationDiscontinuities).toBe(1);
+  pipeline.dispose();
+});
+
+describe("on-demand signal centering", () => {
+  it("excludes samples queued before click and ignores cancelled result IDs", async () => {
+    const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker);
+    const receiver = pipeline.begin(METADATA);
+    receiver.receiveSamples({ I: new Float32Array(10), Q: new Float32Array(10), frequency: METADATA.hardwareCenterFrequencyHz });
+    const pending = pipeline.measureSignalCenter(METADATA);
+    const request = worker.sent.find(message => message.type === "center-start")!;
+    expect(request).toMatchObject({ minimumSampleIndex: 10 });
+    if (request.type !== "center-start") throw new Error("Missing request");
+    pipeline.cancelSignalCenter();
+    expect((await pending).kind).toBe("failure");
+    worker.emit({ type: "center-result", sessionGeneration: 7, requestId: request.requestId, result: { kind: "estimate", offsetHz: 2000, toleranceHz: 50, message: "OK" } });
+    const second = pipeline.measureSignalCenter(METADATA);
+    const next = worker.sent.filter(message => message.type === "center-start").at(-1)!;
+    if (next.type !== "center-start") throw new Error("Missing request");
+    worker.emit({ type: "center-result", sessionGeneration: 7, requestId: request.requestId, result: { kind: "estimate", offsetHz: 8000, message: "old" } });
+    worker.emit({ type: "center-result", sessionGeneration: 7, requestId: next.requestId, result: { kind: "estimate", offsetHz: 2000, message: "fresh" } });
+    expect((await second).message).toBe("fresh"); pipeline.dispose();
+  });
+  it.each(["retune", "gap", "stop"])("invalidates a measurement on %s", async operation => {
+    const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker); pipeline.begin(METADATA);
+    const pending = pipeline.measureSignalCenter(METADATA);
+    if (operation === "retune") pipeline.retune({ ...METADATA, sessionGeneration: 8 });
+    else if (operation === "gap") pipeline.markDiscontinuity(10);
+    else pipeline.stop();
+    expect((await pending).kind).toBe("failure"); pipeline.dispose();
+  });
+  it("returns an actionable failure if fresh data never arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker); pipeline.begin(METADATA);
+      const pending = pipeline.measureSignalCenter(METADATA); await vi.advanceTimersByTimeAsync(4000);
+      expect((await pending).message).toContain("Check reception"); pipeline.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+  it("keeps native CI8 measurement ingress with a WebGPU tap attached", () => {
+    const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker); pipeline.begin({ ...METADATA, source: "hackrf" });
+    const tap = vi.fn(); pipeline.attachGpuTap(vi.fn(), tap);
+    pipeline.receiveCi8(new Uint8Array(16), METADATA.hardwareCenterFrequencyHz, 7);
+    expect(tap).toHaveBeenCalledTimes(1);
+    expect(worker.sent.find(message => message.type === "samples-ci8")).toMatchObject({ sampleIndex: 0 }); pipeline.dispose();
   });
 });

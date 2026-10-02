@@ -29,6 +29,7 @@
   "dependencies": {
     "@jtarrio/signals": "0.10.1",
     "@jtarrio/webrtlsdr": "3.0.6",
+    "@noble/hashes": "^2.4.0",
     "fflate": "0.8.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"

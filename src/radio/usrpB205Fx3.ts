@@ -649,7 +649,11 @@ export class UsrpB205Fx3Connection {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const current = await this.state(token);
       if (current === target) return;
-      if (current === 5 || current === 6)
+      // The FX3 handles the prepare/start requests on its application thread.
+      // State 5 (unconfigured) and the preceding/next non-terminal states may
+      // therefore remain observable for several polls after EP0 acknowledges
+      // the request. UHD only treats undefined/error as terminal here.
+      if (current === 0 || current === 6)
         throw new Error(
           `USRP B205-mini FPGA ${phase} failed in loader state ${current}; a physical USB power cycle is required.`,
         );
@@ -667,7 +671,7 @@ export class UsrpB205Fx3Connection {
       for (let attempt = 0; attempt < 100; attempt += 1) {
         await this.pause(token, 10);
         current = await this.state(token);
-        if (current === 4) return current;
+        if (current === 1 || current === 4 || current === 5) return current;
         if (current !== 3) {
           throw new Error(
             `USRP B205-mini FPGA loader left busy state for unsafe state ${current}; physically power-cycle before retrying.`,
@@ -678,7 +682,7 @@ export class UsrpB205Fx3Connection {
         "USRP B205-mini FPGA loader remained busy for 1 second; physically power-cycle before retrying.",
       );
     }
-    if (![4, 5].includes(current)) {
+    if (![1, 4, 5].includes(current)) {
       throw new Error(
         `USRP B205-mini FPGA loader is in unsafe initial state ${current}; close it and physically power-cycle before retrying.`,
       );
@@ -711,18 +715,28 @@ export class UsrpB205Fx3Connection {
     };
   }
 
-  private async load(token: number, image: Uint8Array): Promise<void> {
+  private async load(
+    token: number,
+    image: Uint8Array,
+    initialState: UsrpB205Fx3State,
+  ): Promise<void> {
     await this.controlIn(token, 0x22, 512);
     await this.controlOut(token, 0x1c, Uint8Array.of(0, 0, 0, 0));
+    // State 1 means the firmware has already consumed FPGA_CONFIG and is
+    // waiting for FPGA_START. Sending FPGA_CONFIG again would queue a second
+    // configuration pass, so resume at the start signal. No image bytes can
+    // have been accepted before the firmware advances to state 2.
+    if (initialState !== 1) {
+      await this.controlOut(token, 0x55, Uint8Array.of(0));
+      await this.pollState(token, 1, 500, "preparation");
+    }
+    await this.controlOut(token, 0x02, Uint8Array.of(0));
+    await this.pollState(token, 2, 1_000, "configuration start");
     this.diagnosticsValue = {
       ...this.diagnosticsValue,
       mutationStarted: true,
       powerCycleRequired: true,
     };
-    await this.controlOut(token, 0x55, Uint8Array.of(0));
-    await this.pollState(token, 1, 500, "preparation");
-    await this.controlOut(token, 0x02, Uint8Array.of(0));
-    await this.pollState(token, 2, 1_000, "configuration start");
     for (let offset = 0; offset < image.byteLength; offset += 512) {
       await this.controlOut(
         token,
@@ -850,7 +864,7 @@ export class UsrpB205Fx3Connection {
     ) {
       imageDisposition = "already-compatible";
     } else {
-      await this.load(token, verified);
+      await this.load(token, verified, compatible.state);
       imageDisposition = "loaded-volatile";
     }
     await this.controlOut(token, 0x72, Uint8Array.of(0, 0, 0, 0));

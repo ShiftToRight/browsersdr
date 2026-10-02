@@ -1,5 +1,6 @@
 import { FFT_SIZE, SpectrumAccumulator } from "./spectrumMath";
 import type { SpectrumKernel } from "./spectrumBackend";
+import { SPECTRUM_PUBLICATION_WINDOW } from "./spectrumProtocol";
 
 export function spectrumWindowsPerAverage(sampleRateHz: number): number {
   return Math.max(4, Math.ceil(sampleRateHz * 0.04 / FFT_SIZE));
@@ -19,16 +20,18 @@ export class SpectrumProcessor {
   private readonly pendingI = new Float32Array(FFT_SIZE);
   private readonly pendingQ = new Float32Array(FFT_SIZE);
   private pendingLength = 0;
-  private publicationCredit = true;
+  private publicationCredits: number;
   private lastPublicationMs = -Infinity;
   private droppedSincePublication = 0;
   private skippedSpectrumFramesSincePublication = 0;
   private sampleIndex = 0;
   private missingSamplesSincePublication = 0;
 
-  constructor(accumulator: SpectrumKernel = new SpectrumAccumulator(), private readonly sampleClockCadence = false) {
+  constructor(accumulator: SpectrumKernel = new SpectrumAccumulator(), private readonly sampleClockCadence = false, private readonly publicationWindow = SPECTRUM_PUBLICATION_WINDOW) {
     if (accumulator.size !== FFT_SIZE) throw new RangeError(`SpectrumProcessor requires ${FFT_SIZE} bins`);
+    if (!Number.isSafeInteger(publicationWindow) || publicationWindow < 1) throw new RangeError("publicationWindow must be a positive integer");
     this.accumulator = accumulator;
+    this.publicationCredits = publicationWindow;
   }
 
   dispose(): void { this.accumulator.dispose?.(); }
@@ -39,12 +42,15 @@ export class SpectrumProcessor {
     this.lastPublicationMs = -Infinity;
     this.droppedSincePublication = 0;
     this.skippedSpectrumFramesSincePublication = 0;
-    this.publicationCredit = true;
+    this.publicationCredits = this.publicationWindow;
     this.sampleIndex = 0;
     this.missingSamplesSincePublication = 0;
   }
 
-  grantPublicationCredit(): void { this.publicationCredit = true; }
+  grantPublicationCredit(count = 1): void {
+    if (!Number.isSafeInteger(count) || count < 1) return;
+    this.publicationCredits = Math.min(this.publicationWindow, this.publicationCredits + count);
+  }
 
   accept(
     I: Float32Array,
@@ -66,12 +72,12 @@ export class SpectrumProcessor {
     this.droppedSincePublication += droppedInputBlocks;
     const output: ProcessorFrame[] = [];
     const publish = (bins: Float32Array) => {
-      if (!this.publicationCredit || (!this.sampleClockCadence && nowMs - this.lastPublicationMs < 40)) {
+      if (this.publicationCredits < 1 || (!this.sampleClockCadence && nowMs - this.lastPublicationMs < 40)) {
         this.droppedSincePublication += 1;
         this.skippedSpectrumFramesSincePublication += 1;
         return;
       }
-      this.publicationCredit = false;
+      this.publicationCredits -= 1;
       this.lastPublicationMs = nowMs;
       output.push({
         bins,

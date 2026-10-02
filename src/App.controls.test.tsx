@@ -16,6 +16,7 @@ import type { SourceSessionMetadata } from "./radio/types";
 import { USRP_B205_IMAGE } from "./radio/usrpB205Images";
 import { usrpB205SessionDetails } from "./testing/usrpB205SessionFixture";
 import { usrpB205FirmwareFixture } from "./testing/usrpB205FirmwareFixture";
+import type { BladeRfMicroModel } from "./radio/bladerfModels";
 vi.mock("./graphics/WebGpuSpectrum", () => ({ WebGpuSpectrum: () => null }));
 vi.mock("./ui/SpectrumExplorer", () => ({
   SpectrumExplorer: vi.fn(() => null),
@@ -31,11 +32,19 @@ let hardwareCalls = 0;
 let analogCalls: Array<{ bandwidthHz: number; squelch: number }> = [];
 let backendEvents: ReceiverBackendEvents;
 let connectionWait: Promise<void> | undefined;
+let connectionError: Error | undefined;
+let tuningWait: Promise<void> | undefined;
+let tuneFails = false;
+let bladeRfModel: BladeRfMicroModel = "xA4";
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   options = [];
   connectionWait = undefined;
+  connectionError = undefined;
+  tuningWait = undefined;
+  tuneFails = false;
+  bladeRfModel = "xA4";
   closes = 0;
   closeFailures = 0;
   hardwareCalls = 0;
@@ -44,6 +53,7 @@ beforeEach(async () => {
   const backend: ReceiverBackend = {
     connect: async (value) => {
       options.push(value);
+      if (connectionError) throw connectionError;
       if (connectionWait) {
         backendEvents.permissionGranted();
         await connectionWait;
@@ -62,6 +72,33 @@ beforeEach(async () => {
           usrpB205: details,
         };
       }
+      if (value.source === "bladerf") {
+        const image = (await import("./radio/bladerfImages")).BLADERF_HOSTED_IMAGES.find(
+          (candidate) => candidate.model === bladeRfModel && candidate.version === "0.16.0",
+        )!;
+        const bladerf = {
+          identity: {
+            model: bladeRfModel,
+            firmware: { major: 2, minor: 5 },
+            fpga: { major: 0, minor: 16, patch: 0 },
+            volatileImage: { model: image.model, version: image.version, sha256: image.sha256 },
+            variantValidation: bladeRfModel === "xA4" ? "existing-xa4-profile" : "experimental",
+          },
+          nativeSampleRateHz: 4_800_000,
+          acceptedSampleRateHz: 4_800_000,
+          effectiveSampleRateHz: 4_800_000,
+          gainMode: "slow-attack-agc",
+          rxInput: "RX1",
+        } as NonNullable<SourceSessionMetadata["bladerf"]>;
+        return {
+          ...metadata,
+          source: "bladerf",
+          hackrf: undefined,
+          bladerf,
+          hardwareCenterFrequencyHz: value.channelFrequencyHz,
+          selectedChannelFrequencyHz: value.channelFrequencyHz,
+        };
+      }
       return {
         ...metadata,
         hardwareCenterFrequencyHz: value.channelFrequencyHz,
@@ -77,7 +114,11 @@ beforeEach(async () => {
       closes++;
       if (closeFailures-- > 0) throw new Error("USB close failed");
     },
-    tune: async () => metadata,
+    tune: async (frequencyHz) => {
+      await tuningWait;
+      if (tuneFails) throw new Error("Tune rejected by receiver");
+      return { ...metadata, selectedChannelFrequencyHz: frequencyHz };
+    },
     setVolume: () => undefined,
     setGain: async () => null,
     configureMode: async () => metadata,
@@ -216,7 +257,7 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
     antennaPowerEnabled: false,
   });
 });
-it("renders only the receive-only B205 rates and never enables recording", async () => {
+it("renders the receive-only B205 rates and offers ci16_le SigMF recording", async () => {
   await change(control("Source"), "usrp-b205");
   expect(control("Sample rate").value).toBe("4800000");
   expect(control("Sample rate").disabled).toBe(false);
@@ -273,7 +314,9 @@ it("renders only the receive-only B205 rates and never enables recording", async
       .find((button) => button.textContent === "Start I/Q recording")
       ?.hasAttribute("disabled"),
   ).toBe(true);
-  expect(document.body.textContent).toContain("SigMF hardware claims");
+  expect(control("Recording export format").value).toBe("sigmf");
+  expect(document.body.textContent).toContain("SigMF ci16_le");
+  expect(document.body.textContent).not.toContain("SigMF hardware claims are unavailable");
 });
 it("selects a source-compatible digital rate before connect and keeps stopped configuration editable", async () => {
   await change(control("Source"), "hackrf");
@@ -290,15 +333,17 @@ it("selects a source-compatible digital rate before connect and keeps stopped co
   expect(control("Sample rate").value).toBe("2400000");
   expect(controller.getSnapshot().session?.source).toBe("hackrf");
 });
-it("offers spectrum-only tuning with the audio control disabled", async () => {
+it("offers spectrum-only tuning without unrelated audio controls", async () => {
   await change(control("Source"), "hackrf");
   const off = document.querySelector<HTMLOptionElement>('option[value="OFF"]')!;
   expect(off.textContent).toContain("Spectrum only");
   await change(control("Mode"), "OFF");
-  expect(control("Volume").disabled).toBe(true);
-  expect(document.body.textContent).toContain(
-    "Demodulation and audio are disabled",
-  );
+  expect(
+    Array.from(document.querySelectorAll("label")).some((label) =>
+      label.textContent?.startsWith("Volume"),
+    ),
+  ).toBe(false);
+  expect(document.body.textContent).toContain("Demodulation disabled");
   expect(document.body.textContent).toContain("Spectrum only");
   await click("Connect");
   await click("Start receiving");
@@ -361,7 +406,7 @@ it("exposes a top-level help view with scoped compatibility evidence and a demo 
   expect(document.body.textContent).toContain("Tested receiver setups");
   const overview = document.querySelector(".compatibility-overview")!;
   expect(overview.querySelectorAll(".compat-status.is-validated")).toHaveLength(
-    4,
+    3,
   );
   expect(overview.querySelectorAll(".compat-status.is-unclear")).toHaveLength(
     1,
@@ -460,7 +505,7 @@ it("exposes licence, driver provenance, and privacy information in About", async
   );
   expect(document.body.textContent).toContain("Licences, privacy & provenance");
   expect(document.body.textContent).toContain(
-    "Automatic error reporting is off until you enable it in Diagnostics",
+    "Automatic error reporting is on by default",
   );
   expect(document.body.textContent).toContain(
     "Analog Devices no-OS · BSD-3-Clause",
@@ -646,6 +691,7 @@ it("polls visible diagnostics only while keeping hidden health snapshots", async
 it("updates DAB audio telemetry without rebuilding the receiver controls or hidden views", async () => {
   await change(control("Source"), "hackrf");
   await change(control("Mode"), "DAB");
+  metadata = { ...metadata, mode: "DAB", channelBandwidthHz: 1_536_000 };
   await click("Connect");
   await click("Start receiving");
   const renders = vi.mocked(SpectrumExplorer).mock.calls.length;
@@ -712,12 +758,43 @@ it("shows connection activity until initialization finishes, then enables recept
   );
 });
 
+it.each([
+  ["xA4", "Existing xA4 receive profile."],
+  ["xA5", "This xA5/xA9 receive profile is experimental and awaits owner hardware validation."],
+  ["xA9", "This xA5/xA9 receive profile is experimental and awaits owner hardware validation."],
+] as const)("shows the detected bladeRF %s model and matching firmware image", async (model, status) => {
+  bladeRfModel = model;
+  await change(control("Source"), "bladerf");
+  expect((control("Signal source") as HTMLSelectElement).selectedOptions[0]?.textContent).toContain(
+    "bladeRF 2.0 Micro device",
+  );
+  expect(document.body.textContent).toContain("Missing or mismatched images stop connection before FPGA programming.");
+  await click("Connect");
+  const details = document.querySelector('[aria-label="Detected bladeRF model and image"]')!;
+  expect(details.textContent).toContain(`Detected bladeRF 2.0 Micro ${model}`);
+  expect(details.textContent).toContain(`firmware 2.5 · required hosted${model} v0.16.0`);
+  expect(details.textContent).toContain(status);
+  expect(details.textContent).toContain(`Verified volatile image: hosted${model} v0.16.0`);
+  expect(document.body.textContent).toContain("xA5 and xA9 are experimental pending owner hardware validation");
+  expect(control("bladeRF receive input").value).toBe("RX1");
+  await change(control("bladeRF receive input"), "RX2");
+  expect(JSON.parse(localStorage.getItem("browsersdr.source.v1.bladerf")!).bladerfSettings.rxInput).toBe("RX2");
+  await change(control("bladeRF gain mode"), "manual");
+  expect(control("bladeRF manual gain")).toBeTruthy();
+  await click("Capture & replay");
+  expect(control("Recording export format").value).toBe("sigmf");
+  expect(document.body.textContent).toContain("SigMF ci16_le");
+  expect(document.body.textContent).not.toContain("recording and SigMF hardware claims are unavailable");
+});
+
 it("uses the same verified checklist for bladeRF and keeps failed replacement errors visible", async () => {
   const images = await import("./radio/bladerfImages");
   vi.spyOn(images, "importBladeRfImage").mockResolvedValue(
-    images.BLADERF_HOSTED_IMAGES[0]!,
+    images.BLADERF_HOSTED_IMAGES.find((image) => image.model === "xA5" && image.version === "0.16.0")!,
   );
-  vi.spyOn(images, "storedBladeRfImageVersions").mockResolvedValue(["0.15.3"]);
+  vi.spyOn(images, "storedBladeRfImages").mockResolvedValue([
+    images.BLADERF_HOSTED_IMAGES.find((image) => image.model === "xA5" && image.version === "0.16.0")!,
+  ]);
   await change(control("Source"), "bladerf");
   const input = document.querySelector<HTMLInputElement>(
     '.setup-checklist input[type="file"]',
@@ -732,6 +809,8 @@ it("uses the same verified checklist for bladeRF and keeps failed replacement er
   expect(document.querySelector(".setup-file-verified")?.textContent).toBe(
     "✓ FPGA image verified",
   );
+  expect(document.body.textContent).toContain("Verified and saved official hostedxA5 v0.16.0");
+  expect(document.body.textContent).toContain("Saved: hostedxA5 v0.16.0.");
   expect(input.getAttribute("aria-label")).toBe("Replace fpga image");
   vi.mocked(images.importBladeRfImage).mockRejectedValue(
     new Error("Image checksum does not match"),
@@ -745,4 +824,146 @@ it("uses the same verified checklist for bladeRF and keeps failed replacement er
   expect(document.querySelector(".setup-file-verified")?.textContent).toBe(
     "✓ FPGA image verified",
   );
+});
+
+it("keeps the live frequency unchanged until the receiver acknowledges tuning", async () => {
+  await change(control("Source"), "hackrf");
+  await click("Connect");
+  await click("Start receiving");
+  const live = document.querySelector(".operational-rail")!;
+  const original = live.textContent;
+  const nextMhz = metadata.selectedChannelFrequencyHz / 1_000_000 + 1;
+  await change(control("Channel frequency"), String(nextMhz));
+  expect(live.textContent).toBe(original);
+  expect(document.querySelector("#frequency-state")?.textContent).toContain(
+    "Change pending",
+  );
+  let finish!: () => void;
+  tuningWait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await click("Tune");
+  expect(document.querySelector("#frequency-state")?.textContent).toContain(
+    "Applying frequency",
+  );
+  expect(live.textContent).toContain(
+    (metadata.selectedChannelFrequencyHz / 1_000_000).toFixed(6),
+  );
+  await act(async () => {
+    finish();
+    await tuningWait;
+  });
+  expect(live.textContent).toContain(nextMhz.toFixed(6));
+  expect(document.querySelector("#frequency-state")?.textContent).toBe(
+    "✓ Tuned",
+  );
+});
+it("retains the requested frequency after a receiver tuning failure", async () => {
+  await change(control("Source"), "hackrf");
+  await click("Connect");
+  await click("Start receiving");
+  const nextMhz = metadata.selectedChannelFrequencyHz / 1_000_000 + 1;
+  await change(control("Channel frequency"), String(nextMhz));
+  tuneFails = true;
+  await click("Tune");
+  expect(control("Channel frequency").value).toBe(String(nextMhz));
+  expect(document.body.textContent).toContain("Tune rejected by receiver");
+  expect(document.querySelector("#frequency-state")?.textContent).not.toBe(
+    "✓ Tuned",
+  );
+});
+
+
+it("keeps initial USB setup short and shares the OS choice with recovery steps", async () => {
+  const readiness = document.querySelector(".connection-readiness")!;
+  expect(readiness.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
+  expect(readiness.querySelector("p")!.textContent!.length).toBeLessThan(85);
+  await act(async () => readiness.querySelector("summary")?.click());
+  await change(readiness.querySelector("select")!, "Linux");
+  expect(readiness.textContent).toContain("sudo modprobe -r dvb_usb_rtl28xxu");
+
+  connectionError = Object.assign(new Error("Unable to claimInterface"), { name: "NetworkError" });
+  await click("Connect");
+  const status = document.querySelector(".receiver-status")!;
+  expect(status.textContent).toContain("system driver may be using it");
+  expect(status.querySelector<HTMLDetailsElement>(".connection-help-details")?.open).toBe(false);
+  await act(async () => status.querySelector("summary")?.click());
+  expect(status.querySelector("select")?.value).toBe("Linux");
+  expect(status.textContent).toContain("sudo modprobe -r dvb_usb_rtl28xxu");
+  await change(status.querySelector("select")!, "Windows");
+  expect(status.textContent).toContain("WinUSB");
+  expect(status.textContent).not.toContain("modprobe");
+  expect(document.querySelector<HTMLSelectElement>(".connection-readiness select")?.value).toBe("Windows");
+  connectionError = undefined;
+  await act(async () => status.querySelector<HTMLButtonElement>(".recovery-actions button")!.click());
+  expect(controller.getSnapshot().lifecycle).toBe("connected");
+  expect(document.querySelector(".receiver-recovery")).toBeNull();
+  expect(document.querySelector(".connection-readiness")).toBeNull();
+});
+
+it("shows a neutral cancellation with a chooser retry and no report button", async () => {
+  connectionError = new DOMException("No device selected", "NotFoundError");
+  await click("Connect");
+  const status = document.querySelector(".receiver-status")!;
+  expect(status.getAttribute("role")).toBe("status");
+  expect(status.textContent).toContain("cancelled");
+  expect(status.textContent).toContain("Choose device again");
+  expect(status.querySelector(".connection-help-details")).toBeNull();
+  expect(status.querySelector(".report-error-button")).toBeNull();
+  expect(document.querySelector(".acquire-connection-status")?.textContent).toBe("Not connected");
+});
+
+it("offers release before retry when cleanup fails and clears hints after release", async () => {
+  await change(control("Source"), "hackrf");
+  await click("Connect");
+  closeFailures = 1;
+  await click("Disconnect");
+  expect(document.querySelector(".recovery-actions")?.textContent).toBe("Release device");
+  expect(document.querySelector(".recovery-hint")?.textContent).toMatch(/^Release/);
+  await click("Release device");
+  expect(closes).toBe(2);
+  expect(controller.getSnapshot().cleanupRequired).not.toBe(true);
+  expect(document.querySelector(".receiver-recovery")).toBeNull();
+});
+
+it("hides hardware setup for the no-hardware demo and recording replay", async () => {
+  await change(control("Source"), "synthetic");
+  expect(document.querySelector(".connection-readiness")).toBeNull();
+  await change(control("Source"), "replay");
+  expect(document.querySelector(".connection-readiness")).toBeNull();
+});
+
+it("centers the running channel once and keeps frequency input and Undo correct through provisional tune state", async () => {
+  metadata = { ...metadata, hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_120_000, mode: "AM" };
+  await change(control("Source"), "hackrf");
+  await change(control("Mode"), "AM");
+  await change(control("Channel frequency"), "100.12");
+  await click("Connect"); await click("Start receiving");
+  let resolveMeasurement!: (value: import("./dsp/signalCenter").SignalCenterResult) => void;
+  const measure = vi.spyOn(analysis, "measureSignalCenter").mockImplementation(() => new Promise(resolve => { resolveMeasurement = resolve; }));
+  let resolveTune!: () => void;
+  tuningWait = new Promise<void>(resolve => { resolveTune = resolve; });
+  await click("Center signal");
+  expect(measure).toHaveBeenCalledTimes(1);
+  await act(async () => resolveMeasurement({ kind: "estimate", offsetHz: 1500, toleranceHz: 25, message: "OK" }));
+  expect(controller.getSnapshot().lifecycle).toBe("tuning");
+  expect(control("Channel frequency").value).toBe("100.12");
+  expect(document.body.textContent).toContain("Applying measured correction");
+  await act(async () => resolveTune());
+  expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).toBe(100_121_500);
+  expect(control("Channel frequency").value).toBe("100.1215");
+  expect(document.body.textContent).toContain("Corrected +1,500 Hz");
+  await click("Undo center");
+  expect(control("Channel frequency").value).toBe("100.12");
+  expect(document.body.textContent).toContain("Previous frequency restored");
+  expect(measure).toHaveBeenCalledTimes(1);
+});
+
+it("disables center signal with a pending channel frequency edit", async () => {
+  metadata = { ...metadata, hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_120_000, mode: "AM" };
+  await change(control("Source"), "hackrf"); await change(control("Mode"), "AM"); await change(control("Channel frequency"), "100.12");
+  await click("Connect"); await click("Start receiving");
+  const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent === "Center signal")!;
+  expect(button.disabled).toBe(false);
+  await change(control("Channel frequency"), "100.13"); expect(button.disabled).toBe(true);
 });

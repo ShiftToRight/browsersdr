@@ -387,6 +387,20 @@ export function createReportServer(options = {}) {
     "INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,?,?) ON CONFLICT(bucket) DO UPDATE SET count=excluded.count, expires_at=excluded.expires_at",
   );
 
+  const purgeExpired = (now = new Date()) => {
+    database
+      .prepare("DELETE FROM reports WHERE expires_at <= ?")
+      .run(now.toISOString());
+    database
+      .prepare("DELETE FROM fingerprint_counts WHERE expires_at <= ?")
+      .run(now.toISOString());
+    database
+      .prepare("DELETE FROM rate_limits WHERE expires_at <= ?")
+      .run(Math.floor(now.getTime() / 1000));
+  };
+  purgeExpired();
+  // Run even when no reports arrive. Start only while the server owns the DB.
+  let retentionTimer;
   const server = createServer((request, response) => {
     if (request.url === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -512,15 +526,7 @@ export function createReportServer(options = {}) {
           sanitized.build.id ?? null,
           primaryCode,
         );
-        database
-          .prepare("DELETE FROM reports WHERE expires_at < ?")
-          .run(receivedAt.toISOString());
-        database
-          .prepare("DELETE FROM fingerprint_counts WHERE expires_at < ?")
-          .run(receivedAt.toISOString());
-        database
-          .prepare("DELETE FROM rate_limits WHERE expires_at < ?")
-          .run(nowSeconds);
+        purgeExpired(receivedAt);
         response.writeHead(202, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
@@ -545,7 +551,21 @@ export function createReportServer(options = {}) {
       }
     });
   });
-  return { server, database };
+  server.on("listening", () => {
+    retentionTimer = setInterval(
+      () => {
+        try {
+          purgeExpired();
+        } catch (error) {
+          console.error("Report retention cleanup failed", error);
+        }
+      },
+      options.cleanupIntervalMs ?? 60 * 60 * 1000,
+    );
+    retentionTimer.unref();
+  });
+  server.on("close", () => clearInterval(retentionTimer));
+  return { server, database, purgeExpired };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -1,3 +1,5 @@
+import type { SourceSessionMetadata } from "../radio/types";
+import type { SignalCenterResult } from "./signalCenter";
 import type { AnalysisBackendName, AnalysisBackendPreference } from "./spectrumBackend";
 
 export interface ConfigureAnalysisMessage {
@@ -10,6 +12,8 @@ export interface ConfigureAnalysisMessage {
 
 export interface AnalysisSamplesMessage {
   type: "samples";
+  /** Source-clock position; used to exclude queued pre-click samples. */
+  sampleIndex?: number;
   sessionGeneration: number;
   centerFrequencyHz: number;
   sampleRateHz: number;
@@ -27,8 +31,10 @@ export type AnalysisSc16Ack = Omit<AnalysisAckMessage, "type" | "I" | "Q"> & { t
 export type AnalysisUsrpSc16Message = Omit<AnalysisSamplesMessage, "type" | "I" | "Q"> & { type: "samples-usrp-sc16"; bytes: ArrayBuffer };
 export type AnalysisUsrpSc16Ack = Omit<AnalysisAckMessage, "type" | "I" | "Q"> & { type: "samples-usrp-sc16-ack"; bytes: ArrayBuffer };
 export interface AnalysisStopMessage { type: "stop"; sessionGeneration: number }
-export interface SpectrumCreditMessage { type: "spectrum-credit"; sessionGeneration: number }
-export type AnalysisWorkerInput = ConfigureAnalysisMessage | AnalysisSamplesMessage | AnalysisCi8Message | AnalysisSc16Message | AnalysisUsrpSc16Message | AnalysisStopMessage | SpectrumCreditMessage;
+/** Maximum spectrum rows that may cross the worker boundary before the display drains them. */
+export const SPECTRUM_PUBLICATION_WINDOW = 32;
+export interface SpectrumCreditMessage { type: "spectrum-credit"; sessionGeneration: number; credits: number }
+export type AnalysisWorkerInput = ConfigureAnalysisMessage | AnalysisSamplesMessage | AnalysisCi8Message | AnalysisSc16Message | AnalysisUsrpSc16Message | AnalysisStopMessage | SpectrumCreditMessage | CenterStartMessage | CenterCancelMessage;
 
 export interface AnalysisAckMessage {
   type: "samples-ack";
@@ -57,4 +63,8 @@ export interface AnalysisFrameMessage {
   hopSamples?: number;
 }
 
-export type AnalysisWorkerOutput = AnalysisAckMessage | AnalysisCi8Ack | AnalysisSc16Ack | AnalysisUsrpSc16Ack | AnalysisFrameMessage;
+export type AnalysisWorkerOutput = AnalysisAckMessage | AnalysisCi8Ack | AnalysisSc16Ack | AnalysisUsrpSc16Ack | AnalysisFrameMessage | CenterResultMessage;
+
+export interface CenterStartMessage { type: "center-start"; sessionGeneration: number; requestId: number; minimumSampleIndex: number; metadata: SourceSessionMetadata }
+export interface CenterCancelMessage { type: "center-cancel"; sessionGeneration: number; requestId: number }
+export interface CenterResultMessage { type: "center-result"; sessionGeneration: number; requestId: number; result: SignalCenterResult }

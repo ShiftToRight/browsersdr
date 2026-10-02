@@ -335,6 +335,7 @@ export class AtlasClient {
           ...init,
           headers,
           credentials: "same-origin",
+          signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
         });
         if (response.ok) {
           if (response.status === 204) return undefined as T;

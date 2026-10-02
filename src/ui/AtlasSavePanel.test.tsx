@@ -124,7 +124,7 @@ it("requires an explicit action and renders verified save plus partial analysis 
   const controller = new FakeController();
   controller.start.mockImplementation(async (request) => {
     expect(request).toEqual({
-      operatorToken: "t".repeat(32),
+      userToken: "t".repeat(32),
       title: "Capture title",
       sourceKind: "synthetic",
       analyzeAfterSave: true,
@@ -163,10 +163,10 @@ it("requires an explicit action and renders verified save plus partial analysis 
     "Offline ZIP and separate-file downloads remain available",
   );
   expect(host.querySelector("unsafe")).toBeNull();
-  expect(input("SigIntAtlas operator token").type).toBe("password");
+  expect(input("SigIntAtlas user token").type).toBe("password");
 
   await setInput(input("SigIntAtlas recording title"), "Capture title");
-  await setInput(input("SigIntAtlas operator token"), "t".repeat(32));
+  await setInput(input("SigIntAtlas user token"), "t".repeat(32));
   await act(async () => {
     (host.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
     (
@@ -186,7 +186,7 @@ it("requires an explicit action and renders verified save plus partial analysis 
   expect(
     host.querySelector<HTMLAnchorElement>('a[href^="/#/runs/"]')?.textContent,
   ).toBe("Open analysis result");
-  expect(input("SigIntAtlas operator token").value).toBe("");
+  expect(input("SigIntAtlas user token").value).toBe("");
 });
 
 it("surfaces authentication failure and retries the same prepared pair", async () => {
@@ -216,7 +216,7 @@ it("surfaces authentication failure and retries the same prepared pair", async (
       />,
     ),
   );
-  await setInput(input("SigIntAtlas operator token"), "t".repeat(32));
+  await setInput(input("SigIntAtlas user token"), "t".repeat(32));
   await act(async () => {
     (host.querySelector("button") as HTMLButtonElement).click();
   });
@@ -258,7 +258,7 @@ it("survives Strict Mode effect replay, then cancels on unmount and ignores a la
     (controller) => controller.listeners.size > 0,
   )!;
   expect(subscribedController.cancel).not.toHaveBeenCalled();
-  await setInput(input("SigIntAtlas operator token"), "t".repeat(32));
+  await setInput(input("SigIntAtlas user token"), "t".repeat(32));
   await act(async () => {
     (host.querySelector("button") as HTMLButtonElement).click();
   });

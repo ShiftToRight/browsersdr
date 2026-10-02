@@ -413,7 +413,6 @@ export class DabModeIProcessor {
   private selectedKey?: string;
   private stationKey?: string;
   private quadraturePolarity?: -1 | 1;
-  private polarityTrial: -1 | 1 = -1;
 
   constructor(
     private readonly onLogicalFrame: (frame: Uint8Array) => void,
@@ -505,7 +504,6 @@ export class DabModeIProcessor {
     this.selectedKey = undefined;
     this.stationKey = undefined;
     this.quadraturePolarity = undefined;
-    this.polarityTrial = -1;
     this.configureResampler();
     this.onStatus({
       state: "searching",
@@ -711,15 +709,28 @@ export class DabModeIProcessor {
       previousQ.set(currentQ);
     }
     this.coarseCarrierOffsetHz = coarseOffset * 1_000;
-    // Some SDR/FFT stacks expose the analytic signal with the opposite Q
-    // convention. Try one convention per frame until a CRC-valid FIB locks
-    // the choice. This keeps real-time cost at one Viterbi pass per FIC group.
-    const selectedPolarity = this.quadraturePolarity ?? this.polarityTrial;
-    if (selectedPolarity === 1) {
+    // A wrong Q convention can still recover CRC-valid FIBs in partially
+    // unaffected coding groups. Compare both on the same acquisition frame;
+    // accepting the first valid FIB can lock to a persistent half-FIC/no-MSC
+    // result after a corrupt startup frame. Once proven, decode only one path.
+    let selectedPolarity = this.quadraturePolarity ?? -1;
+    let groups: Uint8Array[][];
+    if (this.quadraturePolarity === undefined) {
+      const standard = this.decodeFicGroups(ficBits);
       this.flipQuadratureMetrics(ficBits);
-      this.flipQuadratureMetrics(mscBits);
+      const reversed = this.decodeFicGroups(ficBits);
+      const standardCount = standard.reduce((sum, group) => sum + group.length, 0);
+      const reversedCount = reversed.reduce((sum, group) => sum + group.length, 0);
+      selectedPolarity = reversedCount > standardCount ? 1 : -1;
+      groups = selectedPolarity === 1 ? reversed : standard;
+      if (standardCount !== reversedCount)
+        this.quadraturePolarity = selectedPolarity;
+    } else {
+      if (selectedPolarity === 1) this.flipQuadratureMetrics(ficBits);
+      groups = this.decodeFicGroups(ficBits);
     }
-    const validFibs = this.processFic(ficBits);
+    if (selectedPolarity === 1) this.flipQuadratureMetrics(mscBits);
+    const validFibs = this.processFic(groups);
     this.consecutiveBadFrames =
       validFibs > 0 ? 0 : this.consecutiveBadFrames + 1;
     // A CRC-valid FIB makes an accidental integer-carrier alignment
@@ -727,10 +738,6 @@ export class DabModeIProcessor {
     // frequency-selective fading to select a noisy PRS peak on every frame.
     if (validFibs > 0 && this.lockedCoarseOffset === undefined)
       this.lockedCoarseOffset = coarseOffset;
-    if (this.quadraturePolarity === undefined) {
-      if (validFibs > 0) this.quadraturePolarity = selectedPolarity;
-      else this.polarityTrial = selectedPolarity === -1 ? 1 : -1;
-    }
     if (!this.msc) return timingStart;
     for (let cif = 0; cif < 4; cif += 1) {
       const logical = this.msc.pushCif(
@@ -744,14 +751,18 @@ export class DabModeIProcessor {
     return timingStart;
   }
 
-  private processFic(bits: Int8Array): number {
+  private decodeFicGroups(bits: Int8Array): Uint8Array[][] {
+    return Array.from({ length: 4 }, (_, group) =>
+      decodeFicGroup(bits.subarray(group * 2_304, (group + 1) * 2_304)),
+    );
+  }
+
+  private processFic(groups: Uint8Array[][]): number {
     this.ficAttempts += 12;
     this.ficFrames += 1;
     let validFibs = 0;
     for (let group = 0; group < 4; group += 1) {
-      const decoded = decodeFicGroup(
-        bits.subarray(group * 2_304, (group + 1) * 2_304),
-      );
+      const decoded = groups[group]!;
       this.ficGroupBlocks[group] =
         (this.ficGroupBlocks[group] ?? 0) + decoded.length;
       for (const fib of decoded) {
@@ -789,7 +800,7 @@ export class DabModeIProcessor {
       coarseCarrierLocked: this.lockedCoarseOffset !== undefined,
       timingStartSamples: this.timingStartSamples,
       quadraturePolarity:
-        (this.quadraturePolarity ?? this.polarityTrial) === -1
+        (this.quadraturePolarity ?? -1) === -1
           ? "standard"
           : "reversed",
       stations: this.fic.stations(),

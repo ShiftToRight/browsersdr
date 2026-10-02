@@ -65,6 +65,7 @@ export interface DabEnsembleDecoder extends SampleReceiver {
   reset(): void;
   selectService?(key: string): void;
   prepare?(): Promise<void>;
+  drain?(): Promise<void>;
   close?(): void;
 }
 
@@ -190,6 +191,8 @@ export class DabReceiver implements DigitalSampleReceiver {
       true,
     );
   }
+
+  flushStatus(): void { this.onUpdate(this.snapshot); }
 
   recordPcm(samples: number, sampleRateHz: number): void {
     this.publish(

@@ -363,7 +363,31 @@ describe("USRP B205-mini FX3 discovery and volatile loading", () => {
     await loader.close();
   });
 
-  it.each([0, 1, 2, 6])(
+  it("waits through asynchronous unconfigured/busy states after FPGA preparation", async () => {
+    const usb = new FakeUsrpB205Usb();
+    usb.loaderState = 5;
+    usb.legacyHash = 0;
+    usb.stateReads = [5, 5, 3, 1, 1, 2];
+    const result = await connection().open(usb, image());
+    expect(result.imageDisposition).toBe("loaded-volatile");
+    expect(usb.imageBytes).toEqual([1, 2, 3]);
+  });
+
+  it("resumes a pre-bitstream state 1 without queuing FPGA preparation twice", async () => {
+    const usb = new FakeUsrpB205Usb();
+    usb.loaderState = 1;
+    usb.legacyHash = 0;
+    const result = await connection().open(usb, image());
+    expect(result.imageDisposition).toBe("loaded-volatile");
+    expect(
+      usb.calls
+        .filter((call) => call.direction === "out")
+        .map((call) => call.setup.request),
+    ).toEqual([0x1c, 0x02, 0x12, 0x1c, 0x72]);
+    expect(usb.imageBytes).toEqual([1, 2, 3]);
+  });
+
+  it.each([0, 2, 6])(
     "rejects unsafe initial FX3 state %i without mutating the device",
     async (state) => {
       const usb = new FakeUsrpB205Usb();
@@ -390,9 +414,9 @@ describe("USRP B205-mini FX3 discovery and volatile loading", () => {
     ).toHaveLength(101);
     const interrupted = new FakeUsrpB205Usb();
     interrupted.loaderState = 3;
-    interrupted.stateReads = [3, 5];
+    interrupted.stateReads = [3, 2];
     await expect(connection().open(interrupted, image())).rejects.toThrow(
-      /left busy state for unsafe state 5/,
+      /left busy state for unsafe state 2/,
     );
     const unknown = new FakeUsrpB205Usb();
     unknown.loaderState = 255;
@@ -407,6 +431,15 @@ describe("USRP B205-mini FX3 discovery and volatile loading", () => {
     usb.stateReads = [3, 3, 4];
     const result = await connection().open(usb, image());
     expect(result.imageDisposition).toBe("already-compatible");
+  });
+
+  it("accepts busy-to-unconfigured as a retryable loader transition", async () => {
+    const usb = new FakeUsrpB205Usb();
+    usb.loaderState = 5;
+    usb.legacyHash = 0;
+    usb.stateReads = [3, 3, 5];
+    const result = await connection().open(usb, image());
+    expect(result.imageDisposition).toBe("loaded-volatile");
   });
 
   it("rejects product, descriptor, firmware and USB-speed mismatches before mutation", async () => {

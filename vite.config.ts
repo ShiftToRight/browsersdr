@@ -22,6 +22,15 @@ function prepareLocalNoOsJavascript(bytes: Buffer): Buffer {
 export default defineConfig({
   // Keep the app, stylesheet and module worker relocatable as one static directory.
   base: "./",
+  // The DAB worker is loaded on demand, outside the initial page import scan.
+  // Prebundle its DSP imports before serving worker modules to avoid stale
+  // optimized dependency URLs on the first DAB startup.
+  optimizeDeps: {
+    include: [
+      "@jtarrio/signals/dsp/fft.js",
+      "@jtarrio/signals/dsp/resamplers.js",
+    ],
+  },
   plugins: [
     react(),
     {

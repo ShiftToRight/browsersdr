@@ -1,3 +1,4 @@
+import { DEFAULT_BLADERF_RX_SETTINGS, validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
 import type { SourceKind } from "./types";
 import {
   defaultModeSettings, normalizeGain, normalizeModeSettings, planChannelTune,
@@ -128,6 +129,7 @@ export interface SourceCapabilities {
   readonly gain: { readonly kind: "rtl-auto-manual"; readonly minimumDb: number; readonly maximumDb: number }
     | { readonly kind: "hackrf-stages"; readonly lnaCodes: readonly HackrfLnaGainCode[]; readonly vgaMinimumDb: number; readonly vgaMaximumDb: number; readonly vgaStepDb: number; readonly antennaPowerEnabled: false }
     | { readonly kind: "usrp-fixed-agc"; readonly mode: "slow_agc"; readonly exposedGainDb: false }
+    | { readonly kind: "bladerf-rx" }
     | { readonly kind: "none" };
 }
 
@@ -146,11 +148,10 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
     gain: { kind: "hackrf-stages", lnaCodes: [0, 16, 33], vgaMinimumDb: 0, vgaMaximumDb: 62, vgaStepDb: 2, antennaPowerEnabled: false },
   },
   bladerf: {
-    source: "bladerf", label: "bladeRF 2.0 Micro xA4", requiresUsb: true, persistentConnection: true,
+    source: "bladerf", label: "bladeRF 2.0 Micro", requiresUsb: true, persistentConnection: true,
     frequency: { minimumHz: 70_000_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
     rates: { kind: "choices", valuesHz: BLADERF_SAMPLE_RATES_HZ, defaultHz: 2_400_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
-    // The first hardware release deliberately uses the gateware's slow-attack AGC default.
-    gain: { kind: "none" },
+    gain: { kind: "bladerf-rx" },
   },
   "usrp-b205": {
     source: "usrp-b205", label: "USRP B205-mini", requiresUsb: true, persistentConnection: true,
@@ -242,11 +243,13 @@ export interface SourceConfiguration {
   gainDb?: number | null;
   hardwareSettings?: HackrfRxSettings;
   usrpSettings?: UsrpB205RxSettings;
+  bladerfSettings?: BladeRfRxSettings;
 }
 
 export function validateSourceConfiguration(options: SourceConfiguration): void {
   const source = options.source ?? "rtl-sdr";
   const caps = sourceCapabilities(source);
+  if (source !== "bladerf" && options.bladerfSettings !== undefined) throw new Error("bladeRF settings require the bladeRF source.");
   const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
   validateSourceFrequency(source, options.channelFrequencyHz);
     if (source === "hackrf") {
@@ -257,6 +260,9 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
     if (options.gainDb !== undefined) throw new Error("USRP B205-mini uses fixed slow-attack AGC, not RTL gainDb.");
     if (options.hardwareSettings !== undefined) throw new Error("HackRF RX settings require the HackRF source.");
     validateUsrpB205RxSettings(options.usrpSettings ?? DEFAULT_USRP_B205_RX_SETTINGS);
+    } else if (source === "bladerf") {
+    if (options.hardwareSettings !== undefined || options.usrpSettings !== undefined || options.gainDb !== undefined) throw new Error("bladeRF uses its own RX gain/input settings.");
+    validateBladeRfRxSettings(options.bladerfSettings ?? DEFAULT_BLADERF_RX_SETTINGS, options.channelFrequencyHz);
     } else {
     if (options.hardwareSettings !== undefined || options.usrpSettings !== undefined) throw new Error("Source-specific RX settings require the matching hardware source.");
     // Existing demo/replay callers carry the legacy scalar; it controls no hardware.
@@ -319,3 +325,14 @@ export function validateHackrfSessionDetails(details: HackrfSessionDetails): voi
     || ![settings.reportedBasebandBandwidthHz, settings.reportedAnalogLpfTargetHz].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)
     || settings.stableFpgaControl !== undefined) throw new Error("HackRF reported settings/rates do not match the standard profile.");
 }
+
+
+/** User-facing recording descriptions share one capability definition across Help. */
+export const SOURCE_RECORDING_DESCRIPTIONS = {
+  "rtl-sdr": "Native unsigned 8-bit CU8 I/Q; BrowserSDR and SigMF pairs",
+  hackrf: "Native signed 8-bit CI8 I/Q; BrowserSDR and SigMF pairs",
+  bladerf: "Native SC16 Q11 I/Q; SigMF ci16_le pairs with Q11 scale and model provenance",
+  "usrp-b205": "Losslessly reordered CI16 I/Q; SigMF ci16_le pairs with hardware provenance",
+  synthetic: "Quantized CU8 I/Q; BrowserSDR and SigMF pairs",
+  replay: "Original imported encoding or processed channel I/Q; compatible paired exports",
+} as const;

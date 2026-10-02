@@ -37,10 +37,12 @@ const image = {
 describe("USRP B205-mini worker session proxy", () => {
   it("matches commands, transfers an owned image copy and forwards sample generations", async () => {
     const worker = new FakeWorker();
-    const usrpSc16 = vi.fn();
+    const ordered: string[] = [];
+    const usrpSc16 = vi.fn((_bytes, _frequency, _generation, gaps?: readonly { missingSamples: number | null }[]) => ordered.push(`samples:${gaps?.[0]?.missingSamples ?? "none"}`));
     const generationChanged = vi.fn();
+    const discontinuity = vi.fn((gap: { missingSamples: number | null }) => ordered.push(`gap:${gap.missingSamples}`));
     const session = new UsrpB205WorkerSession({
-      usrpSc16, generationChanged, discontinuity: vi.fn(), error: vi.fn(),
+      usrpSc16, generationChanged, discontinuity, error: vi.fn(),
     }, () => worker as never);
     const initialization = session.initialize("FIXTURE", image, usrpB205FirmwareFixture(), createUsrpB205RequestedConfiguration(100_000_000));
     const request = worker.sent[0]!;
@@ -63,6 +65,15 @@ describe("USRP B205-mini worker session proxy", () => {
     worker.emit({ type: "usrp-sc16-packets", generation: 7, frequency: 100_000_000, packets: [packet.buffer] });
     expect(usrpSc16).toHaveBeenCalledWith(Uint8Array.of(0, 192, 0, 64), 100_000_000, 7);
     expect(worker.sent.at(-1)).toEqual({ type: "sample-consumed", generation: 7 });
+    worker.emit({
+      type: "usrp-sc16-packets",
+      generation: 7,
+      frequency: 100_000_000,
+      packets: [packet.slice().buffer],
+      gapsBefore: [{ missingSamples: 12, reason: "queue loss" }],
+    });
+    expect(ordered.slice(-2)).toEqual(["gap:12", "samples:12"]);
+    expect(discontinuity).toHaveBeenCalledWith({ generation: 7, missingSamples: 12, reason: "queue loss" });
     worker.emit({ type: "generation", generation: 8, reason: "overflow", details });
     expect(generationChanged).toHaveBeenCalledWith(8, "overflow", details);
   });

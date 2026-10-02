@@ -26,7 +26,7 @@ type UsrpB205WorkerCommand = UsrpB205WorkerCommandRequest extends infer Request
 export type UsrpB205WorkerResponse =
   | { type: "response"; id: number; details?: UsrpB205SessionDetails; diagnostics: UsrpB205WorkerDiagnostics }
   | { type: "response-error"; id: number; message: string; diagnostics: UsrpB205WorkerDiagnostics }
-  | { type: "usrp-sc16-packets"; generation: number; frequency: number; packets: ArrayBuffer[] }
+  | { type: "usrp-sc16-packets"; generation: number; frequency: number; packets: ArrayBuffer[]; gapsBefore?: readonly { missingSamples: number | null; reason: string }[] }
   | { type: "discontinuity"; value: UsrpB205Discontinuity }
   | { type: "generation"; generation: number; reason: string; details: UsrpB205SessionDetails }
   | { type: "fatal"; message: string; diagnostics: UsrpB205WorkerDiagnostics };
@@ -34,7 +34,7 @@ export type UsrpB205WorkerResponse =
 export type UsrpB205WorkerPort = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror">;
 
 export interface UsrpB205WorkerSessionEvents {
-  usrpSc16(bytes: Uint8Array, frequency: number, generation: number): void;
+  usrpSc16(bytes: Uint8Array, frequency: number, generation: number, gapsBefore?: readonly { missingSamples: number | null; reason: string }[]): void;
   discontinuity(value: UsrpB205Discontinuity): void;
   generationChanged(generation: number, reason: string, details: UsrpB205SessionDetails): void;
   error(error: unknown): void;
@@ -162,7 +162,16 @@ export class UsrpB205WorkerSession implements UsrpB205WorkerSessionPort {
           bytes.set(payload, offset);
           offset += payload.byteLength;
         }
-        this.events.usrpSc16(bytes, message.frequency, message.generation);
+        for (const gap of message.gapsBefore ?? []) {
+          this.events.discontinuity({
+            generation: message.generation,
+            missingSamples: gap.missingSamples,
+            reason: gap.reason,
+          });
+        }
+        if (message.gapsBefore?.length)
+          this.events.usrpSc16(bytes, message.frequency, message.generation, message.gapsBefore);
+        else this.events.usrpSc16(bytes, message.frequency, message.generation);
       } catch (error) {
         this.fail(error instanceof Error ? error : new Error(String(error)));
       } finally {

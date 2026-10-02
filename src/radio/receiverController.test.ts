@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  describeReceiverError,
   ReceiverController,
   type ReceiverBackend,
   type ReceiverBackendEvents,
@@ -24,6 +25,17 @@ const METADATA = {
   gainDb: null,
   sampleFormat: "planar-f32-iq-normalized" as const,
 };
+
+it("describes an unplugged WebUSB transfer as device loss", () => {
+  expect(
+    describeReceiverError(
+      new DOMException(
+        "Failed to execute 'transferIn' on 'USBDevice': A transfer error has occurred.",
+        "NetworkError",
+      ),
+    ),
+  ).toBe("The sample transfer stopped.");
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -448,7 +460,7 @@ describe("ReceiverController", () => {
     expect(controller.getSnapshot().session?.gainDb).toBe(24.7);
   });
 
-  it("updates same-mode analog settings without a new generation or recording stop", async () => {
+  it.each([false, true])("updates same-mode analog settings and ends only channel captures (channel = %s)", async (channel) => {
     const analog = {
       ...METADATA,
       mode: "AM" as const,
@@ -470,6 +482,7 @@ describe("ReceiverController", () => {
       updateAnalogMode,
       configureMode,
       stopRecording,
+      getRecordingStatus: () => ({ state: "recording", sampleCount: 0, bytes: 0, maxBytes: 1024, captureCurrentChannel: channel }),
     }));
     await controller.start({
       ...OPTIONS,
@@ -489,7 +502,8 @@ describe("ReceiverController", () => {
       squelch: 2.2,
     });
     expect(configureMode).not.toHaveBeenCalled();
-    expect(stopRecording).not.toHaveBeenCalled();
+    if (channel) expect(stopRecording).toHaveBeenCalledWith("metadata-change");
+    else expect(stopRecording).not.toHaveBeenCalled();
     expect(controller.getSnapshot()).toMatchObject({
       lifecycle: "running",
       sessionGeneration: generation,

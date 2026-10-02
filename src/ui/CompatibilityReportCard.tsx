@@ -1,3 +1,4 @@
+import { ReportDialog } from "./ReportDialog";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildCompatibilityReport } from "../diagnostics/compatibilityReportBuilder";
@@ -158,13 +159,7 @@ export function CompatibilityReportCard({
       </section>
       {report &&
         createPortal(
-          <div className="diagnostic-dialog-backdrop" role="presentation">
-            <section
-              className="diagnostic-dialog compatibility-report-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="compatibility-report-dialog-heading"
-            >
+          <ReportDialog className="compatibility-report-dialog" labelledBy="compatibility-report-dialog-heading" onDismiss={() => setReport(undefined)}>
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Review before sending</p>
@@ -262,8 +257,7 @@ export function CompatibilityReportCard({
                   Cancel
                 </button>
               </div>
-            </section>
-          </div>,
+            </ReportDialog>,
           document.body,
         )}
     </>

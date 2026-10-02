@@ -1,7 +1,9 @@
+import type { RecordingOptions } from "./channelRecording";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { ADSB_FREQUENCY_HZ } from "../adsb/adsbReceiver";
 import { IngressTimings, type IngressDiagnostics } from "./ingressTimings";
-import type { IqRecording, RecordingStatus } from "./iqRecording";
+import { IqRecorder, preferredRecordingStorageMode, type IqRecording, type RecordingStatus } from "./iqRecording";
+import { usrpB205Ci16RecordingFormat } from "./ci16Recording";
 import type { SurveyCaptureContext } from "./fieldSurvey";
 import {
   defaultModeSettings,
@@ -172,6 +174,8 @@ export class Usrpb205Backend implements ReceiverBackend {
   private metadata?: UsrpB205SourceSessionMetadata;
   private receiving = false;
   private acquired = false;
+  private authorizedDevice?: USBDevice;
+  private deviceSerial: string | null = null;
   private disconnected = false;
   private disconnectRequested = false;
   private volume = 0;
@@ -180,6 +184,8 @@ export class Usrpb205Backend implements ReceiverBackend {
   private command?: { name: string; task: Promise<Metadata> };
   private stopTask?: Promise<void>;
   private disconnectTask?: Promise<void>;
+  private recorder?: IqRecorder;
+  private completedRecording?: IqRecording;
 
   constructor(
     private readonly events: ReceiverBackendEvents,
@@ -201,7 +207,13 @@ export class Usrpb205Backend implements ReceiverBackend {
       );
     this.adapter = new UsrpB205SampleAdapter(
       this.pipeline,
-      (block) => dependencies.nativeCapture?.(block, this.metadata!),
+      (block) => {
+        dependencies.nativeCapture?.(block, this.metadata!);
+        if (!this.recorder) return;
+        if (block.discontinuityBefore)
+          this.recorder.addGap(block.discontinuityBefore.missingSamples, block.discontinuityBefore.reason);
+        this.recorder.appendUsrpSc16(block.bytes);
+      },
       (gap) => this.pipeline.markDiscontinuity(gap.missingSamples),
       this.ingressTimings,
     );
@@ -263,7 +275,9 @@ export class Usrpb205Backend implements ReceiverBackend {
       this.volume = options.volume;
       // Resume and chooser acquisition are both initiated before the first await.
       const resume = this.pipeline.resume();
-      const prepared = this.prepare(selection, token);
+      const prepared = this.acquired && this.details?.nativeSampleRateHz !== selection.sampleRateHz
+        ? this.reinitializeStopped(selection, token)
+        : this.prepare(selection, token);
       await Promise.all([resume, prepared]);
       this.check(token);
       this.pipeline.requireRunning();
@@ -275,8 +289,6 @@ export class Usrpb205Backend implements ReceiverBackend {
           "The connected USRP B205-mini is configured for another center; start it, then use the serialized tune operation.",
         );
       }
-      if (this.details!.nativeSampleRateHz !== selection.sampleRateHz)
-        throw new Error("Disconnect the USRP B205-mini before changing its sample rate.");
       this.selection = selection;
       return this.startConfigured(selection, token);
     });
@@ -307,6 +319,7 @@ export class Usrpb205Backend implements ReceiverBackend {
     grantedDevice?: USBDevice,
   ): Promise<void> {
     if (this.acquired) return;
+    if (grantedDevice) this.authorizedDevice = grantedDevice;
     const image = this.dependencies.image;
     if (!image)
       throw new Error(
@@ -330,24 +343,32 @@ export class Usrpb205Backend implements ReceiverBackend {
         : usb!.requestDevice({ filters: [{ vendorId: 0x2500, productId: 0x0022 }] });
       const device = await permission;
       this.check(token);
+      this.authorizedDevice = device;
+      this.deviceSerial = device.serialNumber ?? null;
       this.acquired = true;
       this.events.permissionGranted();
       const worker = createWorkerSession({
-        usrpSc16: (bytes, frequency, generation) => {
-          if (this.receiving && generation === this.transportGeneration)
+        usrpSc16: (bytes, frequency, generation, gapsBefore) => {
+          if (this.receiving && generation === this.transportGeneration) {
+            for (const gap of gapsBefore ?? []) this.recorder?.addGap(gap.missingSamples, gap.reason);
+            this.recorder?.appendUsrpSc16(bytes);
             this.pipeline.receiveUsrpSc16(bytes, frequency);
+          }
         },
         error: this.runtimeError,
         discontinuity: (gap) => {
+          if (!this.receiving || gap.generation !== this.transportGeneration) return;
           this.events.statusChanged?.(
             gap.missingSamples === null
               ? `USRP receive discontinuity: ${gap.reason}; loss count unknown.`
               : `USRP receive discontinuity: ${gap.reason}; ${gap.missingSamples} samples missing.`,
           );
-          if (this.receiving) this.pipeline.markDiscontinuity(gap.missingSamples);
+          this.pipeline.markDiscontinuity(gap.missingSamples);
         },
         generationChanged: (generation, reason, next) => {
           this.transportGeneration = Math.max(this.transportGeneration, generation);
+          if (this.receiving && reason !== "retune")
+            this.recorder?.addGap(null, `USRP receive generation changed: ${reason}`);
           this.details = structuredClone(next);
           if (this.selection) this.publish(next, this.selection);
           if (this.receiving && reason !== "retune") this.pipeline.markDiscontinuity(null);
@@ -386,6 +407,7 @@ export class Usrpb205Backend implements ReceiverBackend {
       : connection.requestAndOpen(image, this.dependencies.usb, firmware);
     const identity = await identityPromise;
     this.check(token);
+    this.deviceSerial = identity.serialNumber;
     this.acquired = true;
     this.events.permissionGranted();
     try {
@@ -421,6 +443,8 @@ export class Usrpb205Backend implements ReceiverBackend {
         ),
       generationChanged: (generation, reason, next) => {
         this.transportGeneration = Math.max(this.transportGeneration, generation);
+        if (this.receiving && reason !== "retune")
+          this.recorder?.addGap(null, `USRP receive generation changed: ${reason}`);
         this.details = structuredClone(next);
         if (this.selection) this.publish(next, this.selection);
         this.adapter.ready({ generation, details: next });
@@ -441,6 +465,38 @@ export class Usrpb205Backend implements ReceiverBackend {
       try { await connection.close(); } catch { /* disconnect() retries retained ownership. */ }
       throw error;
     }
+  }
+
+  /** A rate change needs a fresh RF configuration, but no new USB permission. */
+  private async reinitializeStopped(selection: Selection, token: number): Promise<void> {
+    let device = this.authorizedDevice;
+    if (!device) {
+      const usb = this.dependencies.usb ?? navigator.usb;
+      const devices = await usb?.getDevices?.() ?? [];
+      const matches = devices.filter((candidate) =>
+        candidate.vendorId === 0x2500 && candidate.productId === 0x0022 &&
+        (this.deviceSerial === null || candidate.serialNumber === this.deviceSerial));
+      if (matches.length !== 1)
+        throw new Error("The connected USRP could not be identified for a sample-rate change. Reconnect the device and try again.");
+      device = matches[0]!;
+    }
+    this.check(token);
+    this.invalidateSamples();
+    // Keep ownership references until every close succeeds, so controller
+    // cleanup can retry if the USB owner cannot be released.
+    await Promise.all([
+      this.workerSession?.close() ?? this.transport?.close() ?? this.connection?.close() ?? Promise.resolve(),
+      this.control?.close() ?? Promise.resolve(),
+    ]);
+    this.check(token);
+    this.workerSession = undefined;
+    this.transport = undefined;
+    this.configurator = undefined;
+    this.control = undefined;
+    this.connection = undefined;
+    this.details = undefined;
+    this.acquired = false;
+    await this.prepare(selection, token, device);
   }
 
   private async startConfigured(selection: Selection, token: number): Promise<Metadata> {
@@ -544,6 +600,7 @@ export class Usrpb205Backend implements ReceiverBackend {
     }
     const selection: Selection = { ...this.selection, channel, mode };
     return this.run("retune", async (token) => {
+      this.finishRecording("metadata-change");
       this.invalidateSamples();
       this.sessionGeneration = generation;
       this.selection = selection;
@@ -598,24 +655,46 @@ export class Usrpb205Backend implements ReceiverBackend {
     this.pipeline.selectDabService(key);
   }
 
-  startRecording(_survey?: SurveyCaptureContext): RecordingStatus {
-    throw new Error(
-      "USRP B205-mini recording is unavailable in release 1: native CHDR/VRT SC16 capture, gap-preserving replay and SigMF provenance are not yet implemented.",
+  startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus {
+    if (!this.receiving || !this.metadata || !this.details)
+      throw new Error("USRP B205-mini is not receiving.");
+    if (this.recorder || this.completedRecording)
+      throw new Error("Finish or retrieve the existing recording first.");
+    this.recorder = new IqRecorder(
+      this.metadata,
+      undefined,
+      undefined,
+      "USRP B205-mini receive-only WebUSB capture. Native little-endian Q/I sample words were reordered losslessly to SigMF ci16_le I/Q; amplitudes are uncalibrated.",
+      survey,
+      usrpB205Ci16RecordingFormat(this.details),
+      preferredRecordingStorageMode(options?.storageMode),
+      options,
     );
+    return this.recorder.status();
   }
 
-  stopRecording(): IqRecording | undefined {
-    return undefined;
+  stopRecording(reason: "user" | "source-stop" | "metadata-change" = "user"): IqRecording | undefined {
+    this.finishRecording(reason);
+    const recording = this.completedRecording;
+    this.completedRecording = undefined;
+    return recording;
   }
 
   getRecordingStatus(): RecordingStatus | undefined {
-    return undefined;
+    return this.recorder?.status();
+  }
+
+  private finishRecording(reason: "user" | "source-stop" | "metadata-change"): void {
+    if (!this.recorder) return;
+    this.completedRecording = this.recorder.finish(reason);
+    this.recorder = undefined;
   }
 
   stop(): Promise<void> {
     if (this.stopTask) return this.stopTask;
     if (!this.receiving && !this.command) return Promise.resolve();
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.invalidateSamples();
     const pending = this.command?.task;
     const task = (async () => {
@@ -640,6 +719,7 @@ export class Usrpb205Backend implements ReceiverBackend {
     if (this.disconnectTask) return this.disconnectTask;
     this.disconnectRequested = true;
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.invalidateSamples();
     const pending = this.command?.task;
     const task = (async () => {
@@ -690,6 +770,7 @@ export class Usrpb205Backend implements ReceiverBackend {
   private readonly runtimeError = (error: unknown): void => {
     if (this.disconnectRequested) return;
     ++this.cancelled;
+    this.finishRecording("source-stop");
     this.invalidateSamples();
     this.events.runtimeError(error);
   };

@@ -38,6 +38,7 @@ const sampleQueue = new UsrpB205WorkerSampleQueue(SC16_QUEUE_BLOCKS);
 let samplesInFlight = 0;
 let batchPackets: ArrayBuffer[] = [];
 let batchGeneration = 0;
+let batchGaps: Array<{ missingSamples: number | null; reason: string }> = [];
 
 function diagnostics(): UsrpB205WorkerDiagnostics {
   return {
@@ -69,6 +70,7 @@ function resetSampleQueue(): void {
   samplesInFlight = 0;
   batchPackets = [];
   batchGeneration = 0;
+  batchGaps = [];
 }
 
 function pumpSamples(): void {
@@ -86,21 +88,14 @@ function pumpSamples(): void {
 
 function flushBatch(): void {
   if (!details || batchPackets.length === 0) return;
-  const dropped = sampleQueue.pushLatest({
+  sampleQueue.pushLatest({
     generation: batchGeneration,
     frequency: details.configuration.acceptedCenterFrequencyHz,
     packets: batchPackets,
+    ...(batchGaps.length ? { gapsBefore: batchGaps } : {}),
   });
   batchPackets = [];
-  if (dropped)
-    post({
-      type: "discontinuity",
-      value: {
-        generation: batchGeneration,
-        missingSamples: dropped.samples,
-        reason: `Main thread stalled; discarded ${dropped.blocks} stale USRP SC16 batches to catch up`,
-      },
-    });
+  batchGaps = [];
   pumpSamples();
 }
 
@@ -108,10 +103,15 @@ function receiveNative(block: UsrpB205NativeBlock): void {
   if (!details || block.generation !== transport?.diagnostics.generation)
     return;
   if (block.discontinuityBefore) {
-    batchPackets = [];
+    flushBatch();
+    batchGaps.push({
+      missingSamples: block.discontinuityBefore.missingSamples,
+      reason: block.discontinuityBefore.reason,
+    });
   }
   if (batchPackets.length && batchGeneration !== block.generation) {
     batchPackets = [];
+    batchGaps = [];
   }
   if (
     !(block.nativePacketBytes.buffer instanceof ArrayBuffer) ||
@@ -185,7 +185,9 @@ async function initialize(
     details,
     {
       error: fatal,
-      discontinuity: (value) => post({ type: "discontinuity", value }),
+      // Discontinuities travel with the first affected sample batch so main
+      // applies them after all earlier in-flight batches, not ahead of data.
+      discontinuity: () => undefined,
       generationChanged: (generation, reason, next) => {
         resetSampleQueue();
         details = structuredClone(next);

@@ -40,17 +40,8 @@ export const SQUELCH_MAX = 6;
 export const MANUAL_GAIN_MIN_DB = 0;
 export const MANUAL_GAIN_MAX_DB = 49.6;
 
-/**
- * Keeps the complete channel passband away from the capture's Nyquist edge.
- * The 20 kHz guard is wider than the center-to-first-null estimate for the
- * installed 151-tap Hamming FIR at 1.024 MS/s (~13.6 kHz).
- */
-export const CAPTURE_EDGE_GUARD_HZ = 20_000;
-
-/** Preserve the conservative 151-tap FIR guard in normalized frequency units. */
-export function captureEdgeGuardHz(sampleRateHz: number): number {
-  return CAPTURE_EDGE_GUARD_HZ * sampleRateHz / 1_024_000;
-}
+export { CAPTURE_EDGE_GUARD_HZ, captureEdgeGuardHz } from "./captureSpan";
+import { captureEdgeGuardHz } from "./captureSpan";
 
 const MODE_CAPABILITIES: Record<ReceiverMode, ModeCapabilities> = {
   OFF: { bandwidthSettable: false, minimumBandwidthHz: 1, maximumBandwidthHz: 1, squelchSettable: false },

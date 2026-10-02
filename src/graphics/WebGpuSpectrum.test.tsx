@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { WebGpuSpectrum } from "./WebGpuSpectrum";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
+import { hackrfRecordingFixture } from "../testing/hackrfRecordingFixture";
 import type { SpectrumFrame } from "../radio/types";
 
 afterEach(() => {
@@ -76,13 +77,19 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
       return unsubscribe;
     },
   } as unknown as AnalysisPipeline;
+  const session = {
+    ...(await hackrfRecordingFixture()).session,
+    sessionGeneration: 0,
+  };
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   await act(async () =>
-    root.render(<WebGpuSpectrum pipeline={pipeline} active />),
+    root.render(
+      <WebGpuSpectrum pipeline={pipeline} session={session} active />,
+    ),
   );
   const frame = (sequence: number): SpectrumFrame => ({
     sessionGeneration: 0,
@@ -101,13 +108,15 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
     await act(async () => listener(f, [f]));
   };
   await send(0);
-  const status = host.querySelector('[role="status"]')!.textContent;
+  const status = host.querySelector(".diagnostic-message")!.textContent;
   now += 40;
   await send(1);
-  expect(host.querySelector('[role="status"]')!.textContent).toBe(status);
+  expect(host.querySelector(".diagnostic-message")!.textContent).toBe(status);
   now += 250;
   await send(2);
-  expect(host.querySelector('[role="status"]')!.textContent).not.toBe(status);
+  expect(host.querySelector(".diagnostic-message")!.textContent).not.toBe(
+    status,
+  );
   expect(width).toHaveBeenCalledOnce();
   expect(height).toHaveBeenCalledOnce();
   const uniforms = writeBuffer.mock.calls.filter(
@@ -115,23 +124,29 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   );
   expect(new Set(uniforms.map((call) => call[2])).size).toBe(1);
   await act(async () =>
-    root.render(<WebGpuSpectrum pipeline={pipeline} active={false} />),
+    root.render(
+      <WebGpuSpectrum pipeline={pipeline} session={session} active={false} />,
+    ),
   );
   submit.mockClear();
   writeBuffer.mockClear();
-  const hiddenStatus = host.querySelector('[role="status"]')!.textContent;
+  const hiddenStatus = host.querySelector(".diagnostic-message")!.textContent;
   now += 1000;
   await send(3);
   await send(4);
   expect(submit).not.toHaveBeenCalled();
-  expect(host.querySelector('[role="status"]')!.textContent).toBe(hiddenStatus);
+  expect(host.querySelector(".diagnostic-message")!.textContent).toBe(
+    hiddenStatus,
+  );
   expect(
     writeBuffer.mock.calls.filter(
       (call) => call[0]?.label === "circular waterfall power history",
     ),
   ).toHaveLength(2);
   await act(async () =>
-    root.render(<WebGpuSpectrum pipeline={pipeline} active />),
+    root.render(
+      <WebGpuSpectrum pipeline={pipeline} session={session} active />,
+    ),
   );
   expect(submit).toHaveBeenCalledOnce();
   expect(unsubscribe).not.toHaveBeenCalled();
@@ -159,6 +174,29 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   visibility.mockReturnValue("visible");
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
   expect(submit).toHaveBeenCalled();
+  const current = frame(6);
+  current.bins.fill(-90);
+  current.bins[2000] = -40;
+  await act(async () => listener(current, [current]));
+  const pause = host.querySelector<HTMLButtonElement>(".display-pause")!;
+  const autoScale = Array.from(
+    host.querySelectorAll(".spectrum-actions button"),
+  ).find(
+    (button) => button.textContent?.trim() === "Auto scale",
+  ) as HTMLButtonElement;
+  expect(autoScale.disabled).toBe(false);
+  await act(async () => pause.click());
+  expect(pause.textContent).toContain("Resume display");
+  await send(7); // Incoming data must not alter scaling of the frozen display.
+  await act(async () => autoScale.click());
+  expect(
+    Array.from(host.querySelectorAll(".display-controls output")).map(
+      (output) => output.textContent,
+    ),
+  ).toEqual(["-98 dB", "64 dB"]);
+  expect(pause.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => pause.click());
+  expect(pause.textContent).toContain("Pause display");
   await act(async () => root.unmount());
   expect(unsubscribe).toHaveBeenCalledOnce();
 });

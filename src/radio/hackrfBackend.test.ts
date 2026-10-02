@@ -756,3 +756,16 @@ it("reports running audio when resume emits no statechange event", async () => {
   await f.ready(f.backend.start(OPTIONS));
   expect(f.events.audioStateChanged).toHaveBeenLastCalledWith("running");
 });
+
+it.each([0x0109, 0x0110, 0x0113])("captures a channel through HackRF API %i and finalizes it on retune", async (api) => {
+  const f = fixture(new FakeHackrfUsb(api));
+  await f.ready(f.backend.start(OPTIONS));
+  f.backend.startRecording(undefined, { captureCurrentChannel: true });
+  await f.feed(new Uint8Array(65_536).fill(32));
+  await f.backend.tune(100_100_000, 2);
+  const recording = f.backend.stopRecording()!;
+  expect(recording.metadata).toMatchObject({ format: "browsersdr-channel-iq-v1", source: "hackrf", stopReason: "metadata-change", centerFrequencyHz: 100_000_000 });
+  expect(recording.metadata.sampleRateHz).toBe(64_000);
+  expect(recording.data.length).toBe(4096);
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+});

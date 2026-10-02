@@ -11,7 +11,7 @@ interface TransferSource {
   name: string;
   mediaType: string;
   size: number;
-  view(start: number, end: number): Uint8Array;
+  view(start: number, end: number): Promise<Uint8Array>;
 }
 interface HashedSource { source: TransferSource; sha256: string; partHashes: string[]; partSize: number }
 
@@ -31,7 +31,9 @@ export interface AtlasTransferSnapshot {
   message?: string;
 }
 export interface AtlasTransferRequest {
-  operatorToken: string;
+  /** User-supplied credential for this explicit upload. The current Atlas v1
+   * protocol exchanges it through its legacy `operator_token` session field. */
+  userToken: string;
   title: string;
   sourceKind?: "real" | "synthetic" | "unknown";
   analyzeAfterSave?: boolean;
@@ -57,15 +59,24 @@ export class AtlasTransferFailure extends Error {
 }
 
 function source(file: PreparedRecordingFile): TransferSource {
+  if (file.contents instanceof Blob) {
+    const blob = file.contents;
+    return {
+      name: file.name,
+      mediaType: file.type,
+      size: blob.size,
+      view: async (start, end) => new Uint8Array(await blob.slice(start, end).arrayBuffer()),
+    };
+  }
   const bytes = typeof file.contents === "string" ? new TextEncoder().encode(file.contents) : file.contents;
-  return { name: file.name, mediaType: file.type, size: bytes.byteLength, view: (start, end) => bytes.subarray(start, end) };
+  return { name: file.name, mediaType: file.type, size: bytes.byteLength, view: async (start, end) => bytes.subarray(start, end) };
 }
 
 function identifyPair(prepared: PreparedRecordingExport): { data: TransferSource; metadata: TransferSource; metadataValue: SigmfMetadata } {
   if (prepared.format !== "sigmf") throw new AtlasTransferFailure("sigmf_required", "SigIntAtlas transfer requires the prepared SigMF pair.");
   const dataFile = prepared.files.find(file => file.name.endsWith(".sigmf-data"));
   const metadataFile = prepared.files.find(file => file.name.endsWith(".sigmf-meta"));
-  if (!dataFile || !metadataFile || typeof metadataFile.contents !== "string" || !(dataFile.contents instanceof Uint8Array)) {
+  if (!dataFile || !metadataFile || typeof metadataFile.contents !== "string" || (!(dataFile.contents instanceof Uint8Array) && !(dataFile.contents instanceof Blob))) {
     throw new AtlasTransferFailure("invalid_prepared_pair", "Prepared SigMF data and metadata files are incomplete.");
   }
   let metadataValue: SigmfMetadata;
@@ -81,14 +92,16 @@ function positiveSafeDecimal(value: string, field: string): number {
   return parsed;
 }
 
-function hashSource(item: TransferSource, partSize: number): HashedSource {
+async function hashSource(item: TransferSource, partSize: number, signal: AbortSignal): Promise<HashedSource> {
   const whole = new IncrementalSha256();
   const partHashes: string[] = [];
   for (let partStart = 0; partStart < item.size; partStart += partSize) {
     const part = new IncrementalSha256();
     const partEnd = Math.min(item.size, partStart + partSize);
     for (let offset = partStart; offset < partEnd; offset += HASH_CHUNK_BYTES) {
-      const view = item.view(offset, Math.min(partEnd, offset + HASH_CHUNK_BYTES));
+      signal.throwIfAborted();
+      const view = await item.view(offset, Math.min(partEnd, offset + HASH_CHUNK_BYTES));
+      signal.throwIfAborted();
       whole.update(view); part.update(view);
     }
     partHashes.push(part.hex());
@@ -161,7 +174,8 @@ export class AtlasTransferController {
     ++this.generation;
     this.aborter?.abort(new DOMException("Cancelled", "AbortError"));
     const ids = Object.values(this.uploadIds);
-    await Promise.all(ids.map(id => this.client.abortUpload(id).catch(() => undefined)));
+    // Local cancellation must not wait for an unreachable upload service.
+    void Promise.all(ids.map(id => this.client.abortUpload(id, AbortSignal.timeout(5_000)).catch(() => undefined)));
     this.update({ state: "cancelled", generation: this.generation, activeParts: 0, errorCode: "cancelled", message: "Transfer cancelled; no saved recording was deleted." });
   }
 
@@ -185,10 +199,10 @@ export class AtlasTransferController {
     const concurrency = Math.max(1, Math.min(CLIENT_MAX_INFLIGHT_PARTS, capabilities.max_inflight_parts));
     this.assertGeneration(generation);
     this.update({ state: "authenticating", totalBytes: String(pair.data.size + pair.metadata.size) });
-    await this.client.login(request.operatorToken, signal);
+    await this.client.login(request.userToken, signal);
     this.assertGeneration(generation);
     this.update({ state: "hashing" });
-    const data = hashSource(pair.data, partSize), metadata = hashSource(pair.metadata, partSize);
+    const [data, metadata] = await Promise.all([hashSource(pair.data, partSize, signal), hashSource(pair.metadata, partSize, signal)]);
     this.assertGeneration(generation);
     const dataUpload = await this.transferFile("data", data, concurrency, generation, signal);
     const metadataUpload = await this.transferFile("metadata", metadata, concurrency, generation, signal);
@@ -243,7 +257,7 @@ export class AtlasTransferController {
         if (received.has(partNumber)) continue;
         this.assertGeneration(generation);
         const start = (partNumber - 1) * plan.partSize, end = Math.min(plan.source.size, start + plan.partSize);
-        const bytes = plan.source.view(start, end);
+        const bytes = await plan.source.view(start, end);
         this.update({ activeParts: this.snapshot.activeParts + 1, peakActiveParts: Math.max(this.snapshot.peakActiveParts, this.snapshot.activeParts + 1), peakBufferedBytes: Math.max(this.snapshot.peakBufferedBytes, this.metadataEncodingBytes + (this.snapshot.activeParts + 1) * plan.partSize) });
         try {
           const body = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/octet-stream" });

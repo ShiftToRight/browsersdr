@@ -1,3 +1,4 @@
+import { sourceCapabilities } from "../radio/sourceCapabilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import type {
@@ -422,6 +423,7 @@ export function SpectrumExplorer({
   volume,
   recordingBlocked,
   startReceptionForScan,
+  onOpenReceiver,
   onInvestigate,
   onScanningChange,
   onCaptureCandidates,
@@ -433,6 +435,7 @@ export function SpectrumExplorer({
   volume: number;
   recordingBlocked: boolean;
   startReceptionForScan: () => Promise<ReceiverSnapshot>;
+  onOpenReceiver?: () => void;
   onInvestigate: (frequencyHz: number) => void;
   onScanningChange: (active: boolean) => void;
   onCaptureCandidates: (
@@ -489,10 +492,13 @@ export function SpectrumExplorer({
     void loadLatestSurveyRun()
       .then((saved) => {
         if (!active || !saved) return;
-        const restoredStatus = saved.status === "running" ? "cancelled" : saved.status;
+        const restoredStatus =
+          saved.status === "running" ? "cancelled" : saved.status;
         setScope(saved.scope);
         setProfile(saved.snapshot.profile);
-        setEnabledBandIds(new Set(saved.snapshot.profile.bands.map((band) => band.id)));
+        setEnabledBandIds(
+          new Set(saved.snapshot.profile.bands.map((band) => band.id)),
+        );
         loadBand(saved.snapshot.profile.bands[0]!);
         setWindows(saved.windows);
         setRecords(saved.records);
@@ -527,7 +533,16 @@ export function SpectrumExplorer({
       records,
       progress,
     }).catch(() => undefined);
-  }, [storageReady, scope, runStatus, runSnapshot, runManifest, windows, records, progress]);
+  }, [
+    storageReady,
+    scope,
+    runStatus,
+    runSnapshot,
+    runManifest,
+    windows,
+    records,
+    progress,
+  ]);
 
   useEffect(
     () => () => {
@@ -787,7 +802,9 @@ export function SpectrumExplorer({
             throw new DOMException("Spectrum scan cancelled", "AbortError");
           let result: ScanWindowResult;
           try {
-            const tuned = await controller.scanTune(job.window.centerFrequencyHz);
+            const tuned = await controller.scanTune(
+              job.window.centerFrequencyHz,
+            );
             if (!tuned)
               throw new Error("The receiver could not tune this scan window.");
             if (abort.signal.aborted)
@@ -856,14 +873,20 @@ export function SpectrumExplorer({
           `Coarse pass complete. Refining ${detailBands.length} active region${detailBands.length === 1 ? "" : "s"}…`,
         );
       }
-      const failedCount = state.windows.filter((window) => window.status === "failed").length;
-      const insufficientCount = state.windows.filter((window) => window.status === "insufficient").length;
-      const successfulCount = state.windows.length - failedCount - insufficientCount;
-      finalStatus = failedCount > 0 && successfulCount === 0
-        ? "failed"
-        : failedCount > 0 || insufficientCount > 0
-          ? "insufficient"
-          : "completed";
+      const failedCount = state.windows.filter(
+        (window) => window.status === "failed",
+      ).length;
+      const insufficientCount = state.windows.filter(
+        (window) => window.status === "insufficient",
+      ).length;
+      const successfulCount =
+        state.windows.length - failedCount - insufficientCount;
+      finalStatus =
+        failedCount > 0 && successfulCount === 0
+          ? "failed"
+          : failedCount > 0 || insufficientCount > 0
+            ? "insufficient"
+            : "completed";
       resumeRef.current = undefined;
       setResumeAvailable(false);
       setMessage(
@@ -1054,174 +1077,38 @@ export function SpectrumExplorer({
         <span
           className={`status-pill ${scanning || capturing ? "status-tuning" : runStatus === "completed" ? "status-running" : "status-idle"}`}
         >
-          {surveyStatusLabel(
-            runStatus,
-            scanning,
-            capturing,
-            resumeAvailable,
-          )}
+          {surveyStatusLabel(runStatus, scanning, capturing, resumeAvailable)}
         </span>
       </div>
-      <section
-        className="survey-profile-panel"
-        aria-label="Survey profile and site"
-      >
-        <div className="survey-profile-grid">
-          <label>
-            Profile name
-            <input
-              value={profile.name}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  name: e.currentTarget.value || "Unnamed survey",
-                })
-              }
-            />
-          </label>
-          <label>
-            Site label
-            <input
-              value={profile.site.label}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  site: {
-                    ...profile.site,
-                    label: e.currentTarget.value || "Unnamed site",
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Latitude (optional)
-            <input
-              type="number"
-              min="-90"
-              max="90"
-              step="0.000001"
-              value={profile.site.latitude ?? ""}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  site: {
-                    ...profile.site,
-                    latitude:
-                      e.currentTarget.value === ""
-                        ? undefined
-                        : e.currentTarget.valueAsNumber,
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Longitude (optional)
-            <input
-              type="number"
-              min="-180"
-              max="180"
-              step="0.000001"
-              value={profile.site.longitude ?? ""}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  site: {
-                    ...profile.site,
-                    longitude:
-                      e.currentTarget.value === ""
-                        ? undefined
-                        : e.currentTarget.valueAsNumber,
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Antenna
-            <input
-              value={profile.site.antenna ?? ""}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  site: { ...profile.site, antenna: e.currentTarget.value },
-                })
-              }
-            />
-          </label>
-          <label>
-            Site notes
-            <input
-              value={profile.site.notes ?? ""}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                updateProfile({
-                  ...profile,
-                  site: { ...profile.site, notes: e.currentTarget.value },
-                })
-              }
-            />
-          </label>
-        </div>
-        <div className="survey-actions">
-          <button
-            type="button"
-            className="secondary"
-            disabled={scanning || capturing}
-            onClick={() =>
-              downloadText(
-                `${safeSurveySlug(profile.name)}.browsersdr-survey.json`,
-                surveyProfileJson(profile),
-                "application/json",
-              )
-            }
-          >
-            Export profile
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={scanning || capturing}
-            onClick={() => profileInputRef.current?.click()}
-          >
-            Import profile
-          </button>
-          <input
-            ref={profileInputRef}
-            hidden
-            type="file"
-            accept=".json,application/json"
-            onChange={(e) => void importProfile(e.currentTarget.files?.[0])}
-          />
-          <button
-            type="button"
-            className="secondary"
-            disabled={!scanning && !capturing}
-            onClick={() => {
-              abortRef.current?.abort();
-              captureAbortRef.current?.abort();
-            }}
-          >
-            {scanning ? "Pause scan" : "Cancel capture"}
-          </button>
-        </div>
-        <p className="display-note">
-          Coordinates are optional and are written to SigMF only when both are
-          supplied. Profiles and the latest survey results remain in this
-          browser until its site data is cleared.
-        </p>
-      </section>
       <div className="explorer-layout">
         <aside
           className="explorer-controls"
           aria-label="Spectrum scan controls"
         >
+          <div className="explorer-source">
+            <span>Source</span>
+            <strong>
+              {receiver.session
+                ? sourceCapabilities(receiver.session.source).label
+                : "No receiver connected"}
+            </strong>
+            <small>
+              {receiver.lifecycle === "running"
+                ? "● Receiving"
+                : receiver.lifecycle === "connected"
+                  ? "✓ Connected · scan will start reception"
+                  : "Connect a receiver in Acquire to scan."}
+            </small>
+            {!receiver.session && onOpenReceiver && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={onOpenReceiver}
+              >
+                Go to Acquire
+              </button>
+            )}
+          </div>
           <label>
             Scan scope
             <select
@@ -1236,124 +1123,22 @@ export function SpectrumExplorer({
               <option value="full">Full survey · coarse + detail</option>
             </select>
           </label>
-          <label>
-            Profile band
-            <select
-              value={selectedBandId}
-              disabled={scanning || capturing}
-              onChange={(e) => chooseBand(e.currentTarget.value)}
-            >
-              {profile.bands.map((band) => (
-                <option key={band.id} value={band.id}>
-                  {band.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Band name
-            <input
-              value={bandName}
-              disabled={scanning || capturing}
-              onChange={(e) => setBandName(e.currentTarget.value)}
-            />
-          </label>
-          <div className="explorer-range-grid">
-            <label>
-              Start frequency
-              <span className="unit-input">
-                <input
-                  type="number"
-                  min="0.000001"
-                  step="0.001"
-                  value={startMhz}
-                  disabled={scanning || capturing}
-                  onChange={(e) => setStartMhz(e.currentTarget.valueAsNumber)}
-                />
-                <span>MHz</span>
-              </span>
-            </label>
-            <label>
-              End frequency
-              <span className="unit-input">
-                <input
-                  type="number"
-                  min="0.000001"
-                  step="0.001"
-                  value={endMhz}
-                  disabled={scanning || capturing}
-                  onChange={(e) => setEndMhz(e.currentTarget.valueAsNumber)}
-                />
-                <span>MHz</span>
-              </span>
-            </label>
-          </div>
-          <label>
-            Detector
-            <select
-              value={detector}
-              disabled={scanning || capturing}
-              onChange={(e) =>
-                setDetector(e.currentTarget.value as SurveyDetectorMode)
-              }
-            >
-              <option value="average">Average power</option>
-              <option value="max-hold">Max hold / bursts</option>
-              <option value="occupancy">Occupancy</option>
-              <option value="wideband">Wideband plateau</option>
-            </select>
-          </label>
-          <label>
-            Dwell per window <output>{dwellMs} ms</output>
-            <input
-              type="range"
-              min={MIN_DWELL_MS}
-              max={MAX_DWELL_MS}
-              step="50"
-              value={dwellMs}
-              disabled={scanning || capturing}
-              onChange={(e) => setDwellMs(e.currentTarget.valueAsNumber)}
-            />
-          </label>
-          <label>
-            Detection threshold <output>{thresholdDb} dB</output>
-            <input
-              type="range"
-              min="1"
-              max="40"
-              step="1"
-              value={thresholdDb}
-              disabled={scanning || capturing}
-              onChange={(e) => setThresholdDb(e.currentTarget.valueAsNumber)}
-            />
-            <small>Above the detector's local floor</small>
-          </label>
-          <div className="band-editor-actions">
-            <button
-              type="button"
-              className="secondary"
-              disabled={scanning || capturing}
-              onClick={saveBand}
-            >
-              Save band
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={scanning || capturing || profile.bands.length >= 64}
-              onClick={addBand}
-            >
-              Add custom
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={scanning || capturing || profile.bands.length <= 1}
-              onClick={removeBand}
-            >
-              Remove
-            </button>
-          </div>
+          {scope === "window" && (
+            <div className="scan-range-summary">
+              <span>Frequency range</span>
+              <strong>
+                {receiver.session
+                  ? (() => {
+                      const band = currentWindowSurveyBand(
+                        receiver.session,
+                        currentBand(),
+                      );
+                      return `${formatFrequency(band.startFrequencyHz)}–${formatFrequency(band.endFrequencyHz)}`;
+                    })()
+                  : "Current receiver window"}
+              </strong>
+            </div>
+          )}
           {scope !== "window" && (
             <fieldset className="survey-band-picker">
               <legend>Included frequency regions</legend>
@@ -1376,6 +1161,12 @@ export function SpectrumExplorer({
               ))}
             </fieldset>
           )}
+          <p className="scan-estimate">
+            Estimated time:{" "}
+            {estimatedSeconds === null
+              ? "connect a receiver first"
+              : `about ${estimatedSeconds.toFixed(1)} s`}
+          </p>
           <div className="explorer-actions">
             <button
               type="button"
@@ -1414,37 +1205,23 @@ export function SpectrumExplorer({
             >
               Resume
             </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={
-                !records.some((record) => record.selected) ||
-                scanning ||
-                capturing ||
-                receiver.lifecycle !== "running"
-              }
-              onClick={() => void captureSelected()}
-            >
-              Capture selected
-            </button>
-          </div>
-          <div className="scan-summary">
-            <span>Source</span>
-            <strong>{receiver.session?.source ?? "Start receiver"}</strong>
-            <span>Estimated time</span>
-            <strong>
-              {estimatedSeconds === null
-                ? "—"
-                : `about ${estimatedSeconds.toFixed(1)} s`}
-            </strong>
-            <span>Coverage</span>
-            <strong>
-              {progress.total
-                ? `${progress.completed} / ${progress.total} windows`
-                : "Not started"}
-            </strong>
-            <span>Session</span>
-            <strong>{sessionId}</strong>
+
+            {(scanning || capturing) && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={!scanning && !capturing}
+                  onClick={() => {
+                    abortRef.current?.abort();
+                    captureAbortRef.current?.abort();
+                  }}
+                >
+                  {scanning ? "Pause scan" : "Cancel capture"}
+                </button>{" "}
+              </>
+            )}
           </div>
           {progress.total > 0 && (
             <progress
@@ -1453,13 +1230,306 @@ export function SpectrumExplorer({
               aria-label="Spectrum scan progress"
             />
           )}
-          <p className="explorer-note">
-            Current window is fastest. Band plan scans enabled regions at their
-            saved settings. Full survey uses a 150 ms coarse pass, then revisits
-            the strongest active regions with each band’s detailed dwell and
-            detector. Widely separated results use a logarithmic frequency axis.
-            Results remain relative and uncalibrated.
-          </p>
+          <details className="explorer-settings">
+            <summary>Detector settings</summary>
+            <label>
+              Detector
+              <select
+                value={detector}
+                disabled={scanning || capturing}
+                onChange={(e) =>
+                  setDetector(e.currentTarget.value as SurveyDetectorMode)
+                }
+              >
+                <option value="average">Average power</option>
+                <option value="max-hold">Max hold / bursts</option>
+                <option value="occupancy">Occupancy</option>
+                <option value="wideband">Wideband plateau</option>
+              </select>
+            </label>
+            <label>
+              Dwell per window <output>{dwellMs} ms</output>
+              <input
+                type="range"
+                min={MIN_DWELL_MS}
+                max={MAX_DWELL_MS}
+                step="50"
+                value={dwellMs}
+                disabled={scanning || capturing}
+                onChange={(e) => setDwellMs(e.currentTarget.valueAsNumber)}
+              />
+            </label>
+            <label>
+              Detection threshold <output>{thresholdDb} dB</output>
+              <input
+                type="range"
+                min="1"
+                max="40"
+                step="1"
+                value={thresholdDb}
+                disabled={scanning || capturing}
+                onChange={(e) => setThresholdDb(e.currentTarget.valueAsNumber)}
+              />
+              <small>Above the detector's local floor</small>
+            </label>
+          </details>
+          <details className="explorer-settings">
+            <summary>Edit profile bands</summary>
+            <label>
+              Profile band
+              <select
+                value={selectedBandId}
+                disabled={scanning || capturing}
+                onChange={(e) => chooseBand(e.currentTarget.value)}
+              >
+                {profile.bands.map((band) => (
+                  <option key={band.id} value={band.id}>
+                    {band.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Band name
+              <input
+                value={bandName}
+                disabled={scanning || capturing}
+                onChange={(e) => setBandName(e.currentTarget.value)}
+              />
+            </label>
+            <div className="explorer-range-grid">
+              <label>
+                Start frequency
+                <span className="unit-input">
+                  <input
+                    type="number"
+                    min="0.000001"
+                    step="0.001"
+                    value={startMhz}
+                    disabled={scanning || capturing}
+                    onChange={(e) => setStartMhz(e.currentTarget.valueAsNumber)}
+                  />
+                  <span>MHz</span>
+                </span>
+              </label>
+              <label>
+                End frequency
+                <span className="unit-input">
+                  <input
+                    type="number"
+                    min="0.000001"
+                    step="0.001"
+                    value={endMhz}
+                    disabled={scanning || capturing}
+                    onChange={(e) => setEndMhz(e.currentTarget.valueAsNumber)}
+                  />
+                  <span>MHz</span>
+                </span>
+              </label>
+            </div>
+            <div className="band-editor-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={scanning || capturing}
+                onClick={saveBand}
+              >
+                Save band
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={scanning || capturing || profile.bands.length >= 64}
+                onClick={addBand}
+              >
+                Add custom
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={scanning || capturing || profile.bands.length <= 1}
+                onClick={removeBand}
+              >
+                Remove
+              </button>
+            </div>
+            <p className="display-note">
+              Save band to apply edits to band-plan and full-survey scans.
+            </p>
+          </details>
+          <details
+            className="survey-profile-panel"
+            aria-label="Survey profile and site"
+          >
+            <summary>Site &amp; profile</summary>
+            <div className="survey-profile-grid">
+              <label>
+                Profile name
+                <input
+                  value={profile.name}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      name: e.currentTarget.value || "Unnamed survey",
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Site label
+                <input
+                  value={profile.site.label}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      site: {
+                        ...profile.site,
+                        label: e.currentTarget.value || "Unnamed site",
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Latitude (optional)
+                <input
+                  type="number"
+                  min="-90"
+                  max="90"
+                  step="0.000001"
+                  value={profile.site.latitude ?? ""}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      site: {
+                        ...profile.site,
+                        latitude:
+                          e.currentTarget.value === ""
+                            ? undefined
+                            : e.currentTarget.valueAsNumber,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Longitude (optional)
+                <input
+                  type="number"
+                  min="-180"
+                  max="180"
+                  step="0.000001"
+                  value={profile.site.longitude ?? ""}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      site: {
+                        ...profile.site,
+                        longitude:
+                          e.currentTarget.value === ""
+                            ? undefined
+                            : e.currentTarget.valueAsNumber,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Antenna
+                <input
+                  value={profile.site.antenna ?? ""}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      site: { ...profile.site, antenna: e.currentTarget.value },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Site notes
+                <input
+                  value={profile.site.notes ?? ""}
+                  disabled={scanning || capturing}
+                  onChange={(e) =>
+                    updateProfile({
+                      ...profile,
+                      site: { ...profile.site, notes: e.currentTarget.value },
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="survey-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={scanning || capturing}
+                onClick={() =>
+                  downloadText(
+                    `${safeSurveySlug(profile.name)}.browsersdr-survey.json`,
+                    surveyProfileJson(profile),
+                    "application/json",
+                  )
+                }
+              >
+                Export profile
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={scanning || capturing}
+                onClick={() => profileInputRef.current?.click()}
+              >
+                Import profile
+              </button>
+              <input
+                ref={profileInputRef}
+                hidden
+                type="file"
+                accept=".json,application/json"
+                onChange={(e) => void importProfile(e.currentTarget.files?.[0])}
+              />
+            </div>
+            <p className="display-note">
+              Coordinates are optional and are written to SigMF only when both
+              are supplied. Profiles and the latest survey results remain in
+              this browser until its site data is cleared.
+            </p>
+          </details>
+          <details className="explorer-settings">
+            <summary>Survey details</summary>
+            <div className="scan-summary">
+              <span>Source</span>
+              <strong>{receiver.session?.source ?? "Start receiver"}</strong>
+              <span>Estimated time</span>
+              <strong>
+                {estimatedSeconds === null
+                  ? "—"
+                  : `about ${estimatedSeconds.toFixed(1)} s`}
+              </strong>
+              <span>Coverage</span>
+              <strong>
+                {progress.total
+                  ? `${progress.completed} / ${progress.total} windows`
+                  : "Not started"}
+              </strong>
+              <span>Session</span>
+              <strong>{sessionId}</strong>
+            </div>
+            <p className="explorer-note">
+              Current window is fastest. Band plan scans enabled regions at
+              their saved settings. Full survey uses a 150 ms coarse pass, then
+              revisits the strongest active regions with each band’s detailed
+              dwell and detector. Widely separated results use a logarithmic
+              frequency axis. Results remain relative and uncalibrated.
+            </p>
+          </details>
         </aside>
         <div className="explorer-results">
           <SpectrumOverview
@@ -1477,7 +1547,40 @@ export function SpectrumExplorer({
           </p>
           <div className="candidate-list-wrap">
             <div className="candidate-list-heading">
-              <h3>Candidate review</h3>
+              <h3>Candidate review</h3>{" "}
+              <div className="candidate-selection-actions">
+                {records.length > 0 && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all candidates"
+                      checked={records.every((record) => record.selected)}
+                      disabled={scanning || capturing}
+                      onChange={(event) => {
+                        const selected = event.currentTarget.checked;
+                        updateRecords((current) =>
+                          current.map((record) => ({ ...record, selected })),
+                        );
+                      }}
+                    />{" "}
+                    Select all
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={
+                    !records.some((record) => record.selected) ||
+                    scanning ||
+                    capturing ||
+                    receiver.lifecycle !== "running"
+                  }
+                  onClick={() => void captureSelected()}
+                >
+                  Capture selected (
+                  {records.filter((record) => record.selected).length})
+                </button>{" "}
+              </div>
               <div className="survey-actions">
                 <button
                   type="button"
@@ -1535,11 +1638,12 @@ export function SpectrumExplorer({
                         type="checkbox"
                         checked={record.selected}
                         disabled={scanning || capturing}
-                        onChange={(e) =>
-                          setRecord(index, {
-                            selected: e.currentTarget.checked,
-                          })
-                        }
+                        onChange={(e) => {
+                          const selected = e.currentTarget.checked;
+                          setRecord(index, { selected });
+                          if (selected)
+                            setHighlightedRecordKey(recordKey(record));
+                        }}
                       />
                       <strong>{formatFrequency(record.frequencyHz)}</strong>
                     </label>
@@ -1551,63 +1655,76 @@ export function SpectrumExplorer({
                       {record.occupancy === undefined
                         ? ""
                         : ` · ${Math.round(record.occupancy * 100)}% occupancy`}
-                      {record.captured ? " · captured" : ""}
+                      {record.captured ? " · ✓ Captured" : ""}
                     </span>
-                    <div className="candidate-annotation-grid">
-                      <label>
-                        Label
-                        <input
-                          value={record.annotation.label ?? ""}
-                          onChange={(e) =>
-                            setAnnotation(index, {
-                              label: e.currentTarget.value,
-                            })
-                          }
-                          placeholder="Unknown signal"
-                        />
-                      </label>
-                      <label>
-                        Modulation
-                        <input
-                          value={record.annotation.modulation ?? ""}
-                          onChange={(e) =>
-                            setAnnotation(index, {
-                              modulation: e.currentTarget.value,
-                            })
-                          }
-                          placeholder="e.g. WBFM, PPM"
-                        />
-                      </label>
-                      <label>
-                        Encoding
-                        <input
-                          value={record.annotation.encoding ?? ""}
-                          onChange={(e) =>
-                            setAnnotation(index, {
-                              encoding: e.currentTarget.value,
-                            })
-                          }
-                          placeholder="e.g. RDS, Mode S"
-                        />
-                      </label>
-                      <label>
-                        Confidence
-                        <select
-                          value={record.annotation.confidence}
-                          onChange={(e) =>
-                            setAnnotation(index, {
-                              confidence: e.currentTarget
-                                .value as SurveyConfidence,
-                            })
-                          }
-                        >
-                          <option value="unknown">Unknown</option>
-                          <option value="low">Low</option>
-                          <option value="medium">Medium</option>
-                          <option value="high">High</option>
-                        </select>
-                      </label>
-                    </div>
+                    <details
+                      className="candidate-annotations"
+                      open={highlightedRecordKey === recordKey(record)}
+                      onToggle={(event) => {
+                        const open = event.currentTarget.open;
+                        const key = recordKey(record);
+                        setHighlightedRecordKey((current) =>
+                          open ? key : current === key ? undefined : current,
+                        );
+                      }}
+                    >
+                      <summary>Annotations</summary>
+                      <div className="candidate-annotation-grid">
+                        <label>
+                          Label
+                          <input
+                            value={record.annotation.label ?? ""}
+                            onChange={(e) =>
+                              setAnnotation(index, {
+                                label: e.currentTarget.value,
+                              })
+                            }
+                            placeholder="Unknown signal"
+                          />
+                        </label>
+                        <label>
+                          Modulation
+                          <input
+                            value={record.annotation.modulation ?? ""}
+                            onChange={(e) =>
+                              setAnnotation(index, {
+                                modulation: e.currentTarget.value,
+                              })
+                            }
+                            placeholder="e.g. WBFM, PPM"
+                          />
+                        </label>
+                        <label>
+                          Encoding
+                          <input
+                            value={record.annotation.encoding ?? ""}
+                            onChange={(e) =>
+                              setAnnotation(index, {
+                                encoding: e.currentTarget.value,
+                              })
+                            }
+                            placeholder="e.g. RDS, Mode S"
+                          />
+                        </label>
+                        <label>
+                          Confidence
+                          <select
+                            value={record.annotation.confidence}
+                            onChange={(e) =>
+                              setAnnotation(index, {
+                                confidence: e.currentTarget
+                                  .value as SurveyConfidence,
+                              })
+                            }
+                          >
+                            <option value="unknown">Unknown</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                        </label>
+                      </div>
+                    </details>
                     <button
                       type="button"
                       className="secondary candidate-action"

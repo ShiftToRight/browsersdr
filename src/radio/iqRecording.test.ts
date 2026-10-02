@@ -3,6 +3,7 @@ import type { Player } from "@jtarrio/signals/demod/player.js";
 import { describe, expect, it } from "vitest";
 import { createSignalsMode } from "./receiverConfig";
 import {
+  CU8_NORMALIZATION,
   decodeCu8,
   IqRecorder,
   parseRecording,
@@ -13,6 +14,7 @@ import {
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { syntheticAm } from "../testing/syntheticModulation";
 import { usrpB205SessionDetails } from "../testing/usrpB205SessionFixture";
+import { fftInPlace } from "../dsp/spectrumMath";
 
 class CapturePlayer implements Player {
   readonly sampleRate = 48_000;
@@ -76,7 +78,7 @@ describe("BrowserSDR CU8 recording format", () => {
       hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_000_000,
       mode: "AM", channelBandwidthHz: 10_000, squelch: 0, gainDb: null,
       sampleFormat: "planar-f32-iq-normalized", usrpB205: details,
-    })).toThrow(/not a replayable SC16\/SigMF stream/);
+    })).toThrow(/native CI16 recording path/);
   });
   it.each([
     { durationSeconds: 99 }, { source: "invalid" }, { stopReason: "invalid" },
@@ -104,8 +106,19 @@ describe("BrowserSDR CU8 recording format", () => {
     expect(parsed.metadata.sampleRateHz).toBe(48_000);
     expect(parsed.metadata.centerFrequencyHz).toBe(10_000_000);
     expect(parsed.metadata.captureStartedAt).toBe("2026-09-08T00:00:00.000Z");
-    expect(parsed.metadata.normalization).toBe("float = byte / 128 - 0.995");
+    expect(parsed.metadata.normalization).toBe(CU8_NORMALIZATION);
     expect(parsed.metadata.provenance).toContain("deterministic generator");
+  });
+
+  it.each([
+    "float = byte / 128 - 0.995",
+    "float = (byte - 127.5) / 127.5",
+  ])("rejects the removed CU8 normalization %s", (normalization) => {
+    const fixture = createDeterministicRecordingFixture(32);
+    expect(() => parseRecording(
+      JSON.stringify({ ...fixture.metadata, normalization }),
+      fixture.data,
+    )).toThrow(/Unsupported recording encoding or normalization/);
   });
 
   it("keeps legacy metadata compatible and supplies validated SRD defaults", () => {
@@ -156,18 +169,14 @@ describe("BrowserSDR CU8 recording format", () => {
   it("preserves the RF carrier bin and decodes the generated 1 kHz AM audio tone", () => {
     const fixture = createDeterministicRecordingFixture();
     const decoded = decodeCu8(fixture.data);
+    const size = 4096;
+    const spectrumI = decoded.I.slice(0, size);
+    const spectrumQ = decoded.Q.slice(0, size);
+    fftInPlace(spectrumI, spectrumQ);
     let bestBin = 0;
     let best = 0;
-    const size = 4096;
     for (let bin = 0; bin < size; bin += 1) {
-      let real = 0;
-      let imaginary = 0;
-      for (let index = 0; index < size; index += 1) {
-        const phase = -2 * Math.PI * bin * index / size;
-        real += (decoded.I[index] ?? 0) * Math.cos(phase) - (decoded.Q[index] ?? 0) * Math.sin(phase);
-        imaginary += (decoded.I[index] ?? 0) * Math.sin(phase) + (decoded.Q[index] ?? 0) * Math.cos(phase);
-      }
-      const power = real * real + imaginary * imaginary;
+      const power = spectrumI[bin]! ** 2 + spectrumQ[bin]! ** 2;
       if (power > best) { best = power; bestBin = bin; }
     }
     const carrierHz = bestBin / size * fixture.metadata.sampleRateHz;

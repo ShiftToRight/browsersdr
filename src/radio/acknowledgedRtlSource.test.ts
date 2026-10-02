@@ -5,6 +5,35 @@ import { AcknowledgedRtlSource } from "./acknowledgedRtlSource";
 
 afterEach(() => vi.useRealTimers());
 
+it("labels live blocks with the matching acknowledged tuner center", async () => {
+  let requestedFrequency = 0;
+  const device = {
+    setCenterFrequency: async (frequency: number) => {
+      requestedFrequency = frequency;
+      return frequency + 17;
+    },
+    readSamples: async () => ({
+      data: Uint8Array.from([0, 255]).buffer,
+      // WebRTLSDR reports the requested value on sample blocks.
+      frequency: requestedFrequency,
+      directSampling: false,
+    }),
+  } as unknown as RtlDevice;
+  const source = new AcknowledgedRtlSource(device);
+
+  await expect(source.setCenterFrequency(100_000_000)).resolves.toBe(
+    100_000_017,
+  );
+  await expect(source.readSamples(1)).resolves.toMatchObject({
+    frequency: 100_000_017,
+  });
+
+  await source.setCenterFrequency(101_000_000);
+  await expect(source.readSamples(1)).resolves.toMatchObject({
+    frequency: 101_000_017,
+  });
+});
+
 it("preserves live manual/auto acknowledgements through the installed Radio command queue", async () => {
   vi.useFakeTimers();
   let gain: number | null = null;

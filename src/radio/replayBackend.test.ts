@@ -1,3 +1,4 @@
+import { createDabEnsembleFixture } from "../testing/dabEnsembleFixture";
 import { readFile } from "node:fs/promises";
 import { WasmChannelFilter, type ChannelExports } from "./wasmChannel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +8,9 @@ import { createDeterministicRecordingFixture } from "../testing/recordingFixture
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import { SpectrumAccumulator } from "../dsp/spectrumMath";
-import { IqRecorder, SIGMF_CU8_NORMALIZATION, type IqRecording } from "./iqRecording";
+import { IqRecorder, type IqRecording } from "./iqRecording";
 import { defaultModeSettings } from "./receiverConfig";
+import { CI8_RECORDING_FORMAT } from "./ci8Recording";
 import type { SourceSessionMetadata } from "./types";
 
 class TestAudioContext extends EventTarget {
@@ -124,25 +126,15 @@ function dabTransitionSignal(): { I: Float32Array; Q: Float32Array } {
 }
 
 describe("real replay backend integration", () => {
-  it("uses SigMF CU8 endpoint normalization while preserving legacy replay decoding", async () => {
-    const sigmf = createDeterministicRecordingFixture(1);
-    sigmf.data.set([0, 255]);
-    sigmf.metadata.normalization = SIGMF_CU8_NORMALIZATION;
-    const imported = setupRecording(sigmf);
+  it("uses the canonical CU8 endpoint normalization", async () => {
+    const recording = createDeterministicRecordingFixture(1);
+    recording.data.set([0, 255]);
+    const imported = setupRecording(recording);
     await imported.backend.start(imported.options);
     await vi.advanceTimersByTimeAsync(1);
-    expect(imported.samples[0]?.I[0]).toBe(-1);
-    expect(imported.samples[0]?.Q[0]).toBe(1);
+    expect(imported.samples[0]?.I[0]).toBe(-0.99609375);
+    expect(imported.samples[0]?.Q[0]).toBe(0.99609375);
     await imported.backend.stop();
-
-    const legacy = createDeterministicRecordingFixture(1);
-    legacy.data.set([0, 255]);
-    const existing = setupRecording(legacy);
-    await existing.backend.start(existing.options);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(existing.samples[0]?.I[0]).toBeCloseTo(-0.995, 6);
-    expect(existing.samples[0]?.Q[0]).toBeCloseTo(255 / 128 - 0.995, 6);
-    await existing.backend.stop();
   });
 
   it("starts, performs a no-op and in-span tune, preserves raw RF bins, then stops", async () => {
@@ -242,7 +234,7 @@ describe("real replay backend integration", () => {
     await vi.advanceTimersByTimeAsync(100);
 
     const updates = vi.mocked(events.dabChanged!).mock.calls.map(([snapshot]) => snapshot);
-    expect(updates.at(-1)).toMatchObject({ state: "synchronized", nullSymbolCount: 1 });
+    expect(updates.at(-1)).toMatchObject({ state: "searching", ficBlockCount: 0 });
     await backend.stop();
   });
 
@@ -314,7 +306,7 @@ describe("real replay backend integration", () => {
 it.each([0x0109, 0x0110, 0x0113].flatMap(api => ([1_024_000, 2_400_000, 4_800_000, 9_600_000, 19_200_000] as const).flatMap(rate => [48_000, 44_100].map(audioRate => ({ api, rate, audioRate })))))("replays and re-records native CI8 $api at $rate samples/s with $audioRate Hz audio", async ({ api, rate, audioRate }) => {
   TestAudioContext.rate = audioRate;
   const { hackrfRecordingFixture } = await import("../testing/hackrfRecordingFixture");
-  const { decodeRecordingSamples, RECORDING_FORMAT } = await import("./iqRecording");
+  const { decodeRecordingSamples } = await import("./iqRecording");
   const bytes = new Uint8Array(32_768);
   for (let n = 0; n < bytes.length; n++) bytes[n] = n % 256;
   const { recording } = await hackrfRecordingFixture(bytes, rate, api);
@@ -329,7 +321,7 @@ it.each([0x0109, 0x0110, 0x0113].flatMap(api => ([1_024_000, 2_400_000, 4_800_00
   const result = f.backend.stopRecording()!;
   expect(result.data).toEqual(bytes);
   expect(result.metadata).toMatchObject({ source: "replay", captureStartedAt: recording.metadata.captureStartedAt, nativeSampleRateHz: rate, effectiveSampleRateHz: rate >= 4_800_000 ? 2_400_000 : rate });
-  if (result.metadata.format === RECORDING_FORMAT || recording.metadata.format === RECORDING_FORMAT) throw new Error("Expected CI8");
+  if (result.metadata.format !== CI8_RECORDING_FORMAT || recording.metadata.format !== CI8_RECORDING_FORMAT) throw new Error("Expected CI8");
   expect(result.metadata.hardware).toEqual(recording.metadata.hardware); expect(result.metadata.captureSettings).toEqual(recording.metadata.captureSettings);
   expect(result.metadata.knownGaps.map(g => [g.afterSample, g.missingSamples])).toEqual([[100, 2400], [9000, null]]);
   expect(result.metadata.provenance).toContain("No new hardware observation");
@@ -386,3 +378,105 @@ it("catches up 19.2 MS/s replay under 4 ms timer clamping with bounded blocks", 
     await f.backend.stop();
   } finally { timer.mockRestore(); }
 });
+
+it("replays and re-records bladeRF Q11 at nominal DSP rate while retaining accepted sample-time evidence", async () => {
+  const { bladeRfRecordingFixture } = await import("../testing/bladerfRecordingFixture");
+  const { recording } = await bladeRfRecordingFixture(undefined, 4_800_000, "xA9", 5, -1);
+  const { backend, options, samples } = setupRecording(recording);
+  const metadata = await backend.start(options);
+  expect(metadata.actualSampleRateHz).toBe(4_800_000);
+  expect(metadata.bladerf?.acceptedSampleRateHz).toBe(4_799_999);
+  backend.startRecording();
+  await vi.advanceTimersByTimeAsync(1);
+  expect([...samples[0]!.I]).toEqual([-1, -0.5]);
+  expect([...samples[0]!.Q]).toEqual([2047 / 2048, 0.5]);
+  const rerecorded = backend.stopRecording()!;
+  expect(rerecorded.data).toEqual(recording.data);
+  expect(rerecorded.metadata).toMatchObject({ format: "browsersdr-bladerf-sc16-q11-v1", sampleRateHz: 4_799_999, nativeSampleRateHz: 4_800_000, source: "replay", normalization: "float = int16 / 2048" });
+  await backend.stop();
+});
+
+it.each([48_000, 44_100])("replays and re-records processed channel I/Q at audio rate %i", async (audioRate) => {
+  TestAudioContext.rate = audioRate;
+  const input = { I: new Float32Array(32768).fill(0.3), Q: new Float32Array(32768).fill(-0.2) };
+  for (const wide of [false, true]) {
+    const fixture = wide ? await (await import("../testing/bladerfRecordingFixture")).bladeRfRecordingFixture() : undefined;
+    const sourceSession: SourceSessionMetadata = fixture ? { ...fixture.session, mode: "AM", channelBandwidthHz: 15_000 } : {
+      source: "synthetic", sessionGeneration: 1, requestedSampleRateHz: 1_024_000, actualSampleRateHz: 1_024_000,
+      hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_000_000, mode: "AM", channelBandwidthHz: 15_000,
+      squelch: 0, gainDb: null, sampleFormat: "planar-f32-iq-normalized",
+    };
+    const recorder = new IqRecorder(sourceSession, undefined, 131072, undefined, undefined, fixture?.format, "memory", { captureCurrentChannel: true });
+    if (fixture) {
+      const bytes = new Uint8Array(32768 * 4), view = new DataView(bytes.buffer);
+      for (let n = 0; n < 32768; n++) { view.setInt16(n * 4, 614, true); view.setInt16(n * 4 + 2, -410, true); }
+      recorder.appendBladeRfSc16(bytes);
+    } else recorder.appendNormalized(input);
+    const recording = recorder.finish();
+    const f = setupRecording(recording);
+    await f.backend.start(f.options);
+    f.backend.startRecording();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    expect(f.samples.reduce((sum, block) => sum + block.I.length, 0)).toBe(recording.metadata.sampleCount);
+    expect(f.backend.stopRecording()!.data).toEqual(recording.data);
+    await f.backend.stop();
+  }
+});
+
+it.each(["AIS", "DAB"] as const)("routes %s samples through channel capture and rejects incomplete DAB frames", async (mode) => {
+  const signal = mode === "AIS" ? aisSignal(2_400_000, 10_000) : dabTransitionSignal();
+  const settings = defaultModeSettings(mode);
+  const center = mode === "AIS" ? 162_000_000 : 220_352_000;
+  const session: SourceSessionMetadata = {
+    source: "synthetic", sessionGeneration: 1, requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_000,
+    hardwareCenterFrequencyHz: center, selectedChannelFrequencyHz: center + (mode === "AIS" ? 10_000 : 0),
+    mode, channelBandwidthHz: settings.bandwidthHz, squelch: 0, gainDb: null, sampleFormat: "planar-f32-iq-normalized",
+  };
+  const recorder = new IqRecorder(session, undefined, 262144, undefined, undefined, undefined, "memory", { captureCurrentChannel: true });
+  recorder.appendNormalized(signal);
+  const recording = recorder.finish();
+  if (mode === "AIS") expect(recording.metadata.sampleRateHz).toBe(300_000);
+  const f = setupRecording(recording);
+  await f.backend.start(f.options);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+  if (mode === "AIS") {
+    const updates = vi.mocked(f.events.aisChanged!).mock.calls.map(([snapshot]) => snapshot);
+    expect(updates.at(-1)).toMatchObject({ validFrames: 1, targets: [{ mmsi: 211_234_567 }] });
+  } else {
+    const updates = vi.mocked(f.events.dabChanged!).mock.calls.map(([snapshot]) => snapshot);
+    expect(updates.at(-1)).toMatchObject({ state: "searching", ficBlockCount: 0 });
+  }
+  await f.backend.stop();
+});
+
+
+it("retains audio ownership on close failure and retries the same context", async () => {
+  const f = setup();
+  await f.backend.start(f.options);
+  const context = TestAudioContext.instances[0]!;
+  const close = vi.spyOn(context, "close").mockRejectedValueOnce(new Error("audio close failed"));
+  await expect(f.backend.stop()).rejects.toThrow("audio close failed");
+  expect(context.state).toBe("running");
+  await f.backend.stop();
+  expect(close).toHaveBeenCalledTimes(2);
+  expect(context.state).toBe("closed");
+});
+
+
+it("decodes a complete DAB ensemble and programme through recorded I/Q replay", async () => {
+  const signal = createDabEnsembleFixture();
+  const recording = recordingAt(2_400_000, 220_352_000, signal.I, signal.Q);
+  recording.metadata.mode = "DAB";
+  recording.metadata.channelBandwidthHz = defaultModeSettings("DAB").bandwidthHz;
+  const f = setupRecording(recording);
+  await f.backend.start(f.options);
+  await vi.advanceTimersByTimeAsync(1_500);
+  const snapshots = vi.mocked(f.events.dabChanged!).mock.calls.map(([snapshot]) => snapshot);
+  expect(snapshots.some(snapshot => snapshot.serviceId === 0x1234 && (snapshot.ficBlockCount ?? 0) > 0)).toBe(true);
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+  expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+  await f.backend.stop();
+}, 20_000);

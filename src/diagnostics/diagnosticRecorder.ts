@@ -106,9 +106,9 @@ export function loadAutoReportPreference(
   storage: Pick<Storage, "getItem"> = localStorage,
 ): boolean {
   try {
-    return storage.getItem(AUTO_REPORT_KEY) === "true";
+    return storage.getItem(AUTO_REPORT_KEY) !== "false";
   } catch {
-    return false;
+    return true;
   }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AtlasClient, type AtlasAnalysisRun } from "../radio/atlasClient";
+import { atlasWebPageUrl } from "../radio/atlasWebNavigation";
 import {
   AtlasTransferController,
   type AtlasTransferRequest,
@@ -113,7 +114,7 @@ export function AtlasSavePanel({
     [createController, prepared],
   );
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot());
-  const [operatorToken, setOperatorToken] = useState("");
+  const [userToken, setUserToken] = useState("");
   const [title, setTitle] = useState(prepared.basename);
   const [analyzeAfterSave, setAnalyzeAfterSave] = useState(false);
   const [result, setResult] = useState<AtlasTransferResult>();
@@ -152,16 +153,16 @@ export function AtlasSavePanel({
       setLocalError("Enter a recording title before saving.");
       return;
     }
-    if (operatorToken.length < 32) {
+    if (userToken.length < 32) {
       setLocalError(
-        "Enter the configured SigIntAtlas operator token (at least 32 characters). The token stays only in memory.",
+        "Enter the configured SigIntAtlas user token (at least 32 characters). The token stays only in memory.",
       );
       return;
     }
     setRequestPending(true);
     void controller
       .start({
-        operatorToken,
+        userToken,
         title: title.trim(),
         sourceKind,
         analyzeAfterSave,
@@ -170,7 +171,7 @@ export function AtlasSavePanel({
         if (!mounted.current) return;
         setResult(next);
         setAnalysisRun(next.analysis.run);
-        setOperatorToken("");
+        setUserToken("");
       })
       .catch((error: unknown) => {
         if (mounted.current && error instanceof Error)
@@ -270,15 +271,15 @@ export function AtlasSavePanel({
           />
         </label>
         <label>
-          Operator token
+          SigIntAtlas user token
           <input
-            aria-label="SigIntAtlas operator token"
+            aria-label="SigIntAtlas user token"
             type="password"
-            value={operatorToken}
+            value={userToken}
             autoComplete="off"
             spellCheck={false}
             disabled={active || saved}
-            onChange={(event) => setOperatorToken(event.currentTarget.value)}
+            onChange={(event) => setUserToken(event.currentTarget.value)}
           />
         </label>
         <label className="atlas-analysis-choice">
@@ -340,13 +341,13 @@ export function AtlasSavePanel({
       </div>
       {saved && (
         <div className="atlas-saved-links">
-          <a href={snapshot.recordingUrl} target="_blank" rel="noreferrer">
+          <a href={atlasWebPageUrl(snapshot.recordingUrl)} target="_blank" rel="noreferrer">
             Open saved recording
           </a>
           {result?.analysis.status === "scheduled" &&
             result.analysis.run?.result_url && (
               <a
-                href={result.analysis.run.result_url}
+                href={atlasWebPageUrl(result.analysis.run.result_url)}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -356,7 +357,10 @@ export function AtlasSavePanel({
         </div>
       )}
       <p className="display-note">
-        The operator token is kept only in this page's memory. Retry reuses
+        The user token authenticates this explicit upload and is kept only in
+        this page's memory. SigIntAtlas currently records the authenticated
+        local operator as the owner; it must provide distinct user identities
+        server-side to separate multiple users. Retry reuses
         verified parts while this prepared pair remains retained. Reload cannot
         resume without preparing or reselecting the source bytes. Offline ZIP
         and separate-file downloads remain available.

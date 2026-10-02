@@ -89,13 +89,13 @@ describe.skipIf(!configured)("configured real BSD-03 SigIntAtlas workflow", () =
         }),
     });
     const first = controller.start({
-      operatorToken: operatorToken!,
+      userToken: operatorToken!,
       title: "BSD-03 isolated contiguous acceptance fixture",
       sourceKind: "synthetic",
       analyzeAfterSave: true,
     });
     const duplicate = controller.start({
-      operatorToken: operatorToken!,
+      userToken: operatorToken!,
       title: "BSD-03 isolated contiguous acceptance fixture",
       sourceKind: "synthetic",
       analyzeAfterSave: true,
@@ -151,7 +151,7 @@ describe.skipIf(!configured)("configured real BSD-03 SigIntAtlas workflow", () =
       { client: client(), pollDelay: async () => undefined },
     );
     const gap = await gapController.start({
-      operatorToken: operatorToken!,
+      userToken: operatorToken!,
       title: "BSD-03 isolated structured-gap archive fixture",
       sourceKind: "synthetic",
       analyzeAfterSave: true,

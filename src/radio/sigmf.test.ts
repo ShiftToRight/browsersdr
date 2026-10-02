@@ -5,7 +5,7 @@ import schema from "../../docs/vendor/sigmf-v1.2.6/sigmf-schema.json";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { buildSigmfMetadata, createSigmfExport } from "./sigmf";
 
-const FIXTURE_SHA512 = "a936ed1c87e6a2fbc496648647710738fac157a3cc906f0d6af12953be19559973ad88893163861bf12e0f3f8f7ca1a0eacba9ec3b2c141e47316afea210f533";
+const FIXTURE_SHA512 = "9259a238d026943fdeb53fba0664783d79357c4b66669edea2f4683a00746423e104e615305eb2842eaf2fec9d2fa17d757a0b047b68725c2701c2b04f5d7348";
 
 describe("SigMF v1.2.6 export", () => {
   it("exports the fixture bytes unchanged with a known SHA-512 and safe paired names", async () => {
@@ -20,6 +20,19 @@ describe("SigMF v1.2.6 export", () => {
     expect(exported.dataFilename).toBe(`${exported.basename}.sigmf-data`);
     expect(exported.metadataFilename).toBe(`${exported.basename}.sigmf-meta`);
     expect(exported.basename).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it("hashes a file-backed capture incrementally without materializing it in data", async () => {
+    const fixture = createDeterministicRecordingFixture(4096);
+    const recording = {
+      ...fixture,
+      data: new Uint8Array(),
+      dataBlob: new Blob([fixture.data as Uint8Array<ArrayBuffer>]),
+    };
+    const exported = await createSigmfExport(recording);
+    expect(exported.data).toHaveLength(0);
+    expect(exported.dataBlob?.size).toBe(fixture.data.byteLength);
+    expect(exported.metadata.global["core:sha512"]).toBe(FIXTURE_SHA512);
   });
 
   it("uses the capture center and describes the selected channel with RF edges", async () => {

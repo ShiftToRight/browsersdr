@@ -1,18 +1,27 @@
-import { validateRecordingMetadata, recordingSampleFormat, RECORDING_FORMAT, RECORDING_METADATA_MAX_BYTES } from "./iqRecording";
+import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
+import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
+import type { UsrpB205Ci16RecordingFormat } from "./ci16Recording";
+import { sha512 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { recordingDataBlob, recordingDataByteLength, validateRecordingMetadata, recordingSampleFormat, RECORDING_FORMAT, RECORDING_METADATA_MAX_BYTES } from "./iqRecording";
 import type { IqRecording, RecordingGap } from "./iqRecording";
 import { safeSurveySlug } from "./fieldSurvey";
+import { STREAMING_RECORDING_MAX_BYTES } from "./recordingSpool";
+import { CI16_RECORDING_FORMAT } from "./ci16Recording";
 
 export const SIGMF_VERSION = "1.2.6" as const;
 export const SIGMF_RECORDER = "BrowserSDR" as const;
 
 export interface SigmfGlobal {
-  "core:datatype": "cu8" | "ci8";
+  "core:datatype": "cu8" | "ci8" | "ci16_le";
   "core:version": typeof SIGMF_VERSION;
   "core:sample_rate": number;
   "core:recorder": typeof SIGMF_RECORDER;
   "core:sha512": string;
   "core:description": string;
   "core:hw"?: string;
+  "core:extensions"?: { name: "browsersdr"; version: "1.0.0"; optional: true }[];
+  "browsersdr:sample_format"?: BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat;
 }
 
 export interface SigmfCapture {
@@ -44,6 +53,7 @@ export interface SigmfExport {
   dataFilename: string;
   metadataFilename: string;
   data: Uint8Array;
+  dataBlob?: Blob;
   metadata: SigmfMetadata;
   metadataJson: string;
 }
@@ -72,13 +82,22 @@ function consolidateGaps(gaps: readonly RecordingGap[]): ConsolidatedGap[] {
 
 function describeRecording(recording: IqRecording): string {
   const { metadata } = recording;
+  if (metadata.format === CHANNEL_RECORDING_FORMAT) {
+    return `BrowserSDR current-channel I/Q from ${metadata.provenanceDetails.originalSource}; frequency shifted, FIR filtered and decimated, then requantized. Amplitude is uncalibrated. Capture processing: ${JSON.stringify(metadata.channelCapture)}. ${metadata.provenance ?? ""}`;
+  }
+  if (metadata.format === BLADERF_SC16_RECORDING_FORMAT) {
+    return `BrowserSDR native bladeRF ${metadata.hardware.identity.model} SC16 Q11 I/Q. Little-endian signed words are retained unchanged; playback divides by 2048. Amplitude is uncalibrated. Capture sample rate and RF center are RFIC readbacks, not measured clock accuracy. Native DSP rate is ${metadata.nativeSampleRateHz} Hz. Host timing/accounting cannot prove hardware continuity. ${metadata.provenance ?? ""}`;
+  }
+  if (metadata.format === CI16_RECORDING_FORMAT) {
+    return `BrowserSDR CI16 I/Q capture: USRP B205-mini native little-endian Q/I words were reordered losslessly to SigMF ci16_le I/Q without scaling. Amplitude is not calibrated. Rate and RF center use the validated B205 receive-session evidence. Capture format/provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. ${metadata.provenance ?? ""}${metadata.survey ? ` Survey context: ${JSON.stringify(metadata.survey)}.` : ""}`;
+  }
   if (metadata.format !== RECORDING_FORMAT) {
     const origin = metadata.provenanceDetails.originalSource === "hackrf" ? "HackRF Pro native USB bytes unchanged" : "imported CI8 bytes of unknown hardware origin";
     return `BrowserSDR CI8 I/Q capture: ${origin}. Amplitude is not calibrated. Dataset rate is native; stored bytes are unchanged. Playback channel processing is recorded in the format provenance. ${metadata.rateEvidence === "requested-and-acknowledged" ? "Rate and RF center are nominal USB-acknowledged requests, not firmware readbacks or physical measurements." : ""} Adapter reference commit is not an authenticated firmware hash. Capture format/provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. ${metadata.provenance ?? ""}${metadata.survey ? ` Survey context: ${JSON.stringify(metadata.survey)}.` : ""}`;
   }
   let description = "BrowserSDR CU8 I/Q capture.";
   if (metadata.source === "synthetic") {
-    description += " Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round((float + 0.995) * 128), 0, 255).";
+    description += " Normalized synthetic I/Q floats were quantized with the BrowserSDR CU8 formula byte = clamp(round(float * 128 + 127.5), 0, 255).";
   } else if (metadata.source === "replay") {
     description += ` Existing replay CU8 bytes were copied unchanged; replay normalization is ${metadata.normalization}.`;
   } else {
@@ -98,7 +117,7 @@ function describeRecording(recording: IqRecording): string {
 function receiverSettingsComment(recording: IqRecording): string {
   const { metadata } = recording;
   if (metadata.format !== RECORDING_FORMAT) {
-    return `Receiver settings: selected channel ${metadata.selectedChannelFrequencyHz} Hz; bandwidth ${metadata.channelBandwidthHz} Hz; source ${metadata.source}; mode ${metadata.mode}; squelch ${metadata.squelch}${metadata.beatToneHz === undefined ? "" : `; CW beat tone ${metadata.beatToneHz} Hz`}; stop reason ${metadata.stopReason}. Accepted settings and provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. Not measured or calibrated RF gain.`;
+    return `Receiver settings: selected channel ${metadata.selectedChannelFrequencyHz} Hz; bandwidth ${metadata.channelBandwidthHz} Hz; source ${metadata.source}; mode ${metadata.mode}; squelch ${metadata.squelch}${metadata.beatToneHz === undefined ? "" : `; CW beat tone ${metadata.beatToneHz} Hz`}; stop reason ${metadata.stopReason}. ${metadata.captureWarning ?? ""} Accepted settings and provenance: ${JSON.stringify(recordingSampleFormat(metadata))}. Not measured or calibrated RF gain.`;
   }
   const gain = metadata.gainDb === null
     ? "automatic RF gain"
@@ -110,6 +129,7 @@ function receiverSettingsComment(recording: IqRecording): string {
     gain,
     `squelch ${metadata.squelch}`,
     `stop reason ${metadata.stopReason}`,
+    ...(metadata.captureWarning ? [metadata.captureWarning] : []),
   ].join("; ") + ". These are receiver settings, not calibrated RF measurements.";
 }
 
@@ -147,8 +167,24 @@ export async function sha512Hex(data: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function recordingSha512Hex(recording: IqRecording): Promise<string> {
+  if (!recording.dataBlob) return sha512Hex(recording.data);
+  const hasher = sha512.create();
+  const reader = (await recordingDataBlob(recording)).stream().getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      hasher.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return bytesToHex(hasher.digest());
+}
+
 export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfMetadata> {
-  const metadata = validateRecordingMetadata(recording.metadata, recording.data.byteLength);
+  const metadata = validateRecordingMetadata(recording.metadata, recordingDataByteLength(recording), STREAMING_RECORDING_MAX_BYTES);
   const gaps = consolidateGaps(metadata.knownGaps);
   const captures: SigmfCapture[] = [{
     "core:sample_start": 0,
@@ -218,13 +254,23 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
   annotations.sort((left, right) => left["core:sample_start"] - right["core:sample_start"]);
   const result: SigmfMetadata = {
     global: {
-      "core:datatype": metadata.sampleEncoding === "signed-8-bit" ? "ci8" : "cu8",
+      "core:datatype": metadata.sampleEncoding === "signed-16-bit-little-endian"
+        ? "ci16_le"
+        : metadata.sampleEncoding === "signed-8-bit" ? "ci8" : "cu8",
       "core:version": SIGMF_VERSION,
       "core:sample_rate": metadata.sampleRateHz,
       "core:recorder": SIGMF_RECORDER,
-      "core:sha512": await sha512Hex(recording.data),
+      "core:sha512": await recordingSha512Hex(recording),
       "core:description": describeRecording(recording),
-      ...(metadata.format !== RECORDING_FORMAT && metadata.hardware ? { "core:hw": `HackRF Pro via WebUSB; board ${metadata.hardware.boardId}; revision ${metadata.hardware.boardRevisionRaw}; API ${metadata.hardware.usbApiVersion}; firmware ${metadata.hardware.firmwareVersion}; serial ${metadata.hardware.serialWords.map(word => word.toString(16).padStart(8, "0")).join("")}` } : {}),
+      ...(metadata.format !== CHANNEL_RECORDING_FORMAT && metadata.format !== RECORDING_FORMAT && metadata.format !== CI16_RECORDING_FORMAT && metadata.format !== BLADERF_SC16_RECORDING_FORMAT && metadata.hardware ? { "core:hw": `HackRF Pro via WebUSB; board ${metadata.hardware.boardId}; revision ${metadata.hardware.boardRevisionRaw}; API ${metadata.hardware.usbApiVersion}; firmware ${metadata.hardware.firmwareVersion}; serial ${metadata.hardware.serialWords.map(word => word.toString(16).padStart(8, "0")).join("")}` } : {}),
+      ...(metadata.format === CI16_RECORDING_FORMAT ? { "core:hw": `USRP B205-mini via WebUSB; ${metadata.hardware.capabilities.identity.productName}; serial ${metadata.hardware.capabilities.identity.serialNumber ?? "unavailable"}; FPGA SHA-256 ${metadata.hardware.capabilities.fpga.imageSha256}; UHD profile ${metadata.hardware.capabilities.protocolProfile}` } : {}),
+      ...(metadata.format === BLADERF_SC16_RECORDING_FORMAT ? {
+        "core:hw": `bladeRF 2.0 Micro ${metadata.hardware.identity.model} via WebUSB; firmware ${metadata.hardware.identity.firmware.major}.${metadata.hardware.identity.firmware.minor}; FPGA ${metadata.hardware.identity.fpga.major}.${metadata.hardware.identity.fpga.minor}.${metadata.hardware.identity.fpga.patch}; ${metadata.hardware.rxInput ?? "RX1"}; image SHA-256 ${metadata.hardware.identity.volatileImage?.sha256 ?? "unknown; preconfigured"}`,
+      } : {}),
+      ...(metadata.format === CHANNEL_RECORDING_FORMAT || metadata.format === BLADERF_SC16_RECORDING_FORMAT || metadata.format === CI16_RECORDING_FORMAT ? {
+        "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }],
+        "browsersdr:sample_format": recordingSampleFormat(metadata) as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat,
+      } : {}),
       ...(metadata.source === "rtl-sdr" ? { "core:hw": "RTL-SDR via WebUSB" } : {}),
     },
     captures,
@@ -242,6 +288,7 @@ export async function createSigmfExport(recording: IqRecording): Promise<SigmfEx
     dataFilename: `${basename}.sigmf-data`,
     metadataFilename: `${basename}.sigmf-meta`,
     data: recording.data,
+    ...(recording.dataBlob ? { dataBlob: await recordingDataBlob(recording) } : {}),
     metadata,
     metadataJson: `${JSON.stringify(metadata, null, 2)}\n`,
   };

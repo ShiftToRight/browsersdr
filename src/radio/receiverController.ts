@@ -1,3 +1,6 @@
+import { classifyReceiverIssue, type ReceiverIssue } from "./receiverRecovery";
+import type { RecordingOptions } from "./channelRecording";
+import { validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
 import type { IngressDiagnostics } from "./ingressTimings";
 import type { ChannelDiagnostics } from "./widebandChannel";
 import type {
@@ -45,6 +48,7 @@ export interface ReceiverStartOptions {
   sampleRateHz?: number;
   hardwareSettings?: HackrfRxSettings;
   usrpSettings?: UsrpB205RxSettings;
+  bladerfSettings?: BladeRfRxSettings;
 }
 
 export interface ReceiverBackendEvents {
@@ -112,7 +116,8 @@ export interface ReceiverBackend {
     settings: HackrfRxSettings,
     sessionGeneration: number,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
-  startRecording?(survey?: SurveyCaptureContext): RecordingStatus;
+  configureBladeRf?(settings: BladeRfRxSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  startRecording?(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus;
   stopRecording?(
     reason?: "user" | "source-stop" | "metadata-change",
   ): IqRecording | undefined;
@@ -139,6 +144,7 @@ export interface ReceiverSnapshot {
   srdWorker?: DigitalWorkerAdapterDiagnostics;
   /** A failed close retains ownership; only Stop/retry is safe until it closes. */
   cleanupRequired?: boolean;
+  issue?: ReceiverIssue;
 }
 
 type Listener = (snapshot: ReceiverSnapshot) => void;
@@ -158,6 +164,7 @@ export class ReceiverController {
   private backend?: ReceiverBackend;
   private startTask?: Promise<void>;
   private generation = 0;
+  private source: SourceKind = "rtl-sdr";
   private completedRecording?: IqRecording;
   private readonly cleanupTasks = new Map<ReceiverBackend, Promise<void>>();
 
@@ -197,6 +204,7 @@ export class ReceiverController {
     if (this.backend && !restartingConnectedBackend) return Promise.resolve();
 
     const generation = ++this.generation;
+    this.source = options.source ?? "rtl-sdr";
     try {
       validateOptions(options);
     } catch (error) {
@@ -265,6 +273,7 @@ export class ReceiverController {
       return;
     if (this.backend) return;
     const generation = ++this.generation;
+    this.source = options.source ?? "rtl-sdr";
     try {
       validateOptions(options);
     } catch (error) {
@@ -409,14 +418,14 @@ export class ReceiverController {
     this.backend?.setVolume(safeVolume);
   }
 
-  startRecording(survey?: SurveyCaptureContext): RecordingStatus | undefined {
+  startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus | undefined {
     if (
       this.snapshot.lifecycle !== "running" ||
       !this.backend ||
       this.completedRecording
     )
       return undefined;
-    return this.backend.startRecording?.(survey);
+    return this.backend.startRecording?.(survey, options);
   }
 
   stopRecording(): IqRecording | undefined {
@@ -643,6 +652,8 @@ export class ReceiverController {
       );
       if (!this.backend.updateAnalogMode)
         throw new Error("This source cannot update analog settings live.");
+      if (this.backend.getRecordingStatus?.()?.captureCurrentChannel && (normalized.bandwidthHz !== this.snapshot.session.channelBandwidthHz || normalized.beatToneHz !== this.snapshot.session.beatToneHz))
+        this.captureCompletedRecording(this.backend.stopRecording?.("metadata-change"));
       const metadata = this.backend.updateAnalogMode(normalized);
       this.publish({
         ...this.snapshot,
@@ -680,7 +691,7 @@ export class ReceiverController {
     try {
       normalizeGain(gainDb);
     } catch (error) {
-      this.publish({ ...this.snapshot, message: describeReceiverError(error) });
+      this.publishCommandFailure(error);
       return;
     }
     this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
@@ -703,10 +714,7 @@ export class ReceiverController {
       });
     } catch (error) {
       if (this.backend === backend && this.generation === generation) {
-        this.publish({
-          ...this.snapshot,
-          message: describeReceiverError(error),
-        });
+        this.publishCommandFailure(error);
       }
     }
   }
@@ -726,7 +734,7 @@ export class ReceiverController {
         throw new Error("This source does not support HackRF RX settings.");
       validated = validateHackrfRxSettings(settings);
     } catch (error) {
-      this.publish({ ...this.snapshot, message: describeReceiverError(error) });
+      this.publishCommandFailure(error);
       return;
     }
     const wasRunning = this.snapshot.lifecycle === "running";
@@ -747,6 +755,49 @@ export class ReceiverController {
           metadata,
           generation,
           "HackRF RX settings accepted.",
+        );
+    } catch (error) {
+      if (this.backend === backend && this.generation === generation)
+        await this.failBackend(backend, error);
+    }
+  }
+
+  async configureBladeRf(settings: BladeRfRxSettings): Promise<void> {
+    const backend = this.backend;
+    const session = this.snapshot.session;
+    if (
+      !backend ||
+      !session ||
+      !["connected", "running"].includes(this.snapshot.lifecycle)
+    )
+      return;
+    let validated: BladeRfRxSettings;
+    try {
+      if (session.source !== "bladerf" || !backend.configureBladeRf)
+        throw new Error("This source does not support bladeRF RX settings.");
+      validated = validateBladeRfRxSettings(settings, session.hardwareCenterFrequencyHz);
+    } catch (error) {
+      this.publishCommandFailure(error);
+      return;
+    }
+    const wasRunning = this.snapshot.lifecycle === "running";
+    this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
+    const generation = ++this.generation;
+    this.publish({
+      ...this.snapshot,
+      lifecycle: "tuning",
+      sessionGeneration: generation,
+      message: "Applying bladeRF RX settings…",
+    });
+    try {
+      const metadata = await backend.configureBladeRf!(validated, generation);
+      if (this.backend !== backend || this.generation !== generation) return;
+      if (wasRunning) this.publishRunning(metadata, generation);
+      else
+        this.publishConnected(
+          metadata,
+          generation,
+          "bladeRF RX settings accepted.",
         );
     } catch (error) {
       if (this.backend === backend && this.generation === generation)
@@ -802,6 +853,7 @@ export class ReceiverController {
     error: unknown,
   ): Promise<void> {
     // Invalidate in-flight reconfiguration and prevent Start until close settles.
+    const failedOperation = this.snapshot.lifecycle;
     const generation = ++this.generation;
     this.captureCompletedRecording(backend.stopRecording?.("source-stop"));
     this.publish({
@@ -814,7 +866,7 @@ export class ReceiverController {
     } catch {
       /* Stop remains available to retry. */
     }
-    if (generation === this.generation) this.publishFailure(generation, error);
+    if (generation === this.generation) this.publishFailure(generation, error, failedOperation);
   }
 
   private async handleSourceEnded(backend: ReceiverBackend): Promise<void> {
@@ -1030,32 +1082,36 @@ export class ReceiverController {
     return task;
   }
 
-  private publishFailure(generation: number, error: unknown): void {
-    const name = error instanceof Error ? error.name : "";
-    const message = error instanceof Error ? error.message : String(error);
-    const expected =
-      name.includes("NoDeviceSelected") || name === "NotFoundError";
-    const setup =
-      name.includes("NoUsbSupport") ||
-      name.includes("UnsupportedDevice") ||
-      /unsupported tuner|profile|firmware|busy|another application|access denied/i.test(
-        message,
-      );
+  private publishCommandFailure(error: unknown): void {
+    const issue = classifyReceiverIssue(error, this.source, this.snapshot.lifecycle);
+    this.publish({ ...this.snapshot, message: issue.summary, issue });
+  }
+
+  private publishFailure(
+    generation: number,
+    error: unknown,
+    operation = this.snapshot.lifecycle,
+  ): void {
+    const issue = classifyReceiverIssue(error, this.source, operation);
+    const expected = issue.code === "selection-cancelled";
+    const setup = [
+      "browser-unsupported", "device-unsupported", "usb-permission",
+      "usb-busy", "firmware", "settings",
+    ].includes(issue.code);
     if (!expected)
       defaultDiagnosticRecorder.record({
-        area: /usb|device|transfer|firmware|tuner/i.test(`${name} ${message}`)
-          ? "usb"
-          : "receiver",
+        area: isUsbIssue(issue) ? "usb" : "receiver",
         code: setup ? "RECEIVER_SETUP_FAILURE" : "RECEIVER_TERMINAL_FAILURE",
         severity: setup ? "warning" : "error",
-        operation: this.snapshot.lifecycle,
+        operation,
         error,
         autoSubmitEligible: !setup,
-        context: { generation },
+        context: { generation, issueCode: issue.code, source: issue.source },
       });
     this.publish({
       lifecycle: "error",
-      message: describeReceiverError(error),
+      message: issue.summary,
+      issue,
       sessionGeneration: generation,
       audioState: this.snapshot.audioState,
       cleanupRequired: Boolean(this.backend),
@@ -1070,6 +1126,12 @@ export class ReceiverController {
 
   private publish(snapshot: ReceiverSnapshot): void {
     const previous = this.snapshot;
+    // Spreading a snapshot for telemetry must retain a failure; a new status must clear it.
+    if (
+      snapshot.issue === previous.issue &&
+      (snapshot.message !== previous.message || snapshot.lifecycle !== previous.lifecycle)
+    )
+      snapshot = { ...snapshot, issue: undefined };
     this.snapshot = snapshot;
     if (
       this.squelchMeter &&
@@ -1103,45 +1165,12 @@ export function validateOptions(options: ReceiverStartOptions): void {
 }
 
 export function describeReceiverError(error: unknown): string {
-  const name = error instanceof Error ? error.name : "";
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.startsWith("HackRF USB access denied")) return message;
-  if (
-    message.includes("HackRF") &&
-    /profile|USB API|revision|standard image|firmware/i.test(message)
-  )
-    return `${message} Check the detected firmware against the supported Pro profile before reconnecting.`;
-  if (name.includes("NoDeviceSelected") || name === "NotFoundError") {
-    return "Device selection was cancelled. Nothing was connected.";
-  }
-  if (name.includes("NoUsbSupport")) {
-    return "WebUSB is unavailable. Use localhost or HTTPS in a compatible desktop browser.";
-  }
-  if (
-    name.includes("UnsupportedDevice") ||
-    message.toLowerCase().includes("unsupported tuner")
-  ) {
-    return "The selected dongle uses an unsupported tuner. Use an RTL2832U with an R820/R828/R860 tuner.";
-  }
-  if (
-    name.includes("UsbTransferError") ||
-    name === "NetworkError" ||
-    name === "InvalidStateError" ||
-    message.toLowerCase().includes("another application") ||
-    message.toLowerCase().includes("busy") ||
-    message.toLowerCase().includes("claiminterface") ||
-    message.toLowerCase().includes("access denied")
-  ) {
-    return "The dongle is busy or its USB driver is unavailable. Close other SDR apps and check the setup guide.";
-  }
-  if (
-    message.toLowerCase().includes("unplug") ||
-    message.toLowerCase().includes("transfer")
-  ) {
-    return "The sample transfer stopped. Reconnect the dongle, then start again.";
-  }
-  if (name === "NotAllowedError" || message.toLowerCase().includes("audio")) {
-    return "Audio could not start. Click Start receiving again and allow this page to play audio.";
-  }
-  return `Receiver failed: ${message || "Unknown error"}`;
+  return classifyReceiverIssue(error).summary;
+}
+
+function isUsbIssue(issue: ReceiverIssue): boolean {
+  return [
+    "browser-unsupported", "device-unsupported", "usb-permission", "usb-busy",
+    "usb-transfer", "power-cycle", "firmware",
+  ].includes(issue.code);
 }
