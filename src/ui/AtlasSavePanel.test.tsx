@@ -164,7 +164,7 @@ it("requires an explicit action and renders verified save plus partial analysis 
   expect(controller.start).not.toHaveBeenCalled();
   expect(host.textContent).toContain("nothing has been sent");
   expect(host.textContent).toContain(
-    "Offline ZIP and separate-file downloads remain available",
+    "You can also download the recording as a ZIP or separate files",
   );
   expect(host.querySelector("unsafe")).toBeNull();
   expect(input("SigIntAtlas user token").type).toBe("password");

@@ -4887,6 +4887,20 @@ export function ReceiverApp({
                     {preparedCaptureNeedsSeparateFiles ? "Download separate files" : "Download ZIP"}
                   </button>
                 )}
+                {retainedCapturePresent && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={
+                      exportingRecording ||
+                      atlasTransferActive ||
+                      Boolean(recordingStatus)
+                    }
+                    onClick={discardPreparedRecording}
+                  >
+                    Discard prepared capture
+                  </button>
+                )}
                 {retainedCapture.status === "retry-available" && (
                   <>
                     <button
@@ -4920,31 +4934,17 @@ export function ReceiverApp({
                   prepared capture.
                 </p>
               )}
-              {retainedCapturePresent && (
+              {preparedCaptureAvailable && !preparedCaptureNeedsSeparateFiles && (
                 <details className="recording-more">
                   <summary>More options</summary>
                   <div className="recording-controls">
-                    {preparedCaptureAvailable && !preparedCaptureNeedsSeparateFiles && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={exportingRecording}
-                        onClick={() => requestRecordingDownload("separate")}
-                      >
-                        Download separate files
-                      </button>
-                    )}
                     <button
                       type="button"
                       className="secondary"
-                      disabled={
-                        exportingRecording ||
-                        atlasTransferActive ||
-                        Boolean(recordingStatus)
-                      }
-                      onClick={discardPreparedRecording}
+                      disabled={exportingRecording}
+                      onClick={() => requestRecordingDownload("separate")}
                     >
-                      Discard prepared capture
+                      Download separate files
                     </button>
                   </div>
                   <small>

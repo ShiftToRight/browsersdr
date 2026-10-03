@@ -60,6 +60,17 @@ function storeUserToken(token: string): boolean {
   }
 }
 
+function uploadSize(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1_000 && unit < units.length - 1) {
+    size /= 1_000;
+    unit += 1;
+  }
+  return `${size.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`;
+}
+
 function defaultController(
   prepared: PreparedRecordingExport,
 ): AtlasTransferControl {
@@ -363,8 +374,7 @@ export function AtlasSavePanel({
               value={progress}
             />
             <span>
-              {transferred.toLocaleString()} of {total.toLocaleString()} bytes
-              accepted for upload
+              {uploadSize(transferred)} of {uploadSize(total)} uploaded
             </span>
           </>
         )}
@@ -400,14 +410,10 @@ export function AtlasSavePanel({
         </div>
       )}
       <p className="display-note">
-        The user token authenticates this explicit upload. Saving remembers it
-        in this browser for future saves when browser storage is available.
-        Use Forget token to remove it. SigIntAtlas currently records the
-        authenticated local operator as the owner; it must provide distinct user identities
-        server-side to separate multiple users. Retry reuses
-        verified parts while this prepared pair remains retained. Reload cannot
-        resume without preparing or reselecting the source bytes. Offline ZIP
-        and separate-file downloads remain available.
+        Your token is remembered in this browser for future saves. Use Forget
+        token to remove it. Keep this page open until the upload finishes;
+        reloading requires preparing the recording again. You can also download
+        the recording as a ZIP or separate files.
       </p>
     </section>
   );

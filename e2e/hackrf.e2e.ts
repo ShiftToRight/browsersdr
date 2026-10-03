@@ -132,7 +132,6 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
     ),
   );
   expect(sidecar.format).toBe("browsersdr-ci8-v2");
-  await page.getByText("More options", { exact: true }).click();
   await page.getByRole("button", { name: "Discard prepared capture" }).click();
 
   await page.getByRole("tab", { name: /Explorer/ }).click();
