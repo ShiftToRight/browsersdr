@@ -1017,6 +1017,19 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
       .locator(".atlas-save-panel")
       .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
   ).toBe(true);
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
+  await prepareSyntheticSigmf(page);
+  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue(
+    "t".repeat(32),
+  );
+  expect(atlas.recordingCreates()).toBe(1);
+  await page.getByRole("button", { name: "Forget token" }).click();
+  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue("");
+  await page.reload();
+  await prepareSyntheticSigmf(page);
+  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue("");
 });
 
 test("SigIntAtlas cancellation rejects late work, auth expiry retries, and receiver stays usable", async ({

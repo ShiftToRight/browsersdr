@@ -39,6 +39,27 @@ const ACTIVE_STATES = new Set<AtlasTransferSnapshot["state"]>([
   "importing",
 ]);
 
+const USER_TOKEN_STORAGE_KEY = "browsersdr.atlas.user-token.v1";
+
+function readUserToken(): string {
+  try {
+    const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY) ?? "";
+    return token.length >= 32 ? token : "";
+  } catch {
+    return "";
+  }
+}
+
+function storeUserToken(token: string): boolean {
+  try {
+    if (token) localStorage.setItem(USER_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(USER_TOKEN_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function defaultController(
   prepared: PreparedRecordingExport,
 ): AtlasTransferControl {
@@ -114,7 +135,8 @@ export function AtlasSavePanel({
     [createController, prepared],
   );
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot());
-  const [userToken, setUserToken] = useState("");
+  const [userToken, setUserToken] = useState(readUserToken);
+  const [storageNotice, setStorageNotice] = useState<string>();
   const [title, setTitle] = useState(prepared.basename);
   const [analyzeAfterSave, setAnalyzeAfterSave] = useState(false);
   const [result, setResult] = useState<AtlasTransferResult>();
@@ -155,10 +177,15 @@ export function AtlasSavePanel({
     }
     if (userToken.length < 32) {
       setLocalError(
-        "Enter the configured SigIntAtlas user token (at least 32 characters). The token stays only in memory.",
+        "Enter the configured SigIntAtlas user token (at least 32 characters).",
       );
       return;
     }
+    setStorageNotice(
+      storeUserToken(userToken)
+        ? undefined
+        : "Browser storage is unavailable. Re-enter the token after reopening this panel.",
+    );
     setRequestPending(true);
     void controller
       .start({
@@ -171,7 +198,6 @@ export function AtlasSavePanel({
         if (!mounted.current) return;
         setResult(next);
         setAnalysisRun(next.analysis.run);
-        setUserToken("");
       })
       .catch((error: unknown) => {
         if (mounted.current && error instanceof Error)
@@ -309,7 +335,24 @@ export function AtlasSavePanel({
         >
           Cancel transfer
         </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={active}
+          onClick={() => {
+            const removed = storeUserToken("");
+            setUserToken("");
+            setStorageNotice(
+              removed
+                ? undefined
+                : "The saved token could not be removed from browser storage.",
+            );
+          }}
+        >
+          Forget token
+        </button>
       </div>
+      {storageNotice && <p className="display-note">{storageNotice}</p>}
       <div className="atlas-transfer-status" aria-live="polite">
         <strong>{stageText(snapshot)}</strong>
         {(active || snapshot.bytesTransferred !== "0") && (
@@ -357,9 +400,10 @@ export function AtlasSavePanel({
         </div>
       )}
       <p className="display-note">
-        The user token authenticates this explicit upload and is kept only in
-        this page's memory. SigIntAtlas currently records the authenticated
-        local operator as the owner; it must provide distinct user identities
+        The user token authenticates this explicit upload. Saving remembers it
+        in this browser for future saves when browser storage is available.
+        Use Forget token to remove it. SigIntAtlas currently records the
+        authenticated local operator as the owner; it must provide distinct user identities
         server-side to separate multiple users. Retry reuses
         verified parts while this prepared pair remains retained. Reload cannot
         resume without preparing or reselecting the source bytes. Offline ZIP

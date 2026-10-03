@@ -39,6 +39,8 @@ const IDLE: AtlasTransferSnapshot = {
   peakBufferedBytes: 0,
 };
 
+const USER_TOKEN_STORAGE_KEY = "browsersdr.atlas.user-token.v1";
+
 const SAVED_RESULT: AtlasTransferResult = {
   recordingId: "30000000-0000-4000-8000-000000000001",
   recordingRevisionId: "40000000-0000-4000-8000-000000000001",
@@ -90,6 +92,7 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host = document.createElement("div");
   document.body.append(host);
@@ -98,6 +101,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
@@ -186,7 +190,104 @@ it("requires an explicit action and renders verified save plus partial analysis 
   expect(
     host.querySelector<HTMLAnchorElement>('a[href^="/#/runs/"]')?.textContent,
   ).toBe("Open analysis result");
+  expect(input("SigIntAtlas user token").value).toBe("t".repeat(32));
+  expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBe("t".repeat(32));
+
+  await act(async () => root.render(null));
+  const nextController = new FakeController();
+  nextController.start.mockResolvedValue(SAVED_RESULT);
+  await act(async () =>
+    root.render(
+      <AtlasSavePanel
+        prepared={PREPARED}
+        createController={() => nextController}
+      />,
+    ),
+  );
+  expect(input("SigIntAtlas user token").value).toBe("t".repeat(32));
+  expect(nextController.start).not.toHaveBeenCalled();
+  await act(async () => {
+    (host.querySelector("button") as HTMLButtonElement).click();
+  });
+  expect(nextController.start).toHaveBeenCalledWith(
+    expect.objectContaining({ userToken: "t".repeat(32) }),
+  );
+});
+
+it("remembers a replacement token and forgets it across panel reopenings", async () => {
+  localStorage.setItem(USER_TOKEN_STORAGE_KEY, "old".repeat(32));
+  const controller = new FakeController();
+  controller.start.mockResolvedValue(SAVED_RESULT);
+  const renderPanel = () =>
+    root.render(
+      <AtlasSavePanel
+        prepared={PREPARED}
+        createController={() => controller}
+      />,
+    );
+  await act(async () => renderPanel());
+  expect(input("SigIntAtlas user token").value).toBe("old".repeat(32));
+  await setInput(input("SigIntAtlas user token"), "new".repeat(32));
+  await act(async () => {
+    (host.querySelector("button") as HTMLButtonElement).click();
+  });
+  expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBe("new".repeat(32));
+  await act(async () => root.render(null));
+  await act(async () => renderPanel());
+  expect(input("SigIntAtlas user token").value).toBe("new".repeat(32));
+  await act(async () => {
+    Array.from(host.querySelectorAll("button"))
+      .find((button) => button.textContent === "Forget token")!
+      .click();
+  });
   expect(input("SigIntAtlas user token").value).toBe("");
+  expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBeNull();
+  await act(async () => root.render(null));
+  await act(async () => renderPanel());
+  expect(input("SigIntAtlas user token").value).toBe("");
+});
+
+it("ignores short stored tokens and does not remember an invalid save", async () => {
+  localStorage.setItem(USER_TOKEN_STORAGE_KEY, "short");
+  const controller = new FakeController();
+  await act(async () =>
+    root.render(
+      <AtlasSavePanel prepared={PREPARED} createController={() => controller} />,
+    ),
+  );
+  expect(input("SigIntAtlas user token").value).toBe("");
+  await setInput(input("SigIntAtlas user token"), "still short");
+  await act(async () => {
+    (host.querySelector("button") as HTMLButtonElement).click();
+  });
+  expect(host.textContent).toContain("at least 32 characters");
+  expect(controller.start).not.toHaveBeenCalled();
+  expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBe("short");
+});
+
+it("can save when browser storage cannot be read or written", async () => {
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Storage full", "QuotaExceededError");
+  });
+  const controller = new FakeController();
+  controller.start.mockResolvedValue(SAVED_RESULT);
+  await act(async () =>
+    root.render(
+      <AtlasSavePanel prepared={PREPARED} createController={() => controller} />,
+    ),
+  );
+  expect(input("SigIntAtlas user token").value).toBe("");
+  await setInput(input("SigIntAtlas user token"), "t".repeat(32));
+  await act(async () => {
+    (host.querySelector("button") as HTMLButtonElement).click();
+  });
+  expect(controller.start).toHaveBeenCalledWith(
+    expect.objectContaining({ userToken: "t".repeat(32) }),
+  );
+  expect(host.textContent).toContain("Browser storage is unavailable");
 });
 
 it("surfaces authentication failure and retries the same prepared pair", async () => {
