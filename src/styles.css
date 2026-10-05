@@ -2679,12 +2679,6 @@ label output {
   min-width: min(100%, 310px);
   margin: 0;
 }
-.about-visitors {
-  margin: 0;
-  padding: 4px 2px;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
 .about-build div {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr);
@@ -2714,6 +2708,17 @@ label output {
 }
 .about-panel {
   padding: 24px;
+}
+.about-panel.about-visitors {
+  padding: 14px 24px;
+}
+.about-visitors p {
+  margin: 0;
+  font: 0.75rem/1.4 "IBM Plex Mono", monospace;
+}
+.about-visitors strong {
+  color: #cbe9ff;
+  font-weight: 500;
 }
 .about-panel h3 {
   font-size: 1.05rem;

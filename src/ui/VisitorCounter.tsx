@@ -44,8 +44,11 @@ export function VisitorCounter() {
 
   if (!count) return null;
   return (
-    <p className="about-visitors">
-      {count.visitors.toLocaleString("en-GB")} visitors since launch
-    </p>
+    <footer className="about-panel about-visitors" aria-label="Visitor count">
+      <p>
+        <strong>{count.visitors.toLocaleString("en-GB")}</strong> visitors since
+        launch
+      </p>
+    </footer>
   );
 }
