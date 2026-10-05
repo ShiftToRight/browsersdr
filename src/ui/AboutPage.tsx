@@ -1,5 +1,6 @@
 import packageInfo from "../../package.json";
 import thirdPartyNotices from "../../THIRD_PARTY_NOTICES.md?raw";
+import { VisitorCounter } from "./VisitorCounter";
 
 const buildId = import.meta.env.VITE_BUILD_ID || "development";
 const builtAt = import.meta.env.VITE_BUILD_TIMESTAMP || "local build";
@@ -68,6 +69,11 @@ export function AboutPage() {
             and operating-system description, receiver configuration and an
             optional description. Exact tuned frequency is excluded unless you
             explicitly include it.
+          </p>
+          <p>
+            Visitor counts use existing server access logs, with known bots
+            filtered out. Only the total is published; no analytics cookies or
+            browser identifiers are added.
           </p>
         </section>
       </div>
@@ -141,6 +147,7 @@ export function AboutPage() {
           <pre>{thirdPartyNotices}</pre>
         </details>
       </section>
+      <VisitorCounter />
     </div>
   );
 }
