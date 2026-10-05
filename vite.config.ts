@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { seoAssets } from "./scripts/seo-site.mjs";
 
 const LOCAL_USRP_PREFIX = "/local/usrp-b205/";
 const LOCAL_USRP_ARTIFACTS = new Set(["ad9364-no-os.js", "ad9364-no-os.wasm"]);
@@ -33,6 +34,35 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: "static-seo-guides",
+      generateBundle() {
+        for (const [fileName, source] of Object.entries(seoAssets())) {
+          this.emitFile({ type: "asset", fileName, source });
+        }
+      },
+      configureServer(server) {
+        const assets = seoAssets();
+        server.middlewares.use((request, response, next) => {
+          const url = new URL(request.url ?? "/", "http://localhost");
+          const key = url.pathname.slice(1);
+          const fileName = url.pathname.endsWith("/") ? `${key}index.html` : key;
+          const source = assets[fileName];
+          if (source === undefined) {
+            if (assets[`${key}/index.html`] !== undefined) {
+              response.writeHead(308, { Location: `${url.pathname}/${url.search}` });
+              response.end();
+              return;
+            }
+            next();
+            return;
+          }
+          const type = fileName.endsWith(".html") ? "text/html" : fileName.endsWith(".css") ? "text/css" : fileName.endsWith(".xml") ? "application/xml" : "text/plain";
+          response.writeHead(200, { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-cache" });
+          response.end(request.method === "HEAD" ? undefined : source);
+        });
+      },
+    },
     {
       name: "local-usrp-b205-no-os",
       apply: "serve",

@@ -39,6 +39,9 @@ jobs:
       - name: Build production bundle
         run: npm run build
 
+      - name: Verify static SEO documents and discovery files
+        run: node scripts/verify-seo.mjs dist
+
       - name: Install Chromium for browser integration tests
         run: npx playwright install --with-deps chromium
 
