@@ -45,6 +45,8 @@ export function CenterSignalControl({
       <ActionButton
         type="button"
         className="secondary tune-button"
+        icon="crosshair"
+        disabledLabel={state.measuring ? "Measuring signal" : "Fine-tune signal"}
         disabled={disabled || state.measuring}
         disabledReason={
           state.measuring
@@ -67,6 +69,7 @@ export function CenterSignalControl({
         <ActionButton
           type="button"
           className="secondary"
+          icon="retry"
           disabled={disabled}
           disabledReason={
             disabledReason ??

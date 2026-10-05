@@ -26,6 +26,13 @@ export interface AtlasSession {
   expires_at: string;
   csrf_token: string;
 }
+export interface AtlasCurrentUser {
+  id: string;
+  display_name: string;
+  role: "admin" | "operator" | "viewer";
+  token_id: string | null;
+  bootstrap: boolean;
+}
 export type AtlasUploadState =
   | "created"
   | "uploading"
@@ -149,6 +156,7 @@ export class AtlasClient {
   private readonly wait: NonNullable<AtlasClientOptions["delay"]>;
   private readonly retryAttempts: number;
   private csrfToken?: string;
+  private sessionGeneration = 0;
 
   constructor(options: AtlasClientOptions = {}) {
     this.basePath = validateBasePath(options.basePath ?? "/api/v1");
@@ -161,6 +169,7 @@ export class AtlasClient {
     return this.csrfToken !== undefined;
   }
   clearSession(): void {
+    ++this.sessionGeneration;
     this.csrfToken = undefined;
   }
 
@@ -171,22 +180,38 @@ export class AtlasClient {
     operatorToken: string,
     signal?: AbortSignal,
   ): Promise<AtlasSession> {
-    if (operatorToken.length < 32)
+    if (operatorToken.length < 32 || operatorToken.length > 4096)
       throw new Error(
-        "SigIntAtlas operator token must contain at least 32 characters.",
+        "SigIntAtlas user token must contain 32–4096 characters.",
       );
+    const generation = ++this.sessionGeneration;
+    this.csrfToken = undefined;
     const session = await this.request<AtlasSession>("/session", {
       method: "POST",
       body: JSON.stringify({ operator_token: operatorToken }),
       headers: { "Content-Type": "application/json" },
       signal,
     });
+    signal?.throwIfAborted();
+    if (generation !== this.sessionGeneration) throw new DOMException("Session changed", "AbortError");
+    if (typeof session.operator_id !== "string" || !session.operator_id ||
+        typeof session.csrf_token !== "string" || !session.csrf_token ||
+        !Number.isFinite(Date.parse(session.expires_at))) throw new Error("Invalid SigIntAtlas session response.");
     this.csrfToken = session.csrf_token;
     return session;
   }
   async logout(signal?: AbortSignal): Promise<void> {
+    const generation = this.sessionGeneration;
     await this.request("/session", { method: "DELETE", signal });
-    this.clearSession();
+    if (generation === this.sessionGeneration) this.clearSession();
+  }
+
+  async me(signal?: AbortSignal): Promise<AtlasCurrentUser> {
+    const user = await this.request<AtlasCurrentUser>("/me", { signal }, true);
+    if (typeof user.id !== "string" || !user.id || typeof user.display_name !== "string" ||
+        !["admin", "operator", "viewer"].includes(user.role) || typeof user.bootstrap !== "boolean" ||
+        !(user.token_id === null || typeof user.token_id === "string")) throw new Error("Invalid SigIntAtlas current-user response. Check the /api/v1/me proxy.");
+    return user;
   }
 
   createUpload(
@@ -318,9 +343,10 @@ export class AtlasClient {
     retryable = false,
   ): Promise<T> {
     const method = init.method ?? "GET";
+    const sessionGeneration = this.sessionGeneration;
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
-    if (!["GET", "HEAD"].includes(method) && path !== "/session") {
+    if (!["GET", "HEAD"].includes(method) && !(path === "/session" && method === "POST")) {
       if (!this.csrfToken)
         throw new AtlasRequestError(
           401,
@@ -337,6 +363,7 @@ export class AtlasClient {
           credentials: "same-origin",
           signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
         });
+        init.signal?.throwIfAborted();
         if (response.ok) {
           if (response.status === 204) return undefined as T;
           return (await response.json()) as T;
@@ -352,7 +379,8 @@ export class AtlasClient {
         } catch {
           /* bounded generic error */
         }
-        const retryAfter = Number(response.headers.get("Retry-After"));
+        const retryAfterHeader = response.headers.get("Retry-After");
+        const retryAfter = retryAfterHeader === null ? NaN : Number(retryAfterHeader);
         const failure = new AtlasRequestError(
           response.status,
           error.code,
@@ -362,7 +390,7 @@ export class AtlasClient {
             ? Math.max(0, retryAfter * 1000)
             : undefined,
         );
-        if (response.status === 401) this.clearSession();
+        if (response.status === 401 && sessionGeneration === this.sessionGeneration) this.clearSession();
         if (!retryable || !failure.transient || attempt >= this.retryAttempts)
           throw failure;
         await this.wait(

@@ -1,3 +1,4 @@
+import { AppIcon } from "./AppIcon";
 import { useId, useState } from "react";
 import {
   OPERATING_SYSTEMS,
@@ -160,7 +161,7 @@ export function ReceiverRecovery({
             onClick={onRelease}
             disabled={disabled}
           >
-            Release device
+            <AppIcon name="unplug" />Release device
           </button>
         ) : reviewSettings ? (
           <button
@@ -169,7 +170,7 @@ export function ReceiverRecovery({
             onClick={onReviewSettings}
             disabled={disabled}
           >
-            Review settings
+            <AppIcon name="settings" />Review settings
           </button>
         ) : canRetry ? (
           <button
@@ -178,6 +179,7 @@ export function ReceiverRecovery({
             onClick={onRetry}
             disabled={disabled}
           >
+            <AppIcon name={issue.code === "audio-blocked" ? "play" : "retry"} />
             {cancelled
               ? "Choose device again"
               : issue.code === "audio-blocked"
@@ -188,7 +190,7 @@ export function ReceiverRecovery({
       </div>
       {!cancelled && (
         <details className="connection-help-details">
-          <summary>Show recovery steps</summary>
+          <summary><span className="icon-label"><AppIcon name="help" />Show recovery steps</span></summary>
           {isUsbSource(issue.source) && (
             <PlatformChoice os={os} onOsChange={onOsChange} />
           )}

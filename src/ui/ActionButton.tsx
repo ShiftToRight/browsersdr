@@ -6,16 +6,19 @@ import {
   type ButtonHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
+import { AppIcon, type AppIconName } from "./AppIcon";
 
 /** A disabled action's prerequisite remains available to pointer and keyboard users. */
 export function ActionButton({
   disabledReason,
   disabledLabel,
   children,
+  icon,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   disabledReason?: string;
   disabledLabel?: string;
+  icon?: AppIconName;
 }) {
   const hintId = useId();
   const anchor = useRef<HTMLSpanElement>(null);
@@ -73,6 +76,7 @@ export function ActionButton({
         {...props}
         aria-describedby={showHint ? hintId : props["aria-describedby"]}
       >
+        {icon && <AppIcon name={icon} />}
         {children}
       </button>
       {showHint &&

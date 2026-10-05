@@ -2782,7 +2782,7 @@ label output {
       260px,
       320px
     );
-  grid-template-rows: minmax(540px, auto) auto auto;
+  grid-template-rows: minmax(540px, auto) auto;
   gap: 10px;
   align-items: stretch;
 }
@@ -3108,37 +3108,10 @@ label output {
   height: min(52vw, 540px);
   min-height: 340px;
 }
-.signal-chain-panel > .receiver-status {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  align-items: center;
-  min-width: 0;
-  min-height: 38px;
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px 12px;
-  background: rgba(5, 17, 37, 0.9);
-}
-.signal-chain-panel > .receiver-status > div {
-  min-width: 0;
-}
-.signal-chain-panel > .receiver-status strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.signal-chain-panel > .receiver-status p {
-  overflow: hidden;
-  margin-top: 2px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .receiver-dock {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -3431,7 +3404,7 @@ label output {
   }
   #receiver-view {
     grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
-    grid-template-rows: minmax(500px, auto) auto auto auto;
+    grid-template-rows: minmax(500px, auto) auto auto;
   }
   .acquire-stage {
     grid-column: 1;
@@ -3455,11 +3428,8 @@ label output {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: end;
   }
-  .signal-chain-panel > .receiver-status {
-    grid-row: 3;
-  }
   .receiver-dock {
-    grid-row: 4;
+    grid-row: 3;
   }
 }
 
@@ -3490,7 +3460,7 @@ label output {
   }
   #receiver-view {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(440px, auto) auto auto auto auto;
+    grid-template-rows: minmax(440px, auto) auto auto auto;
   }
   #receiver-view > .graphics-panel {
     grid-column: 1;
@@ -3504,12 +3474,9 @@ label output {
     grid-column: 1;
     grid-row: 3;
   }
-  .signal-chain-panel > .receiver-status {
-    grid-row: 4;
-  }
   .receiver-dock {
     grid-column: 1;
-    grid-row: 5;
+    grid-row: 4;
   }
   .acquire-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3971,7 +3938,7 @@ label output {
 .candidate-review-card > .candidate-annotations { grid-column: 1 / -1; grid-row: 2; margin-top: 0; padding-top: 6px; }
 .candidate-annotation-grid { margin-top: 10px; }
 @media (max-width: 820px) {
-  #receiver-view { grid-template-rows: auto minmax(340px, auto) auto auto auto; }
+  #receiver-view { grid-template-rows: auto minmax(340px, auto) auto auto; }
   .acquire-stage { grid-row: 1; }
   .demodulate-stage { grid-row: 3; }
   #receiver-view > .graphics-panel { grid-row: 2; }
@@ -4052,7 +4019,7 @@ label output {
   .receiver-workspace #receiver-view {
     flex: 1;
     min-height: 0;
-    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
   .receiver-workspace .signal-stage {
     min-height: 0;
@@ -4104,25 +4071,25 @@ label output {
 }
 
 /* Recovery text must remain readable instead of inheriting the compact status ellipsis. */
-.signal-chain-panel > .receiver-status.has-recovery {
+.app-topbar > .receiver-status.has-recovery {
   align-items: flex-start;
   flex-wrap: wrap;
 }
-.signal-chain-panel > .receiver-status.has-recovery > div {
+.app-topbar > .receiver-status.has-recovery > div {
   flex: 1 1 240px;
 }
-.signal-chain-panel > .receiver-status.has-recovery strong,
-.signal-chain-panel > .receiver-status.has-recovery p {
+.app-topbar > .receiver-status.has-recovery strong,
+.app-topbar > .receiver-status.has-recovery p {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: anywhere;
 }
-.signal-chain-panel > .receiver-status.has-recovery .recovery-hint {
+.app-topbar > .receiver-status.has-recovery .recovery-hint {
   color: #b6c7dc;
   font-size: 0.8rem;
 }
-.signal-chain-panel > .receiver-status.has-recovery .report-error-button {
+.app-topbar > .receiver-status.has-recovery .report-error-button {
   align-self: flex-start;
 }
 
@@ -4136,17 +4103,6 @@ label output {
   text-underline-offset: 3px;
 }
 
-/* Expanded help uses document flow so it cannot squeeze the receiver controls. */
-@media (min-width: 1181px) and (min-height: 900px) {
-  .receiver-workspace:has(.receiver-recovery .connection-help-details[open]) {
-    height: auto;
-    min-height: 100dvh;
-  }
-  .receiver-workspace #receiver-view:has(.receiver-recovery .connection-help-details[open]) {
-    flex: 0 0 auto;
-    grid-template-rows: minmax(540px, auto) auto auto;
-  }
-}
 
 .channel-tune-actions {
   display: flex;
@@ -4264,3 +4220,140 @@ button.destructive { color: var(--danger); border-color: rgba(255, 156, 170, 0.3
 .about-page { grid-template-columns: minmax(0, 1fr); }
 .about-page > *, .about-grid > *, .about-hero > * { min-width: 0; }
 @media (max-width: 760px) { .about-hero, .about-grid { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* One status surface in the header; controls retain their visible action labels. */
+.app-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  vertical-align: -3px;
+  pointer-events: none;
+}
+.app-icon-record { fill: currentColor; }
+.icon-label,
+button:has(> .app-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.icon-label { justify-content: flex-start; }
+/* Quiet header: one status disclosure, with recovery in its own row. */
+.app-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px 20px;
+}
+.app-topbar .subtitle { display: none; }
+.app-topbar .view-tabs { min-width: 0; margin: 0; justify-self: end; }
+.app-topbar .view-tabs [role="tablist"] { flex-wrap: wrap; }
+.app-topbar > .receiver-status { display: contents; }
+.receiver-status-menu { position: relative; grid-column: 3; min-width: 0; }
+.receiver-status-menu > summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.78rem;
+}
+.receiver-status-menu > summary::-webkit-details-marker { display: none; }
+.receiver-status-menu > summary:hover,
+.receiver-status-menu[open] > summary { border-color: var(--cyan-soft); }
+.receiver-status-label { display: inline-flex; align-items: center; gap: 7px; }
+.receiver-status-label.is-working { color: var(--success); }
+.receiver-status-label.needs-attention { color: var(--warning); }
+.receiver-health-panel {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 30;
+  width: min(420px, calc(100vw - 48px));
+  max-height: calc(100dvh - 130px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  background: #071329;
+  box-shadow: 0 16px 40px #0009;
+}
+.receiver-health-summary { display: grid; gap: 6px; margin: 12px 0; }
+.receiver-health-summary .health-indicator {
+  display: flex;
+  justify-content: flex-start;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.78rem;
+  text-align: left;
+  white-space: normal;
+}
+.receiver-health-summary .health-indicator strong { font: inherit; color: inherit; }
+.receiver-health-summary .health-indicator.is-working { color: var(--success); border-color: #69efbd55; background: #69efbd0b; }
+.receiver-health-summary .health-indicator.needs-attention { color: var(--warning); border-color: #f2c87966; background: #f2c87912; }
+.receiver-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  margin: 14px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.receiver-notice > .app-icon { margin-top: 4px; color: var(--warning); }
+.receiver-notice[role="alert"] .receiver-status-message { color: var(--warning); }
+.receiver-status-content { flex: 1 1 240px; min-width: 0; }
+.receiver-status-message { overflow-wrap: anywhere; }
+.receiver-notice .receiver-recovery { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; }
+.receiver-notice .recovery-hint { display: none; }
+.receiver-notice .recovery-actions { margin: 0; }
+.receiver-notice .connection-help-details { flex: 1 1 220px; margin: 0; padding: 0; border: 0; }
+.receiver-notice .connection-help-details[open] { flex-basis: 100%; }
+.receiver-notice .report-error-button { margin: 0; align-self: flex-start; white-space: normal; }
+
+@media (max-width: 1180px) {
+  .app-topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .app-topbar .view-tabs { grid-row: 2; grid-column: 1 / -1; justify-self: stretch; }
+  .app-topbar .view-tabs [role="tablist"] { justify-content: center; }
+  .receiver-status-menu { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 820px) {
+  .app-topbar { display: grid; }
+  .view-tabs [role="tab"] { padding-inline: 5px; }
+  .receiver-status-menu > summary { min-height: 44px; }
+  .app-topbar .brand-tagline { display: none; }
+}
+@media (max-width: 580px) {
+  .view-tabs [role="tab"] { flex: 1 1 100px; min-height: 44px; }
+  .receiver-dock-bar { flex-wrap: wrap; }
+  .receiver-dock-tabs { flex: 1 1 100%; flex-wrap: wrap; min-width: 0; }
+  .receiver-dock-tabs button { flex: 1 1 auto; min-height: 44px; white-space: normal; }
+  .receiver-dock-bar .dock-toggle { margin-left: auto; }
+}
+@media (pointer: coarse) {
+  .receiver-health-summary .health-indicator { min-height: 44px; }
+}
+
+.receiver-health-panel .health-detail-error { color: var(--warning); }
+
+/* Integration settings remain usable without a receiver or prepared capture. */
+.atlas-settings-panel { max-width: 760px; margin: 24px auto; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: rgba(8, 19, 37, 0.9); }
+.atlas-settings-panel form { display: grid; gap: 16px; }
+.atlas-settings-panel input[type="password"] { width: 100%; min-width: 0; }
+.atlas-settings-panel p { overflow-wrap: anywhere; }
+.atlas-settings-status { margin-top: 18px; }
+@media (max-width: 580px) {
+  .atlas-settings-panel { padding: 16px; }
+  .atlas-settings-panel .atlas-save-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .atlas-settings-panel .atlas-save-actions button { min-height: 44px; white-space: normal; }
+}

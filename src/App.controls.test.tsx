@@ -512,11 +512,10 @@ it("exposes licence, driver provenance, and privacy information in About", async
   );
 });
 
-it("integrates the signal path into the header and progressively reveals mode-aware settings", async () => {
-  const rail = document.querySelector(".operational-rail");
-  expect(rail?.textContent).toContain("RTL-SDR");
-  expect(rail?.textContent).toContain("100.000 MHz");
-  expect(rail?.textContent).toContain("WBFM audio");
+it("keeps the header quiet and progressively reveals mode-aware settings", async () => {
+  expect(document.querySelector(".operational-rail")).toBeNull();
+  expect(document.querySelector(".receiver-status-menu summary")?.textContent).not.toContain("MHz");
+  expect(Number(control("Channel frequency").value)).toBe(100);
   expect(
     document.querySelector(".signal-chain-panel > .panel-heading"),
   ).toBeNull();
@@ -715,8 +714,8 @@ it("updates DAB audio telemetry without rebuilding the receiver controls or hidd
   }
   expect(vi.mocked(SpectrumExplorer).mock.calls.length).toBe(renders);
   await click("Stop receiving");
-  expect(document.querySelector(".operational-rail")?.textContent).toContain(
-    "connected",
+  expect(document.querySelector(".receiver-status-menu summary")?.textContent).toContain(
+    "Connected",
   );
 });
 
@@ -830,7 +829,7 @@ it("keeps the live frequency unchanged until the receiver acknowledges tuning", 
   await change(control("Source"), "hackrf");
   await click("Connect");
   await click("Start receiving");
-  const live = document.querySelector(".operational-rail")!;
+  const live = document.querySelector("#session-panel .session-grid")!;
   const original = live.textContent;
   const nextMhz = metadata.selectedChannelFrequencyHz / 1_000_000 + 1;
   await change(control("Channel frequency"), String(nextMhz));
@@ -887,7 +886,7 @@ it("keeps initial USB setup short and shares the OS choice with recovery steps",
   const status = document.querySelector(".receiver-status")!;
   expect(status.textContent).toContain("system driver may be using it");
   expect(status.querySelector<HTMLDetailsElement>(".connection-help-details")?.open).toBe(false);
-  await act(async () => status.querySelector("summary")?.click());
+  await act(async () => status.querySelector<HTMLElement>(".connection-help-details summary")?.click());
   expect(status.querySelector("select")?.value).toBe("Linux");
   expect(status.textContent).toContain("sudo modprobe -r dvb_usb_rtl28xxu");
   await change(status.querySelector("select")!, "Windows");
@@ -905,7 +904,7 @@ it("shows a neutral cancellation with a chooser retry and no report button", asy
   connectionError = new DOMException("No device selected", "NotFoundError");
   await click("Connect");
   const status = document.querySelector(".receiver-status")!;
-  expect(status.getAttribute("role")).toBe("status");
+  expect(status.querySelector(".receiver-notice")?.getAttribute("role")).toBe("status");
   expect(status.textContent).toContain("cancelled");
   expect(status.textContent).toContain("Choose device again");
   expect(status.querySelector(".connection-help-details")).toBeNull();

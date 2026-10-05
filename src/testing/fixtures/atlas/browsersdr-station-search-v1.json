@@ -1,0 +1,773 @@
+{
+  "schema_version": "browsersdr-station-search/1",
+  "note": "Invented identities and evidence. Login token and CSRF are illustrative placeholders, never usable secrets.",
+  "session": {
+    "operator_id": "example-viewer",
+    "expires_at": "2026-01-02T12:00:00Z",
+    "csrf_token": "illustrative-csrf-placeholder"
+  },
+  "viewer": {
+    "id": "example-viewer",
+    "display_name": "Example viewer",
+    "role": "viewer",
+    "token_id": "00000000-0000-4000-8000-000000000031",
+    "bootstrap": false
+  },
+  "pages": {
+    "first": {
+      "items": [
+        {
+          "name": "Example <Radio>",
+          "aliases": [
+            "Example alias"
+          ],
+          "call_sign": "EXAM",
+          "network": "Example network",
+          "service": "Radio",
+          "country": "DE",
+          "transmitter_notes": "Sanitized reference fixture",
+          "transmissions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000011",
+              "frequency_hz": 100000000.0,
+              "broadcast_format": "FM",
+              "bandwidth_hz": 200000.0,
+              "site": {
+                "name": "Example tower",
+                "place_name": "Example place",
+                "country": "DE",
+                "latitude": 52.0,
+                "longitude": 13.0
+              },
+              "rds_pi": "D123",
+              "rds_ecc": "E0",
+              "rds_ps": "EXAMPLE",
+              "source": "https://example.test/reference",
+              "verification_state": "verified",
+              "verified_at": "2026-01-01T00:00:00Z",
+              "valid_from": "2026-01-01T00:00:00Z",
+              "valid_to": null,
+              "reception": {
+                "last_reception_at": null,
+                "last_reviewed_reception_at": null,
+                "reception_count": 0,
+                "undated_count": 0,
+                "recording_id": null,
+                "recording_revision_id": null,
+                "annotation_id": null,
+                "sample_start": null,
+                "sample_count": null,
+                "review_state": null,
+                "excluded_reviewed_count": 0,
+                "excluded_reviewed_claims": []
+              }
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000012",
+              "frequency_hz": 101000000.0,
+              "broadcast_format": "NBFM",
+              "bandwidth_hz": null,
+              "site": null,
+              "rds_pi": null,
+              "rds_ecc": null,
+              "rds_ps": null,
+              "source": "Manual reference fixture",
+              "verification_state": "provisional",
+              "verified_at": null,
+              "valid_from": null,
+              "valid_to": null,
+              "reception": {
+                "last_reception_at": null,
+                "last_reviewed_reception_at": null,
+                "reception_count": 0,
+                "undated_count": 0,
+                "recording_id": null,
+                "recording_revision_id": null,
+                "annotation_id": null,
+                "sample_start": null,
+                "sample_count": null,
+                "review_state": null,
+                "excluded_reviewed_count": 0,
+                "excluded_reviewed_claims": []
+              }
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000013",
+              "frequency_hz": 102000000.0,
+              "broadcast_format": "DAB",
+              "bandwidth_hz": null,
+              "site": null,
+              "rds_pi": null,
+              "rds_ecc": null,
+              "rds_ps": null,
+              "source": "Catalog reference; receiver mode unsupported",
+              "verification_state": "provisional",
+              "verified_at": null,
+              "valid_from": null,
+              "valid_to": null,
+              "reception": {
+                "last_reception_at": null,
+                "last_reviewed_reception_at": null,
+                "reception_count": 0,
+                "undated_count": 0,
+                "recording_id": null,
+                "recording_revision_id": null,
+                "annotation_id": null,
+                "sample_start": null,
+                "sample_count": null,
+                "review_state": null,
+                "excluded_reviewed_count": 0,
+                "excluded_reviewed_claims": []
+              }
+            }
+          ],
+          "id": "00000000-0000-4000-8000-000000000001",
+          "version": 2,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "next_cursor": "MQ"
+    },
+    "last": {
+      "items": [
+        {
+          "name": "Example without references",
+          "aliases": [],
+          "call_sign": null,
+          "network": null,
+          "service": null,
+          "country": null,
+          "transmitter_notes": null,
+          "transmissions": [],
+          "id": "00000000-0000-4000-8000-000000000002",
+          "version": 1,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "next_cursor": null
+    },
+    "empty": {
+      "items": [],
+      "next_cursor": null
+    }
+  },
+  "details": {
+    "multiple_references": {
+      "name": "Example <Radio>",
+      "aliases": [
+        "Example alias"
+      ],
+      "call_sign": "EXAM",
+      "network": "Example network",
+      "service": "Radio",
+      "country": "DE",
+      "transmitter_notes": "Sanitized reference fixture",
+      "transmissions": [
+        {
+          "id": "00000000-0000-4000-8000-000000000011",
+          "frequency_hz": 100000000.0,
+          "broadcast_format": "FM",
+          "bandwidth_hz": 200000.0,
+          "site": {
+            "name": "Example tower",
+            "place_name": "Example place",
+            "country": "DE",
+            "latitude": 52.0,
+            "longitude": 13.0
+          },
+          "rds_pi": "D123",
+          "rds_ecc": "E0",
+          "rds_ps": "EXAMPLE",
+          "source": "https://example.test/reference",
+          "verification_state": "verified",
+          "verified_at": "2026-01-01T00:00:00Z",
+          "valid_from": "2026-01-01T00:00:00Z",
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000012",
+          "frequency_hz": 101000000.0,
+          "broadcast_format": "NBFM",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Manual reference fixture",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000013",
+          "frequency_hz": 102000000.0,
+          "broadcast_format": "DAB",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Catalog reference; receiver mode unsupported",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "id": "00000000-0000-4000-8000-000000000001",
+      "version": 2,
+      "reception": {
+        "last_reception_at": null,
+        "last_reviewed_reception_at": null,
+        "reception_count": 0,
+        "undated_count": 0,
+        "recording_id": null,
+        "recording_revision_id": null,
+        "annotation_id": null,
+        "sample_start": null,
+        "sample_count": null,
+        "review_state": null,
+        "excluded_reviewed_count": 0,
+        "excluded_reviewed_claims": []
+      }
+    },
+    "no_reference": {
+      "name": "Example without references",
+      "aliases": [],
+      "call_sign": null,
+      "network": null,
+      "service": null,
+      "country": null,
+      "transmitter_notes": null,
+      "transmissions": [],
+      "id": "00000000-0000-4000-8000-000000000002",
+      "version": 1,
+      "reception": {
+        "last_reception_at": null,
+        "last_reviewed_reception_at": null,
+        "reception_count": 0,
+        "undated_count": 0,
+        "recording_id": null,
+        "recording_revision_id": null,
+        "annotation_id": null,
+        "sample_start": null,
+        "sample_count": null,
+        "review_state": null,
+        "excluded_reviewed_count": 0,
+        "excluded_reviewed_claims": []
+      }
+    },
+    "owner_with_evidence": {
+      "name": "Example <Radio>",
+      "aliases": [
+        "Example alias"
+      ],
+      "call_sign": "EXAM",
+      "network": "Example network",
+      "service": "Radio",
+      "country": "DE",
+      "transmitter_notes": "Sanitized reference fixture",
+      "transmissions": [
+        {
+          "id": "00000000-0000-4000-8000-000000000011",
+          "frequency_hz": 100000000.0,
+          "broadcast_format": "FM",
+          "bandwidth_hz": 200000.0,
+          "site": {
+            "name": "Example tower",
+            "place_name": "Example place",
+            "country": "DE",
+            "latitude": 52.0,
+            "longitude": 13.0
+          },
+          "rds_pi": "D123",
+          "rds_ecc": "E0",
+          "rds_ps": "EXAMPLE",
+          "source": "https://example.test/reference",
+          "verification_state": "verified",
+          "verified_at": "2026-01-01T00:00:00Z",
+          "valid_from": "2026-01-01T00:00:00Z",
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": "2026-01-02T00:00:00.030000Z",
+            "last_reviewed_reception_at": null,
+            "reception_count": 1,
+            "undated_count": 0,
+            "recording_id": "00000000-0000-4000-8000-000000000021",
+            "recording_revision_id": "00000000-0000-4000-8000-000000000022",
+            "annotation_id": "00000000-0000-4000-8000-000000000023",
+            "sample_start": "9007199254741003",
+            "sample_count": "20",
+            "review_state": "provisional",
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000012",
+          "frequency_hz": 101000000.0,
+          "broadcast_format": "NBFM",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Manual reference fixture",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000013",
+          "frequency_hz": 102000000.0,
+          "broadcast_format": "DAB",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Catalog reference; receiver mode unsupported",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "id": "00000000-0000-4000-8000-000000000001",
+      "version": 2,
+      "reception": {
+        "last_reception_at": "2026-01-02T00:00:00.030000Z",
+        "last_reviewed_reception_at": null,
+        "reception_count": 1,
+        "undated_count": 0,
+        "recording_id": "00000000-0000-4000-8000-000000000021",
+        "recording_revision_id": "00000000-0000-4000-8000-000000000022",
+        "annotation_id": "00000000-0000-4000-8000-000000000023",
+        "sample_start": "9007199254741003",
+        "sample_count": "20",
+        "review_state": "provisional",
+        "excluded_reviewed_count": 0,
+        "excluded_reviewed_claims": []
+      }
+    },
+    "viewer_without_grant": {
+      "name": "Example <Radio>",
+      "aliases": [
+        "Example alias"
+      ],
+      "call_sign": "EXAM",
+      "network": "Example network",
+      "service": "Radio",
+      "country": "DE",
+      "transmitter_notes": "Sanitized reference fixture",
+      "transmissions": [
+        {
+          "id": "00000000-0000-4000-8000-000000000011",
+          "frequency_hz": 100000000.0,
+          "broadcast_format": "FM",
+          "bandwidth_hz": 200000.0,
+          "site": {
+            "name": "Example tower",
+            "place_name": "Example place",
+            "country": "DE",
+            "latitude": 52.0,
+            "longitude": 13.0
+          },
+          "rds_pi": "D123",
+          "rds_ecc": "E0",
+          "rds_ps": "EXAMPLE",
+          "source": "https://example.test/reference",
+          "verification_state": "verified",
+          "verified_at": "2026-01-01T00:00:00Z",
+          "valid_from": "2026-01-01T00:00:00Z",
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000012",
+          "frequency_hz": 101000000.0,
+          "broadcast_format": "NBFM",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Manual reference fixture",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000013",
+          "frequency_hz": 102000000.0,
+          "broadcast_format": "DAB",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Catalog reference; receiver mode unsupported",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "id": "00000000-0000-4000-8000-000000000001",
+      "version": 2,
+      "reception": {
+        "last_reception_at": null,
+        "last_reviewed_reception_at": null,
+        "reception_count": 0,
+        "undated_count": 0,
+        "recording_id": null,
+        "recording_revision_id": null,
+        "annotation_id": null,
+        "sample_start": null,
+        "sample_count": null,
+        "review_state": null,
+        "excluded_reviewed_count": 0,
+        "excluded_reviewed_claims": []
+      }
+    },
+    "viewer_with_read_grant": {
+      "name": "Example <Radio>",
+      "aliases": [
+        "Example alias"
+      ],
+      "call_sign": "EXAM",
+      "network": "Example network",
+      "service": "Radio",
+      "country": "DE",
+      "transmitter_notes": "Sanitized reference fixture",
+      "transmissions": [
+        {
+          "id": "00000000-0000-4000-8000-000000000011",
+          "frequency_hz": 100000000.0,
+          "broadcast_format": "FM",
+          "bandwidth_hz": 200000.0,
+          "site": {
+            "name": "Example tower",
+            "place_name": "Example place",
+            "country": "DE",
+            "latitude": 52.0,
+            "longitude": 13.0
+          },
+          "rds_pi": "D123",
+          "rds_ecc": "E0",
+          "rds_ps": "EXAMPLE",
+          "source": "https://example.test/reference",
+          "verification_state": "verified",
+          "verified_at": "2026-01-01T00:00:00Z",
+          "valid_from": "2026-01-01T00:00:00Z",
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": "2026-01-02T00:00:00.030000Z",
+            "last_reviewed_reception_at": null,
+            "reception_count": 1,
+            "undated_count": 0,
+            "recording_id": "00000000-0000-4000-8000-000000000021",
+            "recording_revision_id": "00000000-0000-4000-8000-000000000022",
+            "annotation_id": "00000000-0000-4000-8000-000000000023",
+            "sample_start": "9007199254741003",
+            "sample_count": "20",
+            "review_state": "provisional",
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000012",
+          "frequency_hz": 101000000.0,
+          "broadcast_format": "NBFM",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Manual reference fixture",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000013",
+          "frequency_hz": 102000000.0,
+          "broadcast_format": "DAB",
+          "bandwidth_hz": null,
+          "site": null,
+          "rds_pi": null,
+          "rds_ecc": null,
+          "rds_ps": null,
+          "source": "Catalog reference; receiver mode unsupported",
+          "verification_state": "provisional",
+          "verified_at": null,
+          "valid_from": null,
+          "valid_to": null,
+          "reception": {
+            "last_reception_at": null,
+            "last_reviewed_reception_at": null,
+            "reception_count": 0,
+            "undated_count": 0,
+            "recording_id": null,
+            "recording_revision_id": null,
+            "annotation_id": null,
+            "sample_start": null,
+            "sample_count": null,
+            "review_state": null,
+            "excluded_reviewed_count": 0,
+            "excluded_reviewed_claims": []
+          }
+        }
+      ],
+      "id": "00000000-0000-4000-8000-000000000001",
+      "version": 2,
+      "reception": {
+        "last_reception_at": "2026-01-02T00:00:00.030000Z",
+        "last_reviewed_reception_at": null,
+        "reception_count": 1,
+        "undated_count": 0,
+        "recording_id": "00000000-0000-4000-8000-000000000021",
+        "recording_revision_id": "00000000-0000-4000-8000-000000000022",
+        "annotation_id": "00000000-0000-4000-8000-000000000023",
+        "sample_start": "9007199254741003",
+        "sample_count": "20",
+        "review_state": "provisional",
+        "excluded_reviewed_count": 0,
+        "excluded_reviewed_claims": []
+      }
+    }
+  },
+  "errors": {
+    "unknown_or_deleted": {
+      "error": {
+        "code": "not_found",
+        "message": "station 00000000-0000-4000-8000-000000000099 not found",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    },
+    "anonymous": {
+      "error": {
+        "code": "authentication_required",
+        "message": "Operator authentication is required",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    },
+    "invalid_or_expired": {
+      "error": {
+        "code": "invalid_authentication",
+        "message": "Credential is missing, invalid, revoked, or expired",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    },
+    "viewer_write": {
+      "error": {
+        "code": "role_forbidden",
+        "message": "Viewer access is read-only",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    },
+    "invalid_cursor": {
+      "error": {
+        "code": "invalid_cursor",
+        "message": "Pagination cursor is invalid",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    },
+    "validation": {
+      "error": {
+        "code": "validation_error",
+        "message": "frequency filter requires ordered lower and upper bounds",
+        "details": {},
+        "request_id": "example-request-id"
+      }
+    }
+  },
+  "requests": {
+    "login": {
+      "method": "POST",
+      "path": "/api/v1/session",
+      "body": {
+        "operator_token": "illustrative-user-token-placeholder-0001"
+      }
+    },
+    "search": {
+      "method": "GET",
+      "path": "/api/v1/stations",
+      "query": {
+        "q": "Example",
+        "limit": "50",
+        "min_frequency_hz": "100000000",
+        "max_frequency_hz": "102000000"
+      }
+    },
+    "detail": {
+      "method": "GET",
+      "path": "/api/v1/stations/00000000-0000-4000-8000-000000000001"
+    }
+  },
+  "links": {
+    "station": "/#/database/stations?station_id=00000000-0000-4000-8000-000000000001",
+    "stale_transmission": "/#/database/stations?station_id=00000000-0000-4000-8000-000000000001&transmission_id=00000000-0000-4000-8000-000000000099"
+  }
+}

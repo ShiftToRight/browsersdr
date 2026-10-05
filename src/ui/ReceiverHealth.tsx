@@ -2,6 +2,7 @@ import type { ReceiverSnapshot } from "../radio/receiverController";
 import type { SpectrumDisplayStatus } from "../graphics/WebGpuSpectrum";
 import type { RecordingStatus } from "../radio/iqRecording";
 import type { RecordingRetentionSnapshot } from "../radio/recordingExport";
+import { AppIcon, type AppIconName } from "./AppIcon";
 
 export function ReceiverHealth({
   receiver,
@@ -13,6 +14,8 @@ export function ReceiverHealth({
   onReceiver,
   onRecording,
   onSpectrum,
+  compact = false,
+  includeReceiver = false,
 }: {
   receiver: ReceiverSnapshot;
   spectrum: SpectrumDisplayStatus;
@@ -23,6 +26,8 @@ export function ReceiverHealth({
   onReceiver: () => void;
   onRecording: () => void;
   onSpectrum: () => void;
+  compact?: boolean;
+  includeReceiver?: boolean;
 }) {
   const running = receiver.lifecycle === "running";
   const noAudio =
@@ -47,6 +52,7 @@ export function ReceiverHealth({
                 ? "Not connected"
                 : receiver.lifecycle.replaceAll("-", " "),
       good: running || receiver.lifecycle === "connected",
+      attention: receiver.issue?.code !== "selection-cancelled" && Boolean(receiver.issue || receiver.cleanupRequired || receiver.lifecycle === "error"),
     },
     {
       label: "Audio",
@@ -60,6 +66,20 @@ export function ReceiverHealth({
               ? "API available · not playing"
               : "API unavailable",
       good: receiver.audioState === "running" && running && !noAudio,
+      shortText: noAudio
+        ? "Not used"
+        : receiver.audioState === "running" && running
+          ? "Running"
+          : receiver.audioState === "suspended"
+            ? "Suspended"
+            : typeof AudioContext !== "undefined"
+              ? "Stopped"
+              : "Unavailable",
+      attention:
+        !noAudio &&
+        running &&
+        (receiver.audioState === "suspended" ||
+          typeof AudioContext === "undefined"),
     },
     {
       label: "Spectrum",
@@ -80,6 +100,18 @@ export function ReceiverHealth({
         spectrum.kind === "ready" &&
         spectrum.hasFrame &&
         running,
+      shortText: graphicsFailed
+        ? "Unavailable"
+        : spectrum.paused
+          ? "Paused"
+          : spectrum.stalled && running
+            ? "Stalled"
+            : spectrum.kind === "ready" && spectrum.hasFrame && running
+              ? "Working"
+              : spectrum.kind === "ready"
+                ? "Waiting"
+                : "Checking",
+      attention: graphicsFailed || Boolean(spectrum.stalled && running),
     },
     {
       label: "Recording",
@@ -99,8 +131,58 @@ export function ReceiverHealth({
                     : "Connect a receiver to record"
                 : "Unavailable for this receiver",
       good: Boolean(recording) || readyRecording,
+      shortText: recording
+        ? "Recording"
+        : preparing || retained.status === "preparing"
+          ? "Preparing"
+          : retained.error
+            ? "Needs attention"
+            : readyRecording
+              ? "Ready to download"
+              : !recordingSupported
+                ? "Unavailable"
+                : "Off",
+      attention: Boolean(retained.error),
     },
   ];
+  if (compact) {
+    const icons: Record<string, AppIconName> = {
+      Receiver: "radio",
+      Audio: "volume",
+      Spectrum: "activity",
+      Recording: "record",
+    };
+    const actions: Record<string, () => void> = {
+      Receiver: onReceiver,
+      Audio: onReceiver,
+      Spectrum: onSpectrum,
+      Recording: onRecording,
+    };
+    return (
+      <div
+        className="receiver-health-summary"
+        aria-label="Live receiver health"
+        aria-live="polite"
+      >
+        {items
+          .filter((item) => includeReceiver || item.label !== "Receiver")
+          .map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className={`health-indicator${item.attention ? " needs-attention" : item.good ? " is-working" : ""}`}
+              aria-label={`${item.label}: ${item.text}. Review ${item.label.toLowerCase()}.`}
+              onClick={actions[item.label]}
+            >
+              <AppIcon name={item.attention ? "alert" : icons[item.label]!} />
+              <span>
+                {item.label}: <strong>{item.shortText ?? item.text}</strong>
+              </span>
+            </button>
+          ))}
+      </div>
+    );
+  }
   return (
     <>
       <dl className="receiver-health" aria-label="Receiver health overview">
@@ -126,13 +208,12 @@ export function ReceiverHealth({
             {receiver.issue &&
               receiver.issue.code !== "selection-cancelled" && (
                 <p>
-                  Recovery steps are available beside the receiver status in
-                  Acquire.
+                  Open receiver status in the header for recovery steps.
                 </p>
               )}
             <button type="button" onClick={onReceiver}>
               {receiver.cleanupRequired
-                ? "Release device in Acquire"
+                ? "Release device in receiver status"
                 : "Review connection"}
             </button>
           </div>

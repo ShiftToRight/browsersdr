@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode, act } from "react";
+import { StrictMode, act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
@@ -9,7 +9,14 @@ import type {
   AtlasTransferSnapshot,
 } from "../radio/atlasTransfer";
 import type { PreparedRecordingExport } from "../radio/recordingExport";
-import { AtlasSavePanel } from "./AtlasSavePanel";
+import { AtlasSavePanel as SavePanel } from "./AtlasSavePanel";
+import { AtlasConnection } from "../radio/atlasConnection";
+import { AtlasCredentialStore } from "../radio/atlasCredentials";
+let connection: AtlasConnection | undefined;
+function AtlasSavePanel(props: ComponentProps<typeof SavePanel>) {
+  connection ??= new AtlasConnection(new AtlasCredentialStore(localStorage, window));
+  return <SavePanel {...props} connection={connection} />;
+}
 
 const PREPARED: PreparedRecordingExport = {
   format: "sigmf",
@@ -93,6 +100,7 @@ let root: Root;
 
 beforeEach(() => {
   localStorage.clear();
+  connection = undefined;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host = document.createElement("div");
   document.body.append(host);
@@ -101,6 +109,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  connection?.dispose();
+  connection?.credentials.dispose();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
@@ -162,7 +172,7 @@ it("requires an explicit action and renders verified save plus partial analysis 
   );
 
   expect(controller.start).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("nothing has been sent");
+  expect(host.textContent).toContain("Nothing has been sent for this recording");
   expect(host.textContent).toContain(
     "You can also download the recording as a ZIP or separate files",
   );
@@ -260,7 +270,7 @@ it("ignores short stored tokens and does not remember an invalid save", async ()
   await act(async () => {
     (host.querySelector("button") as HTMLButtonElement).click();
   });
-  expect(host.textContent).toContain("at least 32 characters");
+  expect(host.textContent).toContain("32–4096 characters");
   expect(controller.start).not.toHaveBeenCalled();
   expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBe("short");
 });
@@ -288,6 +298,19 @@ it("can save when browser storage cannot be read or written", async () => {
     expect.objectContaining({ userToken: "t".repeat(32) }),
   );
   expect(host.textContent).toContain("Browser storage is unavailable");
+});
+
+it("uses Settings credential updates and respects memory-only persistence during Save", async () => {
+  const controller = new FakeController();
+  controller.start.mockResolvedValue(SAVED_RESULT);
+  await act(async () => root.render(<AtlasSavePanel prepared={PREPARED} createController={() => controller} />));
+  await setInput(input("SigIntAtlas user token"), "unsaved draft");
+  await act(async () => connection!.saveToken("configured".repeat(4), false));
+  expect(input("SigIntAtlas user token").value).toBe("configured".repeat(4));
+  await act(async () => (host.querySelector("button") as HTMLButtonElement).click());
+  expect(controller.start).toHaveBeenCalledWith(expect.objectContaining({ userToken: "configured".repeat(4) }));
+  expect(localStorage.getItem(USER_TOKEN_STORAGE_KEY)).toBeNull();
+  expect(connection!.credentials.getSnapshot().remember).toBe(false);
 });
 
 it("surfaces authentication failure and retries the same prepared pair", async () => {

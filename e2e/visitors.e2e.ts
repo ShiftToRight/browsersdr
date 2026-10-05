@@ -15,7 +15,7 @@ test("About shows the optional visitor count quietly", async ({ page }) => {
     });
   });
   await page.goto("/");
-  await expect(page.getByLabel("Live signal path")).toBeVisible();
+  await expect(page.locator(".receiver-status-menu > summary")).toBeVisible();
   expect(reads).toBe(0);
   await page.getByRole("tab", { name: /About/ }).click();
   await expect(page.locator(".about-visitors")).toHaveText(

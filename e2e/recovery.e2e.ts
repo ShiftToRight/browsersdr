@@ -73,12 +73,18 @@ test("connection help stays compact and recovery adapts to the chosen OS", async
   await page.getByRole("button", { name: "Connect", exact: true }).click();
 
   const status = page.locator(".receiver-status");
-  await expect(status).toHaveAttribute("role", "alert");
+  await expect(status.locator(".receiver-notice")).toHaveAttribute(
+    "role",
+    "alert",
+  );
   await expect(status).toContainText("system driver may be using it");
   await page
     .getByRole("button", { name: "Recovery help", exact: true })
     .click();
-  await expect(status.locator("details")).toHaveAttribute("open", "");
+  await expect(status.locator(".connection-help-details")).toHaveAttribute(
+    "open",
+    "",
+  );
   expect(
     await page
       .locator(".acquire-stage")
@@ -100,7 +106,7 @@ test("connection help stays compact and recovery adapts to the chosen OS", async
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await status.scrollIntoViewIfNeeded();
+  await status.locator(".receiver-notice").scrollIntoViewIfNeeded();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -128,12 +134,16 @@ test("cancelled USB chooser remains a status and can be retried", async ({
   await page.goto("/?browser-test=1");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   const status = page.locator(".receiver-status");
-  await expect(status).toHaveAttribute("role", "status");
+  await expect(status.locator(".receiver-notice")).toHaveAttribute(
+    "role",
+    "status",
+  );
   await expect(status).toContainText("cancelled");
+  await status.locator(".receiver-status-menu > summary").click();
   await expect(
     status.getByRole("button", { name: "Review & send report" }),
   ).toHaveCount(0);
-  await expect(status.locator("details")).toHaveCount(0);
+  await expect(status.locator(".connection-help-details")).toHaveCount(0);
   await status.getByRole("button", { name: "Choose device again" }).click();
   await expect(status).toContainText("RTL-SDR connected");
 });

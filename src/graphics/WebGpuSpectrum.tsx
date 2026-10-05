@@ -733,6 +733,7 @@ export function WebGpuSpectrum({
               <ActionButton
                 type="button"
                 className="secondary display-action"
+                icon="sliders"
                 title="Fit the current spectrum without changing receiver gain"
                 disabled={!hasFrame || state.kind !== "ready"}
                 disabledReason={state.kind !== "ready" ? "The spectrum display must be available first. Check diagnostics or retry graphics." : "Start reception and wait for spectrum samples."}
@@ -743,13 +744,13 @@ export function WebGpuSpectrum({
               <ActionButton
                 type="button"
                 className="secondary display-action display-pause"
+                icon={paused ? "play" : "pause"}
                 disabledLabel={paused ? "Resume display" : "Pause display"}
                 aria-pressed={paused}
                 disabled={state.kind !== "ready" || (!hasFrame && !paused)}
                 disabledReason={state.kind !== "ready" ? "The spectrum display must be available first. Check diagnostics or retry graphics." : "Start reception and wait for spectrum samples."}
                 onClick={updatePaused}
               >
-                <span aria-hidden="true">{paused ? "▶" : "Ⅱ"}</span>{" "}
                 {paused ? "Resume display" : "Pause display"}
               </ActionButton>
             </div>

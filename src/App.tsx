@@ -14,6 +14,8 @@ import { PositionMap } from "./ui/PositionMap";
 import { SetupFileRow } from "./ui/SetupFileRow";
 import { DabStationControl, FmStationSummary } from "./ui/ChannelProgramme";
 import { ReceiverHealth } from "./ui/ReceiverHealth";
+import { AppIcon } from "./ui/AppIcon";
+import { ReceiverStatus } from "./ui/ReceiverStatus";
 import { DabMetadata } from "./ui/DabMetadata";
 import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
 import {
@@ -147,6 +149,8 @@ import { AboutPage } from "./ui/AboutPage";
 import { readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
 import { AtlasRecoveryPanel } from "./ui/AtlasRecoveryPanel";
 import { AtlasSavePanel } from "./ui/AtlasSavePanel";
+import { AtlasSettingsPanel } from "./ui/AtlasSettingsPanel";
+import { getAtlasConnection } from "./radio/atlasConnection";
 import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
 interface Capability {
@@ -161,7 +165,7 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "receiver" | "explorer" | "diagnostics" | "help" | "about";
+type AppView = "receiver" | "explorer" | "settings" | "diagnostics" | "help" | "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type CompatibilityDetailView = "modes" | "recording" | "browsers";
 type ReplayImportFormat = "browsersdr" | "sigmf";
@@ -2376,7 +2380,10 @@ export function ReceiverApp({
   useEffect(() => { try { localStorage.setItem("browsersdr-recording-format", recordingFormat); localStorage.setItem("browsersdr-capture-duration", String(captureDuration)); } catch { /* Optional preferences. */ } }, [recordingFormat, captureDuration]);
   const captureTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [atlasPrepared, setAtlasPrepared] = useState<PreparedRecordingExport>();
-  const [atlasTransferActive, setAtlasTransferActive] = useState(false);
+  const [atlasSaveActive, setAtlasTransferActive] = useState(false);
+  const [atlasConnection] = useState(getAtlasConnection);
+  const atlasConnectionState = useSyncExternalStore(atlasConnection.subscribe, atlasConnection.getSnapshot);
+  const atlasTransferActive = atlasSaveActive || atlasConnectionState.transferActive;
   const [recordingFormatLatch] = useState(() => new RecordingFormatLatch());
   const capacityStopPending = useRef(false);
   const surveyCaptureActive = useRef(false);
@@ -3211,6 +3218,7 @@ export function ReceiverApp({
     const views: AppView[] = [
       "receiver",
       "explorer",
+      "settings",
       "diagnostics",
       "help",
       "about",
@@ -3414,46 +3422,6 @@ export function ReceiverApp({
           </div>
         </header>
 
-        <div className="operational-rail" aria-label="Live signal path">
-          <span
-            className={`operational-state-dot status-${receiver.lifecycle}`}
-            aria-hidden="true"
-          />
-          <span className="operational-stage">
-            <small>Source · {receiver.lifecycle.replace("-", " ")}</small>
-            <strong>{caps.label}</strong>
-          </span>
-          <i aria-hidden="true">→</i>
-          <span className="operational-stage">
-            <small>
-              {liveSession ? "Channel" : "Configured"} · {liveMode}
-            </small>
-            <strong>
-              {displayedFrequencyHz !== undefined
-                ? formatFrequencyMHz(displayedFrequencyHz)
-                : Number.isFinite(frequencyMhz)
-                  ? formatFrequencyMHz(frequencyMhz * 1_000_000)
-                  : "—"}{" "}
-              MHz
-            </strong>
-          </span>
-          <i aria-hidden="true">→</i>
-          <span className="operational-stage">
-            <small>Output</small>
-            <strong>
-              {source === "synthetic"
-                ? "Spectrum only"
-                : liveMode === "OFF"
-                  ? "Spectrum only"
-                  : ["ADS-B", "AIS", "SRD"].includes(liveMode)
-                    ? `${liveMode} data`
-                    : liveMode === "DAB"
-                      ? "DAB+ audio"
-                      : `${liveMode} audio`}
-            </strong>
-          </span>
-        </div>
-
         <nav className="view-tabs" aria-label="Application views">
           <div role="tablist" aria-label="BrowserSDR views">
             <button
@@ -3466,7 +3434,7 @@ export function ReceiverApp({
               onClick={() => setActiveView("receiver")}
               onKeyDown={handleTabKeyDown}
             >
-              <span>Receiver</span>
+              <span className="icon-label"><AppIcon name="radio" />Receiver</span>
               <small>Tune, listen & record</small>
             </button>
             <button
@@ -3479,8 +3447,21 @@ export function ReceiverApp({
               onClick={() => setActiveView("explorer")}
               onKeyDown={handleTabKeyDown}
             >
-              <span>Explorer</span>
+              <span className="icon-label"><AppIcon name="search" />Explorer</span>
               <small>Scan & investigate</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="settings-tab"
+              aria-selected={activeView === "settings"}
+              aria-controls="settings-view"
+              tabIndex={activeView === "settings" ? 0 : -1}
+              onClick={() => setActiveView("settings")}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span className="icon-label"><AppIcon name="settings" />Settings</span>
+              <small>Integrations &amp; credentials</small>
             </button>
             <button
               type="button"
@@ -3492,7 +3473,7 @@ export function ReceiverApp({
               onClick={() => setActiveView("diagnostics")}
               onKeyDown={handleTabKeyDown}
             >
-              <span>Diagnostics</span>
+              <span className="icon-label"><AppIcon name="activity" />Diagnostics</span>
               <small>Telemetry & setup</small>
             </button>
             <button
@@ -3505,7 +3486,7 @@ export function ReceiverApp({
               onClick={() => setActiveView("help")}
               onKeyDown={handleTabKeyDown}
             >
-              <span>Help</span>
+              <span className="icon-label"><AppIcon name="help" />Help</span>
               <small>Setup & compatibility</small>
             </button>
             <button
@@ -3518,7 +3499,7 @@ export function ReceiverApp({
               onClick={() => setActiveView("about")}
               onKeyDown={handleTabKeyDown}
             >
-              <span>About</span>
+              <span className="icon-label"><AppIcon name="info" />About</span>
               <small>Licences &amp; privacy</small>
             </button>
           </div>
@@ -3527,6 +3508,8 @@ export function ReceiverApp({
               ? "Live radio workspace"
               : activeView === "explorer"
                 ? "Wideband spectrum survey"
+                : activeView === "settings"
+                  ? "Integration settings"
                 : activeView === "diagnostics"
                   ? "Session health and browser support"
                   : activeView === "help"
@@ -3534,6 +3517,51 @@ export function ReceiverApp({
                     : "Licences, privacy and provenance"}
           </p>
         </nav>
+        <ReceiverStatus
+          receiver={receiver}
+          spectrum={spectrumStatus}
+          recording={recordingStatus}
+          preparing={exportingRecording}
+          retained={retainedCapture}
+          recordingSupported={recordingSupported}
+          onReceiver={() => setActiveView("diagnostics")}
+          onSpectrum={() => setActiveView("diagnostics")}
+          onRecording={() => {
+            setActiveView("receiver");
+            setReceiverDockExpanded(true);
+            setReceiverDockView("capture");
+            setCaptureView("record");
+            requestAnimationFrame(() => document.getElementById("recording-heading")?.scrollIntoView({ block: "center" }));
+          }}
+          onReport={() => {
+            window.dispatchEvent(new Event(OPEN_DIAGNOSTIC_REPORT_EVENT));
+            setActiveView("diagnostics");
+          }}
+        >
+          {receiver.issue && (
+            <ReceiverRecovery
+              key={`${receiver.sessionGeneration}-${receiver.issue.code}`}
+              issue={receiver.issue}
+              cleanupRequired={Boolean(receiver.cleanupRequired)}
+              activeConnection={hardwareConnected}
+              os={helpOs}
+              onOsChange={setHelpOs}
+              onRelease={() => void disconnectReceiver()}
+              onRetry={() => {
+                if (receiver.issue?.code === "audio-blocked" || !caps.persistentConnection) start();
+                else connectReceiver();
+              }}
+              onReviewSettings={() => {
+                setActiveView("receiver");
+                requestAnimationFrame(() => {
+                document.querySelector<HTMLSelectElement>('[aria-label="Signal source"]')?.focus();
+                document.querySelector(".acquire-stage")?.scrollIntoView({ block: "nearest" });
+                });
+              }}
+              disabled={transitioning || scanActive}
+            />
+          )}
+        </ReceiverStatus>
       </div>
 
       <div
@@ -3568,7 +3596,7 @@ export function ReceiverApp({
                 <span aria-hidden="true">01</span>
                 <div>
                   <p>Acquire</p>
-                  <h3 id="acquire-heading">Signal source</h3>
+                  <h3 id="acquire-heading" className="icon-label"><AppIcon name="radio" />Signal source</h3>
                 </div>
               </div>
               <div className="stage-controls acquire-controls">
@@ -3727,7 +3755,7 @@ export function ReceiverApp({
                                 : receiver.issue?.code === "selection-cancelled"
                                   ? "Not connected"
                                   : receiver.lifecycle === "error"
-                                    ? "Device needs attention · see details below"
+                                    ? "Needs attention"
                                     : "Not connected"}
                     </span>
                     {receiver.issue && receiver.issue.code !== "selection-cancelled" && (
@@ -3735,6 +3763,8 @@ export function ReceiverApp({
                         type="button"
                         className="acquire-recovery-link secondary"
                         onClick={() => {
+                          const statusMenu = document.querySelector<HTMLDetailsElement>(".receiver-status-menu");
+                          if (statusMenu) statusMenu.open = true;
                           const details = document.querySelector<HTMLDetailsElement>(".receiver-recovery .connection-help-details");
                           if (details) {
                             details.open = true;
@@ -3743,7 +3773,7 @@ export function ReceiverApp({
                           }
                         }}
                       >
-                        Recovery help
+                        <AppIcon name="help" />Recovery help
                       </button>
                     )}
                     {hardwareConnected ||
@@ -3757,6 +3787,7 @@ export function ReceiverApp({
                           scanActive || receiver.lifecycle === "disconnecting"
                         }
                       >
+                        <AppIcon name="unplug" />
                         {receiver.lifecycle === "disconnecting"
                           ? "Disconnecting…"
                           : "Disconnect"}
@@ -3783,6 +3814,7 @@ export function ReceiverApp({
                             receiver.lifecycle !== "error")
                         }
                       >
+                        <AppIcon name="plug" />
                         <span>
                           {receiver.lifecycle === "requesting-permission"
                             ? "Choose USB device…"
@@ -3803,7 +3835,7 @@ export function ReceiverApp({
                         className="acquire-disconnect secondary"
                         onClick={() => void disconnectReceiver()}
                       >
-                        Cancel connection
+                        <AppIcon name="unplug" />Cancel connection
                       </button>
                     )}
                     {source === "usrp-b205" &&
@@ -3836,6 +3868,7 @@ export function ReceiverApp({
                         )
                       }
                     >
+                      <AppIcon name={running || receiver.lifecycle === "tuning" ? "stop" : "play"} />
                       {receiver.lifecycle === "starting"
                         ? "Starting…"
                         : receiver.lifecycle === "stopping"
@@ -3852,7 +3885,7 @@ export function ReceiverApp({
                       onClick={start}
                       disabled={busy || (source === "replay" && !loadedReplay)}
                     >
-                      {source === "synthetic" ? "Start demo" : "Start replay"}
+                      <AppIcon name="play" />{source === "synthetic" ? "Start demo" : "Start replay"}
                     </button>
                     <button
                       type="button"
@@ -3862,7 +3895,7 @@ export function ReceiverApp({
                         scanActive || !busy || receiver.lifecycle === "stopping"
                       }
                     >
-                      Stop
+                      <AppIcon name="stop" />Stop
                     </button>
                   </div>
                 )}
@@ -3876,7 +3909,7 @@ export function ReceiverApp({
                     }
                   >
                     <summary>
-                      <span>Device details &amp; settings</span>
+                      <span className="icon-label"><AppIcon name="settings" />Device details &amp; settings</span>
                       <small>
                         {(sampleRateHz / 1_000_000).toFixed(3)} MS/s ·{" "}
                         {caps.gain.kind === "rtl-auto-manual"
@@ -4151,7 +4184,7 @@ export function ReceiverApp({
                 <span aria-hidden="true">03</span>
                 <div>
                   <p>Tune & demodulate</p>
-                  <h3 id="demodulate-heading">Channel settings</h3>
+                  <h3 id="demodulate-heading" className="icon-label"><AppIcon name="sliders" />Channel settings</h3>
                 </div>
               </div>
               <div className="stage-controls primary-channel-controls">
@@ -4296,6 +4329,7 @@ export function ReceiverApp({
                 <ActionButton
                   type="button"
                   className="secondary tune-button"
+                  icon="crosshair"
                   disabled={
                     !running ||
                     !frequencyValid ||
@@ -4326,7 +4360,7 @@ export function ReceiverApp({
                   !["OFF", "ADS-B", "AIS", "SRD"].includes(mode) && (
                     <>
                       <label>
-                        Volume <output>{Math.round(volume * 100)}%</output>
+                        <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} />Volume <output>{Math.round(volume * 100)}%</output></span>
                         <input
                           className="volume-slider"
                           type="range"
@@ -4588,47 +4622,7 @@ export function ReceiverApp({
             </section>
           </div>
 
-          <div
-            className={`receiver-status receiver-status-${receiver.issue?.code === "selection-cancelled" ? "idle" : receiver.lifecycle}${receiver.issue ? " has-recovery" : ""}`}
-            role={receiver.issue?.code === "selection-cancelled" ? "status" : receiver.lifecycle === "error" || receiver.issue ? "alert" : "status"}
-          >
-            <span className="status-light" />
-            <div>
-              <strong>{receiver.message}</strong>
-              {receiver.issue && (
-                <ReceiverRecovery
-                  key={`${receiver.sessionGeneration}-${receiver.issue.code}`}
-                  issue={receiver.issue}
-                  cleanupRequired={Boolean(receiver.cleanupRequired)}
-                  activeConnection={hardwareConnected}
-                  os={helpOs}
-                  onOsChange={setHelpOs}
-                  onRelease={() => void disconnectReceiver()}
-                  onRetry={() => {
-                    if (receiver.issue?.code === "audio-blocked" || !caps.persistentConnection) start();
-                    else connectReceiver();
-                  }}
-                  onReviewSettings={() => {
-                    document.querySelector<HTMLSelectElement>('[aria-label="Signal source"]')?.focus();
-                    document.querySelector(".acquire-stage")?.scrollIntoView({ block: "nearest" });
-                  }}
-                  disabled={transitioning || scanActive}
-                />
-              )}
-            </div>
-            {receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled" && (
-              <button
-                type="button"
-                className="secondary report-error-button"
-                onClick={() => {
-                  window.dispatchEvent(new Event(OPEN_DIAGNOSTIC_REPORT_EVENT));
-                  setActiveView("diagnostics");
-                }}
-              >
-                Review &amp; send report
-              </button>
-            )}
-          </div>
+
         </section>
 
         <WebGpuSpectrum
@@ -4691,7 +4685,7 @@ export function ReceiverApp({
                   setReceiverDockExpanded(true);
                 }}
               >
-                Audio & decode
+                <AppIcon name="headphones" />Audio & decode
               </button>
               <button
                 type="button"
@@ -4704,7 +4698,7 @@ export function ReceiverApp({
                   setReceiverDockExpanded(true);
                 }}
               >
-                Capture & replay
+                <AppIcon name="record" />Capture & replay
               </button>
               <button
                 type="button"
@@ -4717,7 +4711,7 @@ export function ReceiverApp({
                   setReceiverDockExpanded(true);
                 }}
               >
-                Session
+                <AppIcon name="file" />Session
               </button>
             </div>
             <button
@@ -4726,7 +4720,7 @@ export function ReceiverApp({
               aria-expanded={receiverDockExpanded}
               onClick={() => setReceiverDockExpanded((expanded) => !expanded)}
             >
-              {receiverDockExpanded ? "Collapse" : "Expand"}
+              <AppIcon name={receiverDockExpanded ? "collapse" : "expand"} />{receiverDockExpanded ? "Collapse" : "Expand"}
             </button>
           </div>
 
@@ -4788,7 +4782,7 @@ export function ReceiverApp({
                 tabIndex={captureView === "record" ? 0 : -1}
                 onClick={() => setCaptureView("record")}
               >
-                Record
+                <AppIcon name="record" />Record
               </button>
               <button
                 type="button"
@@ -4799,7 +4793,7 @@ export function ReceiverApp({
                 tabIndex={captureView === "open" ? 0 : -1}
                 onClick={() => setCaptureView("open")}
               >
-                Open recording
+                <AppIcon name="folder" />Open recording
               </button>
             </div>
             <div
@@ -4915,7 +4909,7 @@ export function ReceiverApp({
                     disabled={exportingRecording}
                     onClick={stopRecording}
                   >
-                    Stop recording
+                    <AppIcon name="stop" />Stop recording
                   </button>
                 ) : (
                   <ActionButton
@@ -4930,6 +4924,7 @@ export function ReceiverApp({
                     }
                     disabledReason={!recordingSupported ? "Recording is unavailable for this receive profile." : !running ? "Start reception before recording." : scanActive ? "Finish or pause the spectrum scan first." : exportingRecording ? "Wait for recording preparation to finish." : captureSlotBlocked ? "Download or discard the prepared capture first." : "Choose a channel bandwidth that fits inside the receiver window."}
                     onClick={startRecording}
+                    icon="record"
                   >
                     Start I/Q recording
                   </ActionButton>
@@ -4939,6 +4934,7 @@ export function ReceiverApp({
                     type="button"
                     disabled={exportingRecording}
                     disabledReason={"Wait for recording preparation to finish."}
+                  icon="download"
                   onClick={() => requestRecordingDownload(preparedCaptureNeedsSeparateFiles ? "separate" : "archive")}
                   >
                     {preparedCaptureNeedsSeparateFiles ? "Download separate files" : "Download ZIP"}
@@ -4954,6 +4950,7 @@ export function ReceiverApp({
                       Boolean(recordingStatus)
                     }
                     disabledReason={atlasTransferActive ? "Wait for the transfer to finish." : recordingStatus ? "Stop recording before discarding the capture." : "Wait for recording preparation to finish."}
+                    icon="trash"
                     onClick={discardPreparedRecording}
                   >
                     Discard prepared capture
@@ -4967,14 +4964,14 @@ export function ReceiverApp({
                       disabled={exportingRecording}
                       onClick={retryRecordingPreparation}
                     >
-                      Retry preparation
+                      <AppIcon name="retry" />Retry preparation
                     </button>
                     <button
                       type="button"
                       disabled={exportingRecording}
                       onClick={downloadRecordingFilesDirectly}
                     >
-                      Download files to disk
+                      <AppIcon name="download" />Download files to disk
                     </button>
                   </>
                 )}
@@ -5034,9 +5031,11 @@ export function ReceiverApp({
               <p className="capture-guidance display-note">Stop when the saved range contains a validated PI and complete PS, or keep a provisional candidate if evidence is insufficient. A timed capture stops after approximately the selected wall time; capacity and source changes can stop it earlier.</p>
               {previousSavedUrl && <a href={previousSavedUrl} target="_blank" rel="noreferrer">Previous saved recording</a>}
               {receptionCandidate && <p>Reception candidate: {receptionCandidate.station_name ?? "Catalog station"} · {(receptionCandidate.frequency_hz/1e6).toFixed(3)} MHz. This link proposes settings; Start remains a manual action.{receptionCandidate.bandwidth_hz !== bandwidthHz && <> Requested bandwidth {receptionCandidate.bandwidth_hz.toLocaleString()} Hz; applied {mode} profile {bandwidthHz.toLocaleString()} Hz. Plot and saved bounds use the applied profile.</>}</p>}
-              <AtlasRecoveryPanel transferActive={atlasTransferActive} />
+              <AtlasRecoveryPanel transferActive={atlasTransferActive} connection={atlasConnection} onOpenSettings={() => setActiveView("settings")} />
               {atlasPrepared && (
                 <AtlasSavePanel
+                  connection={atlasConnection}
+                  onOpenSettings={() => setActiveView("settings")}
                   prepared={atlasPrepared}
                   onRecordNext={(url) => { setPreviousSavedUrl(url); discardPreparedRecording(); setRecordingMessage("Saved recording remains in SigIntAtlas. Tune the next station and start a capture."); }}
                   onActiveChange={setAtlasTransferActive}
@@ -5197,6 +5196,7 @@ export function ReceiverApp({
                           !(Number(sigmfChannelMhz) > 0))))
                   }
                   disabledReason={busy ? "Wait for the receiver to finish its current operation." : !replayBinary || !replayMetadata ? "Choose both the I/Q data file and its metadata file." : !sigmfReplayMode ? "Choose a replay mode for this SigMF recording." : "Enter a valid custom replay frequency."}
+                  icon="folder"
                   onClick={() => void loadReplayFiles()}
                 >
                   {replayImportFormat === "sigmf"
@@ -5214,7 +5214,7 @@ export function ReceiverApp({
                     )
                   }
                 >
-                  Open example recording
+                  <AppIcon name="folder" />Open example recording
                 </button>
               </div>
               <p className="file-message" role="status">
@@ -5325,6 +5325,15 @@ export function ReceiverApp({
       </div>
 
       <div
+        id="settings-view"
+        role="tabpanel"
+        aria-labelledby="settings-tab"
+        hidden={activeView !== "settings"}
+      >
+        {activeView === "settings" && <AtlasSettingsPanel connection={atlasConnection} />}
+      </div>
+
+      <div
         id="explorer-view"
         role="tabpanel"
         aria-labelledby="explorer-tab"
@@ -5383,11 +5392,14 @@ export function ReceiverApp({
               recordingSupported={recordingSupported}
               onReceiver={() => {
                 setActiveView("receiver");
-                requestAnimationFrame(() =>
-                  document
-                    .querySelector(".acquire-stage")
-                    ?.scrollIntoView({ block: "start" }),
-                );
+                requestAnimationFrame(() => {
+                  const menu = document.querySelector<HTMLDetailsElement>(".receiver-status-menu");
+                  if (menu) {
+                    menu.open = true;
+                    menu.querySelector<HTMLElement>("summary")?.focus();
+                    menu.scrollIntoView({ block: "start" });
+                  }
+                });
               }}
               onRecording={() => {
                 setActiveView("receiver");

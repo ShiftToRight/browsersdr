@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { AtlasClient } from "./atlasClient";
+import { AtlasConnection } from "./atlasConnection";
+import { AtlasCredentialStore } from "./atlasCredentials";
 import { readAtlasReceipts, type ReceiptStorage } from "./atlasRecovery";
 import { AtlasTransferController, AtlasTransferFailure } from "./atlasTransfer";
 import { prepareRecordingExport, type PreparedRecordingExport } from "./recordingExportFormat";
@@ -35,6 +37,7 @@ class FakeAtlas {
   loseRegistrationResponse = false;
   deferVerification = false;
   operatorId = "local";
+  role: "operator" | "viewer" = "operator";
   registrationKeys: string[] = [];
   conflictingReceipt = false;
   holdParts = false;
@@ -65,6 +68,7 @@ class FakeAtlas {
     });
     if (path === "/api/v1/session" && method === "POST") { this.loginBodies.push(String(init.body)); return response(201, { operator_id: this.operatorId, expires_at: "2030-01-01T00:00:00Z", csrf_token: "c".repeat(43) }); }
     if (path === "/api/v1/session" && method === "DELETE") return response(204, null);
+    if (path === "/api/v1/me") return response(200, { id: this.operatorId, display_name: "Test operator", role: this.role, token_id: null, bootstrap: false });
     if (this.rejectCreate && path === "/api/v1/uploads" && method === "POST") return error(this.rejectCreate.status, this.rejectCreate.code);
     if (path === "/api/v1/uploads" && method === "POST") {
       this.requireAuth(init);
@@ -385,4 +389,54 @@ describe("verification recovery after closed upload receipts disappear", () => {
     expect(atlas.registrationKeys).toEqual(["browsersdr-lost-registration-recording","browsersdr-lost-registration-recording"]);
   });
 
+});
+
+describe("production shared session transfer wiring", () => {
+  it("reuses a settings login, retaining the original receipt owner", async () => {
+    const atlas = new FakeAtlas();
+    const client = new AtlasClient({ fetch: atlas.fetch, retryAttempts: 1 });
+    const credentials = new AtlasCredentialStore(null);
+    const connection = new AtlasConnection(credentials, client);
+    credentials.save(request.userToken, false);
+    try {
+      await connection.testConnection();
+      const transfer = new AtlasTransferController(await prepared(), { client, connection, receiptStorage: null, pollDelay: async () => undefined, maxPolls: 5 });
+      await transfer.start(request);
+      expect(atlas.loginBodies).toHaveLength(1);
+      expect(atlas.registrations).toBe(1);
+      expect(connection.getSnapshot().transferActive).toBe(false);
+    } finally { connection.dispose(); credentials.dispose(); }
+  });
+  it("blocks a viewer before upload or recording writes", async () => {
+    const atlas = new FakeAtlas(); atlas.role = "viewer";
+    const client = new AtlasClient({ fetch: atlas.fetch, retryAttempts: 1 });
+    const credentials = new AtlasCredentialStore(null);
+    const connection = new AtlasConnection(credentials, client);
+    credentials.save(request.userToken, false);
+    try {
+      const transfer = new AtlasTransferController(await prepared(), { client, connection, receiptStorage: null });
+      await expect(transfer.start(request)).rejects.toMatchObject({ code: "role_forbidden" });
+      expect(atlas.uploads.size).toBe(0);
+      expect(atlas.registrations).toBe(0);
+    } finally { connection.dispose(); credentials.dispose(); }
+  });
+  it("cannot recover a previous user's receipt through the shared connection", async () => {
+    const atlas = new FakeAtlas();
+    const entries = new Map<string, string>();
+    const receiptStorage: ReceiptStorage = { getItem: key => entries.get(key) ?? null, setItem: (key, value) => { entries.set(key, value); } };
+    const pair = await prepared();
+    const owner = new AtlasTransferController(pair, { client: new AtlasClient({ fetch: atlas.fetch }), receiptStorage, pollDelay: async () => undefined, maxPolls: 5 });
+    await owner.start(request);
+    const receipt = readAtlasReceipts(receiptStorage)[0]!;
+    atlas.operatorId = "different-user";
+    const client = new AtlasClient({ fetch: atlas.fetch, retryAttempts: 1 });
+    const credentials = new AtlasCredentialStore(null);
+    const connection = new AtlasConnection(credentials, client);
+    credentials.save(request.userToken, false);
+    try {
+      const recovery = new AtlasTransferController(undefined, { client, connection, receipt, receiptStorage });
+      await expect(recovery.start(request)).rejects.toMatchObject({ code: "recovery_owner" });
+      expect(atlas.registrations).toBe(1);
+    } finally { connection.dispose(); credentials.dispose(); }
+  });
 });

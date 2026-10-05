@@ -151,6 +151,7 @@ export function ReceiverTuningControl({
             <ActionButton
               type="button"
               className="secondary toolbar-action"
+              icon="crosshair"
               disabled={busy || !pending || Boolean(invalid)}
               disabledReason={
                 busyReason ?? invalid ?? "Edit the receiver frequency first."
@@ -176,6 +177,7 @@ export function ReceiverTuningControl({
             <ActionButton
               type="button"
               className="secondary toolbar-action"
+              icon="crosshair"
               disabled={
                 busy || session?.selectedChannelFrequencyHz === centerHz
               }

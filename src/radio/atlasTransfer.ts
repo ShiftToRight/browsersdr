@@ -1,5 +1,6 @@
 import { browserReceiptStorage, readAtlasReceipts, saveAtlasReceipt, type AtlasRecoveryReceipt, type ReceiptStorage } from "./atlasRecovery";
 import { AtlasClient, AtlasRequestError, type AtlasAnalysisRun, type AtlasCapabilities, type AtlasUpload } from "./atlasClient";
+import type { AtlasConnection } from "./atlasConnection";
 import { inspectBrowserSigmfLayoutForAtlas, type AtlasSigmfLayoutCompatibility } from "./atlasSigmfCompatibility";
 import type { PreparedRecordingExport, PreparedRecordingFile } from "./recordingExportFormat";
 import type { SigmfMetadata } from "./sigmf";
@@ -55,6 +56,8 @@ export interface AtlasTransferResult {
 }
 export interface AtlasTransferControllerOptions {
   client: AtlasClient;
+  /** Production shared session owner; omitted by standalone injectable clients. */
+  connection?: AtlasConnection;
   pollDelay?: (signal: AbortSignal) => Promise<void>;
   maxPolls?: number;
   idFactory?: () => string;
@@ -134,6 +137,7 @@ export class AtlasTransferController {
   private readonly receiptStorage: ReceiptStorage | null;
   private acceptedByRole = { data: 0, metadata: 0 };
   private readonly client: AtlasClient;
+  private readonly connection?: AtlasConnection;
   private readonly pollDelay: NonNullable<AtlasTransferControllerOptions["pollDelay"]>;
   private readonly maxPolls: number;
   private readonly idFactory: () => string;
@@ -149,7 +153,8 @@ export class AtlasTransferController {
   private snapshot: AtlasTransferSnapshot = { state: "idle", generation: 0, bytesTransferred: "0", totalBytes: "0", activeParts: 0, peakActiveParts: 0, peakBufferedBytes: 0 };
 
   constructor(prepared: PreparedRecordingExport | undefined, options: AtlasTransferControllerOptions) {
-    this.prepared = prepared; this.client = options.client;
+    this.prepared = prepared; this.client = options.connection?.client ?? options.client;
+    this.connection = options.connection;
     this.receipt = options.receipt; this.receiptStorage = options.receiptStorage === undefined ? browserReceiptStorage() : options.receiptStorage;
     this.pollDelay = options.pollDelay ?? (signal => new Promise((resolve, reject) => {
       const abort = () => { clearTimeout(timer); reject(signal.reason ?? new DOMException("Cancelled", "AbortError")); };
@@ -174,7 +179,8 @@ export class AtlasTransferController {
     const generation = ++this.generation;
     const aborter = new AbortController(); this.aborter = aborter;
     this.update({ state: "checking", generation, errorCode: undefined, message: undefined });
-    const active = this.run(request, generation, aborter.signal)
+    const execute = (signal: AbortSignal) => this.run(request, generation, signal);
+    const active = (this.connection ? this.connection.withTransfer(request.userToken, execute, aborter.signal) : execute(aborter.signal))
       .then(result => { this.assertGeneration(generation); this.result = result; this.update({ state: "saved", recordingId: result.recordingId, recordingRevisionId: result.recordingRevisionId, recordingUrl: result.recordingUrl }); return result; })
       .catch(error => { const problem = failure(error); if (generation === this.generation) this.update({ state: problem.code === "reconciliation_timeout" ? "waiting" : problem.code === "cancelled" ? "cancelled" : "failed", errorCode: problem.code, message: problem.message }); throw problem; })
       .finally(() => { if (this.active === active) this.active = undefined; if (this.aborter === aborter) this.aborter = undefined; });
@@ -218,7 +224,11 @@ export class AtlasTransferController {
     const partSize = positiveSafeDecimal(capabilities.upload_part_bytes, "upload_part_bytes");
     const concurrency = Math.max(1, Math.min(CLIENT_MAX_INFLIGHT_PARTS, capabilities.max_inflight_parts));
     this.update({ state: "authenticating" });
-    const session = await this.client.login(request.userToken, signal);
+    const session = this.connection
+      ? await this.connection.authenticateTransfer(signal)
+      : await this.client.login(request.userToken, signal);
+    if (this.connection?.getSnapshot().user?.role === "viewer")
+      throw new AtlasRequestError(403, "role_forbidden", "Viewer access is read-only. Use a writer token to save or recover a recording.");
     this.assertGeneration(generation);
     this.update({ state: "hashing" });
     let data: HashedSource, metadata: HashedSource;

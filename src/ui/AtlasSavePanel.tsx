@@ -1,7 +1,9 @@
 import { preparedReception } from "../radio/receptionEvidence";
 import { ActionButton } from "./ActionButton";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AtlasClient, type AtlasAnalysisRun } from "../radio/atlasClient";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { AtlasAnalysisRun } from "../radio/atlasClient";
+import { getAtlasConnection, type AtlasConnection } from "../radio/atlasConnection";
+import { validAtlasToken } from "../radio/atlasCredentials";
 import { atlasWebPageUrl } from "../radio/atlasWebNavigation";
 import {
   AtlasTransferController,
@@ -20,6 +22,8 @@ interface AtlasTransferControl {
 }
 
 export interface AtlasSavePanelProps {
+  connection?: AtlasConnection;
+  onOpenSettings?: () => void;
   prepared: PreparedRecordingExport;
   sourceKind?: "real" | "synthetic" | "unknown";
   onRecordNext?: (recordingUrl: string) => void;
@@ -43,27 +47,6 @@ const ACTIVE_STATES = new Set<AtlasTransferSnapshot["state"]>([
   "importing",
 ]);
 
-const USER_TOKEN_STORAGE_KEY = "browsersdr.atlas.user-token.v1";
-
-export function readUserToken(): string {
-  try {
-    const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY) ?? "";
-    return token.length >= 32 ? token : "";
-  } catch {
-    return "";
-  }
-}
-
-function storeUserToken(token: string): boolean {
-  try {
-    if (token) localStorage.setItem(USER_TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(USER_TOKEN_STORAGE_KEY);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function uploadSize(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = bytes;
@@ -77,8 +60,9 @@ function uploadSize(bytes: number): string {
 
 function defaultController(
   prepared: PreparedRecordingExport,
+  connection: AtlasConnection,
 ): AtlasTransferControl {
-  return new AtlasTransferController(prepared, { client: new AtlasClient() });
+  return new AtlasTransferController(prepared, { client: connection.client, connection });
 }
 
 function stageText(snapshot: AtlasTransferSnapshot): string {
@@ -86,7 +70,7 @@ function stageText(snapshot: AtlasTransferSnapshot): string {
     case "waiting":
       return "Server verification pending. Continue verification resumes the receipt; closed uploads are not sent again.";
     case "idle":
-      return "Prepared locally. Not connected; nothing has been sent.";
+      return "Prepared locally. Nothing has been sent for this recording.";
     case "checking":
       return "Checking the same-origin SigIntAtlas destination…";
     case "authenticating":
@@ -141,6 +125,8 @@ function analysisText(
 }
 
 export function AtlasSavePanel({
+  connection = getAtlasConnection(),
+  onOpenSettings,
   prepared,
   sourceKind = "unknown",
   onRecordNext,
@@ -149,12 +135,14 @@ export function AtlasSavePanel({
   readAnalysisRun,
 }: AtlasSavePanelProps) {
   const controller = useMemo(
-    () => (createController ?? defaultController)(prepared),
-    [createController, prepared],
+    () => createController ? createController(prepared) : defaultController(prepared, connection),
+    [createController, prepared, connection],
   );
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot());
-  const [userToken, setUserToken] = useState(readUserToken);
-  const [storageNotice, setStorageNotice] = useState<string>();
+  const credential = useSyncExternalStore(connection.credentials.subscribe, connection.credentials.getSnapshot);
+  const connectionState = useSyncExternalStore(connection.subscribe, connection.getSnapshot);
+  const [tokenDraft, setTokenDraft] = useState({ revision: credential.revision, token: credential.token });
+  const userToken = tokenDraft.revision === credential.revision ? tokenDraft.token : credential.token;
   const [selectedOrigin, setSelectedOrigin] = useState(preparedReception(prepared)?.source_kind ?? sourceKind);
   const [title, setTitle] = useState(prepared.basename);
   const [analyzeAfterSave, setAnalyzeAfterSave] = useState(false);
@@ -165,7 +153,6 @@ export function AtlasSavePanel({
   const mounted = useRef(true);
   const currentController = useRef(controller);
   currentController.current = controller;
-  const runClient = useMemo(() => new AtlasClient(), []);
 
   useEffect(() => {
     mounted.current = true;
@@ -197,17 +184,14 @@ export function AtlasSavePanel({
       setLocalError("Enter a recording title before saving.");
       return;
     }
-    if (userToken.length < 32) {
+    if (!validAtlasToken(userToken)) {
       setLocalError(
-        "Enter the configured SigIntAtlas user token (at least 32 characters).",
+        "Enter the configured SigIntAtlas user token (32–4096 characters).",
       );
       return;
     }
-    setStorageNotice(
-      storeUserToken(userToken)
-        ? undefined
-        : "Browser storage is unavailable. Re-enter the token after reopening this panel.",
-    );
+    try { connection.saveToken(userToken, credential.remember); }
+    catch (error) { setLocalError(error instanceof Error ? error.message : "Could not configure token."); return; }
     setRequestPending(true);
     void controller
       .start({
@@ -239,7 +223,7 @@ export function AtlasSavePanel({
     const read =
       readAnalysisRun ??
       ((id: string, signal: AbortSignal) =>
-        runClient.getAnalysisRun(id, signal));
+        connection.read(readSignal => connection.client.getAnalysisRun(id, readSignal), signal));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const wait = (milliseconds: number) =>
       new Promise<void>((resolve, reject) => {
@@ -275,14 +259,14 @@ export function AtlasSavePanel({
       );
       if (timer) clearTimeout(timer);
     };
-  }, [readAnalysisRun, result, runClient, runId]);
+  }, [readAnalysisRun, result, connection, runId]);
 
   const total = Number(snapshot.totalBytes);
   const transferred = Number(snapshot.bytesTransferred);
   const progress = total > 0 ? Math.min(100, (transferred / total) * 100) : 0;
   const saved = snapshot.state === "saved";
   const analysisPending = saved && requestPending && analyzeAfterSave;
-  const canStart = !active && !saved && !requestPending;
+  const canStart = !active && !saved && !requestPending && !connectionState.transferActive && connectionState.user?.role !== "viewer";
 
   return (
     <section className="atlas-save-panel" aria-labelledby="atlas-save-heading">
@@ -341,8 +325,9 @@ export function AtlasSavePanel({
             value={userToken}
             autoComplete="off"
             spellCheck={false}
-            disabled={active || saved}
-            onChange={(event) => setUserToken(event.currentTarget.value)}
+            maxLength={4096}
+            disabled={active || saved || connectionState.transferActive}
+            onChange={(event) => setTokenDraft({ revision: credential.revision, token: event.currentTarget.value })}
           />
         </label>
         <label className="atlas-analysis-choice">
@@ -389,21 +374,19 @@ export function AtlasSavePanel({
             "Wait for the transfer to finish before removing its token."
           }
           className="secondary"
-          disabled={active}
+          disabled={active || connectionState.transferActive}
           onClick={() => {
-            const removed = storeUserToken("");
-            setUserToken("");
-            setStorageNotice(
-              removed
-                ? undefined
-                : "The saved token could not be removed from browser storage.",
-            );
+            setTokenDraft({ revision: credential.revision + 1, token: "" });
+            void connection.forgetToken().catch(() => setLocalError("Could not forget the Atlas token."));
           }}
         >
           Forget token
         </ActionButton>
       </div>
-      {storageNotice && <p className="display-note">{storageNotice}</p>}
+      {onOpenSettings && <button type="button" className="secondary" onClick={onOpenSettings}>SigIntAtlas settings</button>}
+      {connectionState.user?.role === "viewer" && <p role="status">Viewer access is read-only. Configure a writer token in Settings to save recordings.</p>}
+      {credential.notice && <p className="display-note">{credential.notice}</p>}
+      {connectionState.message && <p className="display-note">{connectionState.message}</p>}
       <div className="atlas-transfer-status" aria-live="polite">
         <strong>{stageText(snapshot)}</strong>
         {(active || snapshot.bytesTransferred !== "0") && (
@@ -459,7 +442,7 @@ export function AtlasSavePanel({
         </div>
       )}
       <p className="display-note">
-        Your token is remembered in this browser for future saves. Use Forget
+        {credential.persistence === "remembered" ? "Your token is remembered in this browser." : "Your token is available only in this tab unless you remember it in Settings."} Use Settings to manage persistence or Forget
         token to remove it. Keep this page open until the upload finishes;
         the resumable receipt survives reopening. If missing parts remain, prepare the exact original pair again; a new capture cannot replace it. You can also download
         the recording as a ZIP or separate files.

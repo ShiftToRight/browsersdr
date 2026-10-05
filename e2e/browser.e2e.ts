@@ -16,7 +16,9 @@ test.afterEach(async ({ page }) => {
 
 async function gotoApp(page: Page): Promise<void> {
   await page.goto("/?browser-test=1");
-  await expect(page.getByLabel("Live signal path")).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Receiver", exact: true }),
+  ).toBeVisible();
 }
 
 async function selectSyntheticAndStart(page: Page): Promise<void> {
@@ -79,6 +81,7 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
   let firstCapabilities = true;
   let firstSession = options.expireFirstSession ?? false;
   let recordingCreates = 0;
+  let loginRequests = 0;
   const partSize = 65_536;
   const recordingId = "30000000-0000-4000-8000-000000000001";
   const revisionId = "40000000-0000-4000-8000-000000000001";
@@ -119,7 +122,25 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
       });
       return;
     }
+    if (path === "/me") {
+      await route.fulfill({
+        status: 200,
+        json: {
+          id: "browser-test",
+          display_name: "Browser test",
+          role: "operator",
+          token_id: null,
+          bootstrap: false,
+        },
+      });
+      return;
+    }
     if (path === "/session") {
+      if (request.method() === "DELETE") {
+        await route.fulfill({ status: 204 });
+        return;
+      }
+      loginRequests++;
       if (firstSession) {
         firstSession = false;
         await route.fulfill({
@@ -137,7 +158,7 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
         },
         json: {
           operator_id: "browser-test",
-          expires_at: "2026-09-28T00:00:00Z",
+          expires_at: "2030-01-01T00:00:00Z",
           csrf_token: "browser-test-csrf",
         },
       });
@@ -316,7 +337,11 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
     };
   }
 
-  return { uploads, recordingCreates: () => recordingCreates };
+  return {
+    uploads,
+    recordingCreates: () => recordingCreates,
+    loginRequests: () => loginRequests,
+  };
 }
 
 async function installWorkerInstrumentation(page: Page): Promise<void> {
@@ -632,7 +657,7 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
   );
 
   for (const mode of ["AIS", "DAB", "ADS-B", "SRD", "AM"] as const) {
-    await page.getByLabel("Mode").selectOption(mode);
+    await page.getByRole("combobox", { name: /^Mode/ }).selectOption(mode);
     await expect(page.locator(".receiver-session-details")).toContainText(
       `· ${mode} ·`,
     );
@@ -1007,17 +1032,31 @@ test("recording preparation retries and the paired archive remains truthfully do
 test("explicit SigIntAtlas save retries a lost part and exposes verified recording and analysis links", async ({
   page,
 }) => {
+  // Settings login plus three capture/reload rounds exceed the single-capture budget.
+  test.setTimeout(45_000);
   const atlas = await installAtlasMock(page, { failFirstPart: true });
   await gotoApp(page);
+  await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Settings SigIntAtlas user token").fill("t".repeat(32));
+  await page.getByRole("button", { name: "Save token", exact: true }).click();
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(
+    page.getByText("Connected as Browser test", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Receiver", exact: true }).click();
   await prepareSyntheticSigmf(page);
 
   await expect(
-    page.getByText("Not connected; nothing has been sent."),
+    page.getByText(
+      "Prepared locally. Nothing has been sent for this recording.",
+    ),
   ).toBeVisible();
   await page
     .getByLabel("SigIntAtlas recording title")
     .fill("Deterministic browser acceptance");
-  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
+  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue(
+    "t".repeat(32),
+  );
   await page.getByLabel(/Analyze after save when the live capability/).check();
   const save = page.getByRole("button", { name: "Save to SigIntAtlas" });
   await save.dblclick();
@@ -1036,6 +1075,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
     page.getByRole("link", { name: "Open analysis result" }),
   ).toHaveAttribute("href", /#\/runs\/50000000-/);
   expect(atlas.recordingCreates()).toBe(1);
+  expect(atlas.loginRequests()).toBe(1);
   await expect(
     page.getByRole("link", { name: "Confirm reception in SigIntAtlas" }),
   ).toHaveAttribute("href", /reception=1/);
@@ -1540,7 +1580,7 @@ test("Atlas requested WBFM bandwidth uses the applied profile and recording pref
   await page.goto(
     "/?browser-test=1&station_id=10000000-0000-4000-8000-000000000001&station_name=Retest&frequency_hz=100000000&bandwidth_hz=200000&mode=WBFM",
   );
-  await expect(page.getByLabel("Live signal path")).toBeVisible();
+  await expect(page.locator(".receiver-status-menu > summary")).toBeVisible();
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await expect(
     page.getByText(
@@ -1602,7 +1642,7 @@ test("SigIntAtlas closed transfers recover after reload without a prepared captu
   await expect(
     page.getByText("Recover SigIntAtlas transfers", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Recovery user token").fill("t".repeat(32));
+  // Recovery shares the token persisted by the original Save action.
   await page.getByRole("button", { name: /Continue verification for/ }).click();
   await expect(
     page.getByText("Recording saved and verified.", { exact: true }),

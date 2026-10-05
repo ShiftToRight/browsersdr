@@ -26,7 +26,7 @@ test("desktop receiver fills the window with all primary panels in view", async 
       ".acquire-stage",
       ".graphics-panel",
       ".demodulate-stage",
-      ".receiver-status",
+      ".receiver-status-menu",
       ".receiver-dock",
     ]) {
       const panel = page.locator(selector);
@@ -111,7 +111,6 @@ test("mobile follows the numbered acquire, analyze, demodulate and output order"
       ".acquire-stage",
       ".graphics-panel",
       ".demodulate-stage",
-      ".receiver-status",
       ".receiver-dock",
     ];
     const tops: number[] = [];
@@ -256,7 +255,9 @@ test("SRD choices are primary controls and hardware details have one home", asyn
   await expect(page.locator(".receiver-status")).toContainText(
     "Synthetic RF demo running",
   );
-  await expect(page.locator(".receiver-status details")).toHaveCount(0);
+  await expect(page.locator(".receiver-status-menu")).not.toHaveAttribute(
+    "open",
+  );
   await page.getByRole("tab", { name: "Session", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Session details", exact: true }),
