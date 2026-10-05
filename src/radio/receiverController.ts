@@ -19,6 +19,8 @@ import type { DigitalWorkerAdapterDiagnostics } from "../digital";
 import {
   normalizeGain,
   normalizeModeSettings,
+  planChannelTune,
+  type ReceiverTuneOptions,
   type ReceiverModeSettings,
 } from "./receiverConfig";
 import type { IqRecording, RecordingStatus } from "./iqRecording";
@@ -31,6 +33,7 @@ import {
   validateSourceRoute,
   validateSourceFrequency,
   validateHackrfRxSettings,
+  isWidebandRate,
   type HackrfRxSettings,
 } from "./sourceCapabilities";
 import type { UsrpB205RxSettings } from "./usrpB205Capabilities";
@@ -93,6 +96,7 @@ export interface ReceiverBackend {
   tune(
     channelFrequencyHz: number,
     sessionGeneration: number,
+    options?: ReceiverTuneOptions,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   /** Explicit acquisition-center retune used by bounded spectrum scans. */
   scanTune?(
@@ -166,6 +170,7 @@ export class ReceiverController {
   private startTask?: Promise<void>;
   private generation = 0;
   private source: SourceKind = "rtl-sdr";
+  private autoRecenter = true;
   private completedRecording?: IqRecording;
   private readonly cleanupTasks = new Map<ReceiverBackend, Promise<void>>();
 
@@ -453,13 +458,24 @@ export class ReceiverController {
     return recording;
   }
 
-  async tune(channelFrequencyHz: number): Promise<void> {
+  setAutoRecenter(enabled: boolean): void {
+    this.autoRecenter = enabled;
+  }
+
+  async tuneCenter(centerFrequencyHz: number): Promise<void> {
+    const channel = this.snapshot.session?.selectedChannelFrequencyHz;
+    if (channel !== undefined)
+      await this.tune(channel, { centerFrequencyHz });
+  }
+
+  async tune(channelFrequencyHz: number, options: ReceiverTuneOptions = {}): Promise<void> {
     if (
       this.snapshot.lifecycle !== "running" ||
       !this.snapshot.session ||
       !this.backend
     )
       return;
+    const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
     try {
       const session = this.snapshot.session;
       validateSourceRoute(
@@ -473,6 +489,26 @@ export class ReceiverController {
         session.actualSampleRateHz,
         channelFrequencyHz,
       );
+      const requiresCenter = ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
+        && !isWidebandRate(session.actualSampleRateHz) && ["DAB", "ADS-B"].includes(session.mode);
+      if (requiresCenter && tuneOptions.centerFrequencyHz === undefined && tuneOptions.autoRecenter)
+        tuneOptions.centerFrequencyHz = channelFrequencyHz;
+      const plan = planChannelTune(
+        session.hardwareCenterFrequencyHz, channelFrequencyHz,
+        session.actualSampleRateHz, session.channelBandwidthHz,
+        tuneOptions,
+      );
+      if (session.source === "replay" && plan.hardwareRetuneRequired)
+        throw new Error("The capture center is fixed during replay. Select a channel within the recorded RF window.");
+      if (["hackrf", "bladerf", "usrp-b205"].includes(session.source)
+        && !isWidebandRate(session.actualSampleRateHz)
+        && ["DAB", "ADS-B"].includes(session.mode)
+        && plan.hardwareCenterFrequencyHz !== channelFrequencyHz)
+        throw new Error(`${session.mode} requires the receiver center to match the channel at this sample rate.`);
+      if (plan.hardwareRetuneRequired)
+        validateSourceFrequency(session.source, plan.hardwareCenterFrequencyHz,
+          ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0);
+
     } catch (error) {
       this.publish({
         ...this.snapshot,
@@ -490,7 +526,9 @@ export class ReceiverController {
     const backend = this.backend;
     this.publish({
       lifecycle: "tuning",
-      message: `Retuning to ${(channelFrequencyHz / 1_000_000).toFixed(3)} MHz…`,
+      message: options.centerFrequencyHz !== undefined
+        ? `Moving receiver center to ${(options.centerFrequencyHz / 1_000_000).toFixed(6)} MHz…`
+        : `Retuning channel to ${(channelFrequencyHz / 1_000_000).toFixed(6)} MHz…`,
       sessionGeneration: generation,
       session: {
         ...this.snapshot.session,
@@ -500,7 +538,7 @@ export class ReceiverController {
       audioState: this.snapshot.audioState,
     });
     try {
-      const metadata = await backend.tune(channelFrequencyHz, generation);
+      const metadata = await backend.tune(channelFrequencyHz, generation, tuneOptions);
       if (generation !== this.generation || this.backend !== backend) return;
       this.publishRunning(metadata, generation);
     } catch (error) {

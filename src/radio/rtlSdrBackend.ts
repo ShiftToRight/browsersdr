@@ -33,6 +33,7 @@ import {
   planChannelTune,
   validateModeSampleRate,
   type ReceiverModeSettings,
+  type ReceiverTuneOptions,
 } from "./receiverConfig";
 
 const PARALLEL_TRANSFERS = 2;
@@ -358,6 +359,7 @@ export class RtlSdrBackend implements ReceiverBackend {
   async tune(
     channelFrequencyHz: number,
     sessionGeneration: number,
+    options: ReceiverTuneOptions = {},
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     const source = this.source;
     if (!this.metadata || !source)
@@ -368,6 +370,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       channelFrequencyHz,
       this.metadata.actualSampleRateHz,
       this.modeSettings.bandwidthHz,
+      options,
     );
     const provisional = {
       ...this.metadata,
@@ -390,6 +393,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     } else {
       this.pipeline.demodulator.setFrequencyOffset(plan.frequencyOffsetHz);
     }
+    planChannelTune(provisional.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.modeSettings.bandwidthHz, { autoRecenter: false });
     this.metadata = provisional;
     this.pipeline.retune({ ...provisional, sessionGeneration });
     return provisional;

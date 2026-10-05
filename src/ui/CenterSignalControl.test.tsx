@@ -99,7 +99,7 @@ async function setup() {
 }
 it("shows measurement, one correction and Undo under StrictMode", async () => {
   const ui = await setup();
-  await ui.click("Center signal");
+  await ui.click("Fine-tune signal");
   expect(ui.host.textContent).toContain("Measuring");
   expect(ui.host.querySelector("button")!.disabled).toBe(true);
   await ui.result({
@@ -110,17 +110,17 @@ it("shows measurement, one correction and Undo under StrictMode", async () => {
   });
   expect(ui.tune).toHaveBeenCalledTimes(1);
   expect(ui.host.textContent).toContain("Corrected +1,500 Hz");
-  await ui.click("Undo center");
+  await ui.click("Undo fine-tune");
   expect(ui.tune).toHaveBeenCalledTimes(2);
   expect(ui.host.textContent).toContain("Previous frequency restored");
 });
 it("disables unsupported/blocked controls and cancels pending input changes", async () => {
   const ui = await setup();
   await ui.render(true);
-  await ui.click("Center signal");
+  await ui.click("Fine-tune signal");
   expect(ui.measureSignalCenter).not.toHaveBeenCalled();
   await ui.render();
-  await ui.click("Center signal");
+  await ui.click("Fine-tune signal");
   await ui.render(true, "edited");
   await ui.result({
     kind: "estimate",
@@ -142,7 +142,7 @@ it("displays no clear signal, already centered and actionable measurement failur
       message: "Samples interrupted; retry after reception settles.",
     },
   ] as SignalCenterResult[]) {
-    await ui.click("Center signal");
+    await ui.click("Fine-tune signal");
     await ui.result(result);
     expect(ui.host.textContent).toContain(
       result.kind === "estimate" ? "Already centered" : result.message,

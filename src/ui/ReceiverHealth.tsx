@@ -41,11 +41,11 @@ export function ReceiverHealth({
           ? "✓ Connected"
           : receiver.issue?.code === "selection-cancelled"
             ? "Not connected"
-          : receiver.lifecycle === "error"
-            ? "Needs attention"
-            : receiver.lifecycle === "idle"
-              ? "Not connected"
-              : receiver.lifecycle.replaceAll("-", " "),
+            : receiver.lifecycle === "error"
+              ? "Needs attention"
+              : receiver.lifecycle === "idle"
+                ? "Not connected"
+                : receiver.lifecycle.replaceAll("-", " "),
       good: running || receiver.lifecycle === "connected",
     },
     {
@@ -69,11 +69,11 @@ export function ReceiverHealth({
           ? "Display paused"
           : spectrum.stalled && running
             ? "No recent spectrum frames · restart reception"
-          : spectrum.kind === "ready" && spectrum.hasFrame && running
-            ? "✓ Working"
-            : spectrum.kind === "ready"
-              ? "Ready · waiting for samples"
-              : "Checking graphics…",
+            : spectrum.kind === "ready" && spectrum.hasFrame && running
+              ? "✓ Working"
+              : spectrum.kind === "ready"
+                ? "Available · waiting for samples"
+                : "Checking graphics…",
       good:
         !spectrum.paused &&
         !spectrum.stalled &&
@@ -92,7 +92,11 @@ export function ReceiverHealth({
             : retained.error
               ? "Needs attention"
               : recordingSupported
-                ? "Ready to record"
+                ? running
+                  ? "Ready to record"
+                  : receiver.lifecycle === "connected"
+                    ? "Start reception to record"
+                    : "Connect a receiver to record"
                 : "Unavailable for this receiver",
       good: Boolean(recording) || readyRecording,
     },
@@ -110,11 +114,23 @@ export function ReceiverHealth({
       <div className="health-actions">
         {(receiver.lifecycle === "error" || receiver.cleanupRequired) && (
           <div>
-            <p role={receiver.issue?.code === "selection-cancelled" ? "status" : "alert"}>{receiver.message}</p>
-            {receiver.issue && receiver.issue.code !== "selection-cancelled" && (
-              <p>Recovery steps are available beside the receiver status in Acquire.</p>
-            )}
-            <button type="button" className="secondary" onClick={onReceiver}>
+            <p
+              role={
+                receiver.issue?.code === "selection-cancelled"
+                  ? "status"
+                  : "alert"
+              }
+            >
+              {receiver.message}
+            </p>
+            {receiver.issue &&
+              receiver.issue.code !== "selection-cancelled" && (
+                <p>
+                  Recovery steps are available beside the receiver status in
+                  Acquire.
+                </p>
+              )}
+            <button type="button" onClick={onReceiver}>
               {receiver.cleanupRequired
                 ? "Release device in Acquire"
                 : "Review connection"}
@@ -127,7 +143,7 @@ export function ReceiverHealth({
               The spectrum display is unavailable. Receiver and audio status are
               shown separately above.
             </p>
-            <button type="button" className="secondary" onClick={onSpectrum}>
+            <button type="button" onClick={onSpectrum}>
               Review spectrum display
             </button>
           </div>
@@ -135,7 +151,7 @@ export function ReceiverHealth({
         {retained.error && (
           <div>
             <p role="alert">{retained.error}</p>
-            <button type="button" className="secondary" onClick={onRecording}>
+            <button type="button" onClick={onRecording}>
               Review recording
             </button>
           </div>

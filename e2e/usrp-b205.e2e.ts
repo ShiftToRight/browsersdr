@@ -301,13 +301,13 @@ test("B205-mini mocked browser flow keeps permission synchronous and receive-onl
     .click();
   await expect(page.locator(".receiver-status")).toContainText("connected");
   await page.getByRole("button", { name: "Start receiving" }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "CHDR/VRT SC16 LE",
   );
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "native 9,600,000 samples/s",
   );
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "synthesizer-calculated accepted",
   );
   await page.getByRole("tab", { name: "Capture & replay" }).click();
@@ -324,7 +324,7 @@ test("B205-mini mocked browser flow keeps permission synchronous and receive-onl
     }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Start receiving" }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "native 19,200,000 samples/s",
   );
   await expect(sampleRate).toBeDisabled();

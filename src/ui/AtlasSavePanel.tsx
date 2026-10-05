@@ -89,9 +89,9 @@ function stageText(snapshot: AtlasTransferSnapshot): string {
     case "authenticating":
       return "SigIntAtlas is reachable. Authenticating this browser session…";
     case "hashing":
-      return "Connected and authenticated. Hashing the immutable prepared pair…";
+      return "Connected and authenticated. Checking recording integrity…";
     case "uploading":
-      return "Uploading bounded parts…";
+      return "Uploading recording…";
     case "completing":
       return "Upload complete; SigIntAtlas is verifying the original bytes…";
     case "registering":
@@ -351,21 +351,34 @@ export function AtlasSavePanel({
         </label>
       </div>
       <div className="atlas-save-actions">
-        <button type="button" disabled={!canStart} onClick={start}>
+        <ActionButton
+          type="button"
+          disabledReason={
+            saved
+              ? "This recording is already saved."
+              : "Wait for the current save to finish."
+          }
+          disabled={!canStart}
+          onClick={start}
+        >
           {snapshot.state === "failed" || snapshot.state === "cancelled"
             ? "Retry save"
             : "Save to SigIntAtlas"}
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           type="button"
+          disabledReason={"There is no active transfer to cancel."}
           className="secondary"
           disabled={!transferActive}
           onClick={() => void controller.cancel()}
         >
           Cancel transfer
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           type="button"
+          disabledReason={
+            "Wait for the transfer to finish before removing its token."
+          }
           className="secondary"
           disabled={active}
           onClick={() => {
@@ -379,7 +392,7 @@ export function AtlasSavePanel({
           }}
         >
           Forget token
-        </button>
+        </ActionButton>
       </div>
       {storageNotice && <p className="display-note">{storageNotice}</p>}
       <div className="atlas-transfer-status" aria-live="polite">

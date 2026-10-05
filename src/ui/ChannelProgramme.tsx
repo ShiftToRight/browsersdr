@@ -70,12 +70,10 @@ export function FmStationSummary({
     receiver.session.source === "synthetic"
   )
     return null;
+  if (!receiver.rds?.programmeService) return null;
   return (
     <div className="channel-programme" aria-label="FM station">
-      <strong>
-        {receiver.rds?.programmeService || "Waiting for station information…"}
-      </strong>
-      {receiver.rds?.radioText && <span>{receiver.rds.radioText}</span>}
+      <strong>{receiver.rds.programmeService}</strong>
     </div>
   );
 }

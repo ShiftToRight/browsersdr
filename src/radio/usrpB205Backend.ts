@@ -8,7 +8,9 @@ import type { SurveyCaptureContext } from "./fieldSurvey";
 import {
   defaultModeSettings,
   normalizeModeSettings,
+  planChannelTune,
   type ReceiverModeSettings,
+  type ReceiverTuneOptions,
 } from "./receiverConfig";
 import type {
   ReceiverBackend,
@@ -529,6 +531,8 @@ export class Usrpb205Backend implements ReceiverBackend {
       selection.channel,
     );
     this.pipeline.validateRateBudget(details.nativeSampleRateHz);
+    planChannelTune(details.configuration.acceptedCenterFrequencyHz, selection.channel,
+      details.nativeSampleRateHz, selection.mode.bandwidthHz, { autoRecenter: false });
     this.metadata = {
       source: "usrp-b205",
       sessionGeneration: this.sessionGeneration,
@@ -565,8 +569,8 @@ export class Usrpb205Backend implements ReceiverBackend {
     return metadata;
   }
 
-  tune(channelFrequencyHz: number, generation: number): Promise<Metadata> {
-    return this.reconfigure(channelFrequencyHz, this.selection?.mode, generation, false);
+  tune(channelFrequencyHz: number, generation: number, options: ReceiverTuneOptions = {}): Promise<Metadata> {
+    return this.reconfigure(channelFrequencyHz, this.selection?.mode, generation, false, options);
   }
 
   scanTune(centerFrequencyHz: number, generation: number): Promise<Metadata> {
@@ -579,11 +583,12 @@ export class Usrpb205Backend implements ReceiverBackend {
     return this.reconfigure(channel, mode, generation, false);
   }
 
-  private reconfigure(
+  private async reconfigure(
     channel: number,
     requestedMode: ReceiverModeSettings | undefined,
     generation: number,
     scan: boolean,
+    options: ReceiverTuneOptions = {},
   ): Promise<Metadata> {
     if (!this.receiving || !this.selection
       || (!this.workerSession && (!this.transport || !this.configurator)) || !requestedMode)
@@ -598,16 +603,27 @@ export class Usrpb205Backend implements ReceiverBackend {
     } catch (error) {
       return Promise.reject(error);
     }
+    const plan = planChannelTune(this.metadata!.hardwareCenterFrequencyHz, channel,
+      this.metadata!.actualSampleRateHz, mode.bandwidthHz, options);
+    const center = scan ? channel : plan.hardwareCenterFrequencyHz;
+    const hardware = scan || plan.hardwareRetuneRequired || mode.mode !== this.selection.mode.mode;
+    if (hardware) validateSourceFrequency("usrp-b205", center, this.metadata!.actualSampleRateHz);
     const selection: Selection = { ...this.selection, channel, mode };
     return this.run("retune", async (token) => {
       this.finishRecording("metadata-change");
-      this.invalidateSamples();
       this.sessionGeneration = generation;
       this.selection = selection;
+      if (!hardware) {
+        const metadata = this.publish(this.details!, selection);
+        this.check(token);
+        this.pipeline.retune({ ...metadata, sessionGeneration: generation });
+        return this.result();
+      }
+      this.invalidateSamples();
       const workerDetails = this.workerSession
-        ? await this.workerSession.retune(channel)
+        ? await this.workerSession.retune(center)
         : undefined;
-      if (!this.workerSession) await this.configurator!.retune(channel, this.transport!);
+      if (!this.workerSession) await this.configurator!.retune(center, this.transport!);
       this.check(token);
       const details = workerDetails ?? this.transport!.observedSessionDetails;
       validateUsrpB205SessionDetails(details);

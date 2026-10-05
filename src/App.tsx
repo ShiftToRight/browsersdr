@@ -1,3 +1,7 @@
+import { ReceiverTuningControl } from "./ui/ReceiverTuningControl";
+import { editableFrequencyMHz, formatFrequencyMHz, formatSampleRate } from "./ui/frequencyFormat";
+import { ActionButton } from "./ui/ActionButton";
+import { flushSync } from "react-dom";
 import { CenterSignalControl } from "./ui/CenterSignalControl";
 import { operatingSystem, usbAvailability, type OperatingSystem } from "./platform/browserEnvironment";
 import { ConnectionReadiness, ReceiverRecovery } from "./ui/ReceiverConnectionHelp";
@@ -887,7 +891,7 @@ function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
       available: workers,
       detail: workers
         ? "Spectrum, channel, DAB and recording jobs available"
-        : "Required for bounded background signal processing",
+        : "Required for background signal processing",
     },
     {
       label: "Web Audio API",
@@ -1380,6 +1384,8 @@ function ReceiverDecodePanel({
     receiver.lifecycle === "tuning" && receiver.message.startsWith("Applying ");
   return (
     <section
+      id="decode-panel"
+      role="tabpanel"
       className="control-panel rds-panel decode-panel receiver-dock-panel"
       aria-labelledby="decode-heading"
       hidden={!active}
@@ -1453,7 +1459,7 @@ function ReceiverDecodePanel({
                   : mode === "AIS"
                     ? "AIS 1 + AIS 2 · dual-channel GMSK"
                     : mode === "SRD"
-                      ? "Bounded OOK / 2-FSK burst inspection"
+                      ? "OOK / 2-FSK signal inspection"
                       : source === "synthetic"
                         ? "Use a hardware source or replay to listen."
                         : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
@@ -1537,7 +1543,7 @@ function ReceiverDecodePanel({
                     disabled={!receiver.srd}
                     onClick={() => downloadSrdSnapshot(receiver)}
                   >
-                    Export bounded SRD JSON
+                    Export device data (JSON)
                   </button>
                   <details className="decoder-details">
                     <summary>Decoder details</summary>{" "}
@@ -1580,7 +1586,7 @@ function ReceiverDecodePanel({
                         ? "Burst in progress…"
                         : receiver.srd?.bursts.length
                           ? `${receiver.srd.bursts.length} recent burst(s); truncated bursts are marked below.`
-                          : "Waiting for a bounded burst. Unknown signals remain inspector-only."}
+                          : "Waiting for a signal burst. Unknown signals appear in the inspector."}
                     </p>
                     <details>
                       <summary>Recent pulse bursts</summary>
@@ -2055,11 +2061,17 @@ export function ReceiverApp({
   const [mode, setMode] = useState(receptionCandidate?.mode ?? initialPreferences.modeSettings.mode);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
-    !["OFF", "WBFM"].includes(initialPreferences.modeSettings.mode),
+    !["OFF", "WBFM", "SRD"].includes(initialPreferences.modeSettings.mode),
   );
+  const [channelTuneIssue, setChannelTuneIssue] = useState<string>();
+  const [autoRecenter, setAutoRecenter] = useState(() =>
+    loadNumber("browsersdr-auto-recenter", 1, 0, 1) !== 0,
+  );
+  useEffect(() => { controller.setAutoRecenter(autoRecenter); }, [controller, autoRecenter]);
   const [frequencyMhz, setFrequencyMhz] = useState(
     (receptionCandidate?.frequency_hz ?? initialPreferences.frequencyHz) / 1_000_000,
   );
+  const [channelFrequencyDraft, setChannelFrequencyDraft] = useState<string>();
   const [volume, setVolume] = useState(() =>
     loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1),
   );
@@ -2341,7 +2353,7 @@ export function ReceiverApp({
   >("center");
   const [sigmfChannelMhz, setSigmfChannelMhz] = useState("");
   const [fileMessage, setFileMessage] = useState(
-    "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or use the deterministic fixture.",
+    "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or open the example recording.",
   );
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>();
   const [captureCurrentChannel, setCaptureCurrentChannel] = useState(false);
@@ -2776,7 +2788,7 @@ export function ReceiverApp({
     setSquelch(next.modeSettings.squelch);
     setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
     setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
-    setChannelAdvancedOpen(!["OFF", "WBFM"].includes(next.modeSettings.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(next.modeSettings.mode));
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
@@ -2799,7 +2811,7 @@ export function ReceiverApp({
       setBeatToneHz(loadedReplay.metadata.beatToneHz ?? 600);
       setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
       setChannelAdvancedOpen(
-        !["OFF", "WBFM"].includes(loadedReplay.metadata.mode),
+        !["OFF", "WBFM", "SRD"].includes(loadedReplay.metadata.mode),
       );
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
@@ -2821,11 +2833,15 @@ export function ReceiverApp({
       if (sourceCapabilities(source).frequency.integerHz)
         frequencyHz = Math.round(frequencyHz);
       const nextMhz = frequencyHz / 1_000_000;
+      setChannelTuneIssue(undefined);
+      setChannelFrequencyDraft(undefined);
       setFrequencyMhz(nextMhz);
       const previousGeneration = controller.getSnapshot().sessionGeneration;
       void controller.tune(frequencyHz).then(() => {
         const snapshot = controller.getSnapshot();
         const accepted = snapshot.session;
+        if (snapshot.lifecycle === "running" && snapshot.sessionGeneration === previousGeneration)
+          setChannelTuneIssue(snapshot.message);
         if (
           accepted &&
           snapshot.lifecycle === "running" &&
@@ -2839,6 +2855,19 @@ export function ReceiverApp({
     },
     [analysis, controller, retainCompletedRecording, source],
   );
+
+  const tuneReceiverCenter = async (frequencyHz: number): Promise<string | undefined> => {
+    analysis.cancelSignalCenter();
+    const before = controller.getSnapshot().sessionGeneration;
+    await controller.tuneCenter(frequencyHz);
+    const snapshot = controller.getSnapshot();
+    const completed = controller.takeCompletedRecording();
+    if (completed) retainCompletedRecording(completed);
+    if (snapshot.session?.bladerf?.rxSettings) setBladeRfSettings({ ...snapshot.session.bladerf.rxSettings });
+    if (snapshot.lifecycle !== "running" || snapshot.sessionGeneration === before)
+      return snapshot.message;
+    return undefined;
+  };
 
   const applyModeSettings = (rawSettings: ReceiverModeSettings) => {
     try {
@@ -2883,7 +2912,7 @@ export function ReceiverApp({
   const chooseMode = (nextMode: ReceiverMode) => {
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(nextMode !== "WBFM" && nextMode !== "OFF");
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
@@ -3235,7 +3264,7 @@ export function ReceiverApp({
     setLoadedReplay(recording);
     setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
     setMode(recording.metadata.mode);
-    setChannelAdvancedOpen(!["OFF", "WBFM"].includes(recording.metadata.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(recording.metadata.mode));
     setBandwidthHz(recording.metadata.channelBandwidthHz);
     setSquelch(recording.metadata.squelch);
     setBeatToneHz(recording.metadata.beatToneHz ?? 600);
@@ -3399,9 +3428,9 @@ export function ReceiverApp({
             </small>
             <strong>
               {displayedFrequencyHz !== undefined
-                ? (displayedFrequencyHz / 1_000_000).toFixed(6)
+                ? formatFrequencyMHz(displayedFrequencyHz)
                 : Number.isFinite(frequencyMhz)
-                  ? frequencyMhz.toFixed(6)
+                  ? formatFrequencyMHz(frequencyMhz * 1_000_000)
                   : "—"}{" "}
               MHz
             </strong>
@@ -4117,7 +4146,7 @@ export function ReceiverApp({
               aria-labelledby="demodulate-heading"
             >
               <div className="stage-heading">
-                <span aria-hidden="true">02</span>
+                <span aria-hidden="true">03</span>
                 <div>
                   <p>Tune & demodulate</p>
                   <h3 id="demodulate-heading">Channel settings</h3>
@@ -4204,12 +4233,30 @@ export function ReceiverApp({
                       min={Math.max(1, caps.frequency.minimumHz) / 1_000_000}
                       max={caps.frequency.maximumHz / 1_000_000}
                       step="0.000001"
-                      value={Number.isFinite(frequencyMhz) ? frequencyMhz : ""}
-                      disabled={transitioning}
-                      onChange={(event) =>
-                        setFrequencyMhz(event.currentTarget.valueAsNumber)
+                      value={
+                        channelFrequencyDraft !== undefined &&
+                        Math.round(Number(channelFrequencyDraft) * 1_000_000) === Math.round(frequencyMhz * 1_000_000)
+                          ? channelFrequencyDraft
+                          : formatFrequencyMHz(frequencyMhz * 1_000_000)
                       }
+                      title={`${(frequencyMhz * 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 3 })} Hz`}
+                      disabled={transitioning}
+                      onFocus={(event) => {
+                        flushSync(() => setChannelFrequencyDraft(editableFrequencyMHz(frequencyMhz * 1_000_000)));
+                        event.currentTarget.select();
+                      }}
+                      onBlur={() => setChannelFrequencyDraft(undefined)}
+                      onChange={(event) => {
+                        setChannelTuneIssue(undefined);
+                        setChannelFrequencyDraft(event.currentTarget.value);
+                        setFrequencyMhz(event.currentTarget.valueAsNumber);
+                      }}
                       onKeyDown={(event) => {
+                        if (event.key === "Escape" && liveSession) {
+                          setChannelTuneIssue(undefined);
+                          setChannelFrequencyDraft(undefined);
+                          setFrequencyMhz(liveSession.selectedChannelFrequencyHz / 1_000_000);
+                        }
                         if (event.key === "Enter" && running && frequencyValid)
                           tune(frequencyMhz * 1_000_000);
                       }}
@@ -4220,7 +4267,7 @@ export function ReceiverApp({
                   </span>
                   <small id="frequency-help">
                     {source === "synthetic"
-                      ? "Demo centre frequency in MHz"
+                      ? "Demo channel frequency in MHz"
                       : caps.frequency.limitsDiscoveredAtTune
                         ? "Checked by the connected tuner"
                         : `${caps.label}: ${caps.frequency.minimumHz / 1_000_000}–${caps.frequency.maximumHz / 1_000_000} MHz`}{" "}
@@ -4230,7 +4277,7 @@ export function ReceiverApp({
                     className={frequencyPending ? "pending-change" : ""}
                     role="status"
                   >
-                    {!frequencyValid
+                    {channelTuneIssue ?? (!frequencyValid
                       ? "Enter a frequency within the supported range"
                       : frequencyPending
                         ? receiver.lifecycle === "tuning"
@@ -4240,11 +4287,11 @@ export function ReceiverApp({
                             : "Change pending · applies when reception starts"
                         : liveSession
                           ? "✓ Tuned"
-                          : "Applies when reception starts"}
+                          : "Applies when reception starts")}
                   </small>
                 </label>
                 <div className="channel-tune-actions">
-                <button
+                <ActionButton
                   type="button"
                   className="secondary tune-button"
                   disabled={
@@ -4253,16 +4300,21 @@ export function ReceiverApp({
                     transitioning ||
                     !frequencyPending
                   }
+                  disabledReason={!running ? "Start reception before tuning a channel." : !frequencyValid ? "Enter a frequency supported by this receiver." : transitioning ? "Wait for the receiver to finish its current operation." : "Edit the channel frequency first."}
                   onClick={() => tune(frequencyMhz * 1_000_000)}
                 >
                   Tune
-                </button>
+                </ActionButton>
                 {["AM", "NBFM", "WBFM"].includes(mode) && <CenterSignalControl
                   controller={controller}
                   analysis={analysis}
                   disabled={!running || transitioning || scanActive || Boolean(recordingStatus) || frequencyPending || !frequencyValid || source === "synthetic"}
+                  disabledReason={source === "synthetic" ? "Fine-tuning is available for received signals, not the demo." : !running ? "Start AM or FM reception to fine-tune a signal." : frequencyPending || !frequencyValid ? "Apply or cancel the channel frequency edit first." : recordingStatus ? "Stop recording before fine-tuning." : scanActive ? "Finish or pause the spectrum scan first." : "Wait for the receiver to finish its current operation."}
                   contextKey={`${source}:${mode}:${bandwidthHz}:${frequencyMhz}`}
-                  onAccepted={(frequencyHz) => setFrequencyMhz(frequencyHz / 1_000_000)}
+                  onAccepted={(frequencyHz) => {
+                    setChannelFrequencyDraft(undefined);
+                    setFrequencyMhz(frequencyHz / 1_000_000);
+                  }}
                 />}
                 </div>
                 {mode === "WBFM" && (
@@ -4291,6 +4343,71 @@ export function ReceiverApp({
                       </label>
                     </>
                   )}
+                {mode === "SRD" && (
+                  <div className="mode-primary-controls" aria-label="SRD reception settings">
+                      <label>
+                        Modulation
+                        <select
+                          value={srdSettings.modulation}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const modulation = event.currentTarget.value as
+                              "ook" | "2fsk";
+                            const next: SrdModeSettings = {
+                              ...srdSettings,
+                              modulation,
+                              protocol: "none",
+                            };
+                            setSrdSettings(next);
+                            if (running)
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                srd: next,
+                              });
+                          }}
+                        >
+                          <option value="ook">OOK / ASK envelope</option>
+                          <option value="2fsk">Binary FSK discriminator</option>
+                        </select>
+                      </label>
+                      <label>
+                        Decoder
+                        <select
+                          value={srdSettings.protocol}
+                          disabled={transitioning}
+                          onChange={(event) => {
+                            const next = {
+                              ...srdSettings,
+                              protocol: event.currentTarget
+                                .value as SrdModeSettings["protocol"],
+                            };
+                            setSrdSettings(next);
+                            if (running)
+                              applyModeSettings({
+                                ...currentModeSettings,
+                                srd: next,
+                              });
+                          }}
+                        >
+                          <option value="none">Inspector only</option>
+                          {srdSettings.modulation === "ook" && (
+                            <option value="acurite-592txr">
+                              Acurite 592TXR
+                            </option>
+                          )}
+                          {srdSettings.modulation === "2fsk" && (
+                            <option value="fineoffset-wh51">
+                              Fine Offset WH51
+                            </option>
+                          )}
+                        </select>
+                        <small>
+                          Unknown bursts stay inspectable and never become
+                          guessed readings.
+                        </small>
+                      </label>
+                  </div>
+                )}
               </div>
               <details
                 className="advanced-settings channel-advanced-settings"
@@ -4401,67 +4518,6 @@ export function ReceiverApp({
                   {mode === "SRD" && (
                     <>
                       <label>
-                        Modulation
-                        <select
-                          value={srdSettings.modulation}
-                          disabled={transitioning}
-                          onChange={(event) => {
-                            const modulation = event.currentTarget.value as
-                              "ook" | "2fsk";
-                            const next: SrdModeSettings = {
-                              ...srdSettings,
-                              modulation,
-                              protocol: "none",
-                            };
-                            setSrdSettings(next);
-                            if (running)
-                              applyModeSettings({
-                                ...currentModeSettings,
-                                srd: next,
-                              });
-                          }}
-                        >
-                          <option value="ook">OOK / ASK envelope</option>
-                          <option value="2fsk">Binary FSK discriminator</option>
-                        </select>
-                      </label>
-                      <label>
-                        Decoder
-                        <select
-                          value={srdSettings.protocol}
-                          disabled={transitioning}
-                          onChange={(event) => {
-                            const next = {
-                              ...srdSettings,
-                              protocol: event.currentTarget
-                                .value as SrdModeSettings["protocol"],
-                            };
-                            setSrdSettings(next);
-                            if (running)
-                              applyModeSettings({
-                                ...currentModeSettings,
-                                srd: next,
-                              });
-                          }}
-                        >
-                          <option value="none">Inspector only</option>
-                          {srdSettings.modulation === "ook" && (
-                            <option value="acurite-592txr">
-                              Acurite 592TXR
-                            </option>
-                          )}
-                          {srdSettings.modulation === "2fsk" && (
-                            <option value="fineoffset-wh51">
-                              Fine Offset WH51
-                            </option>
-                          )}
-                        </select>
-                        <small>
-                          Unknown bursts stay inspectable and never become
-                          guessed readings.
-                        </small>
-                      </label>
-                      <label>
                         Threshold
                         <select
                           value={srdSettings.threshold.mode}
@@ -4557,62 +4613,6 @@ export function ReceiverApp({
                   disabled={transitioning || scanActive}
                 />
               )}
-              {(running || hardwareConnected) && receiver.session ? (
-                <details className="receiver-session-details">
-                  <summary>Session details</summary>
-                  <p>
-                    Center{" "}
-                    {(
-                      receiver.session.hardwareCenterFrequencyHz / 1_000_000
-                    ).toFixed(6)}{" "}
-                    MHz · selected{" "}
-                    {(
-                      receiver.session.selectedChannelFrequencyHz / 1_000_000
-                    ).toFixed(6)}{" "}
-                    MHz · {receiver.session.mode} ·{" "}
-                    {receiver.session.mode === "OFF"
-                      ? "spectrum-only route"
-                      : `${receiver.session.channelBandwidthHz.toLocaleString()} Hz channel`}{" "}
-                    ·{" "}
-                    {receiver.session.source === "rtl-sdr"
-                      ? receiver.session.gainDb === null
-                        ? "automatic gain"
-                        : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
-                      : receiver.session.hackrf
-                        ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
-                        : receiver.session.bladerf
-                          ? `${receiver.session.bladerf.rxInput ?? "RX1"} · ${BLADERF_GAIN_MODES[receiver.session.bladerf.gainMode].label}${receiver.session.bladerf.gainMode === "manual" ? ` · ${receiver.session.bladerf.acceptedGainDb} dB gain readback` : ""}`
-                          : receiver.session.usrpB205
-                            ? "slow-attack AGC; no calibrated gain readback"
-                            : "no hardware gain control"}{" "}
-                    ·{" "}
-                    {isWidebandRate(receiver.session.actualSampleRateHz)
-                      ? "channel DSP rate"
-                      : "effective rate"}{" "}
-                    {(
-                      receiver.session.usrpB205?.effectiveSampleRateHz ??
-                      receiver.session.bladerf?.effectiveSampleRateHz ??
-                      receiver.session.hackrf?.effectiveSampleRateHz ??
-                      (isWidebandRate(receiver.session.actualSampleRateHz)
-                        ? 2_400_000
-                        : receiver.session.actualSampleRateHz)
-                    ).toLocaleString()}{" "}
-                    samples/s
-                    {receiver.session.hackrf &&
-                      ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
-                    {receiver.session.bladerf &&
-                      ` · ${bladeRfModelLabel(receiver.session.bladerf.identity.model)} · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · verified volatile hosted${receiver.session.bladerf.identity.volatileImage.model} v${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA; exact image provenance unknown"} (${receiver.session.bladerf.identity.variantValidation === "experimental" ? "experimental; hardware validation pending" : "hardware validation pending"})`}
-                    {receiver.session.usrpB205 &&
-                      ` · native ${receiver.session.usrpB205.nativeSampleRateHz.toLocaleString()} samples/s CHDR/VRT SC16 LE · requested ${receiver.session.usrpB205.configuration.requested.requestedCenterFrequencyHz.toLocaleString()} Hz, synthesizer-calculated accepted ${receiver.session.usrpB205.configuration.acceptedCenterFrequencyHz.toLocaleString()} Hz · DDC-calculated ${receiver.session.usrpB205.configuration.acceptedSampleRateHz.toLocaleString()} samples/s · AD9361-read-back bandwidth ${receiver.session.usrpB205.configuration.acceptedBandwidthHz.toLocaleString()} Hz · FX3 ${receiver.session.usrpB205.capabilities.firmware.major}.${receiver.session.usrpB205.capabilities.firmware.minor}, FPGA ${receiver.session.usrpB205.capabilities.fpga.compatibilityMajor}.${receiver.session.usrpB205.capabilities.fpga.compatibilityMinor}, USB 3 · RX2/internal · timestamp ${receiver.session.usrpB205.observations.timestampRateValidation} (hardware validation pending)`}
-                  </p>
-                </details>
-              ) : source === "synthetic" || source === "replay" ? (
-                <p>
-                  {source === "synthetic"
-                    ? "Demo uses deterministic complex RF tones and no audio."
-                    : "Replay is paced from sample counts and never opens a USB chooser."}
-                </p>
-              ) : null}
             </div>
             {receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled" && (
               <button
@@ -4633,7 +4633,20 @@ export function ReceiverApp({
           active={activeView === "receiver"}
           pipeline={analysis}
           session={liveSession}
-          onTune={running && !scanActive ? tune : undefined}
+          onTune={running && !transitioning && !scanActive ? tune : undefined}
+          tuningControls={<ReceiverTuningControl
+            session={liveSession}
+            configuredFrequencyHz={frequencyMhz * 1_000_000}
+            disabled={!running || transitioning || scanActive}
+            channelPending={frequencyPending}
+            autoRecenter={autoRecenter}
+            onAutoRecenter={(enabled) => {
+              controller.setAutoRecenter(enabled);
+              setAutoRecenter(enabled);
+              saveNumber("browsersdr-auto-recenter", enabled ? 1 : 0);
+            }}
+            onTuneCenter={tuneReceiverCenter}
+          />}
           onStatusChange={setSpectrumStatus}
           onOpenAcquire={() => {
             setActiveView("receiver");
@@ -4653,11 +4666,24 @@ export function ReceiverApp({
               className="receiver-dock-tabs"
               role="tablist"
               aria-label="Receiver tool panels"
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const views = ["decode", "capture", "session"] as const;
+                const current = views.indexOf(receiverDockView);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? views.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
+                const button = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next];
+                setReceiverDockView(views[next]!);
+                setReceiverDockExpanded(true);
+                button?.focus();
+              }}
             >
               <button
                 type="button"
                 role="tab"
                 aria-selected={receiverDockView === "decode"}
+                tabIndex={receiverDockView === "decode" ? 0 : -1}
+                aria-controls="decode-panel"
                 onClick={() => {
                   setReceiverDockView("decode");
                   setReceiverDockExpanded(true);
@@ -4669,6 +4695,8 @@ export function ReceiverApp({
                 type="button"
                 role="tab"
                 aria-selected={receiverDockView === "capture"}
+                tabIndex={receiverDockView === "capture" ? 0 : -1}
+                aria-controls="capture-panel"
                 onClick={() => {
                   setReceiverDockView("capture");
                   setReceiverDockExpanded(true);
@@ -4680,6 +4708,8 @@ export function ReceiverApp({
                 type="button"
                 role="tab"
                 aria-selected={receiverDockView === "session"}
+                tabIndex={receiverDockView === "session" ? 0 : -1}
+                aria-controls="session-panel"
                 onClick={() => {
                   setReceiverDockView("session");
                   setReceiverDockExpanded(true);
@@ -4707,6 +4737,8 @@ export function ReceiverApp({
           />
 
           <section
+            id="capture-panel"
+            role="tabpanel"
             className="control-panel capture-panel receiver-dock-panel"
             aria-labelledby="recording-heading"
             hidden={!receiverDockExpanded || receiverDockView !== "capture"}
@@ -4791,7 +4823,7 @@ export function ReceiverApp({
                           ? "Preparation failed"
                           : !recordingSupported
                             ? "Recording unavailable for this receiver"
-                            : "Ready to record"}
+                            : running ? "Ready to record" : hardwareConnected ? "Start reception to record" : "Start reception before recording"}
                 </strong>
                 {(recordingStatus ||
                   retainedCapture.sampleCount !== undefined) && (
@@ -4823,7 +4855,7 @@ export function ReceiverApp({
                   <p className="display-note">
                     Up to {Math.min(3600, recordingCapacitySeconds(captureRateHz, preferredRecordingStorageMode() === "opfs" ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES, captureBytesPerSample)).toFixed(1)} s
                     at this sample rate · {preferredRecordingStorageMode() === "opfs" ? "2 GiB private browser storage limit" : "32 MiB memory fallback"}
-                    {!running ? " · start reception to record" : ""}.
+                    .
                   </p>
                 )}
               <label className="checkbox-control channel-capture-toggle">
@@ -4835,7 +4867,7 @@ export function ReceiverApp({
               {captureCurrentChannel && (
                 <p className="display-note" aria-live="polite">
                   {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${channelCapturePreview.plan.outputSampleRateHz.toLocaleString()} samples/s · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
                     : channelCapturePreview.error}
                 </p>
               )}
@@ -4884,7 +4916,7 @@ export function ReceiverApp({
                     Stop recording
                   </button>
                 ) : (
-                  <button
+                  <ActionButton
                     type="button"
                     disabled={
                       !recordingSupported ||
@@ -4894,33 +4926,36 @@ export function ReceiverApp({
                       exportingRecording ||
                       captureSlotBlocked
                     }
+                    disabledReason={!recordingSupported ? "Recording is unavailable for this receive profile." : !running ? "Start reception before recording." : scanActive ? "Finish or pause the spectrum scan first." : exportingRecording ? "Wait for recording preparation to finish." : captureSlotBlocked ? "Download or discard the prepared capture first." : "Choose a channel bandwidth that fits inside the receiver window."}
                     onClick={startRecording}
                   >
                     Start I/Q recording
-                  </button>
+                  </ActionButton>
                 )}
                 {preparedCaptureAvailable && (
-                  <button
+                  <ActionButton
                     type="button"
                     disabled={exportingRecording}
-                    onClick={() => requestRecordingDownload(preparedCaptureNeedsSeparateFiles ? "separate" : "archive")}
+                    disabledReason={"Wait for recording preparation to finish."}
+                  onClick={() => requestRecordingDownload(preparedCaptureNeedsSeparateFiles ? "separate" : "archive")}
                   >
                     {preparedCaptureNeedsSeparateFiles ? "Download separate files" : "Download ZIP"}
-                  </button>
+                  </ActionButton>
                 )}
                 {retainedCapturePresent && (
-                  <button
+                  <ActionButton
                     type="button"
-                    className="secondary"
+                    className="secondary destructive"
                     disabled={
                       exportingRecording ||
                       atlasTransferActive ||
                       Boolean(recordingStatus)
                     }
+                    disabledReason={atlasTransferActive ? "Wait for the transfer to finish." : recordingStatus ? "Stop recording before discarding the capture." : "Wait for recording preparation to finish."}
                     onClick={discardPreparedRecording}
                   >
                     Discard prepared capture
-                  </button>
+                  </ActionButton>
                 )}
                 {retainedCapture.status === "retry-available" && (
                   <>
@@ -5027,7 +5062,7 @@ export function ReceiverApp({
                       setFileMessage(
                         next === "sigmf"
                           ? "Choose a local .sigmf-data/.sigmf-meta pair and an explicit replay mode. The RF-center channel is selected unless you choose a custom channel."
-                          : "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or use the deterministic fixture.",
+                          : "Load a .cu8, .ci8 or .ci16 binary and its .json sidecar, or open the example recording.",
                       );
                     }}
                   >
@@ -5146,7 +5181,7 @@ export function ReceiverApp({
                     </span>
                   </span>
                 </label>
-                <button
+                <ActionButton
                   type="button"
                   className="secondary"
                   disabled={
@@ -5158,12 +5193,13 @@ export function ReceiverApp({
                         (sigmfChannelChoice === "custom" &&
                           !(Number(sigmfChannelMhz) > 0))))
                   }
+                  disabledReason={busy ? "Wait for the receiver to finish its current operation." : !replayBinary || !replayMetadata ? "Choose both the I/Q data file and its metadata file." : !sigmfReplayMode ? "Choose a replay mode for this SigMF recording." : "Enter a valid custom replay frequency."}
                   onClick={() => void loadReplayFiles()}
                 >
                   {replayImportFormat === "sigmf"
                     ? "Load SigMF pair"
                     : "Load files"}
-                </button>
+                </ActionButton>
                 <button
                   type="button"
                   className="secondary"
@@ -5171,7 +5207,7 @@ export function ReceiverApp({
                   onClick={() =>
                     void activateReplay(
                       createDeterministicRecordingFixture(),
-                      "Loaded generated 0.5 s AM fixture: +6 kHz carrier, 1 kHz audio tone, 48 ksample/s.",
+                      "Loaded example AM recording: +6 kHz carrier, 1 kHz audio tone, 0.048 MS/s.",
                     )
                   }
                 >
@@ -5185,6 +5221,8 @@ export function ReceiverApp({
           </section>
 
           <section
+            id="session-panel"
+            role="tabpanel"
             className="control-panel receiver-dock-panel session-panel"
             aria-labelledby="session-heading"
             hidden={!receiverDockExpanded || receiverDockView !== "session"}
@@ -5197,14 +5235,14 @@ export function ReceiverApp({
             </div>
             <dl className="session-grid">
               <div>
-                <dt>Lifecycle</dt>
-                <dd>{receiver.lifecycle.replace("-", " ")}</dd>
+                <dt>Receiver</dt>
+                <dd>{running ? "Receiving" : hardwareConnected ? "Connected" : receiver.lifecycle === "idle" ? "Not connected" : receiver.lifecycle.replaceAll("-", " ")}</dd>
               </div>
               <div>
-                <dt>Selected channel</dt>
+                <dt>Channel frequency</dt>
                 <dd>
                   {displayedFrequencyHz !== undefined
-                    ? `${(displayedFrequencyHz / 1_000_000).toFixed(6)} MHz`
+                    ? `${formatFrequencyMHz(displayedFrequencyHz)} MHz`
                     : "Not connected"}
                 </dd>
               </div>
@@ -5218,18 +5256,67 @@ export function ReceiverApp({
               </div>
               <div>
                 <dt>Sample rate</dt>
-                <dd>
-                  {(
-                    receiver.session?.actualSampleRateHz ?? sampleRateHz
-                  ).toLocaleString()}{" "}
-                  samples/s
-                </dd>
+                <dd>{formatSampleRate(receiver.session?.actualSampleRateHz ?? sampleRateHz)}</dd>
+              </div>
+              <div>
+                <dt>Receiver center</dt>
+                <dd>{receiver.session ? `${formatFrequencyMHz(receiver.session.hardwareCenterFrequencyHz)} MHz` : "Not connected"}</dd>
               </div>
               <div>
                 <dt>Audio</dt>
                 <dd>{receiver.audioState ?? "Not active"}</dd>
               </div>
             </dl>
+            {(running || hardwareConnected) && receiver.session && (
+                <details className="receiver-session-details">
+                  <summary>Hardware &amp; signal details</summary>
+                  <p>
+                    Precise center{" "}
+                    {(
+                      receiver.session.hardwareCenterFrequencyHz / 1_000_000
+                    ).toFixed(6)}{" "}
+                    MHz · precise channel{" "}
+                    {(
+                      receiver.session.selectedChannelFrequencyHz / 1_000_000
+                    ).toFixed(6)}{" "}
+                    MHz · {receiver.session.mode} ·{" "}
+                    {receiver.session.mode === "OFF"
+                      ? "spectrum-only route"
+                      : `${receiver.session.channelBandwidthHz.toLocaleString()} Hz channel`}{" "}
+                    ·{" "}
+                    {receiver.session.source === "rtl-sdr"
+                      ? receiver.session.gainDb === null
+                        ? "automatic gain"
+                        : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
+                      : receiver.session.hackrf
+                        ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
+                        : receiver.session.bladerf
+                          ? `${receiver.session.bladerf.rxInput ?? "RX1"} · ${BLADERF_GAIN_MODES[receiver.session.bladerf.gainMode].label}${receiver.session.bladerf.gainMode === "manual" ? ` · ${receiver.session.bladerf.acceptedGainDb} dB gain readback` : ""}`
+                          : receiver.session.usrpB205
+                            ? "slow-attack AGC; no calibrated gain readback"
+                            : "no hardware gain control"}{" "}
+                    ·{" "}
+                    {isWidebandRate(receiver.session.actualSampleRateHz)
+                      ? "channel DSP rate"
+                      : "effective rate"}{" "}
+                    {(
+                      receiver.session.usrpB205?.effectiveSampleRateHz ??
+                      receiver.session.bladerf?.effectiveSampleRateHz ??
+                      receiver.session.hackrf?.effectiveSampleRateHz ??
+                      (isWidebandRate(receiver.session.actualSampleRateHz)
+                        ? 2_400_000
+                        : receiver.session.actualSampleRateHz)
+                    ).toLocaleString()}{" "}
+                    samples/s
+                    {receiver.session.hackrf &&
+                      ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (hardware validation pending)`}
+                    {receiver.session.bladerf &&
+                      ` · ${bladeRfModelLabel(receiver.session.bladerf.identity.model)} · nominal native ${receiver.session.bladerf.nativeSampleRateHz.toLocaleString()} samples/s SC16 Q11 · RFIC readback ${receiver.session.bladerf.acceptedSampleRateHz.toLocaleString()} samples/s · firmware ${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}, FPGA ${receiver.session.bladerf.identity.fpga.major}.${receiver.session.bladerf.identity.fpga.minor}.${receiver.session.bladerf.identity.fpga.patch}${receiver.session.bladerf.identity.volatileImage ? ` · verified volatile hosted${receiver.session.bladerf.identity.volatileImage.model} v${receiver.session.bladerf.identity.volatileImage.version}` : " · preconfigured FPGA; exact image provenance unknown"} (${receiver.session.bladerf.identity.variantValidation === "experimental" ? "experimental; hardware validation pending" : "hardware validation pending"})`}
+                    {receiver.session.usrpB205 &&
+                      ` · native ${receiver.session.usrpB205.nativeSampleRateHz.toLocaleString()} samples/s CHDR/VRT SC16 LE · requested ${receiver.session.usrpB205.configuration.requested.requestedCenterFrequencyHz.toLocaleString()} Hz, synthesizer-calculated accepted ${receiver.session.usrpB205.configuration.acceptedCenterFrequencyHz.toLocaleString()} Hz · DDC-calculated ${receiver.session.usrpB205.configuration.acceptedSampleRateHz.toLocaleString()} samples/s · AD9361-read-back bandwidth ${receiver.session.usrpB205.configuration.acceptedBandwidthHz.toLocaleString()} Hz · FX3 ${receiver.session.usrpB205.capabilities.firmware.major}.${receiver.session.usrpB205.capabilities.firmware.minor}, FPGA ${receiver.session.usrpB205.capabilities.fpga.compatibilityMajor}.${receiver.session.usrpB205.capabilities.fpga.compatibilityMinor}, USB 3 · RX2/internal · timestamp ${receiver.session.usrpB205.observations.timestampRateValidation} (hardware validation pending)`}
+                  </p>
+                </details>
+            )}
           </section>
         </section>
       </div>
@@ -5349,7 +5436,7 @@ export function ReceiverApp({
                     capability.available === null
                       ? "check pending"
                       : capability.available
-                        ? "check yes"
+                        ? "check available"
                         : "check no"
                   }
                   aria-hidden="true"
@@ -5357,7 +5444,7 @@ export function ReceiverApp({
                   {capability.available === null
                     ? "…"
                     : capability.available
-                      ? "✓"
+                      ? "i"
                       : "!"}
                 </span>
                 <span>
@@ -5760,7 +5847,7 @@ export function ReceiverApp({
                         Spectrum-only mode keeps acquisition and analysis active
                         without audio or decoder output. Analog WBFM, NBFM, AM,
                         USB, LSB and CW are also available, plus DAB/DAB+, 1090
-                        MHz ADS-B, dual-channel AIS and bounded SRD inspection
+                        MHz ADS-B, dual-channel AIS and SRD signal inspection
                         where the selected source and sample rate support them.
                         Reception still depends on your antenna, local signals
                         and RF conditions.

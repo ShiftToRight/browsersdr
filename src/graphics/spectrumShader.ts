@@ -44,6 +44,5 @@ export const spectrumShader = (size: number) => /* wgsl */ `
     return vec4f(display.markerX, select(-0.92, 0.92, index == 1u), 0.0, 1.0);
   }
   @fragment fn spectrumFragment() -> @location(0) vec4f { return vec4f(0.29, 0.86, 1.0, 1.0); }
-  @fragment fn markerFragment() -> @location(0) vec4f { return vec4f(0.94, 0.82, 1.0, 0.92); }
+  @fragment fn markerFragment() -> @location(0) vec4f { return vec4f(0.34, 0.86, 1.0, 0.96); }
 `;
-

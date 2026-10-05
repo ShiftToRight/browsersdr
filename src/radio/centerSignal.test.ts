@@ -116,7 +116,7 @@ describe("one-shot center action", () => {
     measurement.resolve(estimate);
     await task;
     expect(tune).toHaveBeenCalledTimes(1);
-    expect(tune).toHaveBeenCalledWith(100_118_500, expect.any(Number));
+    expect(tune).toHaveBeenCalledWith(100_118_500, expect.any(Number), { autoRecenter: true });
     expect(action.getSnapshot()).toMatchObject({
       measuring: false,
       undoAvailable: true,

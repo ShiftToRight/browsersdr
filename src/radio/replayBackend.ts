@@ -19,6 +19,7 @@ import {
   planChannelTune,
   validateModeSampleRate,
   type ReceiverModeSettings,
+  type ReceiverTuneOptions,
 } from "./receiverConfig";
 import type { ReceiverBackend, ReceiverBackendEvents, ReceiverStartOptions } from "./receiverController";
 import type { SourceSessionMetadata } from "./types";
@@ -177,9 +178,9 @@ export class ReplayBackend implements ReceiverBackend {
   }
   selectDabService(key: string): void { this.dabPlayback?.ensemble.selectService?.(key); }
 
-  async tune(channelFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+  async tune(channelFrequencyHz: number, sessionGeneration: number, options: ReceiverTuneOptions = {}): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     if (!this.metadata) throw new Error("Replay source is not running");
-    const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.metadata.channelBandwidthHz);
+    const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.metadata.channelBandwidthHz, options);
     if (plan.hardwareRetuneRequired) throw new Error("That channel lies outside the recorded capture span; replay cannot retune hardware.");
     this.finishRecording("metadata-change");
     this.sessionGeneration = sessionGeneration;

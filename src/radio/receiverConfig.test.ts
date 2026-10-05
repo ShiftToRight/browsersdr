@@ -64,3 +64,25 @@ describe("receiver mode configuration", () => {
     });
   });
 });
+
+
+describe("independent receiver tuning", () => {
+  it("moves the capture center while retaining the absolute channel and signed offset", () => {
+    expect(planChannelTune(100e6, 100.1e6, 1_024_000, 150_000,
+      { centerFrequencyHz: 100.2e6 })).toMatchObject({
+      hardwareCenterFrequencyHz: 100.2e6, frequencyOffsetHz: -100_000, hardwareRetuneRequired: true,
+    });
+  });
+  it("keeps the complete channel and edge guard inside a fixed window", () => {
+    const edge = 1_024_000 / 2 - 150_000 / 2 - CAPTURE_EDGE_GUARD_HZ;
+    for (const sign of [-1, 1]) {
+      expect(planChannelTune(100e6, 100e6 + sign * edge, 1_024_000, 150_000,
+        { autoRecenter: false }).hardwareRetuneRequired).toBe(false);
+      expect(() => planChannelTune(100e6, 100e6 + sign * (edge + 1), 1_024_000, 150_000,
+        { autoRecenter: false })).toThrow(/complete channel/);
+    }
+    expect(() => planChannelTune(100e6, 100.1e6, 1_024_000, 150_000,
+      { centerFrequencyHz: 101e6 })).toThrow(/selected channel outside/);
+    expect(planChannelTune(100e6, 101e6, 1_024_000, 150_000).hardwareCenterFrequencyHz).toBe(101e6);
+  });
+});

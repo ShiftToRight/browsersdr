@@ -529,9 +529,15 @@ it("keeps RTL raw fan-out, acknowledged centers and route validation through the
   reads.shift()!.resolve(block(101_000_017));
   for (let n = 0; n < 10; n++) await Promise.resolve();
   expect(raw).toEqual([0.25, 0.25]);
+  const centered = await backend.tune(101_000_000, 4, { centerFrequencyHz: 101_200_000 });
+  expect(centered).toMatchObject({
+    hardwareCenterFrequencyHz: 101_200_017,
+    selectedChannelFrequencyHz: 101_000_000,
+  });
+  expect(demodulator.setFrequencyOffset).toHaveBeenLastCalledWith(-200_017);
   const lateTune = deferred<number>();
   source.setCenterFrequency = () => lateTune.promise;
-  const tuning = backend.tune(102_000_000, 4);
+  const tuning = backend.tune(102_000_000, 5);
   const rejected = expect(tuning).rejects.toMatchObject({ name: "AbortError" });
   const disconnecting = backend.disconnect();
   for (const read of reads.splice(0)) read.resolve(block(101_000_017));

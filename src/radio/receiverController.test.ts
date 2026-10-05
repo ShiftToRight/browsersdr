@@ -7,7 +7,7 @@ import {
   type ReceiverStartOptions,
 } from "./receiverController";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
-import type { ReceiverModeSettings } from "./receiverConfig";
+import { planChannelTune, type ReceiverModeSettings } from "./receiverConfig";
 
 const OPTIONS: ReceiverStartOptions = {
   channelFrequencyHz: 100_000_000,
@@ -838,4 +838,68 @@ it("selects only playable discovered DAB stations without an RF tune", async () 
   await controller.stop();
   controller.selectDabService("1:0");
   expect(select).toHaveBeenCalledTimes(1);
+});
+
+
+describe("receiver center and channel policy", () => {
+  function tuningFixture(source: "rtl-sdr" | "replay" = "rtl-sdr") {
+    let metadata = { ...METADATA, source };
+    const stopRecording = vi.fn(() => undefined);
+    const tune = vi.fn<ReceiverBackend["tune"]>(async (channel, _generation, options) => {
+      const plan = planChannelTune(metadata.hardwareCenterFrequencyHz, channel,
+        metadata.actualSampleRateHz, metadata.channelBandwidthHz, options);
+      metadata = { ...metadata, hardwareCenterFrequencyHz: plan.hardwareCenterFrequencyHz,
+        selectedChannelFrequencyHz: channel };
+      return metadata;
+    });
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, async () => metadata, () => undefined), tune, stopRecording,
+    }));
+    return { controller, tune, stopRecording };
+  }
+  it("preserves channel selection for Set center and Center on channel", async () => {
+    const f = tuningFixture();
+    await f.controller.start(OPTIONS);
+    await f.controller.tune(100.1e6);
+    await f.controller.tuneCenter(100.2e6);
+    expect(f.controller.getSnapshot().session).toMatchObject({
+      hardwareCenterFrequencyHz: 100.2e6, selectedChannelFrequencyHz: 100.1e6,
+    });
+    await f.controller.tuneCenter(100.1e6);
+    expect(f.controller.getSnapshot().session).toMatchObject({
+      hardwareCenterFrequencyHz: 100.1e6, selectedChannelFrequencyHz: 100.1e6,
+    });
+  });
+  it("rejects invalid receiver moves without ending reception or a recording", async () => {
+    const f = tuningFixture();
+    await f.controller.start(OPTIONS);
+    const before = f.controller.getSnapshot().sessionGeneration;
+    for (const center of [0, NaN, 101e6]) await f.controller.tuneCenter(center);
+    expect(f.tune).not.toHaveBeenCalled();
+    expect(f.stopRecording).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: before,
+      session: { hardwareCenterFrequencyHz: 100e6, selectedChannelFrequencyHz: 100e6 } });
+  });
+  it("moves the receiver only when the complete channel no longer fits, and honors the lock", async () => {
+    const f = tuningFixture();
+    await f.controller.start(OPTIONS);
+    f.controller.setAutoRecenter(false);
+    await f.controller.tune(100.1e6);
+    expect(f.controller.getSnapshot().session?.hardwareCenterFrequencyHz).toBe(100e6);
+    const calls = f.tune.mock.calls.length;
+    await f.controller.tune(101e6);
+    expect(f.tune).toHaveBeenCalledTimes(calls);
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("Auto re-center") });
+    f.controller.setAutoRecenter(true);
+    await f.controller.tune(101e6);
+    expect(f.controller.getSnapshot().session).toMatchObject({ hardwareCenterFrequencyHz: 101e6, selectedChannelFrequencyHz: 101e6 });
+  });
+  it("keeps replay running when a requested tune is outside the recording", async () => {
+    const f = tuningFixture("replay");
+    await f.controller.start({ ...OPTIONS, source: "replay" });
+    await f.controller.tuneCenter(100.1e6);
+    await f.controller.tune(101e6);
+    expect(f.tune).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("fixed during replay") });
+  });
 });

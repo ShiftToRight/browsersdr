@@ -769,3 +769,18 @@ it.each([0x0109, 0x0110, 0x0113])("captures a channel through HackRF API %i and 
   expect(recording.data.length).toBe(4096);
   expect(f.events.runtimeError).not.toHaveBeenCalled();
 });
+
+
+it("moves HackRF receiver center while preserving channel selection and DSP offset", async () => {
+  const f = fixture();
+  await f.ready(f.backend.start({ ...OPTIONS, modeSettings: defaultModeSettings("USB") }, 1));
+  const setOffset = vi.spyOn(f.demodulator, "setFrequencyOffset");
+  await f.backend.tune(100.1e6, 2);
+  let metadata!: Awaited<ReturnType<typeof f.backend.tune>>;
+  await f.ready(f.backend.tune(100.1e6, 3, { centerFrequencyHz: 100.2e6 }).then(value => { metadata = value; }));
+  expect(metadata).toMatchObject({ hardwareCenterFrequencyHz: 100.2e6, selectedChannelFrequencyHz: 100.1e6 });
+  expect(setOffset).toHaveBeenLastCalledWith(-100_000);
+  const controls = f.device.calls.length;
+  await expect(f.backend.tune(101e6, 4, { autoRecenter: false })).rejects.toThrow(/complete channel/);
+  expect(f.device.calls).toHaveLength(controls);
+});

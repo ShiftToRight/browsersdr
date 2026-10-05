@@ -16,6 +16,7 @@ import {
   normalizeModeSettings,
   planChannelTune,
   type ReceiverModeSettings,
+  type ReceiverTuneOptions,
 } from "./receiverConfig";
 import type {
   ReceiverBackend,
@@ -366,12 +367,13 @@ export class HackrfBackend implements ReceiverBackend {
       ),
     );
   }
-  tune(channelFrequencyHz: number, generation: number): Promise<Metadata> {
+  tune(channelFrequencyHz: number, generation: number, options: ReceiverTuneOptions = {}): Promise<Metadata> {
     return this.reconfigureChannel(
       channelFrequencyHz,
       this.selection?.mode,
       generation,
       false,
+      options,
     );
   }
   scanTune(centerFrequencyHz: number, generation: number): Promise<Metadata> {
@@ -417,11 +419,12 @@ export class HackrfBackend implements ReceiverBackend {
         "HackRF ADS-B reception requires a 1090 MHz hardware center.",
       );
   }
-  private reconfigureChannel(
+  private async reconfigureChannel(
     channel: number,
     settings: ReceiverModeSettings | undefined,
     generation: number,
     scan: boolean,
+    options: ReceiverTuneOptions = {},
   ): Promise<Metadata> {
     // All validation precedes invalidation, so an unsupported mode keeps its route.
     if (!this.receiving || !this.selection || !this.metadata || !settings)
@@ -453,10 +456,17 @@ export class HackrfBackend implements ReceiverBackend {
       channel,
       this.metadata.actualSampleRateHz,
       mode.bandwidthHz,
+      options,
     );
     const mustCenter =
       !isWidebandRate(this.metadata.actualSampleRateHz) &&
       (mode.mode === "DAB" || mode.mode === "ADS-B");
+    const center = scan || (mustCenter && options.centerFrequencyHz === undefined && options.autoRecenter !== false)
+      ? channel : plan.hardwareCenterFrequencyHz;
+    if (mustCenter && center !== channel)
+      return Promise.reject(new Error(`${mode.mode} requires the receiver center to match the channel at this sample rate.`));
+    if (plan.hardwareRetuneRequired)
+      validateSourceFrequency(this.metadata.source, center, this.metadata.actualSampleRateHz);
     const hardware =
       scan ||
       plan.hardwareRetuneRequired ||
@@ -476,7 +486,7 @@ export class HackrfBackend implements ReceiverBackend {
         return this.result();
       }
       this.invalidateSamples();
-      await this.prepare(selection, token, channel);
+      await this.prepare(selection, token, center);
       this.check(token);
       this.selection = selection;
       return this.startConfigured(selection, token);

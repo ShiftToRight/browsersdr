@@ -47,7 +47,7 @@ describe("source-aware controller configuration", () => {
     expect(backend.tune).not.toHaveBeenCalled(); expect(backend.scanTune).not.toHaveBeenCalled();
     expect(backend.stopRecording).not.toHaveBeenCalled();
     await controller.tune(4_300_000_001);
-    expect(backend.tune).toHaveBeenCalledWith(4_300_000_001, 2);
+    expect(backend.tune).toHaveBeenCalledWith(4_300_000_001, 2, { autoRecenter: true });
   });
   it("rejects invalid stages and the legacy scalar before ending the capture", async () => {
     const { controller, backend, start } = setup(); await start();

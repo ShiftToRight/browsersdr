@@ -24,8 +24,8 @@ test("desktop receiver fills the window with all primary panels in view", async 
     for (const selector of [
       ".app-topbar",
       ".acquire-stage",
-      ".demodulate-stage",
       ".graphics-panel",
+      ".demodulate-stage",
       ".receiver-status",
       ".receiver-dock",
     ]) {
@@ -101,7 +101,7 @@ test("short windows retain scrolling and the full available width", async ({
   await expect(record).toBeInViewport();
 });
 
-test("mobile follows acquisition, channel settings, spectrum and output order", async ({
+test("mobile follows the numbered acquire, analyze, demodulate and output order", async ({
   page,
 }) => {
   await page.goto("/");
@@ -109,8 +109,8 @@ test("mobile follows acquisition, channel settings, spectrum and output order", 
     await page.setViewportSize({ width, height: 900 });
     const panels = [
       ".acquire-stage",
-      ".demodulate-stage",
       ".graphics-panel",
+      ".demodulate-stage",
       ".receiver-status",
       ".receiver-dock",
     ];
@@ -153,7 +153,7 @@ test("recording tabs support keyboard navigation and keep replay separate", asyn
   const open = page.getByRole("tab", { name: "Open recording", exact: true });
   await expect(record).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".recording-state")).toContainText(
-    "Ready to record",
+    "Start reception before recording",
   );
   await expect(
     page.getByRole("button", { name: "Download ZIP" }),
@@ -168,4 +168,159 @@ test("recording tabs support keyboard navigation and keep replay separate", asyn
   await page.keyboard.press("Home");
   await expect(record).toBeFocused();
   await expect(page.locator("#record-panel")).toBeVisible();
+});
+
+test("receiver tools support arrow keys, Home and End even when collapsed", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const audio = page.getByRole("tab", { name: "Audio & decode", exact: true });
+  const capture = page.getByRole("tab", {
+    name: "Capture & replay",
+    exact: true,
+  });
+  const session = page.getByRole("tab", { name: "Session", exact: true });
+  await page.getByRole("button", { name: "Collapse", exact: true }).click();
+  await audio.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(capture).toBeFocused();
+  await expect(capture).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#capture-panel")).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(session).toBeFocused();
+  await expect(page.locator("#session-panel")).toBeVisible();
+  await page.keyboard.press("Home");
+  await expect(audio).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(session).toBeFocused();
+  await expect(audio).toHaveAttribute("tabindex", "-1");
+});
+
+test("unavailable actions explain prerequisites and readiness reflects connection", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  const recording = page.getByRole("button", {
+    name: "Start I/Q recording",
+    exact: true,
+  });
+  await expect(recording).toBeDisabled();
+  await recording.locator("..").focus();
+  await expect(
+    page.getByRole("tooltip", { name: "Start reception before recording." }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Explorer", exact: true }).click();
+  await expect(page.locator(".explorer-heading .status-pill")).toHaveText(
+    "Connect receiver",
+  );
+  await page
+    .getByRole("button", { name: "Resume", exact: true })
+    .locator("..")
+    .focus();
+  await expect(
+    page.getByRole("tooltip", { name: "Pause a scan before resuming it." }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+  await expect(page.locator(".receiver-health")).toContainText(
+    "Connect a receiver to record",
+  );
+  await page
+    .getByRole("button", { name: "Create diagnostic report", exact: true })
+    .click();
+  const textarea = page.getByRole("dialog").locator("textarea").first();
+  await expect(textarea).toBeVisible();
+  expect(
+    await textarea.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ).not.toBe("rgb(255, 255, 255)");
+});
+
+test("SRD choices are primary controls and hardware details have one home", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.locator(".demodulate-stage select").first().selectOption("SRD");
+  await expect(page.locator(".mode-primary-controls")).toBeVisible();
+  await expect(page.locator(".mode-primary-controls select")).toHaveCount(2);
+  await expect(page.locator(".channel-advanced-settings")).not.toHaveAttribute(
+    "open",
+  );
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("synthetic");
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Synthetic RF demo running",
+  );
+  await expect(page.locator(".receiver-status details")).toHaveCount(0);
+  await page.getByRole("tab", { name: "Session", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Session details", exact: true }),
+  ).toBeVisible();
+  await page.getByText("Hardware & signal details", { exact: true }).click();
+  await expect(page.locator(".receiver-session-details p")).toBeVisible();
+  await expect(page.locator(".receiver-session-details p")).toContainText(
+    "Precise center",
+  );
+});
+
+test("prerequisite hints stay inside the viewport and dismiss with Escape", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Open recording", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Load files", exact: true })
+    .locator("..")
+    .focus();
+  const hint = page.getByRole("tooltip", {
+    name: "Choose both the I/Q data file and its metadata file.",
+  });
+  await expect(hint).toBeVisible();
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect
+      .poll(async () => {
+        const box = await hint.boundingBox();
+        return Boolean(
+          box &&
+          box.x >= 0 &&
+          box.y >= 0 &&
+          box.x + box.width <= width &&
+          box.y + box.height <= 900,
+        );
+      })
+      .toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(hint).not.toBeVisible();
+});
+
+test("all application views fit narrow screens without page-wide overflow", async ({
+  page,
+}) => {
+  await page.goto("/");
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const view of [
+      "Receiver",
+      "Explorer",
+      "Diagnostics",
+      "Help",
+      "About",
+    ]) {
+      await page.getByRole("tab", { name: view, exact: true }).click();
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+        .toBe(width);
+    }
+  }
 });

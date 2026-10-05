@@ -361,3 +361,18 @@ it.each(["xA4", "xA5", "xA9"] as const)("captures a reduced %s channel with RFIC
   expect(events.runtimeError).not.toHaveBeenCalled();
   await backend.disconnect();
 });
+
+
+it("moves bladeRF receiver center without changing the selected channel", async () => {
+  const { usb, backend, options } = fixture();
+  await backend.connectGranted(options, usb);
+  await backend.start(options, 1);
+  await backend.tune(100.1e6, 2);
+  expect(await backend.tune(100.1e6, 3, { centerFrequencyHz: 100.2e6 })).toMatchObject({
+    hardwareCenterFrequencyHz: 100.2e6, selectedChannelFrequencyHz: 100.1e6,
+  });
+  const before = usb.lifecycle.length;
+  await expect(backend.tune(104e6, 4, { autoRecenter: false })).rejects.toThrow(/complete channel/);
+  expect(usb.lifecycle).toHaveLength(before);
+  await backend.disconnect();
+});

@@ -134,17 +134,19 @@ for (const rate of [9_600_000, 19_200_000])
     await page
       .getByRole("button", { name: "Start receiving", exact: true })
       .click();
-    await expect(page.locator(".receiver-status")).toContainText(
+    await expect(page.locator(".receiver-session-details")).toContainText(
       `native ${rate.toLocaleString("en-US")} samples/s SC16 Q11`,
     );
-    await expect(page.locator(".receiver-status")).toContainText("FPGA 0.15.3");
-    await expect(page.locator(".receiver-status")).toContainText(
+    await expect(page.locator(".receiver-session-details")).toContainText(
+      "FPGA 0.15.3",
+    );
+    await expect(page.locator(".receiver-session-details")).toContainText(
       "preconfigured FPGA",
     );
     await page.getByLabel("Channel frequency", { exact: false }).fill("101");
     await page.getByRole("button", { name: "Tune", exact: true }).click();
-    await expect(page.locator(".receiver-status")).toContainText(
-      "selected 101.000000 MHz",
+    await expect(page.locator(".receiver-session-details")).toContainText(
+      "precise channel 101.000000 MHz",
     );
     await page.getByRole("tab", { name: "Capture & replay" }).click();
     await expect(
@@ -163,7 +165,7 @@ for (const rate of [9_600_000, 19_200_000])
       await page
         .getByRole("button", { name: "Start receiving", exact: true })
         .click();
-      await expect(page.locator(".receiver-status")).toContainText(
+      await expect(page.locator(".receiver-session-details")).toContainText(
         "native 19,200,000 samples/s SC16 Q11",
       );
       await page
@@ -347,7 +349,7 @@ for (const model of ["xA4", "xA5", "xA9"] as const) {
       await installBladeRfUsb(page, { model, firmwareMinor });
       await selectBladeRf(page);
       await page.getByRole("button", { name: "Connect", exact: true }).click();
-      const status = page.locator(".receiver-status");
+      const status = page.locator(".receiver-session-details");
       await expect(status).toContainText(model);
       await expect(status).toContainText("preconfigured FPGA");
       if (model !== "xA4") await expect(status).toContainText(/experimental/i);
@@ -530,13 +532,15 @@ for (const model of ["xA4", "xA5", "xA9"] as const) {
         `hosted${model} v${image.version}`,
       );
       await page.getByRole("button", { name: "Connect", exact: true }).click();
-      await expect(page.locator(".receiver-status")).toContainText(
+      await expect(page.locator(".receiver-session-details")).toContainText(
         `volatile hosted${model} v${image.version}`,
       );
       await page
         .getByRole("button", { name: "Start receiving", exact: true })
         .click();
-      await expect(page.locator(".receiver-status")).toContainText("SC16 Q11");
+      await expect(page.locator(".receiver-session-details")).toContainText(
+        "SC16 Q11",
+      );
       await page
         .getByRole("button", { name: "Stop receiving", exact: true })
         .click();

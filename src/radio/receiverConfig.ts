@@ -135,27 +135,40 @@ export interface TuningPlan {
   usableHalfSpanHz: number;
 }
 
+export interface ReceiverTuneOptions {
+  /** Explicit capture center; the absolute channel frequency is preserved. */
+  centerFrequencyHz?: number;
+  /** Permit moving the capture window when the complete channel no longer fits. */
+  autoRecenter?: boolean;
+}
+
 export function planChannelTune(
   currentCenterFrequencyHz: number,
   channelFrequencyHz: number,
   sampleRateHz: number,
   bandwidthHz: number,
+  options: ReceiverTuneOptions = {},
 ): TuningPlan {
-  if (![currentCenterFrequencyHz, channelFrequencyHz, sampleRateHz, bandwidthHz].every(Number.isFinite)
-    || currentCenterFrequencyHz <= 0 || channelFrequencyHz <= 0 || sampleRateHz <= 0 || bandwidthHz <= 0) {
+  const center = options.centerFrequencyHz ?? currentCenterFrequencyHz;
+  if (![currentCenterFrequencyHz, center, channelFrequencyHz, sampleRateHz, bandwidthHz].every(Number.isFinite)
+    || currentCenterFrequencyHz <= 0 || center <= 0 || channelFrequencyHz <= 0 || sampleRateHz <= 0 || bandwidthHz <= 0) {
     throw new Error("Frequency, sample rate and bandwidth must be finite positive values.");
   }
   const usableHalfSpanHz = sampleRateHz / 2 - bandwidthHz / 2 - captureEdgeGuardHz(sampleRateHz);
   if (usableHalfSpanHz < 0) throw new Error("The channel bandwidth does not fit in the captured sample rate.");
-  const offset = channelFrequencyHz - currentCenterFrequencyHz;
+  const offset = channelFrequencyHz - center;
   if (Math.abs(offset) <= usableHalfSpanHz) {
     return {
-      hardwareCenterFrequencyHz: currentCenterFrequencyHz,
+      hardwareCenterFrequencyHz: center,
       frequencyOffsetHz: offset,
-      hardwareRetuneRequired: false,
+      hardwareRetuneRequired: center !== currentCenterFrequencyHz,
       usableHalfSpanHz,
     };
   }
+  if (options.centerFrequencyHz !== undefined)
+    throw new Error("That receiver center would place the selected channel outside the usable RF window. Choose a closer center or use Center on channel.");
+  if (options.autoRecenter === false)
+    throw new Error("The complete channel does not fit in the usable RF window. Enable Auto re-center or move the receiver center.");
   return {
     hardwareCenterFrequencyHz: channelFrequencyHz,
     frequencyOffsetHz: 0,

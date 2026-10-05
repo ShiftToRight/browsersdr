@@ -228,9 +228,9 @@ describe("USRP B205-mini backend integration", () => {
     worker.samples();
     expect(pipeline.usrpSc16).toEqual([{ bytes: Uint8Array.of(0, 192, 0, 64), frequency: 100_000_000 }]);
     expect(backend.stopRecording()!.data).toEqual(Uint8Array.of(0, 64, 0, 192));
-    await backend.tune(101_000_000, 5);
+    await backend.tune(103_000_000, 5);
     worker.samples();
-    expect(pipeline.usrpSc16.at(-1)?.frequency).toBe(101_000_000);
+    expect(pipeline.usrpSc16.at(-1)?.frequency).toBe(103_000_000);
     await backend.stop();
     const originalWorker = worker;
     for (const sampleRateHz of [9_600_000, 19_200_000, 4_800_000]) {
@@ -246,7 +246,7 @@ describe("USRP B205-mini backend integration", () => {
     }
     await backend.disconnect();
     expect(originalWorker.calls).toEqual([
-      "initialize:FIXTURE", "start:1", "retune:101000000", "stop", "close",
+      "initialize:FIXTURE", "start:1", "retune:103000000", "stop", "close",
     ]);
   });
 
@@ -354,7 +354,8 @@ describe("USRP B205-mini backend integration", () => {
     expect(f.backend.diagnostics.receive).not.toBeNull();
     expect(f.backend.getIngressDiagnostics().budgetMs).toBeCloseTo(0.85125, 5);
     expect(await f.backend.tune(100_100_000, 4)).toMatchObject({
-      usrpB205: { configuration: { acceptedCenterFrequencyHz: 100_100_000 },
+      hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_100_000,
+      usrpB205: { configuration: { acceptedCenterFrequencyHz: 100_000_000 },
         observations: { timestampRateValidation: "observed" } },
     });
   });
@@ -427,5 +428,24 @@ it.each([4_800_000, 9_600_000, 19_200_000] as const)("captures a B205 channel fr
   expect(data.getInt16(recording.data.length - 4, true)).toBeGreaterThan(15000);
   expect(data.getInt16(recording.data.length - 2, true)).toBeLessThan(-7000);
   expect(f.events.runtimeError).not.toHaveBeenCalled();
+  await f.backend.disconnect();
+});
+
+
+it("tunes USRP channels without changing the capture center and moves center independently", async () => {
+  const f = fixture();
+  await f.backend.start(OPTIONS, 1);
+  const calls = f.transport.calls.length;
+  expect(await f.backend.tune(100.1e6, 2)).toMatchObject({
+    hardwareCenterFrequencyHz: 100e6, selectedChannelFrequencyHz: 100.1e6,
+  });
+  expect(f.configurator.retune).not.toHaveBeenCalled();
+  expect(f.transport.calls).toHaveLength(calls);
+  expect(await f.backend.tune(100.1e6, 3, { centerFrequencyHz: 100.2e6 })).toMatchObject({
+    hardwareCenterFrequencyHz: 100.2e6, selectedChannelFrequencyHz: 100.1e6,
+  });
+  expect(f.configurator.retune).toHaveBeenCalledWith(100.2e6, f.transport);
+  await expect(f.backend.tune(104e6, 4, { autoRecenter: false })).rejects.toThrow(/complete channel/);
+  expect(f.configurator.retune).toHaveBeenCalledTimes(1);
   await f.backend.disconnect();
 });

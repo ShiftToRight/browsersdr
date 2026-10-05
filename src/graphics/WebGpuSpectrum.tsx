@@ -1,6 +1,7 @@
+import { ActionButton } from "../ui/ActionButton";
 import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { frequencyForPixel, spectrumEdges } from "../dsp/frequencyScale";
 import { FFT_SIZE } from "../dsp/spectrumMath";
@@ -11,6 +12,7 @@ import { WaterfallHistory } from "./waterfallHistory";
 import { HISTORY_ROWS, spectrumShader } from "./spectrumShader";
 import { defaultDiagnosticRecorder } from "../diagnostics/diagnosticRecorder";
 import { channelPassbands, formatPassbandWidth } from "./channelPassband";
+import { formatFrequencyMHz } from "../ui/frequencyFormat";
 
 export interface SpectrumDisplayStatus {
   kind: "checking" | "ready" | "unsupported" | "error";
@@ -32,7 +34,7 @@ const GPU_BUFFER_STORAGE = 0x80;
 const GAP_LEVEL_DB = -10_000;
 
 function formatFrequency(frequencyHz: number): string {
-  return `${(frequencyHz / 1_000_000).toFixed(3)} MHz`;
+  return `${formatFrequencyMHz(frequencyHz)} MHz`;
 }
 
 function frequencyPercent(
@@ -51,8 +53,10 @@ export function WebGpuSpectrum({
   onOpenAcquire,
   onOpenDiagnostics,
   active = true,
+  tuningControls,
 }: {
   active?: boolean;
+  tuningControls?: ReactNode;
   onStatusChange?: (status: SpectrumDisplayStatus) => void;
   onOpenAcquire?: () => void;
   onOpenDiagnostics?: () => void;
@@ -706,42 +710,51 @@ export function WebGpuSpectrum({
 
   return (
     <section className="graphics-panel" aria-labelledby="graphics-heading">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Analyze</p>
-          <h2 id="graphics-heading">Spectrum & waterfall</h2>
+      <div className="panel-heading spectrum-heading">
+        <div className="stage-heading">
+          <span aria-hidden="true">02</span>
+          <div>
+            <p>Analyze</p>
+            <h2 id="graphics-heading">Spectrum & waterfall</h2>
+          </div>
         </div>
         <span className={`status-pill status-${state.kind}`}>{state.kind}</span>
       </div>
       <div className="spectrum-display">
         <div
           className="spectrum-toolbar"
-          aria-label="Spectrum display controls"
+          aria-label="Spectrum and receiver controls"
         >
-          <span className="display-units">
-            Relative dB <span>· not dBm</span>
-          </span>
-          <div className="spectrum-actions">
-            <button
-              type="button"
-              className="secondary display-action"
-              title="Fit the current spectrum without changing receiver gain"
-              disabled={!hasFrame || state.kind !== "ready"}
-              onClick={autoScale}
-            >
-              Auto scale
-            </button>
-            <button
-              type="button"
-              className="secondary display-action display-pause"
-              aria-pressed={paused}
-              disabled={state.kind !== "ready" || (!hasFrame && !paused)}
-              onClick={updatePaused}
-            >
-              <span aria-hidden="true">{paused ? "▶" : "Ⅱ"}</span>{" "}
-              {paused ? "Resume display" : "Pause display"}
-            </button>
+          <div className="spectrum-display-tools">
+            <span className="display-units">
+              Relative dB <span>· not dBm</span>
+            </span>
+            <div className="spectrum-actions">
+              <ActionButton
+                type="button"
+                className="secondary display-action"
+                title="Fit the current spectrum without changing receiver gain"
+                disabled={!hasFrame || state.kind !== "ready"}
+                disabledReason={state.kind !== "ready" ? "The spectrum display must be available first. Check diagnostics or retry graphics." : "Start reception and wait for spectrum samples."}
+                onClick={autoScale}
+              >
+                Auto scale
+              </ActionButton>
+              <ActionButton
+                type="button"
+                className="secondary display-action display-pause"
+                disabledLabel={paused ? "Resume display" : "Pause display"}
+                aria-pressed={paused}
+                disabled={state.kind !== "ready" || (!hasFrame && !paused)}
+                disabledReason={state.kind !== "ready" ? "The spectrum display must be available first. Check diagnostics or retry graphics." : "Start reception and wait for spectrum samples."}
+                onClick={updatePaused}
+              >
+                <span aria-hidden="true">{paused ? "▶" : "Ⅱ"}</span>{" "}
+                {paused ? "Resume display" : "Pause display"}
+              </ActionButton>
+            </div>
           </div>
+          {tuningControls}
         </div>
         <div className="canvas-frame">
           <canvas
@@ -803,6 +816,7 @@ export function WebGpuSpectrum({
           )}
           {passbandDisplay && hasFrame && state.kind === "ready" ? (
             <>
+              <span className="receiver-center-line" aria-hidden="true" />
               <div className="passband-layer" aria-hidden="true">
                 {passbandDisplay.dimmed.map((segment, index) => (
                   <span
@@ -854,9 +868,9 @@ export function WebGpuSpectrum({
           {session ? (
             <span
               className="marker-label"
-              style={{ left: `${markerPositionPercent}%` }}
+              style={{ left: `clamp(80px, ${markerPositionPercent}%, calc(100% - 80px))` }}
             >
-              Selected {formatFrequency(session.selectedChannelFrequencyHz)}
+              Channel {formatFrequency(session.selectedChannelFrequencyHz)}
             </span>
           ) : null}
         </div>

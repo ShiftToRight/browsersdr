@@ -92,15 +92,15 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "native 1,024,000 samples/s CI8",
   );
   await page
     .getByLabel("Channel frequency", { exact: false })
     .fill("4300.000001");
   await page.getByRole("button", { name: "Tune", exact: true }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
-    "selected 4300.000001 MHz",
+  await expect(page.locator(".receiver-session-details")).toContainText(
+    "precise channel 4300.000001 MHz",
   );
   await page.getByLabel("RX LNA state").selectOption("33");
   await page.getByLabel("RX VGA gain (dB)").fill("62");
@@ -108,7 +108,7 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
     .getByRole("checkbox", { name: "RF amplifier", exact: true })
     .check();
   await page.getByRole("button", { name: "Apply RX settings" }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "accepted LNA code 33, VGA 62 dB, RF amplifier on",
   );
   await page.getByRole("tab", { name: "Capture & replay" }).click();
@@ -171,8 +171,8 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   );
   expect(sigmf.global["core:datatype"]).toBe("ci8");
   await page.getByRole("tab", { name: /Receiver/ }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
-    "selected 4300.000001 MHz",
+  await expect(page.locator(".receiver-session-details")).toContainText(
+    "precise channel 4300.000001 MHz",
   );
   await page
     .locator('select[aria-label="Signal source"]')
@@ -243,10 +243,10 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await expect(page.locator(".receiver-status")).toContainText(
       "Receiving AM",
     );
-    await expect(page.locator(".receiver-status")).toContainText(
+    await expect(page.locator(".receiver-session-details")).toContainText(
       "channel DSP rate 2,400,000",
     );
-    await expect(page.locator(".receiver-status")).toContainText(
+    await expect(page.locator(".receiver-session-details")).toContainText(
       `native ${rate.toLocaleString("en-US")}`,
     );
     await expect(
@@ -273,8 +273,8 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await page.getByRole("tab", { name: "Receiver", exact: true }).click();
     await page.getByLabel("Channel frequency", { exact: false }).fill("101.7");
     await page.getByRole("button", { name: "Tune", exact: true }).click();
-    await expect(page.locator(".receiver-status")).toContainText(
-      "Center 100.000000 MHz · selected 101.700000 MHz",
+    await expect(page.locator(".receiver-session-details")).toContainText(
+      "Precise center 100.000000 MHz · precise channel 101.700000 MHz",
     );
     await page.getByRole("tab", { name: "Capture & replay" }).click();
     await page

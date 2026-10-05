@@ -160,10 +160,10 @@ export function DiagnosticReportCard({
         aria-labelledby="diagnostic-report-heading"
       >
         <div>
-          <p className="eyebrow">Sanitized diagnostics</p>
+          <p className="eyebrow">Error reporting</p>
           <h3 id="diagnostic-report-heading">Help improve BrowserSDR</h3>
           <p>
-            A report contains app errors, recent bounded performance counters,
+            A report contains app errors, recent performance counters,
             browser capabilities, and receiver configuration. It never contains
             recordings, decoded messages, USB serial numbers, IP addresses, or
             audio.
@@ -180,12 +180,12 @@ export function DiagnosticReportCard({
               className="secondary undo-auto-report"
               onClick={() => updateAutoReport(false)}
             >
-              Undo automatic sending
+              Turn off automatic reporting
             </button>
           )}
         </div>
         <div className="diagnostic-report-actions">
-          <button type="button" onClick={() => createReport()}>
+          <button type="button" className="secondary" onClick={() => createReport()}>
             Create diagnostic report
           </button>
           <label className="auto-report-toggle">
@@ -240,7 +240,7 @@ export function DiagnosticReportCard({
               Include exact tuned frequency
             </label>
             <details>
-              <summary>Review sanitized JSON</summary>
+              <summary>Review report data (JSON)</summary>
               <pre>
                 {JSON.stringify(
                   buildDiagnosticReport(recorder, contextRef.current, {

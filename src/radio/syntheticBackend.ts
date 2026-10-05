@@ -4,7 +4,7 @@ import { SyntheticComplexTone, SYNTHETIC_DEMO_SESSION } from "../testing/synthet
 import type { ReceiverBackend, ReceiverBackendEvents, ReceiverStartOptions } from "./receiverController";
 import type { SourceSessionMetadata } from "./types";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
-import { defaultModeSettings, normalizeModeSettings, planChannelTune, type ReceiverModeSettings } from "./receiverConfig";
+import { defaultModeSettings, normalizeModeSettings, planChannelTune, type ReceiverModeSettings, type ReceiverTuneOptions } from "./receiverConfig";
 import { IqRecorder, preferredRecordingStorageMode, type IqRecording, type RecordingStatus } from "./iqRecording";
 
 const DEMO_BLOCK_SIZE = 8192;
@@ -80,13 +80,14 @@ export class SyntheticBackend implements ReceiverBackend {
 
   setVolume(_volume: number): void {}
 
-  tune(channelFrequencyHz: number, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+  tune(channelFrequencyHz: number, sessionGeneration: number, options: ReceiverTuneOptions = {}): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
     if (!this.metadata) return Promise.reject(new Error("Synthetic source is not running"));
     const plan = planChannelTune(
       this.metadata.hardwareCenterFrequencyHz,
       channelFrequencyHz,
       this.metadata.actualSampleRateHz,
       this.metadata.channelBandwidthHz,
+      options,
     );
     this.sessionGeneration = sessionGeneration;
     this.metadata = {

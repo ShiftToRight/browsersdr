@@ -599,13 +599,15 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
     "Loaded 400,000 samples",
   );
   await page.getByRole("button", { name: "Start replay" }).click();
-  await expect(page.locator(".receiver-status")).toContainText(
+  await expect(page.locator(".receiver-session-details")).toContainText(
     "effective rate 2,400,000 samples/s",
   );
 
   for (const mode of ["AIS", "DAB", "ADS-B", "SRD", "AM"] as const) {
     await page.getByLabel("Mode").selectOption(mode);
-    await expect(page.locator(".receiver-status")).toContainText(`· ${mode} ·`);
+    await expect(page.locator(".receiver-session-details")).toContainText(
+      `· ${mode} ·`,
+    );
     if (mode === "SRD") {
       await expect(
         page.locator("label", { hasText: /^\s*Modulation/ }).locator("select"),
@@ -619,11 +621,13 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
       ).toBeVisible();
       await page.locator(".decoder-details > summary").click();
       await expect(
-        page.getByText("Unknown signals remain inspector-only."),
+        page.getByText("Unknown signals appear in the inspector.", {
+          exact: false,
+        }),
       ).toBeVisible();
       const download = page.waitForEvent("download");
       await page
-        .getByRole("button", { name: "Export bounded SRD JSON" })
+        .getByRole("button", { name: "Export device data (JSON)" })
         .click();
       expect((await download).suggestedFilename()).toContain("srd");
     }
@@ -1376,9 +1380,7 @@ test("current-channel capture downloads reduced I/Q and replays the exported pai
   const toggle = page.getByLabel("Capture current channel only");
   await expect(toggle).not.toBeChecked();
   await toggle.check();
-  await expect(page.locator("#record-panel")).toContainText(
-    "Auto: 256,000 samples/s",
-  );
+  await expect(page.locator("#record-panel")).toContainText("Auto: 0.256 MS/s");
   await expect(page.locator("#record-panel")).toContainText("30.72 MB/min");
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   await expect(toggle).toBeDisabled();

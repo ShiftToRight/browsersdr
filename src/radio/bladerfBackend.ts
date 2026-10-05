@@ -20,6 +20,7 @@ import {
   normalizeModeSettings,
   planChannelTune,
   type ReceiverModeSettings,
+  type ReceiverTuneOptions,
 } from "./receiverConfig";
 import type {
   ReceiverBackend,
@@ -355,12 +356,13 @@ export class BladeRfBackend implements ReceiverBackend {
     });
   }
 
-  tune(channelFrequencyHz: number, generation: number): Promise<Metadata> {
+  tune(channelFrequencyHz: number, generation: number, options: ReceiverTuneOptions = {}): Promise<Metadata> {
     return this.reconfigure(
       channelFrequencyHz,
       this.selection?.mode,
       generation,
       false,
+      options,
     );
   }
   scanTune(centerFrequencyHz: number, generation: number): Promise<Metadata> {
@@ -404,11 +406,12 @@ export class BladeRfBackend implements ReceiverBackend {
     return this.result();
   }
 
-  private reconfigure(
+  private async reconfigure(
     channel: number,
     requestedMode: ReceiverModeSettings | undefined,
     generation: number,
     scan: boolean,
+    options: ReceiverTuneOptions = {},
   ): Promise<Metadata> {
     if (!this.receiving || !this.selection || !this.metadata || !requestedMode)
       return Promise.reject(
@@ -442,15 +445,22 @@ export class BladeRfBackend implements ReceiverBackend {
       channel,
       this.metadata.actualSampleRateHz,
       mode.bandwidthHz,
+      options,
     );
     const mustCenter =
       !isWidebandRate(this.metadata.actualSampleRateHz) &&
       (mode.mode === "DAB" || mode.mode === "ADS-B");
+    const center = scan || (mustCenter && options.centerFrequencyHz === undefined && options.autoRecenter !== false)
+      ? channel : plan.hardwareCenterFrequencyHz;
+    if (mustCenter && center !== channel)
+      return Promise.reject(new Error(`${mode.mode} requires the receiver center to match the channel at this sample rate.`));
+    if (plan.hardwareRetuneRequired)
+      validateSourceFrequency(this.metadata.source, center, this.metadata.actualSampleRateHz);
     const hardware = scan || plan.hardwareRetuneRequired || mustCenter;
     if (hardware)
       selection.rxSettings = bladeRfSettingsAtFrequency(
         selection.rxSettings,
-        channel,
+        center,
       );
     return this.run(async (token) => {
       this.finishRecording("metadata-change");
@@ -466,7 +476,7 @@ export class BladeRfBackend implements ReceiverBackend {
       this.pipeline.reset();
       await this.transport.stopRx();
       this.configured = undefined;
-      await this.prepare(selection, token, channel);
+      await this.prepare(selection, token, center);
       this.selection = selection;
       return this.startConfigured(selection, token);
     });

@@ -1,0 +1,65 @@
+import { expect, test } from "@playwright/test";
+
+test("receiver window and channel tune independently, with guarded automatic re-centering", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("synthetic");
+  const channel = page.getByLabel("Channel frequency", { exact: true });
+  await channel.fill("100");
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  const center = page.getByLabel("Receiver center", { exact: true });
+  const auto = page.getByRole("checkbox", { name: "Auto re-center" });
+  await expect(center).toBeEnabled();
+  await expect(center).toHaveValue("100.000");
+  await expect(auto).toBeChecked();
+  await expect(page.locator(".graphics-panel .receiver-tuning")).toBeVisible();
+  await channel.fill("100.1");
+  await channel.press("Enter");
+  await expect(center).toHaveValue("100.000");
+  await expect(channel).toHaveValue("100.100");
+  await expect(page.locator(".marker-label")).toHaveText("Channel 100.100 MHz");
+  await expect(page.locator(".receiver-offset")).toHaveText(
+    "Channel offset +100.000 kHz",
+  );
+  await center.fill("100.2");
+  await center.press("Enter");
+  await expect(center).toHaveValue("100.200");
+  await expect(channel).toHaveValue("100.100");
+  await expect(page.locator(".receiver-offset")).toHaveText(
+    "Channel offset -100.000 kHz",
+  );
+  await center.fill("101");
+  await expect(center).toHaveAttribute("aria-invalid", "true");
+  await expect(
+    page.getByRole("button", { name: "Set center", exact: true }),
+  ).toBeDisabled();
+  await center.press("Escape");
+  await expect(center).toHaveValue("100.200");
+  await page
+    .getByRole("button", { name: "Center on channel", exact: true })
+    .click();
+  await expect(center).toHaveValue("100.100");
+  await auto.uncheck();
+  await channel.fill("101");
+  await channel.press("Enter");
+  await expect(page.locator("#frequency-state")).toContainText(
+    "complete channel does not fit",
+  );
+  await expect(center).toHaveValue("100.100");
+  await expect(auto).toBeEnabled();
+  await auto.check();
+  await channel.press("Enter");
+  await expect(center).toHaveValue("101.000");
+  await expect(page.locator(".receiver-offset")).toHaveText(
+    "Channel offset +0.000 kHz",
+  );
+  await auto.uncheck();
+  await page.reload();
+  await expect(auto).not.toBeChecked();
+  expect(errors).toEqual([]);
+});

@@ -515,7 +515,7 @@ it("exposes licence, driver provenance, and privacy information in About", async
 it("integrates the signal path into the header and progressively reveals mode-aware settings", async () => {
   const rail = document.querySelector(".operational-rail");
   expect(rail?.textContent).toContain("RTL-SDR");
-  expect(rail?.textContent).toContain("100.000000 MHz");
+  expect(rail?.textContent).toContain("100.000 MHz");
   expect(rail?.textContent).toContain("WBFM audio");
   expect(
     document.querySelector(".signal-chain-panel > .panel-heading"),
@@ -847,13 +847,13 @@ it("keeps the live frequency unchanged until the receiver acknowledges tuning", 
     "Applying frequency",
   );
   expect(live.textContent).toContain(
-    (metadata.selectedChannelFrequencyHz / 1_000_000).toFixed(6),
+    (metadata.selectedChannelFrequencyHz / 1_000_000).toFixed(3),
   );
   await act(async () => {
     finish();
     await tuningWait;
   });
-  expect(live.textContent).toContain(nextMhz.toFixed(6));
+  expect(live.textContent).toContain(nextMhz.toFixed(3));
   expect(document.querySelector("#frequency-state")?.textContent).toBe(
     "✓ Tuned",
   );
@@ -866,7 +866,7 @@ it("retains the requested frequency after a receiver tuning failure", async () =
   await change(control("Channel frequency"), String(nextMhz));
   tuneFails = true;
   await click("Tune");
-  expect(control("Channel frequency").value).toBe(String(nextMhz));
+  expect(control("Channel frequency").value).toBe(nextMhz.toFixed(3));
   expect(document.body.textContent).toContain("Tune rejected by receiver");
   expect(document.querySelector("#frequency-state")?.textContent).not.toBe(
     "✓ Tuned",
@@ -943,7 +943,7 @@ it("centers the running channel once and keeps frequency input and Undo correct 
   const measure = vi.spyOn(analysis, "measureSignalCenter").mockImplementation(() => new Promise(resolve => { resolveMeasurement = resolve; }));
   let resolveTune!: () => void;
   tuningWait = new Promise<void>(resolve => { resolveTune = resolve; });
-  await click("Center signal");
+  await click("Fine-tune signal");
   expect(measure).toHaveBeenCalledTimes(1);
   await act(async () => resolveMeasurement({ kind: "estimate", offsetHz: 1500, toleranceHz: 25, message: "OK" }));
   expect(controller.getSnapshot().lifecycle).toBe("tuning");
@@ -951,10 +951,13 @@ it("centers the running channel once and keeps frequency input and Undo correct 
   expect(document.body.textContent).toContain("Applying measured correction");
   await act(async () => resolveTune());
   expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).toBe(100_121_500);
-  expect(control("Channel frequency").value).toBe("100.1215");
+  expect(control("Channel frequency").value).toBe("100.122");
+  await act(async () => control("Channel frequency").focus());
+  expect(control("Channel frequency").value).toBe("100.121500");
+  expect(document.querySelector("#frequency-state")?.textContent).toBe("✓ Tuned");
   expect(document.body.textContent).toContain("Corrected +1,500 Hz");
-  await click("Undo center");
-  expect(control("Channel frequency").value).toBe("100.12");
+  await click("Undo fine-tune");
+  expect(control("Channel frequency").value).toBe("100.120");
   expect(document.body.textContent).toContain("Previous frequency restored");
   expect(measure).toHaveBeenCalledTimes(1);
 });
@@ -963,7 +966,7 @@ it("disables center signal with a pending channel frequency edit", async () => {
   metadata = { ...metadata, hardwareCenterFrequencyHz: 100_000_000, selectedChannelFrequencyHz: 100_120_000, mode: "AM" };
   await change(control("Source"), "hackrf"); await change(control("Mode"), "AM"); await change(control("Channel frequency"), "100.12");
   await click("Connect"); await click("Start receiving");
-  const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent === "Center signal")!;
+  const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent === "Fine-tune signal")!;
   expect(button.disabled).toBe(false);
   await change(control("Channel frequency"), "100.13"); expect(button.disabled).toBe(true);
 });

@@ -1,3 +1,4 @@
+import { ActionButton } from "./ActionButton";
 import { sourceCapabilities } from "../radio/sourceCapabilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
@@ -1077,7 +1078,16 @@ export function SpectrumExplorer({
         <span
           className={`status-pill ${scanning || capturing ? "status-tuning" : runStatus === "completed" ? "status-running" : "status-idle"}`}
         >
-          {surveyStatusLabel(runStatus, scanning, capturing, resumeAvailable)}
+          {runStatus === "idle" && !canScan
+            ? receiver.session
+              ? "Scan unavailable"
+              : "Connect receiver"
+            : surveyStatusLabel(
+                runStatus,
+                scanning,
+                capturing,
+                resumeAvailable,
+              )}
         </span>
       </div>
       <div className="explorer-layout">
@@ -1100,11 +1110,7 @@ export function SpectrumExplorer({
                   : "Connect a receiver in Acquire to scan."}
             </small>
             {!receiver.session && onOpenReceiver && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={onOpenReceiver}
-              >
+              <button type="button" onClick={onOpenReceiver}>
                 Go to Acquire
               </button>
             )}
@@ -1168,8 +1174,19 @@ export function SpectrumExplorer({
               : `about ${estimatedSeconds.toFixed(1)} s`}
           </p>
           <div className="explorer-actions">
-            <button
+            <ActionButton
               type="button"
+              disabledReason={
+                !receiver.session
+                  ? "Connect a receiver in Acquire first."
+                  : scanning || capturing
+                    ? "Wait for the current scan or capture to finish."
+                    : recordingBlocked
+                      ? "Stop recording or finish preparing the capture first."
+                      : !canScan
+                        ? "This receiver is unavailable for scanning. Check its connection and source."
+                        : "Include at least one frequency region."
+              }
               disabled={
                 !canScan ||
                 scanning ||
@@ -1190,9 +1207,14 @@ export function SpectrumExplorer({
                 : scope === "full"
                   ? "Run full survey"
                   : "Run band plan"}
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               type="button"
+              disabledReason={
+                scanning || capturing
+                  ? "Wait for the current scan or capture to finish."
+                  : "Pause a scan before resuming it."
+              }
               className="secondary"
               disabled={!resumeAvailable || scanning || capturing}
               onClick={() =>
@@ -1204,7 +1226,7 @@ export function SpectrumExplorer({
               }
             >
               Resume
-            </button>
+            </ActionButton>
 
             {(scanning || capturing) && (
               <>
@@ -1566,8 +1588,15 @@ export function SpectrumExplorer({
                     Select all
                   </label>
                 )}
-                <button
+                <ActionButton
                   type="button"
+                  disabledReason={
+                    scanning || capturing
+                      ? "Wait for the current scan or capture to finish."
+                      : receiver.lifecycle !== "running"
+                        ? "Start reception before capturing signals."
+                        : "Select at least one detected signal."
+                  }
                   className="secondary"
                   disabled={
                     !records.some((record) => record.selected) ||
@@ -1575,15 +1604,19 @@ export function SpectrumExplorer({
                     capturing ||
                     receiver.lifecycle !== "running"
                   }
+                  disabledLabel="Capture selected signals"
                   onClick={() => void captureSelected()}
                 >
                   Capture selected (
                   {records.filter((record) => record.selected).length})
-                </button>{" "}
+                </ActionButton>{" "}
               </div>
               <div className="survey-actions">
-                <button
+                <ActionButton
                   type="button"
+                  disabledReason={
+                    "Run or pause a survey before exporting its results."
+                  }
                   className="secondary"
                   disabled={!runManifest}
                   onClick={() => {
@@ -1597,9 +1630,12 @@ export function SpectrumExplorer({
                   }}
                 >
                   Manifest JSON
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   type="button"
+                  disabledReason={
+                    "Run or pause a survey before exporting its results."
+                  }
                   className="secondary"
                   disabled={!runManifest}
                   onClick={() => {
@@ -1613,7 +1649,7 @@ export function SpectrumExplorer({
                   }}
                 >
                   Manifest CSV
-                </button>
+                </ActionButton>
               </div>
             </div>
             {records.length ? (

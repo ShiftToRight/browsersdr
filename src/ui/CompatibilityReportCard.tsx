@@ -1,6 +1,7 @@
 import { ReportDialog } from "./ReportDialog";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { formatSampleRate } from "./frequencyFormat";
 import { buildCompatibilityReport } from "../diagnostics/compatibilityReportBuilder";
 import {
   downloadCompatibilityReport,
@@ -134,7 +135,7 @@ export function CompatibilityReportCard({
             </div>
             <div>
               <dt>Sample rate</dt>
-              <dd>{context.sampleRateHz.toLocaleString()} S/s</dd>
+              <dd>{formatSampleRate(context.sampleRateHz)}</dd>
             </div>
             <div>
               <dt>State</dt>
