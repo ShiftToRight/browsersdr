@@ -47,6 +47,7 @@ async function prepareSyntheticSigmf(page: Page): Promise<void> {
 }
 
 interface AtlasMockOptions {
+  deferVerification?: boolean;
   failFirstPart?: boolean;
   gateFirstCapabilities?: Promise<void>;
   expireFirstSession?: boolean;
@@ -62,7 +63,7 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
       byteLength: string;
       sha256: string;
       expectedParts: number;
-      state: "created" | "uploading" | "complete";
+      state: "created" | "uploading" | "completing" | "complete";
       parts: Array<{
         upload_id: string;
         part_number: number;
@@ -170,6 +171,18 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
         return;
       }
       const upload = uploads.get(part[1]!)!;
+      if (!["created", "uploading"].includes(upload.state)) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: "conflict",
+              message: "upload no longer accepts parts",
+            },
+          },
+        });
+        return;
+      }
       const bytes = request.postDataBuffer()!;
       const receipt = {
         upload_id: upload.id,
@@ -186,7 +199,9 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
     }
     const complete = path.match(/^\/uploads\/([^/]+)\/complete$/);
     if (complete) {
-      uploads.get(complete[1]!)!.state = "complete";
+      uploads.get(complete[1]!)!.state = options.deferVerification
+        ? "completing"
+        : "complete";
       await route.fulfill({
         status: 202,
         json: {
@@ -200,8 +215,21 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
       });
       return;
     }
+    if (path.startsWith("/jobs/")) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          id: path.split("/").at(-1),
+          status: options.deferVerification ? "pending" : "complete",
+        },
+      });
+      return;
+    }
     const uploadRead = path.match(/^\/uploads\/([^/]+)$/);
     if (uploadRead) {
+      const upload = uploads.get(uploadRead[1]!)!;
+      if (upload.state === "completing" && !options.deferVerification)
+        upload.state = "complete";
       await route.fulfill({
         status: 200,
         json: uploadView(uploads.get(uploadRead[1]!)!),
@@ -288,7 +316,7 @@ async function installAtlasMock(page: Page, options: AtlasMockOptions = {}) {
     };
   }
 
-  return { recordingCreates: () => recordingCreates };
+  return { uploads, recordingCreates: () => recordingCreates };
 }
 
 async function installWorkerInstrumentation(page: Page): Promise<void> {
@@ -1504,4 +1532,84 @@ test("timed capture stops and keeps synthetic provenance explicit before save", 
   await expect(
     page.getByRole("button", { name: "Stop recording" }),
   ).toHaveCount(0);
+});
+
+test("Atlas requested WBFM bandwidth uses the applied profile and recording preferences survive reload", async ({
+  page,
+}) => {
+  await page.goto(
+    "/?browser-test=1&station_id=10000000-0000-4000-8000-000000000001&station_name=Retest&frequency_hz=100000000&bandwidth_hz=200000&mode=WBFM",
+  );
+  await expect(page.getByLabel("Live signal path")).toBeVisible();
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await expect(
+    page.getByText(
+      /Requested bandwidth 200,000 Hz; applied WBFM profile 150,000 Hz/,
+    ),
+  ).toBeVisible();
+  await page.getByLabel("Recording export format").selectOption("sigmf");
+  await page.getByLabel("Timed capture seconds").fill("1");
+  await page.reload();
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await expect(page.getByLabel("Recording export format")).toHaveValue("sigmf");
+  await expect(page.getByLabel("Timed capture seconds")).toHaveValue("1");
+  await selectSyntheticAndStart(page);
+  await page.getByRole("button", { name: "Start I/Q recording" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Save to SigIntAtlas" }),
+  ).toBeVisible();
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
+  const download = await downloading;
+  const entries = readStoredZip(
+    new Uint8Array(await readFile((await download.path())!)),
+  );
+  const metadata = JSON.parse(
+    new TextDecoder().decode(
+      entries.find((entry) => entry.name.endsWith(".sigmf-meta"))!.data,
+    ),
+  );
+  expect(metadata.global["browsersdr:reception"].candidate.bandwidth_hz).toBe(
+    150000,
+  );
+  const annotation = metadata.annotations[0];
+  expect(
+    annotation["core:freq_upper_edge"] - annotation["core:freq_lower_edge"],
+  ).toBe(150000);
+  expect(
+    (annotation["core:freq_upper_edge"] + annotation["core:freq_lower_edge"]) /
+      2,
+  ).toBe(100000000);
+});
+
+test("SigIntAtlas closed transfers recover after reload without a prepared capture", async ({
+  page,
+}) => {
+  const options: AtlasMockOptions = { deferVerification: true };
+  const atlas = await installAtlasMock(page, options);
+  await gotoApp(page);
+  await prepareSyntheticSigmf(page);
+  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
+  await page
+    .getByRole("button", { name: "Save to SigIntAtlas", exact: true })
+    .click();
+  await expect(page.getByText(/Verification queued/)).toBeVisible();
+  const parts = atlas.uploads.size;
+  expect(parts).toBe(2);
+  await page.reload();
+  options.deferVerification = false;
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await expect(
+    page.getByText("Recover SigIntAtlas transfers", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Recovery user token").fill("t".repeat(32));
+  await page.getByRole("button", { name: /Continue verification for/ }).click();
+  await expect(
+    page.getByText("Recording saved and verified.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open recovered recording" }),
+  ).toHaveAttribute("href", /recordings/);
+  expect(atlas.uploads.size).toBe(parts);
+  expect(atlas.recordingCreates()).toBe(1);
 });

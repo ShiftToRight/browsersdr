@@ -1,3 +1,4 @@
+import { browserReceiptStorage, readAtlasReceipts, saveAtlasReceipt, type AtlasRecoveryReceipt, type ReceiptStorage } from "./atlasRecovery";
 import { AtlasClient, AtlasRequestError, type AtlasAnalysisRun, type AtlasCapabilities, type AtlasUpload } from "./atlasClient";
 import { inspectBrowserSigmfLayoutForAtlas, type AtlasSigmfLayoutCompatibility } from "./atlasSigmfCompatibility";
 import type { PreparedRecordingExport, PreparedRecordingFile } from "./recordingExportFormat";
@@ -15,7 +16,7 @@ interface TransferSource {
 }
 interface HashedSource { source: TransferSource; sha256: string; partHashes: string[]; partSize: number }
 
-export type AtlasTransferState = "idle" | "checking" | "authenticating" | "hashing" | "uploading" | "completing" | "registering" | "importing" | "saved" | "cancelled" | "failed";
+export type AtlasTransferState = "idle" | "waiting" | "checking" | "authenticating" | "hashing" | "uploading" | "completing" | "registering" | "importing" | "saved" | "cancelled" | "failed";
 export interface AtlasTransferSnapshot {
   state: AtlasTransferState;
   generation: number;
@@ -27,6 +28,11 @@ export interface AtlasTransferSnapshot {
   recordingId?: string;
   recordingRevisionId?: string;
   recordingUrl?: string;
+  verificationStage?: "queued" | "active" | "unknown";
+  waitSeconds?: number;
+  recoveryAvailable?: boolean;
+  requestLocked?: boolean;
+  receiptRequest?: Omit<AtlasTransferRequest,"userToken">;
   errorCode?: string;
   message?: string;
 }
@@ -52,6 +58,8 @@ export interface AtlasTransferControllerOptions {
   pollDelay?: (signal: AbortSignal) => Promise<void>;
   maxPolls?: number;
   idFactory?: () => string;
+  receipt?: AtlasRecoveryReceipt;
+  receiptStorage?: ReceiptStorage | null;
 }
 
 export class AtlasTransferFailure extends Error {
@@ -121,7 +129,10 @@ function failure(error: unknown): AtlasTransferFailure {
 }
 
 export class AtlasTransferController {
-  private prepared: PreparedRecordingExport;
+  private prepared: PreparedRecordingExport | undefined;
+  private receipt?: AtlasRecoveryReceipt;
+  private readonly receiptStorage: ReceiptStorage | null;
+  private acceptedByRole = { data: 0, metadata: 0 };
   private readonly client: AtlasClient;
   private readonly pollDelay: NonNullable<AtlasTransferControllerOptions["pollDelay"]>;
   private readonly maxPolls: number;
@@ -137,11 +148,13 @@ export class AtlasTransferController {
   private readonly listeners = new Set<(snapshot: AtlasTransferSnapshot) => void>();
   private snapshot: AtlasTransferSnapshot = { state: "idle", generation: 0, bytesTransferred: "0", totalBytes: "0", activeParts: 0, peakActiveParts: 0, peakBufferedBytes: 0 };
 
-  constructor(prepared: PreparedRecordingExport, options: AtlasTransferControllerOptions) {
+  constructor(prepared: PreparedRecordingExport | undefined, options: AtlasTransferControllerOptions) {
     this.prepared = prepared; this.client = options.client;
+    this.receipt = options.receipt; this.receiptStorage = options.receiptStorage === undefined ? browserReceiptStorage() : options.receiptStorage;
     this.pollDelay = options.pollDelay ?? (signal => new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, 250);
-      signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason ?? new DOMException("Cancelled", "AbortError")); }, { once: true });
+      const abort = () => { clearTimeout(timer); reject(signal.reason ?? new DOMException("Cancelled", "AbortError")); };
+      const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 250);
+      signal.addEventListener("abort", abort, { once: true });
     }));
     this.maxPolls = options.maxPolls ?? 240;
     this.idFactory = options.idFactory ?? (() => crypto.randomUUID());
@@ -163,10 +176,20 @@ export class AtlasTransferController {
     this.update({ state: "checking", generation, errorCode: undefined, message: undefined });
     const active = this.run(request, generation, aborter.signal)
       .then(result => { this.assertGeneration(generation); this.result = result; this.update({ state: "saved", recordingId: result.recordingId, recordingRevisionId: result.recordingRevisionId, recordingUrl: result.recordingUrl }); return result; })
-      .catch(error => { const problem = failure(error); if (generation === this.generation) this.update({ state: problem.code === "cancelled" ? "cancelled" : "failed", errorCode: problem.code, message: problem.message }); throw problem; })
+      .catch(error => { const problem = failure(error); if (generation === this.generation) this.update({ state: problem.code === "reconciliation_timeout" ? "waiting" : problem.code === "cancelled" ? "cancelled" : "failed", errorCode: problem.code, message: problem.message }); throw problem; })
       .finally(() => { if (this.active === active) this.active = undefined; if (this.aborter === aborter) this.aborter = undefined; });
     this.active = active;
     return active;
+  }
+
+  pause(): void {
+    this.aborter?.abort(new DOMException("Monitoring paused; server work and recovery receipt retained", "AbortError"));
+  }
+
+  private persistReceipt(): void {
+    if (!this.receipt) return;
+    this.receipt.uploads = { ...this.uploadIds }; this.receipt.attempts = { ...this.createAttempts };
+    this.update({ recoveryAvailable: saveAtlasReceipt(this.receipt, this.receiptStorage), requestLocked: true, receiptRequest: this.receipt.request });
   }
 
   async cancel(): Promise<void> {
@@ -182,35 +205,60 @@ export class AtlasTransferController {
   async replacePrepared(prepared: PreparedRecordingExport): Promise<void> {
     if (this.result) throw new AtlasTransferFailure("already_saved", "A saved recording cannot be replaced or deleted by a capture replacement.");
     await this.cancel();
-    this.prepared = prepared; this.pairId = this.idFactory(); this.uploadIds = {}; this.createAttempts = { data: 1, metadata: 1 };
+    this.prepared = prepared; this.receipt = undefined; this.acceptedByRole = {data:0,metadata:0}; this.pairId = this.idFactory(); this.uploadIds = {}; this.createAttempts = { data: 1, metadata: 1 };
     this.snapshot = { state: "idle", generation: this.generation, bytesTransferred: "0", totalBytes: "0", activeParts: 0, peakActiveParts: 0, peakBufferedBytes: 0 };
     this.notify();
   }
 
   private async run(request: AtlasTransferRequest, generation: number, signal: AbortSignal): Promise<AtlasTransferResult> {
-    const pair = identifyPair(this.prepared);
-    this.metadataEncodingBytes = pair.metadata.size;
-    this.update({ peakBufferedBytes: Math.max(this.snapshot.peakBufferedBytes, this.metadataEncodingBytes) });
-    const compatibility = inspectBrowserSigmfLayoutForAtlas(pair.metadataValue, pair.data.size);
-    if (!compatibility.archiveEligible) throw new AtlasTransferFailure("archive_ineligible", compatibility.issues.map(item => item.message).join(" "));
+    const pair = this.prepared ? identifyPair(this.prepared) : undefined;
     const capabilities = await this.client.capabilities(signal);
-    this.validateCapabilities(capabilities, pair);
+    if (!capabilities.storage_configured) throw new AtlasTransferFailure("storage_unavailable", "SigIntAtlas storage is not configured.");
+    if (pair) this.validateCapabilities(capabilities, pair);
     const partSize = positiveSafeDecimal(capabilities.upload_part_bytes, "upload_part_bytes");
     const concurrency = Math.max(1, Math.min(CLIENT_MAX_INFLIGHT_PARTS, capabilities.max_inflight_parts));
-    this.assertGeneration(generation);
-    this.update({ state: "authenticating", totalBytes: String(pair.data.size + pair.metadata.size) });
-    await this.client.login(request.userToken, signal);
+    this.update({ state: "authenticating" });
+    const session = await this.client.login(request.userToken, signal);
     this.assertGeneration(generation);
     this.update({ state: "hashing" });
-    const [data, metadata] = await Promise.all([hashSource(pair.data, partSize, signal), hashSource(pair.metadata, partSize, signal)]);
-    this.assertGeneration(generation);
-    const dataUpload = await this.transferFile("data", data, concurrency, generation, signal);
-    const metadataUpload = await this.transferFile("metadata", metadata, concurrency, generation, signal);
+    let data: HashedSource, metadata: HashedSource;
+    if (pair) {
+      [data, metadata] = await Promise.all([hashSource(pair.data, partSize, signal), hashSource(pair.metadata, partSize, signal)]);
+      this.receipt ??= readAtlasReceipts(this.receiptStorage).find(value => value.operatorId === session.operator_id && value.files.data.sha256 === data.sha256 && value.files.metadata.sha256 === metadata.sha256);
+      if (!this.receipt) this.receipt = { version: 1, pairId: this.pairId, operatorId: session.operator_id, startedAt: new Date().toISOString(), request: { title: request.title, sourceKind: request.sourceKind ?? "unknown", analyzeAfterSave: request.analyzeAfterSave ?? false }, files: { data: {name:data.source.name,size:data.source.size,sha256:data.sha256,partSize}, metadata: {name:metadata.source.name,size:metadata.source.size,sha256:metadata.sha256,partSize} }, compatibility: inspectBrowserSigmfLayoutForAtlas(pair.metadataValue, pair.data.size), uploads: {}, attempts: {data:1,metadata:1}, jobs: {} };
+    } else {
+      if (!this.receipt) throw new AtlasTransferFailure("recovery_missing", "No transfer receipt is available.");
+      const plan = (role: "data" | "metadata"): HashedSource => {
+        const file=this.receipt!.files[role];
+        return { source: { name:file.name, mediaType:role === "metadata" ? "application/json" : "application/octet-stream", size:file.size, view:async () => { throw new AtlasTransferFailure("files_required", "Reselect and prepare the exact original SigMF pair to resume missing parts. Server verification can continue without files once both uploads are closed."); } }, sha256:file.sha256, partSize:file.partSize, partHashes:[] };
+      };
+      data=plan("data"); metadata=plan("metadata");
+    }
+    if (this.receipt.operatorId !== session.operator_id) throw new AtlasTransferFailure("recovery_owner", "Sign in with the account that started this transfer.");
+    if (pair && (this.receipt.files.data.partSize !== partSize || this.receipt.files.metadata.partSize !== partSize)) throw new AtlasTransferFailure("upload_conflict", "The negotiated upload layout changed; retain the receipt and recover with the original layout.");
+    this.pairId=this.receipt.pairId; this.uploadIds={...this.receipt.uploads}; this.createAttempts={...this.receipt.attempts};
+    request={...this.receipt.request,userToken:request.userToken};
+    this.metadataEncodingBytes=metadata.source.size;
+    this.acceptedByRole={data:0,metadata:0};
+    this.update({ totalBytes:String(data.source.size+metadata.source.size), bytesTransferred:"0", peakBufferedBytes:Math.max(this.snapshot.peakBufferedBytes,this.metadataEncodingBytes) });
+    this.persistReceipt();
+    if (this.receipt.result) return this.receipt.result;
+    const compatibility=this.receipt.compatibility;
+    if (!compatibility.archiveEligible) throw new AtlasTransferFailure("archive_ineligible", compatibility.issues.map(item=>item.message).join(" "));
+    // Freeze both uploads before waiting on the worker. A queued data verification
+    // must not prevent metadata transfer or a file-free recovery after navigation.
+    let dataUpload = await this.transferFile("data", data, concurrency, generation, signal);
+    let metadataUpload = await this.transferFile("metadata", metadata, concurrency, generation, signal);
+    this.receipt.verificationStartedAt ??= new Date().toISOString(); this.persistReceipt();
+    this.update({ state:"completing" });
+    if (dataUpload.state !== "complete") dataUpload=await this.pollUpload(dataUpload.id, signal, generation, "data");
+    if (metadataUpload.state !== "complete") metadataUpload=await this.pollUpload(metadataUpload.id, signal, generation, "metadata");
     this.update({ state: "registering" });
-    const registration = await this.client.registerRecording({
+    const registration = this.receipt.registrationId ? await this.client.getRegistration(this.receipt.registrationId, signal) : await this.client.registerRecording({
       title: request.title, source_kind: request.sourceKind ?? "unknown", data_upload_id: dataUpload.id,
       metadata_upload_id: metadataUpload.id, raw_iq: null, campaign_id: null,
     }, this.key("recording"), signal);
+    this.receipt.registrationId=registration.id; this.persistReceipt();
     this.assertGeneration(generation);
     this.update({ state: "importing" });
     const imported = await this.pollRegistration(registration, signal, generation);
@@ -220,18 +268,19 @@ export class AtlasTransferController {
     const base = { recordingId: recording.id, recordingRevisionId: recording.current_revision_id!, recordingUrl, dataSha256: data.sha256, metadataSha256: metadata.sha256, compatibility };
     this.update({ state: "saved", recordingId: recording.id, recordingRevisionId: recording.current_revision_id!, recordingUrl });
 
-    if (!request.analyzeAfterSave) return { ...base, analysis: { status: "not-requested" } };
+    const finish = (result: AtlasTransferResult) => { this.receipt!.result=result; this.persistReceipt(); return result; };
+    if (!request.analyzeAfterSave) return finish({ ...base, analysis: { status: "not-requested" } });
     const analysis = capabilities.analysis;
-    if (!compatibility.analysisEligible) return { ...base, analysis: { status: "unavailable", reason: compatibility.issues.map(item => item.message).join(" ") } };
+    if (!compatibility.analysisEligible) return finish({ ...base, analysis: { status: "unavailable", reason: compatibility.issues.map(item => item.message).join(" ") } });
     if (!analysis?.available || !analysis.operations.includes("identify") || !analysis.profiles.includes("offline-bounded-v1")) {
-      return { ...base, analysis: { status: "unavailable", reason: analysis?.unavailable_reason ?? "SigIntAtlas analysis capability is unavailable." } };
+      return finish({ ...base, analysis: { status: "unavailable", reason: analysis?.unavailable_reason ?? "SigIntAtlas analysis capability is unavailable." } });
     }
     try {
       const run = await this.client.scheduleAnalysis(recording.id, { recording_revision_id: recording.current_revision_id, operation: "identify", intent: "full_scan", profile: "offline-bounded-v1", budgets: {} }, this.key("analysis"), signal);
-      return { ...base, analysis: { status: "scheduled", run } };
+      return finish({ ...base, analysis: { status: "scheduled", run } });
     } catch (error) {
       const problem = failure(error);
-      return { ...base, analysis: { status: "failed", reason: problem.message } };
+      return finish({ ...base, analysis: { status: "failed", reason: problem.message } });
     }
   }
 
@@ -245,10 +294,18 @@ export class AtlasTransferController {
 
   private async transferFile(role: "data" | "metadata", plan: HashedSource, concurrency: number, generation: number, signal: AbortSignal): Promise<AtlasUpload> {
     this.update({ state: "uploading" });
+    if (!this.prepared && !this.uploadIds[role]) throw new AtlasTransferFailure("files_required", "The original SigMF pair is needed for the remaining upload; a fresh capture cannot replace it.");
     let upload = await this.resolveUpload(role, plan, signal);
     this.assertUpload(upload, role, plan);
+    if (["completing", "verifying", "complete"].includes(upload.state)) {
+      this.acceptedByRole[role]=plan.source.size; this.update({bytesTransferred:String(this.acceptedByRole.data+this.acceptedByRole.metadata)});
+      return upload;
+    }
+    if (!this.prepared) throw new AtlasTransferFailure("files_required", "This upload still needs original file parts. Prepare the exact original SigMF pair to resume; no replacement capture will be substituted.");
     const received = new Map(upload.parts.map(part => [part.part_number, part]));
     for (const part of upload.parts) this.assertReceipt(part.part_number, part.byte_length, part.sha256, plan);
+    this.acceptedByRole[role]=upload.parts.reduce((sum,part)=>sum+Number(part.byte_length),0);
+    this.update({bytesTransferred:String(this.acceptedByRole.data+this.acceptedByRole.metadata)});
     let nextPart = 1;
     const worker = async () => {
       while (true) {
@@ -264,19 +321,20 @@ export class AtlasTransferController {
           const receipt = await this.client.putPart(upload.id, partNumber, body, plan.partHashes[partNumber - 1]!, signal);
           this.assertGeneration(generation); this.assertReceipt(receipt.part_number, receipt.byte_length, receipt.sha256, plan);
           received.set(partNumber, receipt);
-          this.update({ bytesTransferred: String(BigInt(this.snapshot.bytesTransferred) + BigInt(receipt.byte_length)) });
+          this.acceptedByRole[role]+=Number(receipt.byte_length);
+          this.update({ bytesTransferred: String(this.acceptedByRole.data+this.acceptedByRole.metadata) });
         } finally { this.update({ activeParts: Math.max(0, this.snapshot.activeParts - 1) }); }
       }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, plan.partHashes.length) }, () => worker()));
     this.assertGeneration(generation);
     this.update({ state: "completing" });
-    try { await this.client.completeUpload(upload.id, plan.partHashes.length, plan.sha256, this.key(`${role}-complete-${this.createAttempts[role]}`), signal); }
+    try { const job=await this.client.completeUpload(upload.id, plan.partHashes.length, plan.sha256, this.key(`${role}-complete-${this.createAttempts[role]}`), signal); this.receipt!.jobs[role]=job.id; this.persistReceipt(); }
     catch (error) {
       if (error instanceof AtlasRequestError && [401, 403, 409, 413, 422].includes(error.status)) throw error;
       // Ambiguous completion is resolved from durable upload state below.
     }
-    upload = await this.pollUpload(upload.id, signal, generation);
+    upload = await this.client.getUpload(upload.id, signal);
     this.assertUpload(upload, role, plan);
     return upload;
   }
@@ -288,27 +346,33 @@ export class AtlasTransferController {
       if (!["failed", "aborted", "expired"].includes(existing.state)) return existing;
       this.createAttempts[role] += 1; delete this.uploadIds[role];
     }
+    if (!this.prepared) throw new AtlasTransferFailure("files_required", "Reselect the exact original SigMF pair to replace an expired or aborted upload.");
+    this.persistReceipt();
     const upload = await this.client.createUpload({ role, byte_length: String(plan.source.size), filename: plan.source.name, media_type: plan.source.mediaType, sha256: plan.sha256 }, this.key(`${role}-create-${this.createAttempts[role]}`), signal);
-    this.uploadIds[role] = upload.id;
+    this.uploadIds[role] = upload.id; this.persistReceipt();
     return upload;
   }
 
   private assertUpload(upload: AtlasUpload, role: "data" | "metadata", plan: HashedSource): void {
-    if (upload.role !== role || upload.byte_length !== String(plan.source.size) || Number(upload.part_size) !== plan.partSize || upload.expected_parts !== plan.partHashes.length) throw new AtlasTransferFailure("upload_conflict", "SigIntAtlas upload state does not match the immutable prepared file.");
+    if (upload.role !== role || upload.byte_length !== String(plan.source.size) || Number(upload.part_size) !== plan.partSize || upload.expected_parts !== Math.ceil(plan.source.size/plan.partSize)) throw new AtlasTransferFailure("upload_conflict", "SigIntAtlas upload state does not match the immutable prepared file.");
   }
   private assertReceipt(number: number, byteLength: string, hash: string, plan: HashedSource): void {
     const start = (number - 1) * plan.partSize, expectedLength = Math.min(plan.source.size, start + plan.partSize) - start;
     if (number < 1 || number > plan.partHashes.length || byteLength !== String(expectedLength) || hash !== plan.partHashes[number - 1]) throw new AtlasTransferFailure("conflicting_bytes", "SigIntAtlas already has conflicting bytes for this upload part.");
   }
 
-  private async pollUpload(id: string, signal: AbortSignal, generation: number): Promise<AtlasUpload> {
+  private async pollUpload(id: string, signal: AbortSignal, generation: number, role: "data" | "metadata"): Promise<AtlasUpload> {
     for (let count = 0; count < this.maxPolls; count += 1) {
       const upload = await this.client.getUpload(id, signal); this.assertGeneration(generation);
       if (upload.state === "complete") return upload;
       if (["failed", "aborted", "expired"].includes(upload.state)) throw new AtlasTransferFailure(upload.failure_code ?? `upload_${upload.state}`, `SigIntAtlas upload ended in ${upload.state}.`);
+      let verificationStage: AtlasTransferSnapshot["verificationStage"] = upload.state === "verifying" ? "active" : "unknown";
+      const jobId=this.receipt?.jobs[role];
+      if (jobId) { const job=await this.client.getJob(jobId, signal); verificationStage=job.status === "pending" ? "queued" : job.status === "leased" ? "active" : "unknown"; }
+      this.update({ verificationStage, waitSeconds:Math.max(0,Math.floor((Date.now()-Date.parse(this.receipt!.verificationStartedAt ?? this.receipt!.startedAt))/1000)) });
       await this.pollDelay(signal);
     }
-    throw new AtlasTransferFailure("reconciliation_timeout", "Timed out reconciling SigIntAtlas upload completion.");
+    throw new AtlasTransferFailure("reconciliation_timeout", "Server verification is still pending. The transfer receipt is retained; continue verification without resending closed uploads.");
   }
   private async pollRegistration(initial: Awaited<ReturnType<AtlasClient["registerRecording"]>>, signal: AbortSignal, generation: number) {
     let value = initial;

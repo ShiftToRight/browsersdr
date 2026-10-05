@@ -145,6 +145,7 @@ import {
 import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
 import { AboutPage } from "./ui/AboutPage";
 import { readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
+import { AtlasRecoveryPanel } from "./ui/AtlasRecoveryPanel";
 import { AtlasSavePanel } from "./ui/AtlasSavePanel";
 import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
@@ -2076,7 +2077,7 @@ export function ReceiverApp({
     loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1),
   );
   const [bandwidthHz, setBandwidthHz] = useState(
-    receptionCandidate?.bandwidth_hz ?? initialPreferences.modeSettings.bandwidthHz,
+    normalizeModeSettings({ ...initialPreferences.modeSettings, mode: receptionCandidate?.mode ?? initialPreferences.modeSettings.mode, bandwidthHz: receptionCandidate?.bandwidth_hz ?? initialPreferences.modeSettings.bandwidthHz }).bandwidthHz,
   );
   const [squelch, setSquelch] = useState(
     initialPreferences.modeSettings.squelch,
@@ -2358,7 +2359,7 @@ export function ReceiverApp({
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>();
   const [captureCurrentChannel, setCaptureCurrentChannel] = useState(false);
   const [recordingFormat, setRecordingFormat] =
-    useState<RecordingExportFormat>("browsersdr");
+    useState<RecordingExportFormat>(() => { try { const saved=localStorage.getItem("browsersdr-recording-format"); return saved === "sigmf" ? "sigmf" : "browsersdr"; } catch { return "browsersdr"; } });
   useEffect(() => {
     if (source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT)) setRecordingFormat("sigmf");
   }, [source, loadedReplay]);
@@ -2371,7 +2372,8 @@ export function ReceiverApp({
   const [retainedCapture, setRetainedCapture] =
     useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
   const [previousSavedUrl, setPreviousSavedUrl] = useState<string>();
-  const [captureDuration, setCaptureDuration] = useState(0);
+  const [captureDuration, setCaptureDuration] = useState(() => loadNumber("browsersdr-capture-duration", 0, 0, 300));
+  useEffect(() => { try { localStorage.setItem("browsersdr-recording-format", recordingFormat); localStorage.setItem("browsersdr-capture-duration", String(captureDuration)); } catch { /* Optional preferences. */ } }, [recordingFormat, captureDuration]);
   const captureTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [atlasPrepared, setAtlasPrepared] = useState<PreparedRecordingExport>();
   const [atlasTransferActive, setAtlasTransferActive] = useState(false);
@@ -2565,7 +2567,7 @@ export function ReceiverApp({
       captureTimer.current = undefined;
       if (recording.metadata.reception && receptionCandidate &&
           Math.abs(recording.metadata.selectedChannelFrequencyHz - receptionCandidate.frequency_hz) <= receptionCandidate.bandwidth_hz / 2)
-        recording.metadata.reception.candidate = { ...receptionCandidate };
+        recording.metadata.reception.candidate = { ...receptionCandidate, bandwidth_hz: recording.metadata.channelBandwidthHz };
       setAtlasPrepared(undefined);
       const format = recordingFormatLatch.complete(recordingFormat);
       capacityStopPending.current = false;
@@ -5031,7 +5033,8 @@ export function ReceiverApp({
               </p>}
               <p className="capture-guidance display-note">Stop when the saved range contains a validated PI and complete PS, or keep a provisional candidate if evidence is insufficient. A timed capture stops after approximately the selected wall time; capacity and source changes can stop it earlier.</p>
               {previousSavedUrl && <a href={previousSavedUrl} target="_blank" rel="noreferrer">Previous saved recording</a>}
-              {receptionCandidate && <p>Reception candidate: {receptionCandidate.station_name ?? "Catalog station"} · {(receptionCandidate.frequency_hz/1e6).toFixed(3)} MHz. This link proposes settings; Start remains a manual action.</p>}
+              {receptionCandidate && <p>Reception candidate: {receptionCandidate.station_name ?? "Catalog station"} · {(receptionCandidate.frequency_hz/1e6).toFixed(3)} MHz. This link proposes settings; Start remains a manual action.{receptionCandidate.bandwidth_hz !== bandwidthHz && <> Requested bandwidth {receptionCandidate.bandwidth_hz.toLocaleString()} Hz; applied {mode} profile {bandwidthHz.toLocaleString()} Hz. Plot and saved bounds use the applied profile.</>}</p>}
+              <AtlasRecoveryPanel transferActive={atlasTransferActive} />
               {atlasPrepared && (
                 <AtlasSavePanel
                   prepared={atlasPrepared}

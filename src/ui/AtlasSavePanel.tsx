@@ -16,6 +16,7 @@ interface AtlasTransferControl {
   subscribe(listener: (snapshot: AtlasTransferSnapshot) => void): () => void;
   start(request: AtlasTransferRequest): Promise<AtlasTransferResult>;
   cancel(): Promise<void>;
+  pause?(): void;
 }
 
 export interface AtlasSavePanelProps {
@@ -44,7 +45,7 @@ const ACTIVE_STATES = new Set<AtlasTransferSnapshot["state"]>([
 
 const USER_TOKEN_STORAGE_KEY = "browsersdr.atlas.user-token.v1";
 
-function readUserToken(): string {
+export function readUserToken(): string {
   try {
     const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY) ?? "";
     return token.length >= 32 ? token : "";
@@ -82,6 +83,8 @@ function defaultController(
 
 function stageText(snapshot: AtlasTransferSnapshot): string {
   switch (snapshot.state) {
+    case "waiting":
+      return "Server verification pending. Continue verification resumes the receipt; closed uploads are not sent again.";
     case "idle":
       return "Prepared locally. Not connected; nothing has been sent.";
     case "checking":
@@ -166,13 +169,16 @@ export function AtlasSavePanel({
 
   useEffect(() => {
     mounted.current = true;
-    const unsubscribe = controller.subscribe(setSnapshot);
+    const unsubscribe = controller.subscribe(next => {
+      setSnapshot(next);
+      if (next.receiptRequest) { setTitle(next.receiptRequest.title); setSelectedOrigin(next.receiptRequest.sourceKind ?? "unknown"); setAnalyzeAfterSave(next.receiptRequest.analyzeAfterSave ?? false); }
+    });
     return () => {
       mounted.current = false;
       unsubscribe();
       queueMicrotask(() => {
         if (!mounted.current || currentController.current !== controller)
-          void controller.cancel();
+          if (controller.pause) controller.pause(); else void controller.cancel();
       });
     };
   }, [controller]);
@@ -290,6 +296,8 @@ export function AtlasSavePanel({
             ? "Saved"
             : active
               ? "Connected workflow"
+              : snapshot.state === "waiting"
+                ? "Verification pending"
               : snapshot.state === "failed"
                 ? "Attention needed"
                 : "Local only"}
@@ -303,7 +311,7 @@ export function AtlasSavePanel({
       </p>
       <div className="atlas-save-fields">
         <label>Capture origin
-          <select aria-label="SigIntAtlas capture origin" value={selectedOrigin} disabled={active || saved}
+          <select aria-label="SigIntAtlas capture origin" value={selectedOrigin} disabled={active || saved || snapshot.requestLocked}
             onChange={event => setSelectedOrigin(event.currentTarget.value as typeof selectedOrigin)}>
             <option value="real">Real capture</option><option value="synthetic">Synthetic</option><option value="unknown">Unknown / unresolved replay</option>
           </select>
@@ -313,7 +321,7 @@ export function AtlasSavePanel({
         {preparedReception(prepared)?.decoded_evidence.at(-1) && <dl className="rds-grid">
           <div><dt>Saved PI</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.pi}</dd></div>
           <div><dt>Saved PS</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.ps ?? "Not decoded"}</dd></div>
-          <div><dt>Saved RadioText</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.radio_text ?? "Not decoded"}</dd></div>
+          <div><dt>Saved RadioText (partial)</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.radio_text ?? "Not decoded"}</dd></div>
         </dl>}
         <label>
           Recording title
@@ -321,7 +329,7 @@ export function AtlasSavePanel({
             aria-label="SigIntAtlas recording title"
             value={title}
             maxLength={200}
-            disabled={active || saved}
+            disabled={active || saved || snapshot.requestLocked}
             onChange={(event) => setTitle(event.currentTarget.value)}
           />
         </label>
@@ -341,7 +349,7 @@ export function AtlasSavePanel({
           <input
             type="checkbox"
             checked={analyzeAfterSave}
-            disabled={active || saved}
+            disabled={active || saved || snapshot.requestLocked}
             onChange={(event) =>
               setAnalyzeAfterSave(event.currentTarget.checked)
             }
@@ -363,6 +371,7 @@ export function AtlasSavePanel({
         >
           {snapshot.state === "failed" || snapshot.state === "cancelled"
             ? "Retry save"
+            : snapshot.state === "waiting" ? "Continue verification"
             : "Save to SigIntAtlas"}
         </ActionButton>
         <ActionButton
@@ -409,6 +418,8 @@ export function AtlasSavePanel({
             </span>
           </>
         )}
+        {snapshot.verificationStage && <span>Verification {snapshot.verificationStage === "queued" ? "queued — waiting for the worker; analysis may be using it" : snapshot.verificationStage === "active" ? "active" : "awaiting server reconciliation"} · {snapshot.waitSeconds ?? 0}s elapsed. Bytes are retained on the server.</span>}
+        {snapshot.requestLocked && <span>{snapshot.recoveryAvailable ? "A resumable receipt is saved in this browser. Use Recover SigIntAtlas transfers after reopening." : "Browser receipt storage is unavailable; keep this tab open or download the exact pair for recovery."}</span>}
         {localError && snapshot.state !== "failed" && (
           <span className="atlas-error">{localError}</span>
         )}
@@ -450,7 +461,7 @@ export function AtlasSavePanel({
       <p className="display-note">
         Your token is remembered in this browser for future saves. Use Forget
         token to remove it. Keep this page open until the upload finishes;
-        reloading requires preparing the recording again. You can also download
+        the resumable receipt survives reopening. If missing parts remain, prepare the exact original pair again; a new capture cannot replace it. You can also download
         the recording as a ZIP or separate files.
       </p>
     </section>

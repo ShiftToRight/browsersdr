@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { AtlasClient } from "./atlasClient";
+import { readAtlasReceipts, type ReceiptStorage } from "./atlasRecovery";
 import { AtlasTransferController, AtlasTransferFailure } from "./atlasTransfer";
 import { prepareRecordingExport, type PreparedRecordingExport } from "./recordingExportFormat";
 import { IncrementalSha256, sha256Hex } from "./sha256";
@@ -31,6 +32,10 @@ class FakeAtlas {
   failAfterParts?: number;
   acceptedParts = 0;
   loseCompletionResponses = false;
+  loseRegistrationResponse = false;
+  deferVerification = false;
+  operatorId = "local";
+  registrationKeys: string[] = [];
   conflictingReceipt = false;
   holdParts = false;
   activeParts = 0;
@@ -58,7 +63,7 @@ class FakeAtlas {
         operations: this.analysisAvailable ? ["analyze", "identify"] : [], profiles: this.analysisAvailable ? ["offline-bounded-v1"] : [],
         supported_datatypes: this.analysisAvailable ? ["cu8", "ci16_le", "cf32_le"] : [], unavailable_reason: this.analysisAvailable ? null : "engine offline" },
     });
-    if (path === "/api/v1/session" && method === "POST") { this.loginBodies.push(String(init.body)); return response(201, { operator_id: "local", expires_at: "2030-01-01T00:00:00Z", csrf_token: "c".repeat(43) }); }
+    if (path === "/api/v1/session" && method === "POST") { this.loginBodies.push(String(init.body)); return response(201, { operator_id: this.operatorId, expires_at: "2030-01-01T00:00:00Z", csrf_token: "c".repeat(43) }); }
     if (path === "/api/v1/session" && method === "DELETE") return response(204, null);
     if (this.rejectCreate && path === "/api/v1/uploads" && method === "POST") return error(this.rejectCreate.status, this.rejectCreate.code);
     if (path === "/api/v1/uploads" && method === "POST") {
@@ -84,6 +89,7 @@ class FakeAtlas {
         if (this.failAfterParts !== undefined && this.acceptedParts >= this.failAfterParts) throw new TypeError("network unavailable after accepted part");
         if (this.failPartOnce) { this.failPartOnce = false; throw new TypeError("network interrupted"); }
         const upload = this.uploads.get(partMatch[1]!)!, number = Number(partMatch[2]);
+        if (!["created","uploading"].includes(upload.state)) return error(409,"conflict","upload no longer accepts parts");
         const bytes = new Uint8Array(await (init.body as Blob).arrayBuffer());
         const hash = new Headers(init.headers).get("Content-SHA256")!;
         upload.parts.set(number, { bytes, hash }); upload.state = "uploading";
@@ -95,14 +101,16 @@ class FakeAtlas {
     const completeMatch = /^\/api\/v1\/uploads\/([^/]+)\/complete$/.exec(path);
     if (completeMatch && method === "POST") {
       this.requireAuth(init); const upload = this.uploads.get(completeMatch[1]!)!;
-      upload.state = "complete";
+      upload.state = this.deferVerification ? "completing" : "complete";
       if (this.loseCompletionResponses) throw new TypeError("completion response lost");
       return response(202, { id: "10000000-0000-4000-8000-000000000001", kind: "verify_upload", status: "complete", attempt: 1, failure_code: null, result: {} });
     }
     const abortMatch = /^\/api\/v1\/uploads\/([^/]+)\/abort$/.exec(path);
     if (abortMatch && method === "POST") { const upload = this.uploads.get(abortMatch[1]!)!; upload.state = "aborted"; return response(200, this.uploadView(upload)); }
+    if (path.startsWith("/api/v1/jobs/")) return response(200,{id:path.split("/").at(-1),status:this.deferVerification ? "pending" : "complete"});
     if (path === "/api/v1/recordings" && method === "POST") {
-      this.requireAuth(init); this.registrations += 1;
+      this.requireAuth(init); this.registrations += 1; this.registrationKeys.push(new Headers(init.headers).get("Idempotency-Key")!);
+      if (this.loseRegistrationResponse) throw new TypeError("registration response lost");
       return response(202, { id: "20000000-0000-4000-8000-000000000001", state: "complete", recording_id: "30000000-0000-4000-8000-000000000001", failure_code: null });
     }
     if (path === "/api/v1/recordings/30000000-0000-4000-8000-000000000001") return response(200, { id: "30000000-0000-4000-8000-000000000001", current_revision_id: "40000000-0000-4000-8000-000000000001", import_status: "analysis_ready" });
@@ -122,7 +130,7 @@ class FakeAtlas {
     return { id: upload.id, state: upload.state, role: upload.role, byte_length: String(upload.byteLength),
       accepted_bytes: String(Array.from(upload.parts.values()).reduce((sum, item) => sum + item.bytes.byteLength, 0)),
       part_size: String(upload.partSize), expected_parts: upload.expectedParts, expires_at: "2030-01-01T00:00:00Z", failure_code: null,
-      parts: Array.from(upload.parts, ([part_number, item]) => ({ upload_id: upload.id, part_number, byte_length: String(item.bytes.byteLength), sha256: item.hash, etag: `etag-${part_number}`, accepted_at: "2026-09-27T00:00:00Z" })) };
+      parts: !["created","uploading"].includes(upload.state) ? [] : Array.from(upload.parts, ([part_number, item]) => ({ upload_id: upload.id, part_number, byte_length: String(item.bytes.byteLength), sha256: item.hash, etag: `etag-${part_number}`, accepted_at: "2026-09-27T00:00:00Z" })) };
   }
 }
 
@@ -317,4 +325,64 @@ it("stops hashing at the first chunk boundary after cancellation", async () => {
   await rejected;
   expect(reads).toBe(1);
   expect(atlas.uploads.size).toBe(0);
+});
+
+
+describe("verification recovery after closed upload receipts disappear", () => {
+  function storage(): ReceiptStorage {
+    const values=new Map<string,string>();
+    return {getItem:key=>values.get(key)??null,setItem:(key,value)=>{values.set(key,value);}};
+  }
+  it("freezes both roles, reports queued verification and retries without PUT or overcounted progress", async () => {
+    const atlas=new FakeAtlas(); atlas.deferVerification=true;
+    const transfer=controller(await prepared(),atlas);
+    await expect(transfer.start(request)).rejects.toMatchObject({code:"reconciliation_timeout"});
+    expect(transfer.getSnapshot()).toMatchObject({state:"waiting",verificationStage:"queued"});
+    expect([...atlas.uploads.values()].map(upload=>upload.state)).toEqual(["completing","completing"]);
+    const parts=atlas.acceptedParts;
+    atlas.deferVerification=false;
+    for (const upload of atlas.uploads.values()) upload.state="complete";
+    await expect(transfer.start(request)).resolves.toMatchObject({recordingId:expect.any(String)});
+    expect(atlas.acceptedParts).toBe(parts);
+    expect(transfer.getSnapshot().bytesTransferred).toBe(transfer.getSnapshot().totalBytes);
+    expect(atlas.registrations).toBe(1);
+  });
+  it("recovers both frozen uploads after a browser restart without files or stored credentials", async () => {
+    const atlas=new FakeAtlas(); atlas.deferVerification=true; const receipts=storage();
+    const first=new AtlasTransferController(await prepared(),{client:new AtlasClient({fetch:atlas.fetch}),receiptStorage:receipts,maxPolls:1,pollDelay:async()=>undefined,idFactory:()=>"original-pair"});
+    await expect(first.start(request)).rejects.toMatchObject({code:"reconciliation_timeout"});
+    const receipt=readAtlasReceipts(receipts)[0]!;
+    expect(receipt.uploads.data).toBeTruthy();expect(receipt.uploads.metadata).toBeTruthy();
+    expect(JSON.stringify(receipt)).not.toContain(request.userToken);
+    const parts=atlas.acceptedParts;
+    atlas.deferVerification=false;for(const upload of atlas.uploads.values())upload.state="complete";
+    const restored=new AtlasTransferController(undefined,{client:new AtlasClient({fetch:atlas.fetch}),receipt,receiptStorage:receipts});
+    await expect(restored.start({...request,title:"Changed title is ignored"})).resolves.toMatchObject({recordingId:expect.any(String)});
+    expect(atlas.acceptedParts).toBe(parts);
+    expect(atlas.registrationKeys).toEqual(["browsersdr-original-pair-recording"]);
+    expect(readAtlasReceipts(receipts)[0]!.request.title).toBe(request.title);
+    expect(readAtlasReceipts(receipts)[0]!.result?.recordingId).toBeTruthy();
+  });
+  it("refuses recovery with another account before accessing upload state", async () => {
+    const atlas=new FakeAtlas();atlas.deferVerification=true;const receipts=storage();
+    const first=new AtlasTransferController(await prepared(),{client:new AtlasClient({fetch:atlas.fetch}),receiptStorage:receipts,maxPolls:1,pollDelay:async()=>undefined});
+    await expect(first.start(request)).rejects.toMatchObject({code:"reconciliation_timeout"});
+    const receipt=readAtlasReceipts(receipts)[0]!;atlas.operatorId="other";
+    const restored=new AtlasTransferController(undefined,{client:new AtlasClient({fetch:atlas.fetch}),receipt,receiptStorage:receipts});
+    await expect(restored.start(request)).rejects.toMatchObject({code:"recovery_owner"});
+    expect(atlas.registrations).toBe(0);
+  });
+  it("replays the immutable recording key after a lost registration response and restart", async () => {
+    const atlas=new FakeAtlas(); atlas.loseRegistrationResponse=true; const receipts=storage();
+    const client=new AtlasClient({fetch:atlas.fetch,retryAttempts:1,delay:async()=>undefined});
+    const first=new AtlasTransferController(await prepared(),{client,receiptStorage:receipts,idFactory:()=>"lost-registration",pollDelay:async()=>undefined});
+    await expect(first.start(request)).rejects.toBeInstanceOf(AtlasTransferFailure);
+    const receipt=readAtlasReceipts(receipts)[0]!; const parts=atlas.acceptedParts;
+    atlas.loseRegistrationResponse=false;
+    const restored=new AtlasTransferController(undefined,{client,receipt,receiptStorage:receipts});
+    await expect(restored.start(request)).resolves.toMatchObject({recordingId:expect.any(String)});
+    expect(atlas.acceptedParts).toBe(parts);
+    expect(atlas.registrationKeys).toEqual(["browsersdr-lost-registration-recording","browsersdr-lost-registration-recording"]);
+  });
+
 });
