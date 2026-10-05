@@ -1,3 +1,5 @@
+import { preparedReception } from "../radio/receptionEvidence";
+import { ActionButton } from "./ActionButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AtlasClient, type AtlasAnalysisRun } from "../radio/atlasClient";
 import { atlasWebPageUrl } from "../radio/atlasWebNavigation";
@@ -19,6 +21,7 @@ interface AtlasTransferControl {
 export interface AtlasSavePanelProps {
   prepared: PreparedRecordingExport;
   sourceKind?: "real" | "synthetic" | "unknown";
+  onRecordNext?: (recordingUrl: string) => void;
   onActiveChange?: (active: boolean) => void;
   createController?: (
     prepared: PreparedRecordingExport,
@@ -124,7 +127,7 @@ function analysisText(
     case "success":
       return "Analysis completed. Open the result in SigIntAtlas.";
     case "partial":
-      return "Analysis completed with partial coverage. Open the result for limitations.";
+      return "Analysis completed with limits. Open the result for coverage and identification limitations.";
     case "failure":
       return "The recording is saved, but analysis failed. Open the result for details.";
     case "cancelled":
@@ -137,6 +140,7 @@ function analysisText(
 export function AtlasSavePanel({
   prepared,
   sourceKind = "unknown",
+  onRecordNext,
   onActiveChange,
   createController,
   readAnalysisRun,
@@ -148,6 +152,7 @@ export function AtlasSavePanel({
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot());
   const [userToken, setUserToken] = useState(readUserToken);
   const [storageNotice, setStorageNotice] = useState<string>();
+  const [selectedOrigin, setSelectedOrigin] = useState(preparedReception(prepared)?.source_kind ?? sourceKind);
   const [title, setTitle] = useState(prepared.basename);
   const [analyzeAfterSave, setAnalyzeAfterSave] = useState(false);
   const [result, setResult] = useState<AtlasTransferResult>();
@@ -202,7 +207,7 @@ export function AtlasSavePanel({
       .start({
         userToken,
         title: title.trim(),
-        sourceKind,
+        sourceKind: selectedOrigin,
         analyzeAfterSave,
       })
       .then((next) => {
@@ -292,11 +297,24 @@ export function AtlasSavePanel({
       </div>
       <p>
         Explicit opt-in only. This sends the prepared SigMF data and metadata to
-        the same-origin SigIntAtlas library at <code>/api/v1</code>. It never
+        the SigIntAtlas library at <strong>{location.hostname === "browsersdr.com" || location.hostname === "www.browsersdr.com" ? "sigintatlas.com · Production" : location.origin}</strong>. It never
         uploads surveys, diagnostics, browser location, or future captures
         automatically.
       </p>
       <div className="atlas-save-fields">
+        <label>Capture origin
+          <select aria-label="SigIntAtlas capture origin" value={selectedOrigin} disabled={active || saved}
+            onChange={event => setSelectedOrigin(event.currentTarget.value as typeof selectedOrigin)}>
+            <option value="real">Real capture</option><option value="synthetic">Synthetic</option><option value="unknown">Unknown / unresolved replay</option>
+          </select>
+        </label>
+        {preparedReception(prepared)?.candidate && <p>Intended station: {preparedReception(prepared)?.candidate?.station_name ?? "Catalog candidate"}. Confirm identity in the saved reception form.</p>}
+        <p>Saved RDS evidence: {preparedReception(prepared)?.decoded_evidence.length ?? 0} observations from the saved range. Prior session text is excluded. Exact RDS coverage is currently available for native RTL-SDR captures.</p>
+        {preparedReception(prepared)?.decoded_evidence.at(-1) && <dl className="rds-grid">
+          <div><dt>Saved PI</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.pi}</dd></div>
+          <div><dt>Saved PS</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.ps ?? "Not decoded"}</dd></div>
+          <div><dt>Saved RadioText</dt><dd>{preparedReception(prepared)?.decoded_evidence.at(-1)?.radio_text ?? "Not decoded"}</dd></div>
+        </dl>}
         <label>
           Recording title
           <input
@@ -394,7 +412,14 @@ export function AtlasSavePanel({
       </div>
       {saved && (
         <div className="atlas-saved-links">
-          <a href={atlasWebPageUrl(snapshot.recordingUrl)} target="_blank" rel="noreferrer">
+          <p>Saved · Bytes verified · Identity awaits confirmation · Reception history {selectedOrigin === "real" ? "awaits a dated linked claim" : `excluded: ${selectedOrigin === "unknown" ? "Unknown source kind" : "Synthetic source"}`}</p>
+          <a href={`${atlasWebPageUrl(snapshot.recordingUrl)}?tab=annotations&reception=1`} target="_blank" rel="noreferrer">Confirm reception in SigIntAtlas</a>
+          {onRecordNext && !active && <button type="button" onClick={() => { const url = atlasWebPageUrl(snapshot.recordingUrl); if (url) onRecordNext(url); }}>Record next station</button>}
+          <a
+            href={atlasWebPageUrl(snapshot.recordingUrl)}
+            target="_blank"
+            rel="noreferrer"
+          >
             Open saved recording
           </a>
           {result?.analysis.status === "scheduled" &&

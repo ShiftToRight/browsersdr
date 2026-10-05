@@ -140,6 +140,7 @@ import {
 } from "./ui/DiagnosticReportCard";
 import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
 import { AboutPage } from "./ui/AboutPage";
+import { readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
 import { AtlasSavePanel } from "./ui/AtlasSavePanel";
 import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
@@ -2050,19 +2051,20 @@ export function ReceiverApp({
   const [initialPreferences] = useState(() =>
     loadSourcePreferences(preferenceStorage, initialSource),
   );
-  const [mode, setMode] = useState(initialPreferences.modeSettings.mode);
+  const [receptionCandidate] = useState<ReceptionCandidate | undefined>(() => readReceptionCandidate(location.search));
+  const [mode, setMode] = useState(receptionCandidate?.mode ?? initialPreferences.modeSettings.mode);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
     !["OFF", "WBFM"].includes(initialPreferences.modeSettings.mode),
   );
   const [frequencyMhz, setFrequencyMhz] = useState(
-    initialPreferences.frequencyHz / 1_000_000,
+    (receptionCandidate?.frequency_hz ?? initialPreferences.frequencyHz) / 1_000_000,
   );
   const [volume, setVolume] = useState(() =>
     loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1),
   );
   const [bandwidthHz, setBandwidthHz] = useState(
-    initialPreferences.modeSettings.bandwidthHz,
+    receptionCandidate?.bandwidth_hz ?? initialPreferences.modeSettings.bandwidthHz,
   );
   const [squelch, setSquelch] = useState(
     initialPreferences.modeSettings.squelch,
@@ -2356,6 +2358,9 @@ export function ReceiverApp({
   }, [exportCoordinator]);
   const [retainedCapture, setRetainedCapture] =
     useState<RecordingRetentionSnapshot>(() => exportCoordinator.getSnapshot());
+  const [previousSavedUrl, setPreviousSavedUrl] = useState<string>();
+  const [captureDuration, setCaptureDuration] = useState(0);
+  const captureTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [atlasPrepared, setAtlasPrepared] = useState<PreparedRecordingExport>();
   const [atlasTransferActive, setAtlasTransferActive] = useState(false);
   const [recordingFormatLatch] = useState(() => new RecordingFormatLatch());
@@ -2544,6 +2549,11 @@ export function ReceiverApp({
 
   const retainCompletedRecording = useCallback(
     (recording: IqRecording) => {
+      if (captureTimer.current) clearTimeout(captureTimer.current);
+      captureTimer.current = undefined;
+      if (recording.metadata.reception && receptionCandidate &&
+          Math.abs(recording.metadata.selectedChannelFrequencyHz - receptionCandidate.frequency_hz) <= receptionCandidate.bandwidth_hz / 2)
+        recording.metadata.reception.candidate = { ...receptionCandidate };
       setAtlasPrepared(undefined);
       const format = recordingFormatLatch.complete(recordingFormat);
       capacityStopPending.current = false;
@@ -2551,6 +2561,7 @@ export function ReceiverApp({
       settlePreparation(exportCoordinator.retain(recording, format));
     },
     [
+      receptionCandidate,
       exportCoordinator,
       recordingFormat,
       recordingFormatLatch,
@@ -2946,6 +2957,12 @@ export function ReceiverApp({
     finally { recordingStartPending.current = false; }
     setRecordingStatus(status);
     if (status) {
+      if (captureDuration > 0) captureTimer.current = setTimeout(() => {
+        const completed = controller.stopRecording();
+        controller.takeCompletedRecording();
+        setRecordingStatus(undefined);
+        if (completed) retainCompletedRecording(completed);
+      }, captureDuration * 1000);
       recordingFormatLatch.begin(recordingFormat);
       const destination = status.storage === "opfs"
         ? "private browser storage"
@@ -2958,7 +2975,11 @@ export function ReceiverApp({
     }
   };
 
+  useEffect(() => () => { if (captureTimer.current) clearTimeout(captureTimer.current); }, []);
+
   const stopRecording = () => {
+    if (captureTimer.current) clearTimeout(captureTimer.current);
+    captureTimer.current = undefined;
     const recording = controller.stopRecording();
     setRecordingStatus(undefined);
     if (recording) {
@@ -4964,10 +4985,22 @@ export function ReceiverApp({
                 </p>
                 <p className="recording-message">{recordingMessage}</p>
               </details>
+              <label>Timed capture (seconds; 0 = manual)
+                <input aria-label="Timed capture seconds" type="number" min={0} max={300} step={1} value={captureDuration}
+                  disabled={!!recordingStatus || exportingRecording || atlasTransferActive}
+                  onChange={event => { const value=Number(event.currentTarget.value); if (Number.isFinite(value)) setCaptureDuration(Math.max(0,Math.min(300,value))); }} />
+              </label>
+              {recordingStatus && <p className="capture-evidence-status" role="status">
+                Saved-range RDS: {recordingStatus.receptionEvidence?.at(-1)?.pi ?? "PI not decoded"} · {recordingStatus.receptionEvidence?.at(-1)?.ps ?? "Full PS not decoded"}.
+                {recordingStatus.receptionEvidence?.at(-1)?.ps ? " Identity evidence is available; stop when the desired recording duration is covered." : " Continue until sufficient evidence or retain a provisional candidate."}
+              </p>}
+              <p className="capture-guidance display-note">Stop when the saved range contains a validated PI and complete PS, or keep a provisional candidate if evidence is insufficient. A timed capture stops after approximately the selected wall time; capacity and source changes can stop it earlier.</p>
+              {previousSavedUrl && <a href={previousSavedUrl} target="_blank" rel="noreferrer">Previous saved recording</a>}
+              {receptionCandidate && <p>Reception candidate: {receptionCandidate.station_name ?? "Catalog station"} · {(receptionCandidate.frequency_hz/1e6).toFixed(3)} MHz. This link proposes settings; Start remains a manual action.</p>}
               {atlasPrepared && (
                 <AtlasSavePanel
                   prepared={atlasPrepared}
-                  sourceKind={source === "synthetic" ? "synthetic" : "unknown"}
+                  onRecordNext={(url) => { setPreviousSavedUrl(url); discardPreparedRecording(); setRecordingMessage("Saved recording remains in SigIntAtlas. Tune the next station and start a capture."); }}
                   onActiveChange={setAtlasTransferActive}
                 />
               )}

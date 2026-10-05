@@ -236,3 +236,12 @@ describe("one-shot center action", () => {
     expect(tune).toHaveBeenCalledTimes(1);
   });
 });
+
+it('clears an earlier edge warning after a manual retune',async()=>{
+  const task=action.center();
+  measurement.resolve({kind:'no-signal',message:'Signal near captured edge.'});
+  await task;
+  expect(action.getSnapshot().message).toContain('captured edge');
+  await controller.tune(100_000_000);
+  expect(action.getSnapshot().message).toBe('');
+});

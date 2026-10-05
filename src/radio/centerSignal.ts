@@ -34,6 +34,7 @@ export class CenterSignalAction {
   private unsubscribe?: () => void;
   private applyingTarget?: number;
   private contextKey?: string;
+  private messageRoute?: string;
   constructor(
     private readonly controller: ReceiverController,
     private readonly analysis: Pick<
@@ -47,6 +48,10 @@ export class CenterSignalAction {
     this.unsubscribe ??= this.controller.subscribe(() => {
       const snapshot = this.controller.getSnapshot();
       const session = snapshot.session;
+      if (this.state.message && !this.state.measuring && this.messageRoute &&
+          (!session || routeKey(session) !== this.messageRoute || snapshot.lifecycle !== "running")) {
+        this.publish({ message: "" });
+      }
       if (this.state.measuring) {
         if (this.applyingTarget !== undefined) {
           if (
@@ -93,6 +98,10 @@ export class CenterSignalAction {
     return () => this.listeners.delete(listener);
   };
   private publish(next: Partial<CenterSignalState>): void {
+    if (next.message !== undefined) {
+      const session = this.controller.getSnapshot().session;
+      this.messageRoute = session ? routeKey(session) : undefined;
+    }
     this.state = { ...this.state, ...next };
     for (const listener of this.listeners) listener();
   }

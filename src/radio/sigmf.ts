@@ -13,6 +13,7 @@ export const SIGMF_VERSION = "1.2.6" as const;
 export const SIGMF_RECORDER = "BrowserSDR" as const;
 
 export interface SigmfGlobal {
+  "browsersdr:reception"?: import("./receptionEvidence").ReceptionContext;
   "core:datatype": "cu8" | "ci8" | "ci16_le";
   "core:version": typeof SIGMF_VERSION;
   "core:sample_rate": number;
@@ -272,6 +273,10 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
         "browsersdr:sample_format": recordingSampleFormat(metadata) as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat,
       } : {}),
       ...(metadata.source === "rtl-sdr" ? { "core:hw": "RTL-SDR via WebUSB" } : {}),
+      ...(metadata.reception ? {
+        "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }],
+        "browsersdr:reception": metadata.reception,
+      } : {}),
     },
     captures,
     annotations,

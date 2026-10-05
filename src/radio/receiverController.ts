@@ -1,3 +1,4 @@
+import { captureOrigin } from "./receptionEvidence";
 import { classifyReceiverIssue, type ReceiverIssue } from "./receiverRecovery";
 import type { RecordingOptions } from "./channelRecording";
 import { validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
@@ -905,8 +906,14 @@ export class ReceiverController {
   }
 
   private captureCompletedRecording(recording: IqRecording | undefined): void {
-    if (recording && !this.completedRecording)
+    if (recording && !this.completedRecording) {
+      recording.metadata.reception = {
+        ...recording.metadata.reception,
+        source_kind: captureOrigin(recording.metadata.source),
+        decoded_evidence: recording.metadata.reception?.decoded_evidence ?? [],
+      };
       this.completedRecording = recording;
+    }
   }
 
   private publishRunning(

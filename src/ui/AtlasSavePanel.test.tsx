@@ -181,10 +181,10 @@ it("requires an explicit action and renders verified save plus partial analysis 
   });
 
   await vi.waitFor(() =>
-    expect(host.textContent).toContain("completed with partial coverage"),
+    expect(host.textContent).toContain("completed with limits"),
   );
   expect(
-    host.querySelector<HTMLAnchorElement>('a[href^="/#/recordings/"]')
+    host.querySelector<HTMLAnchorElement>('a[href^="/#/recordings/"]:not([href*="reception=1"])')
       ?.textContent,
   ).toBe("Open saved recording");
   expect(
@@ -372,4 +372,24 @@ it("survives Strict Mode effect replay, then cancels on unmount and ignores a la
   expect(activeController.cancel.mock.calls.length).toBeGreaterThanOrEqual(1);
   await act(async () => pending.at(-1)?.(SAVED_RESULT));
   expect(host.textContent).toBe("");
+});
+
+it('shows prepared hardware origin, allows explicit correction, and advances only after verified save',async()=>{
+  const controller=new FakeController();
+  const next=vi.fn();
+  const prepared={...PREPARED,files:[PREPARED.files[0],{...PREPARED.files[1],contents:JSON.stringify({global:{'browsersdr:reception':{source_kind:'real',decoded_evidence:[]}}})}]} as PreparedRecordingExport;
+  controller.start.mockImplementation(async request=>{
+    expect(request.sourceKind).toBe('real');
+    controller.emit({state:'saved',recordingUrl:SAVED_RESULT.recordingUrl});
+    return {...SAVED_RESULT,analysis:{status:'not-requested'}};
+  });
+  await act(async()=>root.render(<AtlasSavePanel prepared={prepared} sourceKind="synthetic" onRecordNext={next} createController={()=>controller}/>));
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="SigIntAtlas capture origin"]')?.value).toBe('real');
+  expect(host.textContent).not.toContain('Record next station');
+  await setInput(input('SigIntAtlas user token'),'t'.repeat(32));
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Save to SigIntAtlas')!.click());
+  await vi.waitFor(()=>expect(host.textContent).toContain('Bytes verified'));
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Record next station')!.click());
+  expect(next).toHaveBeenCalledWith(SAVED_RESULT.recordingUrl);
+  expect(host.querySelector<HTMLAnchorElement>('a[href*="reception=1"]')?.href).toContain('tab=annotations&reception=1');
 });

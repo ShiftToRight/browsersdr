@@ -960,9 +960,9 @@ test("recording preparation retries and the paired archive remains truthfully do
   await expect(page.locator(".recording-message")).toContainText(
     "do not confirm that the file was stored",
   );
-  await expect(page.locator("#record-panel > .display-note")).toContainText(
-    "Download requested",
-  );
+  await expect(
+    page.locator("#record-panel > .display-note:not(.capture-guidance)"),
+  ).toContainText("Download requested");
 
   const repeatedDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download ZIP" }).click();
@@ -996,7 +996,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   await expect(
     page.getByText("Analysis is queued or running in SigIntAtlas."),
   ).toBeVisible();
-  await expect(page.getByText(/completed with partial coverage/)).toBeVisible();
+  await expect(page.getByText(/completed with limits/)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open saved recording" }),
   ).toHaveAttribute("href", /#\/recordings\/30000000-/);
@@ -1004,6 +1004,10 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
     page.getByRole("link", { name: "Open analysis result" }),
   ).toHaveAttribute("href", /#\/runs\/50000000-/);
   expect(atlas.recordingCreates()).toBe(1);
+  await expect(
+    page.getByRole("link", { name: "Confirm reception in SigIntAtlas" }),
+  ).toHaveAttribute("href", /reception=1/);
+
   await expect(
     page.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
@@ -1019,6 +1023,13 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   ).toBe(true);
 
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("button", { name: "Record next station" }).click();
+  await expect(
+    page.getByRole("link", { name: "Previous saved recording" }),
+  ).toHaveAttribute("href", /#\/recordings\/30000000-/);
+  await expect(
+    page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+  ).toBeEnabled();
   await page.reload();
   await prepareSyntheticSigmf(page);
   await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue(
@@ -1470,5 +1481,25 @@ test("unwritable browser recording storage falls back to bounded memory and expo
   expect((await readFile(path!)).byteLength).toBeGreaterThan(1024);
   await expect(
     page.getByText(/The recording remains in browser storage/),
+  ).toHaveCount(0);
+});
+
+test("timed capture stops and keeps synthetic provenance explicit before save", async ({
+  page,
+}) => {
+  await gotoApp(page);
+  await selectSyntheticAndStart(page);
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await page.getByLabel("Recording export format").selectOption("sigmf");
+  await page.getByLabel("Timed capture seconds").fill("1");
+  await page.getByRole("button", { name: "Start I/Q recording" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Save to SigIntAtlas" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("SigIntAtlas capture origin")).toHaveValue(
+    "synthetic",
+  );
+  await expect(
+    page.getByRole("button", { name: "Stop recording" }),
   ).toHaveCount(0);
 });

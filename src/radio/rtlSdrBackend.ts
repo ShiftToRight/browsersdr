@@ -1,3 +1,4 @@
+import { SavedCaptureRds } from "./savedCaptureRds";
 import type { RecordingOptions } from "./channelRecording";
 import {
   LiveReceiverPipeline,
@@ -183,6 +184,7 @@ export class RtlSdrBackend implements ReceiverBackend {
   private metadata?: Omit<SourceSessionMetadata, "sessionGeneration">;
   private modeSettings = defaultModeSettings("WBFM");
   private recorder?: IqRecorder;
+  private captureRds?: SavedCaptureRds;
   private receiving = false;
   private disconnected = false;
   private disconnectRequested = false;
@@ -210,10 +212,10 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.pipeline = new LiveReceiverPipeline(events, analysis, dependencies);
     this.provider =
       dependencies.createSourceProvider?.(events.permissionGranted, (data) =>
-        this.recorder?.appendCu8(data),
+        this.appendCaptureBytes(data),
       ) ??
       new TrackedRtlProvider(events.permissionGranted, (data) =>
-        this.recorder?.appendCu8(data),
+        this.appendCaptureBytes(data),
       );
     this.metadata = {
       source: "rtl-sdr",
@@ -263,12 +265,12 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.provider =
       this.dependencies.createSourceProvider?.(
         this.events.permissionGranted,
-        (data) => this.recorder?.appendCu8(data),
+        (data) => this.appendCaptureBytes(data),
         device,
       ) ??
       new TrackedRtlProvider(
         this.events.permissionGranted,
-        (data) => this.recorder?.appendCu8(data),
+        (data) => this.appendCaptureBytes(data),
         device,
       );
     return this.connect(options);
@@ -472,6 +474,16 @@ export class RtlSdrBackend implements ReceiverBackend {
     return configured;
   }
 
+  private appendCaptureBytes(input: ArrayBuffer | Uint8Array): void {
+    const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+    const recorder = this.recorder;
+    if (!recorder) return;
+    const before = recorder.status().sampleCount;
+    recorder.appendCu8(data);
+    const accepted = recorder.status().sampleCount - before;
+    if (accepted > 0) this.captureRds?.accept(data.subarray(0, accepted * 2));
+  }
+
   startRecording(
     survey?: import("./fieldSurvey").SurveyCaptureContext,
     options?: RecordingOptions,
@@ -488,6 +500,9 @@ export class RtlSdrBackend implements ReceiverBackend {
       preferredRecordingStorageMode(options?.storageMode),
       options,
     );
+    this.captureRds = !options?.captureCurrentChannel && this.metadata.mode === "WBFM"
+      ? new SavedCaptureRds(this.metadata.hardwareCenterFrequencyHz, this.metadata.actualSampleRateHz, this.metadata.selectedChannelFrequencyHz)
+      : undefined;
     return this.recorder.status();
   }
   stopRecording(
@@ -495,10 +510,14 @@ export class RtlSdrBackend implements ReceiverBackend {
   ): IqRecording | undefined {
     const recorder = this.recorder;
     this.recorder = undefined;
-    return recorder?.finish(reason);
+    const recording = recorder?.finish(reason);
+    if (recording) recording.metadata.reception = {source_kind:"real", decoded_evidence:this.captureRds?.finish(recording.metadata.sampleCount) ?? []};
+    this.captureRds = undefined;
+    return recording;
   }
   getRecordingStatus(): RecordingStatus | undefined {
-    return this.recorder?.status();
+    const status = this.recorder?.status();
+    return status ? {...status, receptionEvidence:this.captureRds?.finish(status.sampleCount)} : undefined;
   }
 
   private async configureConnectedSource(

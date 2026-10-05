@@ -49,6 +49,7 @@ export interface Cu8RecordingFormat {
 export type RecordingSampleFormat = Cu8RecordingFormat | Ci8RecordingFormat | UsrpB205Ci16RecordingFormat | BladeRfSc16RecordingFormat | ChannelRecordingFormat;
 export const CU8_FORMAT: Cu8RecordingFormat = { format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: 2, normalization: CU8_NORMALIZATION };
 interface CommonRecordingMetadata {
+  reception?: import("./receptionEvidence").ReceptionContext;
   sampleRateHz: number;
   centerFrequencyHz: number;
   selectedChannelFrequencyHz: number;
@@ -139,6 +140,7 @@ export function preferredRecordingStorageMode(override?: RecordingStorageMode): 
 }
 
 export interface RecordingStatus {
+  receptionEvidence?: import("./receptionEvidence").DecodedIdentityEvidence[];
   state: "idle" | "recording" | "capacity-reached";
   bytes: number;
   maxBytes: number;
