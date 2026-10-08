@@ -4765,3 +4765,6 @@ button:has(> .app-icon) {
 .share-link-label textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: .78rem; }
 .settings-share-dialog > button { min-height: 40px; }
 @media (pointer: coarse) { .settings-share-dialog button { min-height: 44px; } }
+
+/* Renderer choice remains inside the optional display controls. */
+.display-controls select { grid-column: 1 / -1; width: 100%; min-width: 0; }

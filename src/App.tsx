@@ -890,7 +890,7 @@ function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
       available: webGpu,
       detail: webGpu
         ? "API detected; device check below"
-        : "Use a WebGPU-compatible browser",
+        : "Canvas2D compatibility display will be used",
     },
     {
       label: "WebAssembly DSP",
@@ -5944,7 +5944,8 @@ export function ReceiverApp({
                       <p>
                         Use a current desktop Google Chrome build. Hardware
                         access needs WebUSB, and the spectrum benefits from
-                        WebGPU. Open Diagnostics to see what this browser
+                        WebGPU, with a Canvas2D fallback when it is unavailable.
+                        Open Diagnostics to see what this browser
                         exposes before troubleshooting the radio.
                       </p>
                     </details>
@@ -6053,7 +6054,7 @@ export function ReceiverApp({
                       <span>03</span>
                       <div>
                         <strong>Check Diagnostics</strong>
-                        <p>Confirm secure context, WebUSB and WebGPU.</p>
+                        <p>Confirm secure context and WebUSB; spectrum also works without WebGPU.</p>
                       </div>
                     </li>
                   </ol>

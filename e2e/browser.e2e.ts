@@ -1370,15 +1370,20 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
     Reflect.deleteProperty(Navigator.prototype, "gpu");
   });
   await gotoApp(page);
-  await expect(page.locator(".graphics-panel")).toContainText(
-    "WebGPU is unavailable",
+  await expect(
+    page.getByLabel("Canvas2D RF spectrum and waterfall plot; click to tune", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
+    "ready",
   );
   await openApplicationView(page, "Diagnostics");
   await expect(
     page
       .getByText("WebGPU API", { exact: true })
       .locator("xpath=following-sibling::small"),
-  ).toContainText("Use a WebGPU-compatible browser");
+  ).toContainText("Canvas2D compatibility display will be used");
 });
 
 test("diagnostic reports default on and remain reviewable and downloadable", async ({

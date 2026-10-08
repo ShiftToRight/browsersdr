@@ -19,11 +19,15 @@ test("header keeps receiver, spectrum, and recording states independent across v
   await page.getByRole("button", { name: "Start demo", exact: true }).click();
   await expect(status).toContainText("Synthetic RF demo running");
   await expect(page.locator(".operational-rail")).toHaveCount(0);
-  await expect(status.locator("summary").first()).toContainText("1 issue");
+  await expect(
+    page.getByRole("button", { name: "Auto scale", exact: true }),
+  ).toBeEnabled();
+  await expect(status.locator("summary").first()).toContainText("Receiving");
+  await expect(status.locator("summary").first()).not.toContainText("issue");
   await status.locator("summary").first().click();
   await expect(
     status.getByRole("button", { name: /^Spectrum:/ }),
-  ).toContainText("Unavailable");
+  ).toContainText("Working");
   await expect(status.getByRole("button", { name: /^Audio:/ })).toContainText(
     "Not used",
   );

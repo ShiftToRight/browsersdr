@@ -1,4 +1,5 @@
 import { ActionButton } from "../ui/ActionButton";
+import { CanvasSpectrum } from "./canvasSpectrum";
 import { SpectrumInfo } from "./SpectrumInfo";
 import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
@@ -100,6 +101,8 @@ export function WebGpuSpectrum({
     setRangeDb(displaySettings.rangeDb);
     renderRef.current();
   }, [displaySettings]);
+  const [renderer, setRenderer] = useState<"webgpu" | "canvas2d">("webgpu");
+  const [fallbackReason, setFallbackReason] = useState("");
   const [gpuAttempt, setGpuAttempt] = useState(0);
   const latestBinsRef = useRef<Float32Array | undefined>(undefined);
   const lastFrameAt = useRef(0);
@@ -131,9 +134,9 @@ export function WebGpuSpectrum({
     renderRef.current();
   };
   const retryGraphics = () => {
-    setState({ kind: "checking", message: "Recreating the GPU display…" });
+    setState({ kind: "checking", message: "Recreating the spectrum display…" });
     setDisplayedGeneration(undefined);
-    setFftSize(requestedFftSize ?? FFT_SIZE);
+    setFftSize(renderer === "canvas2d" ? FFT_SIZE : requestedFftSize ?? FFT_SIZE);
     setGpuAttempt((attempt) => attempt + 1);
   };
   const labels = useMemo(
@@ -207,6 +210,8 @@ export function WebGpuSpectrum({
   useEffect(() => {
     let disposed = false;
     const size = fftSize;
+    let canvasDisplay: CanvasSpectrum | undefined;
+    let animationFrame: number | undefined;
     let fft: GpuSpectrum | undefined;
     let gpuTap: GpuAnalysisTap | undefined;
     let detachGpuTap: (() => void) | undefined;
@@ -268,6 +273,33 @@ export function WebGpuSpectrum({
       device.queue.writeBuffer(displayBuffer, 0, data);
     };
     const render = () => {
+      if (disposed || !visibleRef.current) return;
+      if (canvasDisplay) {
+        const drawCanvas = () => {
+          if (disposed || !visibleRef.current) return;
+          try {
+            canvasDisplay?.render(
+              cssWidth, cssHeight, Math.max(1, window.devicePixelRatio || 1),
+              floorRef.current, rangeRef.current,
+            );
+          } catch (error) {
+            setState({ kind: "error", message: `Canvas2D rendering failed: ${error instanceof Error ? error.message : String(error)}` });
+          }
+        };
+        // Commit the final accepted frame before Pause returns. A pending RAF
+        // must not change the frozen plot later or disagree with Auto scale.
+        if (pausedRef.current) {
+          if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
+          animationFrame = undefined;
+          drawCanvas();
+        } else if (animationFrame === undefined) {
+          animationFrame = requestAnimationFrame(() => {
+            animationFrame = undefined;
+            drawCanvas();
+          });
+        }
+        return;
+      }
       const canvas = canvasRef.current;
       if (
         !visibleRef.current ||
@@ -280,6 +312,7 @@ export function WebGpuSpectrum({
         !bindGroup
       )
         return;
+      try {
       const ratio = Math.max(1, window.devicePixelRatio || 1);
       const width = Math.min(
         Math.max(1, Math.round(cssWidth * ratio)),
@@ -316,10 +349,26 @@ export function WebGpuSpectrum({
       }
       pass.end();
       device.queue.submit([encoder.finish()]);
+      } catch (error) {
+        defaultDiagnosticRecorder.record({ area: "graphics", code: "WEBGPU_RENDER_FAILURE", severity: "warning", operation: "render", error });
+        fallbackToCanvas(`WebGPU rendering failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     };
     renderRef.current = render;
 
     const unsubscribe = pipeline.subscribe((frame, frames) => {
+      if (disposed || frame.sessionGeneration !== (sessionRef.current?.sessionGeneration ?? 0)) return;
+      if (canvasDisplay) {
+        if (pausedRef.current) return;
+        const accepted = canvasDisplay.accept(frames);
+        if (!accepted) return;
+        latestBinsRef.current = accepted.bins;
+        lastFrameAt.current = performance.now();
+        setDisplayedGeneration(accepted.sessionGeneration);
+        render();
+        if (shouldUpdateStatus()) setState({ kind: "ready", message: `Canvas2D live · ${(accepted.sampleIndex / accepted.sampleRateHz).toFixed(2)} s on source sample clock · ${fallbackReason}` });
+        return;
+      }
       if (!pausedRef.current) latestBinsRef.current = frame.bins;
       if (
         fft ||
@@ -358,31 +407,36 @@ export function WebGpuSpectrum({
     async function initialize() {
       const initializationStarted = performance.now();
       const canvas = canvasRef.current;
-      if (!canvas || !("gpu" in navigator)) {
-        if (requestedFftSize)
-          setFftMessage(
-            "Experimental GPU FFT unavailable; CPU/WASM analysis continues.",
-          );
-        setState({
-          kind: "unsupported",
-          message:
-            "WebGPU is unavailable. Use a current WebGPU-compatible desktop browser.",
-        });
+      if (renderer === "canvas2d") {
+        try {
+          if (!canvas) throw new Error("Spectrum canvas is unavailable.");
+          const canvasContext = canvas.getContext("2d", { alpha: false });
+          if (!canvasContext) throw new Error("This browser could not create a Canvas2D context.");
+          canvasDisplay = new CanvasSpectrum(canvasContext, sessionRef.current?.sessionGeneration ?? 0);
+          cssWidth = canvas.clientWidth;
+          cssHeight = canvas.clientHeight;
+          resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries.find((item) => item.target === canvas);
+            if (entry) { cssWidth = entry.contentRect.width; cssHeight = entry.contentRect.height; }
+            render();
+          });
+          resizeObserver.observe(canvas);
+          render();
+          setState({ kind: "ready", message: `Canvas2D ready · waiting for RF I/Q spectrum frames · ${fallbackReason}` });
+        } catch (error) {
+          setState({ kind: "error", message: `Canvas2D display unavailable: ${error instanceof Error ? error.message : String(error)}` });
+        }
+        return;
+      }
+      if (!canvas || !("gpu" in navigator) || !navigator.gpu) {
+        fallbackToCanvas("WebGPU is unavailable.");
         return;
       }
       try {
         const adapter = await navigator.gpu.requestAdapter();
         if (disposed) return;
         if (!adapter) {
-          if (requestedFftSize)
-            setFftMessage(
-              "Experimental GPU FFT unavailable; CPU/WASM analysis continues.",
-            );
-          setState({
-            kind: "unsupported",
-            message:
-              "No compatible GPU adapter was found. Check browser GPU settings and graphics drivers.",
-          });
+          fallbackToCanvas("No compatible GPU adapter was found.");
           return;
         }
         device = await adapter.requestDevice();
@@ -402,10 +456,7 @@ export function WebGpuSpectrum({
             safeMessage: info.reason || "unknown",
             autoSubmitEligible: true,
           });
-          setState({
-            kind: "error",
-            message: `The GPU device was lost (${info.reason || "unknown"}). Select Retry graphics; if loss repeats, check browser GPU settings and drivers.`,
-          });
+          fallbackToCanvas(`The GPU device was lost (${info.reason || "unknown"}).`);
         });
         device.addEventListener("uncapturederror", onUncapturedError);
         context = canvas.getContext("webgpu") as GPUCanvasContext | null;
@@ -608,6 +659,7 @@ export function WebGpuSpectrum({
         resizeObserver.observe(canvas);
         document.addEventListener("visibilitychange", renderWhenVisible);
         render();
+        if (gpuFailed || disposed) return;
         setState({
           kind: "ready",
           message: "WebGPU ready · waiting for RF I/Q spectrum frames",
@@ -622,10 +674,7 @@ export function WebGpuSpectrum({
             operation: "initialize",
             error,
           });
-          setState({
-            kind: "error",
-            message: `WebGPU initialization failed: ${error instanceof Error ? error.message : String(error)}`,
-          });
+          fallbackToCanvas(`WebGPU initialization failed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -634,8 +683,20 @@ export function WebGpuSpectrum({
       disposed = true;
       renderRef.current = () => undefined;
       unsubscribe();
+      if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
       releaseGpuResources(true);
     };
+    function fallbackToCanvas(reason: string): void {
+      if (disposed) return;
+      releaseGpuResources(true);
+      setFallbackReason(reason);
+      setRenderer("canvas2d");
+      setFftSize(FFT_SIZE);
+      latestBinsRef.current = undefined;
+      setDisplayedGeneration(undefined);
+      setState({ kind: "checking", message: "Preparing Canvas2D spectrum display…" });
+      if (requestedFftSize) setFftMessage("Experimental GPU FFT unavailable; using CPU/WASM spectrum frames.");
+    }
     function disableFft(error: unknown): void {
       if (disposed || gpuFailed) return;
       gpuTap?.dispose();
@@ -660,10 +721,7 @@ export function WebGpuSpectrum({
           error: event.error,
           autoSubmitEligible: true,
         });
-        setState({
-          kind: "error",
-          message: `WebGPU rendering error: ${event.error.message}. Select Retry graphics to recreate GPU resources.`,
-        });
+        fallbackToCanvas(`WebGPU rendering error: ${event.error.message}`);
       }
     }
     function releaseGpuResources(destroyDevice: boolean): void {
@@ -698,6 +756,8 @@ export function WebGpuSpectrum({
     }
   }, [
     gpuAttempt,
+    renderer,
+    fallbackReason,
     pipeline,
     requestedFftSize,
     session?.sessionGeneration,
@@ -770,10 +830,11 @@ export function WebGpuSpectrum({
         </div>
         <div className="canvas-frame">
           <canvas
+            key={renderer}
             ref={canvasRef}
             width={960}
             height={560}
-            aria-label="WebGPU RF spectrum and waterfall plot; click to tune"
+            aria-label={`${renderer === "canvas2d" ? "Canvas2D" : "WebGPU"} RF spectrum and waterfall plot; click to tune`}
             onClick={tuneFromClick}
           />
           {(state.kind !== "ready" || !hasFrame) && (
@@ -899,9 +960,10 @@ export function WebGpuSpectrum({
           <SpectrumInfo>
             <p className="diagnostic-message">{state.message}</p>
             {fftMessage && <p className="display-note">{fftMessage}</p>}
+            {renderer === "canvas2d" && <p className="display-note">Compatibility display · CPU/WASM analysis · peak-preserving 1024-column waterfall.</p>}
             <p className="display-note">
               {fftSize}-point Hann FFT ·{" "}
-              {requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
+              {renderer === "webgpu" && requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
               · circular 240-row sample-clock history · relative dB (not dBm) ·
               click plot to retune · background tabs may resume with marked gaps
             </p>
@@ -911,6 +973,23 @@ export function WebGpuSpectrum({
       <details className="display-settings">
         <summary>Display settings</summary>
         <div className="display-controls">
+          <label>
+            Display renderer
+            <select aria-label="Display renderer" value={renderer} onChange={(event) => {
+              const next = event.currentTarget.value as "webgpu" | "canvas2d";
+              setRenderer(next);
+              setFallbackReason(next === "canvas2d" ? "Compatibility display selected." : "");
+              setFftSize(next === "canvas2d" ? FFT_SIZE : requestedFftSize ?? FFT_SIZE);
+              setDisplayedGeneration(undefined);
+              latestBinsRef.current = undefined;
+              setState({ kind: "checking", message: "Preparing spectrum display…" });
+              setFftMessage(next === "canvas2d" && requestedFftSize ? "Experimental GPU FFT unavailable; using CPU/WASM spectrum frames." : "");
+              setGpuAttempt(attempt => attempt + 1);
+            }}>
+              <option value="webgpu">WebGPU (automatic fallback)</option>
+              <option value="canvas2d">Compatibility (Canvas2D)</option>
+            </select>
+          </label>
           <label>
             Floor <output>{floorDb} dB</output>
             <input
