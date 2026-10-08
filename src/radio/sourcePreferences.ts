@@ -72,7 +72,7 @@ export function sourceModeUnavailableReason(source: SourceKind, mode: ReceiverMo
   try {
     if (fixedRate) validateModeSampleRate(mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(rate) : rate);
     else if (compatibleSourceRate(source, mode, rate) === undefined) throw new Error("No compatible rate");
-  } catch { return source === "replay" ? "Requires a recording with a compatible sample rate" : "Requires a compatible sample rate; stop reception to change it"; }
+  } catch { return source === "replay" ? "Requires a recording with a compatible sample rate" : "Requires a compatible sample rate"; }
 }
 
 
