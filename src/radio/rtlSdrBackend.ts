@@ -26,6 +26,7 @@ import {
   type RecordingStatus,
 } from "./iqRecording";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
+import { validateSourceRoute } from "./sourceCapabilities";
 import {
   defaultModeSettings,
   normalizeGain,
@@ -195,6 +196,10 @@ export class RtlSdrBackend implements ReceiverBackend {
   private startTask?: Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   private disconnectTask?: Promise<void>;
   private streamTasks: Promise<void>[] = [];
+  private receptionEpoch = 0;
+  private rateTask?: Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  private gainTask?: Promise<number | null>;
+  private stopTask?: Promise<void>;
   private streamFailureReported = false;
   private sourceUnavailable = false;
 
@@ -322,21 +327,97 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.receiving = true;
     this.streamFailureReported = false;
     this.sourceUnavailable = false;
-    const samplesPerBuffer =
-      512 * Math.ceil(metadata.actualSampleRateHz / BUFFERS_PER_SECOND / 512);
-    this.streamTasks = Array.from({ length: PARALLEL_TRANSFERS }, () =>
-      this.pump(samplesPerBuffer),
-    );
+    this.launchTransfers(metadata.actualSampleRateHz);
     return metadata;
   }
 
-  async stop(): Promise<void> {
-    if (!this.receiving) return;
+  private launchTransfers(sampleRateHz: number): void {
+    const epoch = ++this.receptionEpoch;
+    const samplesPerBuffer =
+      512 * Math.ceil(sampleRateHz / BUFFERS_PER_SECOND / 512);
+    this.streamTasks = Array.from({ length: PARALLEL_TRANSFERS }, () =>
+      this.pump(samplesPerBuffer, epoch),
+    );
+  }
+
+  stop(): Promise<void> {
+    if (this.stopTask) return this.stopTask;
+    if (!this.receiving && !this.rateTask && this.streamTasks.length === 0) return Promise.resolve();
     this.receiving = false;
-    await Promise.allSettled(this.streamTasks);
-    this.streamTasks = [];
-    this.pipeline.reset();
-    await this.pipeline.suspend().catch(() => undefined);
+    ++this.receptionEpoch;
+    const pendingRate = this.rateTask;
+    const task = (async () => {
+      try {
+        if (pendingRate) await pendingRate;
+      } catch (error) {
+        if (!(this.disconnectRequested && error instanceof DOMException && error.name === "AbortError")) throw error;
+      } finally {
+        await Promise.allSettled(this.streamTasks);
+        this.streamTasks = [];
+        this.pipeline.reset();
+        await this.pipeline.suspend().catch(() => undefined);
+      }
+    })().finally(() => { if (this.stopTask === task) this.stopTask = undefined; });
+    this.stopTask = task;
+    return task;
+  }
+
+  configureSampleRate(
+    sampleRateHz: number,
+    sessionGeneration: number,
+    options: ReceiverTuneOptions = {},
+  ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    if (this.rateTask) return Promise.reject(new Error("A sample-rate change is already in progress."));
+    const source = this.source;
+    const previous = this.metadata;
+    if (!source || !previous || !this.receiving || this.disconnectRequested || this.stopTask)
+      return Promise.reject(new Error("RTL-SDR reception must be running before changing rate."));
+    // Reject incompatible modes/passbands without disturbing the running stream.
+    try {
+      validateSourceRoute("rtl-sdr", this.modeSettings, sampleRateHz, previous.selectedChannelFrequencyHz);
+      planChannelTune(previous.hardwareCenterFrequencyHz, previous.selectedChannelFrequencyHz,
+        sampleRateHz, previous.channelBandwidthHz, options);
+    } catch (error) { return Promise.reject(error); }
+    if (this.recorder) return Promise.reject(new Error("Finish the recording before changing rate."));
+    this.receiving = false;
+    const epoch = ++this.receptionEpoch;
+    const oldTransfers = this.streamTasks;
+    const pendingGain = this.gainTask;
+    const task = (async () => {
+      // Drain all reads before register writes. Their bytes cannot reach DSP or a
+      // new recording. Do not suspend/resume Web Audio or reopen the USB source.
+      await Promise.all([...oldTransfers, ...(pendingGain ? [pendingGain] : [])]);
+      this.throwIfDisconnectRequested();
+      const actualSampleRateHz = await source.setSampleRate(sampleRateHz);
+      this.throwIfDisconnectRequested();
+      validateSourceRoute("rtl-sdr", this.modeSettings, actualSampleRateHz, previous.selectedChannelFrequencyHz);
+      const plan = planChannelTune(previous.hardwareCenterFrequencyHz, previous.selectedChannelFrequencyHz,
+        actualSampleRateHz, previous.channelBandwidthHz, options);
+      const hardwareCenterFrequencyHz = plan.hardwareRetuneRequired
+        ? await source.setCenterFrequency(plan.hardwareCenterFrequencyHz)
+        : previous.hardwareCenterFrequencyHz;
+      this.throwIfDisconnectRequested();
+      planChannelTune(hardwareCenterFrequencyHz, previous.selectedChannelFrequencyHz,
+        actualSampleRateHz, previous.channelBandwidthHz, { autoRecenter: false });
+      await source.startReceiving(); // Flush old-rate device FIFO before new reads.
+      this.throwIfDisconnectRequested();
+      this.metadata = { ...previous, requestedSampleRateHz: sampleRateHz,
+        actualSampleRateHz, hardwareCenterFrequencyHz, gainDb: this.metadata!.gainDb };
+      this.sessionGeneration = sessionGeneration;
+      if (epoch === this.receptionEpoch) {
+        this.pipeline.retune({ ...this.metadata, sessionGeneration });
+        this.pipeline.markDiscontinuity(null);
+        this.receiving = true;
+        this.streamFailureReported = false;
+        this.launchTransfers(actualSampleRateHz);
+      }
+      return this.metadata;
+    })().catch((error: unknown) => {
+      if (isDeviceUnavailableError(error)) this.sourceUnavailable = true;
+      throw error;
+    }).finally(() => { if (this.rateTask === task) this.rateTask = undefined; });
+    this.rateTask = task;
+    return task;
   }
 
   async disconnect(): Promise<void> {
@@ -468,14 +549,20 @@ export class RtlSdrBackend implements ReceiverBackend {
     return { ...this.metadata };
   }
 
-  async setGain(gainDb: number | null): Promise<number | null> {
-    if (!this.source) throw new Error("RTL-SDR source is not connected");
-    const configured = (await this.source.setParameter(
-      "gain",
-      normalizeGain(gainDb),
-    )) as number | null;
-    if (this.metadata) this.metadata = { ...this.metadata, gainDb: configured };
-    return configured;
+  setGain(gainDb: number | null): Promise<number | null> {
+    const source = this.source;
+    if (!source || this.rateTask || this.disconnectRequested)
+      return Promise.reject(new Error("Wait for the RTL-SDR operation to finish before changing gain."));
+    const pendingGain = this.gainTask;
+    const task = (async () => {
+      if (pendingGain) await pendingGain;
+      this.throwIfDisconnectRequested();
+      const configured = await source.setParameter("gain", normalizeGain(gainDb)) as number | null;
+      if (this.metadata) this.metadata = { ...this.metadata, gainDb: configured };
+      return configured;
+    })().finally(() => { if (this.gainTask === task) this.gainTask = undefined; });
+    this.gainTask = task;
+    return task;
   }
 
   private appendCaptureBytes(input: ArrayBuffer | Uint8Array): void {
@@ -585,6 +672,8 @@ export class RtlSdrBackend implements ReceiverBackend {
     const pendingStartup: Promise<unknown>[] = [];
     if (this.connectTask) pendingStartup.push(this.connectTask);
     if (this.startTask) pendingStartup.push(this.startTask);
+    if (this.rateTask) pendingStartup.push(this.rateTask);
+    if (this.gainTask) pendingStartup.push(this.gainTask);
     await Promise.allSettled(pendingStartup);
     const stopResult = await stopResultTask;
 
@@ -619,21 +708,22 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.disconnected = true;
   }
 
-  private async pump(samplesPerBuffer: number): Promise<void> {
-    while (this.receiving) {
+  private async pump(samplesPerBuffer: number, epoch: number): Promise<void> {
+    while (this.receiving && epoch === this.receptionEpoch) {
       let block: Awaited<ReturnType<SignalSource["readSamples"]>>;
       try {
         block = await this.source!.readSamples(samplesPerBuffer);
       } catch (error) {
         if (isDeviceUnavailableError(error)) this.sourceUnavailable = true;
-        if (this.receiving && !this.streamFailureReported) {
+        if (this.rateTask && epoch !== this.receptionEpoch && !this.disconnectRequested) throw error;
+        if (epoch === this.receptionEpoch && !this.streamFailureReported) {
           this.streamFailureReported = true;
           this.events.runtimeError(error);
         }
         return;
       }
       try {
-        if (this.receiving) this.pipeline.receiveSamples(block);
+        if (this.receiving && epoch === this.receptionEpoch) this.pipeline.receiveSamples(block);
       } catch (error) {
         if (this.receiving && !this.streamFailureReported) {
           this.streamFailureReported = true;

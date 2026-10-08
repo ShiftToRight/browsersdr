@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test } from "@playwright/test";
 
 test("desktop receiver fills the window with all primary panels in view", async ({
@@ -6,11 +7,16 @@ test("desktop receiver fills the window with all primary panels in view", async 
   await page.goto("/");
   for (const viewport of [
     { width: 1181, height: 900 },
+    { width: 1366, height: 768 },
     { width: 1440, height: 900 },
     { width: 1920, height: 1080 },
     { width: 2560, height: 1440 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.getByLabel("Settings", { exact: true }).click();
+    await page.getByRole("button", { name: "Reset view", exact: true }).click();
+    if (viewport.height < 900)
+      await page.getByRole("button", { name: "Compact", exact: true }).click();
     await expect
       .poll(() =>
         page.evaluate(() => ({
@@ -33,12 +39,31 @@ test("desktop receiver fills the window with all primary panels in view", async 
       const box = (await panel.boundingBox())!;
       expect(box.y, selector).toBeGreaterThanOrEqual(0);
       expect(box.y + box.height, selector).toBeLessThanOrEqual(viewport.height);
-      expect(
-        await panel.evaluate(
-          (element) => element.scrollHeight <= element.clientHeight + 1,
-        ),
-        selector,
-      ).toBe(true);
+      // Optional settings may scroll internally; primary controls stay in view.
+      if (
+        selector === ".acquire-stage" ||
+        selector === ".demodulate-stage" ||
+        selector === ".graphics-panel"
+      ) {
+        expect(
+          await panel.evaluate(
+            (element) => getComputedStyle(element).overflowY,
+          ),
+        ).toBe("auto");
+        if (selector !== ".graphics-panel")
+          await expect(panel.locator("select").first()).toBeInViewport();
+        else
+          expect(
+            (await panel.locator("canvas").boundingBox())!.height,
+          ).toBeGreaterThanOrEqual(viewport.height < 900 ? 120 : 1);
+      } else {
+        expect(
+          await panel.evaluate(
+            (element) => element.scrollHeight <= element.clientHeight + 1,
+          ),
+          selector,
+        ).toBe(true);
+      }
     }
   }
   const plot = page.locator(".graphics-panel canvas");
@@ -63,14 +88,16 @@ test("desktop keeps expanded tools reachable and other views in document flow", 
   await record.scrollIntoViewIfNeeded();
   await expect(record).toBeInViewport();
   await page.locator(".display-settings > summary").click();
-  await page.locator(".spectrum-details > summary").click();
-  const details = page.locator(".spectrum-details .display-note").last();
+  await page
+    .getByRole("button", { name: "FFT & display details", exact: true })
+    .click();
+  const details = page.locator(".spectrum-info-panel .display-note").last();
   await details.scrollIntoViewIfNeeded();
   await expect(details).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
     900,
   );
-  await page.getByRole("tab", { name: "Help", exact: true }).click();
+  await openApplicationView(page, "Help");
   await expect(page.locator(".app-shell")).not.toHaveClass(
     /receiver-workspace/,
   );
@@ -84,7 +111,7 @@ test("desktop keeps expanded tools reachable and other views in document flow", 
   );
 });
 
-test("short windows retain scrolling and the full available width", async ({
+test("laptop windows fit primary panels and retain reachable internal tools", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 768 });
@@ -93,6 +120,10 @@ test("short windows retain scrolling and the full available width", async ({
   expect(
     await page.evaluate(() => document.documentElement.scrollHeight),
   ).toBeGreaterThan(768);
+  await page.getByRole("button", { name: "Compact", exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
+    768,
+  );
   await page
     .getByRole("tab", { name: "Capture & replay", exact: true })
     .click();
@@ -222,7 +253,7 @@ test("unavailable actions explain prerequisites and readiness reflects connectio
   await expect(
     page.getByRole("tooltip", { name: "Pause a scan before resuming it." }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+  await openApplicationView(page, "Diagnostics");
   await expect(page.locator(".receiver-health")).toContainText(
     "Connect a receiver to record",
   );
@@ -317,8 +348,8 @@ test("all application views fit narrow screens without page-wide overflow", asyn
       "Diagnostics",
       "Help",
       "About",
-    ]) {
-      await page.getByRole("tab", { name: view, exact: true }).click();
+    ] as const) {
+      await openApplicationView(page, view);
       await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
         .toBe(width);

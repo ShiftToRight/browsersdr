@@ -12,3 +12,6 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# Obsidian preferences, workspace state and local plugins are personal.
+**/.obsidian/

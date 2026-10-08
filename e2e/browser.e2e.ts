@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -509,18 +510,42 @@ async function installRtlAdapter(
       providerGets: number;
       closeAttempts: number;
       audioCloseAttempts: number;
+      rateChanges: number[];
+      audioSuspends: number;
       resolveConnect?: () => void;
-    } = { providerGets: 0, closeAttempts: 0, audioCloseAttempts: 0 };
+    } = {
+      providerGets: 0,
+      closeAttempts: 0,
+      audioCloseAttempts: 0,
+      rateChanges: [],
+      audioSuspends: 0,
+    };
     (window as Window & { __rtlTestState?: typeof state }).__rtlTestState =
       state;
     Object.defineProperty(navigator, "usb", { configurable: true, value: {} });
 
     const createSource = () => ({
-      setSampleRate: async (rate: number) => rate,
+      setSampleRate: async (rate: number) => {
+        state.rateChanges.push(rate);
+        return rate;
+      },
       setCenterFrequency: async (frequency: number) => frequency,
       setParameter: async <V>(_parameter: string, value: V) => value,
       startReceiving: async () => undefined,
-      readSamples: () => new Promise<never>(() => undefined),
+      // Drain a pending read on Stop without pretending to deliver RF samples.
+      readSamples: () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                frequency: 0,
+                I: new Float32Array(0),
+                Q: new Float32Array(0),
+                data: new ArrayBuffer(0),
+              }),
+            50,
+          ),
+        ),
       close: async () => {
         state.closeAttempts += 1;
         if (adapterMode === "close-fails-once" && state.closeAttempts === 1)
@@ -543,6 +568,7 @@ async function installRtlAdapter(
           audioState = "running";
         },
         suspend: async () => {
+          state.audioSuspends += 1;
           audioState = "suspended";
         },
         close: async () => {
@@ -574,6 +600,75 @@ async function installRtlAdapter(
   }, mode);
 }
 
+test("live RTL rate selection preserves USB and audio ownership and resumes automatically", async ({
+  page,
+}) => {
+  await installRtlAdapter(page, "normal");
+  await gotoApp(page);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Start receiving", exact: true })
+    .click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Receiving WBFM",
+  );
+  await page.getByText("Device details & settings", { exact: true }).click();
+  const rate = page.getByLabel("Sample rate", { exact: true });
+  await expect(rate).toBeEnabled();
+  await rate.selectOption("2400000");
+  await expect(rate).toHaveValue("2400000");
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Receiving WBFM",
+  );
+  await rate.selectOption("1024000");
+  await expect(rate).toHaveValue("1024000");
+  await expect(rate).toBeEnabled();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Receiving WBFM",
+  );
+  expect(
+    await page.evaluate(() => {
+      const state = (
+        window as Window & {
+          __rtlTestState?: {
+            providerGets: number;
+            closeAttempts: number;
+            audioSuspends: number;
+            rateChanges: number[];
+          };
+        }
+      ).__rtlTestState!;
+      return {
+        gets: state.providerGets,
+        closes: state.closeAttempts,
+        suspends: state.audioSuspends,
+        rates: state.rateChanges,
+      };
+    }),
+  ).toEqual({
+    gets: 1,
+    closes: 0,
+    suspends: 0,
+    rates: [1024000, 1024000, 2400000, 1024000],
+  });
+  await page
+    .getByRole("button", { name: "Stop receiving", exact: true })
+    .click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "remains connected",
+  );
+  await page
+    .getByRole("button", { name: "Start receiving", exact: true })
+    .click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Receiving WBFM",
+  );
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.locator(".receiver-status")).toContainText(
+    "Receiver disconnected",
+  );
+});
+
 test("synthetic processing survives StrictMode, stop/restart, source switch, and unmount", async ({
   page,
 }, testInfo) => {
@@ -581,7 +676,7 @@ test("synthetic processing survives StrictMode, stop/restart, source switch, and
   await gotoApp(page);
 
   await selectSyntheticAndStart(page);
-  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await openApplicationView(page, "Diagnostics");
   const analysisBlocks = page
     .getByText("Analysis blocks", { exact: true })
     .locator("xpath=following-sibling::dd");
@@ -1036,7 +1131,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   test.setTimeout(45_000);
   const atlas = await installAtlasMock(page, { failFirstPart: true });
   await gotoApp(page);
-  await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  await openApplicationView(page, "Settings");
   await page.getByLabel("Settings SigIntAtlas user token").fill("t".repeat(32));
   await page.getByRole("button", { name: "Save token", exact: true }).click();
   await page.getByRole("button", { name: "Test connection" }).click();
@@ -1225,6 +1320,9 @@ test("failed device close retains the single owner until retry succeeds", async 
     "RTL-SDR connected",
   );
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recovery help", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText(
     "Injected USB close failure",
   );
@@ -1275,7 +1373,7 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
   await expect(page.locator(".graphics-panel")).toContainText(
     "WebGPU is unavailable",
   );
-  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await openApplicationView(page, "Diagnostics");
   await expect(
     page
       .getByText("WebGPU API", { exact: true })
@@ -1287,7 +1385,7 @@ test("diagnostic reports default on and remain reviewable and downloadable", asy
   page,
 }) => {
   await gotoApp(page);
-  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await openApplicationView(page, "Diagnostics");
   await expect(
     page.getByRole("heading", { name: "Help improve BrowserSDR" }),
   ).toBeVisible();
@@ -1343,7 +1441,7 @@ test("About exposes licence, driver provenance, and privacy boundaries", async (
   page,
 }) => {
   await gotoApp(page);
-  await page.getByRole("tab", { name: /About/ }).click();
+  await openApplicationView(page, "About");
   await expect(
     page.getByRole("heading", { name: "Licences, privacy & provenance" }),
   ).toBeVisible();
@@ -1370,7 +1468,7 @@ test("automatic diagnostics send by default, deduplicate errors, and respect a s
     await route.fulfill({ json: { reference: "BR-TEST-AUTOMATIC" } });
   });
   await gotoApp(page);
-  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await openApplicationView(page, "Diagnostics");
   const toggle = page.getByLabel(
     /Automatically send errors and recent diagnostic logs/,
   );
@@ -1394,7 +1492,7 @@ test("automatic diagnostics send by default, deduplicate errors, and respect a s
   await toggle.uncheck();
   await expect(toggle).not.toBeChecked();
   await page.reload();
-  await page.getByRole("tab", { name: /Diagnostics/ }).click();
+  await openApplicationView(page, "Diagnostics");
   await expect(toggle).not.toBeChecked();
   await emit("Opt-out diagnostic regression");
   await expect(
@@ -1407,7 +1505,7 @@ test("compatibility reports capture reviewed service evidence and receiver state
   page,
 }) => {
   await gotoApp(page);
-  await page.getByRole("tab", { name: /Help/ }).click();
+  await openApplicationView(page, "Help");
   await page.getByRole("button", { name: "Share test result" }).click();
   const dialog = page.getByRole("dialog", { name: /Compatibility report/ });
   await expect(
@@ -1652,4 +1750,146 @@ test("SigIntAtlas closed transfers recover after reload without a prepared captu
   ).toHaveAttribute("href", /recordings/);
   expect(atlas.uploads.size).toBe(parts);
   expect(atlas.recordingCreates()).toBe(1);
+});
+
+test("favorite recall preserves USB ownership and blocks active or retained recordings", async ({
+  page,
+}) => {
+  await installRtlAdapter(page, "normal");
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "browsersdr.bookmarks.v1",
+      JSON.stringify({
+        schema: "browsersdr-bookmarks-v1",
+        bookmarks: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "CW fixture",
+            frequencyHz: 101e6,
+            settings: {
+              mode: "CW",
+              bandwidthHz: 500,
+              squelch: 0,
+              beatToneHz: 750,
+            },
+            tags: [],
+            notes: "Synthetic test favorite",
+          },
+        ],
+      }),
+    ),
+  );
+  await gotoApp(page);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Start receiving", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Stop receiving", exact: true }),
+  ).toBeEnabled();
+  const favorites = page.locator(".favorites-panel");
+  const previousFrequency = await page
+    .getByLabel("Channel frequency", { exact: true })
+    .inputValue();
+  await page
+    .getByRole("switch", { name: "Follow channel", exact: true })
+    .uncheck();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
+  await expect(favorites).toContainText("Enable Follow channel");
+  await expect(page.getByRole("combobox", { name: /^Mode/ })).toHaveValue(
+    "WBFM",
+  );
+  await expect(
+    page.getByLabel("Channel frequency", { exact: true }),
+  ).toHaveValue(previousFrequency);
+  await favorites.getByRole("button", { name: "Close Favorites" }).click();
+  await page.getByRole("tab", { name: "Session", exact: true }).click();
+  await expect(
+    page.locator("#session-panel").getByText("WBFM", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("switch", { name: "Follow channel", exact: true })
+    .check();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
+  await expect(
+    page.getByLabel("Channel frequency", { exact: true }),
+  ).toHaveValue("101.000");
+  await expect(favorites).toBeHidden();
+  await expect(page.getByRole("combobox", { name: /^Mode/ })).toHaveValue("CW");
+  await expect(
+    page.getByRole("slider", { name: "CW beat tone", exact: true }),
+  ).toHaveValue("750");
+  await page.getByText("Device details & settings", { exact: true }).click();
+  const rate = page.getByLabel("Sample rate", { exact: true });
+  await rate.selectOption("2400000");
+  await expect(rate).toBeEnabled();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
+  await expect(favorites).toBeHidden();
+  await expect(rate).toHaveValue("2400000");
+  await rate.selectOption("1024000");
+  await expect(rate).toBeEnabled();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
+  await expect(favorites).toBeHidden();
+  await expect(rate).toHaveValue("1024000");
+  await expect(
+    page.getByRole("slider", { name: "CW beat tone", exact: true }),
+  ).toHaveValue("750");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __rtlTestState?: { providerGets: number } })
+          .__rtlTestState?.providerGets,
+    ),
+  ).toBe(1);
+  await page
+    .getByRole("button", { name: "Stop receiving", exact: true })
+    .click();
+  // Use actual demo samples for recording lifecycle coverage; the USB stub supplies no RF data.
+  await page
+    .locator('select[aria-label="Signal source"]')
+    .selectOption("synthetic");
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Start I/Q recording" }).click();
+  await expect(
+    page.getByRole("button", { name: "Stop recording", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await expect(
+    favorites.getByRole("button", { name: "Recall CW fixture" }),
+  ).toBeDisabled();
+  await favorites.getByRole("button", { name: "Close Favorites" }).click();
+  await page
+    .getByRole("button", { name: "Stop recording", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Discard prepared capture", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await expect(
+    favorites.getByRole("button", { name: "Recall CW fixture" }),
+  ).toBeDisabled();
+  await favorites.getByRole("button", { name: "Close Favorites" }).click();
+  await page
+    .getByRole("button", { name: "Discard prepared capture", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await expect(
+    favorites.getByRole("button", { name: "Recall CW fixture" }),
+  ).toBeEnabled();
+  await favorites.getByRole("button", { name: "Close Favorites" }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __rtlTestState?: { providerGets: number } })
+          .__rtlTestState?.providerGets,
+    ),
+  ).toBe(1);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
 });

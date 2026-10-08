@@ -1,3 +1,11 @@
+import { SettingsSharePanel } from "./ui/SettingsSharePanel";
+import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
+import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
+import { useWorkspaceLayout, WorkspaceControls } from "./ui/WorkspaceLayout";
+import { bookmarkFromCandidate, validateBookmark, type Bookmark } from "./radio/bookmarks";
+import { applyBookmark } from "./radio/bookmarkSelection";
+import { AtlasStationSearchPanel } from "./ui/AtlasStationSearchPanel";
+import { applyReceptionCandidate } from "./radio/atlasStationSelection";
 import { ReceiverTuningControl } from "./ui/ReceiverTuningControl";
 import { editableFrequencyMHz, formatFrequencyMHz, formatSampleRate } from "./ui/frequencyFormat";
 import { ActionButton } from "./ui/ActionButton";
@@ -146,7 +154,7 @@ import {
 } from "./ui/DiagnosticReportCard";
 import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
 import { AboutPage } from "./ui/AboutPage";
-import { readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
+import { CaptureCandidateLatch, readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
 import { AtlasRecoveryPanel } from "./ui/AtlasRecoveryPanel";
 import { AtlasSavePanel } from "./ui/AtlasSavePanel";
 import { AtlasSettingsPanel } from "./ui/AtlasSettingsPanel";
@@ -1392,36 +1400,11 @@ function ReceiverDecodePanel({
       id="decode-panel"
       role="tabpanel"
       className="control-panel rds-panel decode-panel receiver-dock-panel"
+      data-mode={mode}
       aria-labelledby="decode-heading"
       hidden={!active}
     >
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Listen & decode</p>
-          <h2 id="decode-heading">Decoded data</h2>
-        </div>
-        <span
-          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
-        >
-          {modeChangePending
-            ? "reconfiguring"
-            : mode === "OFF"
-              ? "spectrum only"
-              : mode === "DAB"
-                ? (receiver.dab?.state ?? "not started")
-                : mode === "ADS-B"
-                  ? `${receiver.adsb?.validFrames ?? 0} valid frames`
-                  : mode === "AIS"
-                    ? `${receiver.ais?.validFrames ?? 0} valid frames`
-                    : mode === "SRD"
-                      ? `${receiver.srd?.counters.bursts ?? 0} bursts`
-                      : receiver.rds?.validGroups
-                        ? `${receiver.rds.validGroups} valid groups`
-                        : source === "synthetic"
-                          ? "no audio"
-                          : `${mode} audio`}
-        </span>
-      </div>
+      <h2 id="decode-heading" className="visually-hidden">Decoded data</h2>
       <div className="decode-layout">
         <div className="audio-summary">
           <span>
@@ -1469,6 +1452,27 @@ function ReceiverDecodePanel({
                         ? "Use a hardware source or replay to listen."
                         : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
           </small>
+        <span
+          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+        >
+          {modeChangePending
+            ? "reconfiguring"
+            : mode === "OFF"
+              ? "spectrum only"
+              : mode === "DAB"
+                ? (receiver.dab?.state ?? "not started")
+                : mode === "ADS-B"
+                  ? `${receiver.adsb?.validFrames ?? 0} valid frames`
+                  : mode === "AIS"
+                    ? `${receiver.ais?.validFrames ?? 0} valid frames`
+                    : mode === "SRD"
+                      ? `${receiver.srd?.counters.bursts ?? 0} bursts`
+                      : receiver.rds?.validGroups
+                        ? `${receiver.rds.validGroups} valid groups`
+                        : source === "synthetic"
+                          ? "no audio"
+                          : `${mode} audio`}
+        </span>
         </div>
         {source !== "synthetic" &&
           ["WBFM", "DAB", "ADS-B", "AIS", "SRD"].includes(mode) && (
@@ -2062,8 +2066,24 @@ export function ReceiverApp({
   const [initialPreferences] = useState(() =>
     loadSourcePreferences(preferenceStorage, initialSource),
   );
-  const [receptionCandidate] = useState<ReceptionCandidate | undefined>(() => readReceptionCandidate(location.search));
+  const [receptionCandidate, setReceptionCandidate] = useState<ReceptionCandidate | undefined>(() => hasSettingsShare(location.hash) ? undefined : readReceptionCandidate(location.search));
   const [mode, setMode] = useState(receptionCandidate?.mode ?? initialPreferences.modeSettings.mode);
+  const [layout, setLayout] = useWorkspaceLayout();
+  const favorites = useFavorites();
+  const [favoriteDraft, setFavoriteDraft] = useState<Bookmark>();
+  const [spectrumDisplay, setSpectrumDisplay] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("browsersdr.spectrum-display.v1") ?? "null") as SharedDisplay | null;
+      if (saved && Number.isFinite(saved.floorDb) && saved.floorDb >= -120 && saved.floorDb <= -30 &&
+          Number.isFinite(saved.rangeDb) && saved.rangeDb >= 20 && saved.rangeDb <= 120)
+        return { floorDb: saved.floorDb, rangeDb: saved.rangeDb };
+    } catch { /* Optional display preferences. */ }
+    return { floorDb: -105, rangeDb: 90 };
+  });
+  useEffect(() => {
+    try { localStorage.setItem("browsersdr.spectrum-display.v1", JSON.stringify(spectrumDisplay)); }
+    catch { /* Optional display preferences. */ }
+  }, [spectrumDisplay]);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
     !["OFF", "WBFM", "SRD"].includes(initialPreferences.modeSettings.mode),
@@ -2385,16 +2405,33 @@ export function ReceiverApp({
   const atlasConnectionState = useSyncExternalStore(atlasConnection.subscribe, atlasConnection.getSnapshot);
   const atlasTransferActive = atlasSaveActive || atlasConnectionState.transferActive;
   const [recordingFormatLatch] = useState(() => new RecordingFormatLatch());
+  const [captureCandidateLatch] = useState(() => new CaptureCandidateLatch());
+  const [stationSelectionBusy, setStationSelectionBusy] = useState(false);
+  const stationSelectionPending = useRef(false);
+  const selectedSourceRef = useRef(source);
+  selectedSourceRef.current = source;
   const capacityStopPending = useRef(false);
   const surveyCaptureActive = useRef(false);
   const autoConnectAttempted = useRef(false);
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
-  const [activeView, setActiveView] = useState<AppView>("receiver");
+  const [activeView, setActiveViewState] = useState<AppView>("receiver");
+  const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "explorer">("receiver");
+  const setActiveView = useCallback((view: AppView) => {
+    setActiveViewState(view);
+    if (view === "receiver" || view === "explorer") setLastWorkspace(view);
+  }, []);
+  const openAuxiliaryView = (view: AppView) => {
+    setActiveView(view);
+    requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
+  };
   const [compatibilityDetailView, setCompatibilityDetailView] =
     useState<CompatibilityDetailView>("modes");
   const [receiverDockView, setReceiverDockView] =
     useState<ReceiverDockView>("decode");
-  const [receiverDockExpanded, setReceiverDockExpanded] = useState(true);
+  const receiverDockLarge = layout.dockLarge;
+  const setReceiverDockLarge = (update: (old: boolean) => boolean) => setLayout((old) => ({ ...old, dockLarge: update(old.dockLarge) }));
+  const receiverDockExpanded = layout.dockExpanded;
+  const setReceiverDockExpanded = (update: boolean | ((old: boolean) => boolean)) => setLayout((old) => ({ ...old, dockExpanded: typeof update === "function" ? update(old.dockExpanded) : update }));
   const [scanActive, setScanActive] = useState(false);
   const [spectrumStatus, setSpectrumStatus] = useState<SpectrumDisplayStatus>({
     kind: "checking",
@@ -2438,7 +2475,7 @@ export function ReceiverApp({
       receiver.lifecycle,
     );
   const transitioning =
-    scanActive ||
+    stationSelectionBusy || scanActive ||
     [
       "requesting-permission",
       "connecting",
@@ -2572,9 +2609,7 @@ export function ReceiverApp({
     (recording: IqRecording) => {
       if (captureTimer.current) clearTimeout(captureTimer.current);
       captureTimer.current = undefined;
-      if (recording.metadata.reception && receptionCandidate &&
-          Math.abs(recording.metadata.selectedChannelFrequencyHz - receptionCandidate.frequency_hz) <= receptionCandidate.bandwidth_hz / 2)
-        recording.metadata.reception.candidate = { ...receptionCandidate, bandwidth_hz: recording.metadata.channelBandwidthHz };
+      captureCandidateLatch.complete(recording);
       setAtlasPrepared(undefined);
       const format = recordingFormatLatch.complete(recordingFormat);
       capacityStopPending.current = false;
@@ -2582,7 +2617,7 @@ export function ReceiverApp({
       settlePreparation(exportCoordinator.retain(recording, format));
     },
     [
-      receptionCandidate,
+      captureCandidateLatch,
       exportCoordinator,
       recordingFormat,
       recordingFormatLatch,
@@ -2614,7 +2649,7 @@ export function ReceiverApp({
   }, [controller]);
 
   useEffect(() => {
-    if (autoConnectAttempted.current) return;
+    if (autoConnectAttempted.current || hasSettingsShare(location.hash)) return;
     if (
       source === "usrp-b205" &&
       (!usrpImageChecked ||
@@ -2945,6 +2980,21 @@ export function ReceiverApp({
     });
   };
 
+  const applySampleRate = async (nextRate: number) => {
+    if (transitioning || exportingRecording || atlasTransferActive || recordingStartPending.current) return;
+    if (controller.getSnapshot().lifecycle !== "running") {
+      setSampleRateHz(nextRate);
+      return;
+    }
+    analysis.cancelSignalCenter();
+    await controller.configureSampleRate(nextRate);
+    const accepted = controller.getSnapshot().session;
+    if (accepted?.source === source) setSampleRateHz(accepted.requestedSampleRateHz);
+    const completed = controller.takeCompletedRecording();
+    if (completed) retainCompletedRecording(completed);
+    setRecordingStatus(controller.getRecordingStatus());
+  };
+
   const applyBladeRfHardware = async () => {
     await controller.configureBladeRf(bladerfSettings);
     const accepted = controller.getSnapshot().session?.bladerf?.rxSettings;
@@ -2983,13 +3033,101 @@ export function ReceiverApp({
   };
 
   const recordingStartPending = useRef(false);
+  const stationUseBlockedReason = stationSelectionBusy ? "Applying station settings…"
+    : source === "replay" ? "Choose a live receiver source or the demo to use a station."
+    : transitioning || receiver.cleanupRequired ? "Wait for the receiver operation or scan to finish."
+    : recordingStatus || exportingRecording ? "Stop recording and finish preparation before selecting a station."
+    : atlasTransferActive ? "Wait for the Atlas transfer to finish or cancel it before selecting a station."
+    : retainedCapturePresent ? "Download and discard the retained capture before selecting another station."
+    : undefined;
+  const stationUseBlockedRef = useRef(stationUseBlockedReason);
+  stationUseBlockedRef.current = stationUseBlockedReason;
+  const useAtlasStation = async (candidate: ReceptionCandidate): Promise<string> => {
+    if (stationUseBlockedRef.current || recordingStartPending.current || stationSelectionPending.current ||
+        controller.getRecordingStatus() || !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) ||
+        atlasConnection.getSnapshot().transferActive || selectedSourceRef.current !== source)
+      throw new Error(stationUseBlockedRef.current ?? "Receiver context changed. Finish the current capture or operation and select again.");
+    stationSelectionPending.current = true;
+    setStationSelectionBusy(true);
+    analysis.cancelSignalCenter();
+    try {
+      const result = await applyReceptionCandidate(controller, candidate, { source, channelFrequencyHz: candidate.frequency_hz,
+        modeSettings: currentModeSettings, sampleRateHz, ...hardwareOptions });
+      if (selectedSourceRef.current !== source) throw new Error("Receiver source changed. Select the station again.");
+      // Selecting a reference never initiates the app's authorized-device reconnect path.
+      autoConnectAttempted.current = true;
+      setMode(result.settings.mode);
+      setBandwidthHz(result.settings.bandwidthHz);
+      setSquelch(result.settings.squelch);
+      setFrequencyMhz(result.frequencyHz / 1e6);
+      setChannelFrequencyDraft(undefined);
+      setChannelTuneIssue(undefined);
+      setChannelAdvancedOpen(result.settings.mode !== "WBFM");
+      setReceptionCandidate(result.candidate);
+      return `Receiver candidate selected. Requested bandwidth ${candidate.bandwidth_hz.toLocaleString()} Hz; applied ${result.settings.bandwidthHz.toLocaleString()} Hz. Start remains manual; station identity is unconfirmed.`;
+    } finally {
+      const completed = controller.takeCompletedRecording();
+      if (completed) retainCompletedRecording(completed);
+      stationSelectionPending.current = false;
+      setStationSelectionBusy(false);
+    }
+  };
+  const recallFavorite = async (bookmark: Bookmark): Promise<string> => {
+    if (stationUseBlockedRef.current || recordingStartPending.current || stationSelectionPending.current ||
+        controller.getRecordingStatus() || !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) ||
+        atlasConnection.getSnapshot().transferActive || selectedSourceRef.current !== source)
+      throw new Error(stationUseBlockedRef.current ?? "Finish the current capture or receiver operation first.");
+    stationSelectionPending.current = true;
+    setStationSelectionBusy(true);
+    analysis.cancelSignalCenter();
+    try {
+      const { bookmark: accepted, sampleRateHz: nextRate } = await applyBookmark(controller, bookmark, { source, channelFrequencyHz: frequencyMhz * 1e6, modeSettings: currentModeSettings, sampleRateHz, ...hardwareOptions });
+      if (selectedSourceRef.current !== source) throw new Error("Source changed. Recall the favorite again.");
+      autoConnectAttempted.current = true;
+      setMode(accepted.settings.mode);
+      setBandwidthHz(accepted.settings.bandwidthHz);
+      setSquelch(accepted.settings.squelch);
+      setBeatToneHz(accepted.settings.beatToneHz ?? 600);
+      setSrdSettings(accepted.settings.srd ?? defaultSrdModeSettings());
+      if (!running) setSampleRateHz(nextRate);
+      setFrequencyMhz(accepted.frequencyHz / 1e6);
+      setChannelFrequencyDraft(undefined);
+      setChannelTuneIssue(undefined);
+      // A stored catalog reference is not a freshly checked receiver candidate.
+      setReceptionCandidate(undefined);
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(accepted.settings.mode));
+      return `Recalled ${accepted.name}. ${running ? "Applied to reception." : "Start remains manual."}${accepted.atlasReference ? " Saved Atlas reference has not been rechecked; station identity is unconfirmed." : ""}`;
+    } finally {
+      stationSelectionPending.current = false;
+      setStationSelectionBusy(false);
+    }
+  };
+  const applySharedSettings = async (shared: SharedSettings) => {
+    if (controller.getSnapshot().lifecycle === "running") throw new Error("Stop reception before applying shared settings.");
+    await recallFavorite(sharedSettingsBookmark(shared));
+    setSpectrumDisplay({ floorDb: shared.display.floorDb, rangeDb: shared.display.rangeDb });
+    setLayout((old) => ({ ...old, compact: shared.display.compact }));
+  };
+  const saveFavoriteBlockedReason = transitioning ? "Wait for the receiver operation to finish."
+    : !frequencyValid || frequencyPending || channelFrequencyDraft !== undefined ? "Apply or cancel the channel frequency edit before saving."
+    : undefined;
+  const newFavorite = () => {
+    try {
+      setFavoriteDraft(validateBookmark({ id: crypto.randomUUID(), name: `${frequencyMhz} MHz ${mode}`, frequencyHz: Math.round(frequencyMhz * 1e6), settings: normalizeModeSettings(currentModeSettings), tags: [], notes: "", sourceHint: source,
+        ...(receptionCandidate?.frequency_hz === Math.round(frequencyMhz * 1e6) && receptionCandidate.mode === mode ? { atlasReference: receptionCandidate } : {}) }));
+    } catch (error) { setChannelTuneIssue(error instanceof Error ? error.message : "Check channel settings before saving."); }
+  };
+  const saveAtlasFavorite = (candidate: ReceptionCandidate) => {
+    favorites.change((items) => [...items, bookmarkFromCandidate(candidate)]);
+  };
   const startRecording = async () => {
-    if (recordingStartPending.current) return;
+    if (recordingStartPending.current || stationSelectionPending.current) return;
     recordingStartPending.current = true;
     let status: RecordingStatus | undefined;
     try {
       const storageMode = await prepareRecordingStorage();
       status = controller.startRecording(undefined, { captureCurrentChannel, storageMode });
+      if (status) captureCandidateLatch.begin(receptionCandidate, controller.getSnapshot().session);
     }
     catch (error) { setRecordingMessage(error instanceof Error ? error.message : "Recording could not start."); return; }
     finally { recordingStartPending.current = false; }
@@ -3133,6 +3271,7 @@ export function ReceiverApp({
             detector: candidate.detector,
             signal: candidate.annotation,
           }, { storageMode });
+          if (status) captureCandidateLatch.begin(undefined, tuned.session);
           if (!status) {
             recordingFormatLatch.complete("sigmf");
             throw new Error(
@@ -3210,20 +3349,13 @@ export function ReceiverApp({
       }
       return { captured, cancelled };
     },
-    [controller, exportCoordinator, recordingFormatLatch, volume],
+    [captureCandidateLatch, controller, exportCoordinator, recordingFormatLatch, volume],
   );
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     let nextView: AppView | undefined;
-    const views: AppView[] = [
-      "receiver",
-      "explorer",
-      "settings",
-      "diagnostics",
-      "help",
-      "about",
-    ];
-    const currentIndex = views.indexOf(activeView);
+    const views: AppView[] = ["receiver", "explorer"];
+    const currentIndex = event.currentTarget.id === "explorer-tab" ? 1 : 0;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const direction = event.key === "ArrowRight" ? 1 : -1;
       nextView =
@@ -3231,7 +3363,7 @@ export function ReceiverApp({
     } else if (event.key === "Home") {
       nextView = "receiver";
     } else if (event.key === "End") {
-      nextView = "about";
+      nextView = "explorer";
     }
     if (!nextView) return;
     event.preventDefault();
@@ -3398,7 +3530,7 @@ export function ReceiverApp({
 
   return (
     <main
-      className={`app-shell${activeView === "receiver" ? " receiver-workspace" : ""}`}
+      className={`app-shell${activeView === "receiver" ? " receiver-workspace" : ""}${layout.compact ? " density-compact" : ""}${layout.sourceCollapsed ? " source-collapsed" : ""}${layout.channelCollapsed ? " channel-collapsed" : ""}`}
     >
       <div className="app-topbar">
         <header className="app-header">
@@ -3430,7 +3562,7 @@ export function ReceiverApp({
               id="receiver-tab"
               aria-selected={activeView === "receiver"}
               aria-controls="receiver-view"
-              tabIndex={activeView === "receiver" ? 0 : -1}
+              tabIndex={lastWorkspace === "receiver" ? 0 : -1}
               onClick={() => setActiveView("receiver")}
               onKeyDown={handleTabKeyDown}
             >
@@ -3443,64 +3575,12 @@ export function ReceiverApp({
               id="explorer-tab"
               aria-selected={activeView === "explorer"}
               aria-controls="explorer-view"
-              tabIndex={activeView === "explorer" ? 0 : -1}
+              tabIndex={lastWorkspace === "explorer" ? 0 : -1}
               onClick={() => setActiveView("explorer")}
               onKeyDown={handleTabKeyDown}
             >
               <span className="icon-label"><AppIcon name="search" />Explorer</span>
               <small>Scan & investigate</small>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="settings-tab"
-              aria-selected={activeView === "settings"}
-              aria-controls="settings-view"
-              tabIndex={activeView === "settings" ? 0 : -1}
-              onClick={() => setActiveView("settings")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <span className="icon-label"><AppIcon name="settings" />Settings</span>
-              <small>Integrations &amp; credentials</small>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="diagnostics-tab"
-              aria-selected={activeView === "diagnostics"}
-              aria-controls="diagnostics-view"
-              tabIndex={activeView === "diagnostics" ? 0 : -1}
-              onClick={() => setActiveView("diagnostics")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <span className="icon-label"><AppIcon name="activity" />Diagnostics</span>
-              <small>Telemetry & setup</small>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="help-tab"
-              aria-selected={activeView === "help"}
-              aria-controls="help-view"
-              tabIndex={activeView === "help" ? 0 : -1}
-              onClick={() => setActiveView("help")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <span className="icon-label"><AppIcon name="help" />Help</span>
-              <small>Setup & compatibility</small>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="about-tab"
-              aria-selected={activeView === "about"}
-              aria-controls="about-view"
-              tabIndex={activeView === "about" ? 0 : -1}
-              onClick={() => setActiveView("about")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <span className="icon-label"><AppIcon name="info" />About</span>
-              <small>Licences &amp; privacy</small>
             </button>
           </div>
           <p>
@@ -3517,6 +3597,11 @@ export function ReceiverApp({
                     : "Licences, privacy and provenance"}
           </p>
         </nav>
+        <WorkspaceControls layout={layout} onChange={setLayout} activeView={activeView}
+          onSettings={() => openAuxiliaryView("settings")}
+          onHelp={() => openAuxiliaryView("help")}
+          onAbout={() => openAuxiliaryView("about")}
+        />
         <ReceiverStatus
           receiver={receiver}
           spectrum={spectrumStatus}
@@ -3524,8 +3609,8 @@ export function ReceiverApp({
           preparing={exportingRecording}
           retained={retainedCapture}
           recordingSupported={recordingSupported}
-          onReceiver={() => setActiveView("diagnostics")}
-          onSpectrum={() => setActiveView("diagnostics")}
+          onReceiver={() => openAuxiliaryView("diagnostics")}
+          onSpectrum={() => openAuxiliaryView("diagnostics")}
           onRecording={() => {
             setActiveView("receiver");
             setReceiverDockExpanded(true);
@@ -3553,6 +3638,7 @@ export function ReceiverApp({
               }}
               onReviewSettings={() => {
                 setActiveView("receiver");
+                setLayout((old) => ({ ...old, sourceCollapsed: false }));
                 requestAnimationFrame(() => {
                 document.querySelector<HTMLSelectElement>('[aria-label="Signal source"]')?.focus();
                 document.querySelector(".acquire-stage")?.scrollIntoView({ block: "nearest" });
@@ -3563,6 +3649,16 @@ export function ReceiverApp({
           )}
         </ReceiverStatus>
       </div>
+
+      {activeView !== "receiver" && activeView !== "explorer" && (
+        <div className="auxiliary-view-header">
+          <button id="auxiliary-return" type="button" className="secondary" onClick={() => {
+            setActiveView(lastWorkspace);
+            requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
+          }}>Back to {lastWorkspace === "receiver" ? "Receiver" : "Explorer"}</button>
+          <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
+        </div>
+      )}
 
       <div
         id="receiver-view"
@@ -3598,7 +3694,9 @@ export function ReceiverApp({
                   <p>Acquire</p>
                   <h3 id="acquire-heading" className="icon-label"><AppIcon name="radio" />Signal source</h3>
                 </div>
+                <button type="button" className="stage-collapse secondary" aria-label={layout.sourceCollapsed ? "Expand source panel" : "Collapse source panel"} aria-expanded={!layout.sourceCollapsed} aria-controls="source-stage-body" onClick={() => setLayout((old) => ({ ...old, sourceCollapsed: !old.sourceCollapsed }))}>{layout.sourceCollapsed ? "+" : "−"}</button>
               </div>
+              <div id="source-stage-body" className="stage-body" hidden={layout.sourceCollapsed}>
               <div className="stage-controls acquire-controls">
                 <label>
                   Source
@@ -3928,10 +4026,11 @@ export function ReceiverApp({
                         <label>
                           Sample rate
                           <select
+                            aria-label="Sample rate"
                             value={sampleRateHz}
-                            disabled={transitioning || running}
+                            disabled={transitioning || (running && source !== "rtl-sdr") || exportingRecording || atlasTransferActive}
                             onChange={(event) =>
-                              setSampleRateHz(Number(event.currentTarget.value))
+                              void applySampleRate(Number(event.currentTarget.value))
                             }
                           >
                             {caps.rates.valuesHz.map((rate) => (
@@ -3939,7 +4038,7 @@ export function ReceiverApp({
                                 key={rate}
                                 value={rate}
                                 disabled={
-                                  compatibleSourceRate(source, mode, rate) !==
+                                  compatibleSourceRate(source, running ? (receiver.session?.mode ?? mode) : mode, rate) !==
                                   rate
                                 }
                               >
@@ -3952,7 +4051,7 @@ export function ReceiverApp({
                             ))}
                           </select>
                           {hardwareConnected &&
-                            receiver.session?.actualSampleRateHz !==
+                            receiver.session?.requestedSampleRateHz !==
                               sampleRateHz && (
                               <small className="pending-change">
                                 Change pending · applies when reception starts
@@ -3965,7 +4064,7 @@ export function ReceiverApp({
                                 ? "All supported bladeRF 2.0 Micro variants use native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
                                 : source === "usrp-b205"
                                   ? "Stop reception to change rate. The new rate is applied when reception starts; the USRP is reinitialized automatically. Demodulation uses a 2.4 MS/s selected-channel path."
-                                  : "2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses. Stop reception to change rate without disconnecting."}
+                                  : "Change rate while receiving; reception resumes automatically after a brief gap. An active recording finishes before switching. 2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses."}
                           </small>
                         </label>
                       )}
@@ -4174,6 +4273,7 @@ export function ReceiverApp({
                   </details>
                 )}
               </div>
+              </div>
             </section>
 
             <section
@@ -4186,7 +4286,9 @@ export function ReceiverApp({
                   <p>Tune & demodulate</p>
                   <h3 id="demodulate-heading" className="icon-label"><AppIcon name="sliders" />Channel settings</h3>
                 </div>
+                <button type="button" className="stage-collapse secondary" aria-label={layout.channelCollapsed ? "Expand channel panel" : "Collapse channel panel"} aria-expanded={!layout.channelCollapsed} aria-controls="channel-stage-body" onClick={() => setLayout((old) => ({ ...old, channelCollapsed: !old.channelCollapsed }))}>{layout.channelCollapsed ? "+" : "−"}</button>
               </div>
+              <div id="channel-stage-body" className="stage-body" hidden={layout.channelCollapsed}>
               <div className="stage-controls primary-channel-controls">
                 <label>
                   Mode
@@ -4353,6 +4455,19 @@ export function ReceiverApp({
                   }}
                 />}
                 </div>
+                <FavoritesPanel items={favorites.items} storageMessage={favorites.message} draft={favoriteDraft}
+                  onNew={newFavorite} onEdit={(item) => setFavoriteDraft(structuredClone(item))} onCancel={() => setFavoriteDraft(undefined)}
+                  onChange={favorites.change} onRecall={recallFavorite} blockedReason={stationUseBlockedReason?.replaceAll("station", "favorite")} saveBlockedReason={saveFavoriteBlockedReason} />
+                <AtlasStationSearchPanel
+              onFavorite={saveAtlasFavorite}
+                  connection={atlasConnection}
+                  channelFrequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6}
+                  channelBandwidthHz={bandwidthHz}
+                  candidate={receptionCandidate}
+                  blockedReason={stationUseBlockedReason}
+                  onUse={useAtlasStation}
+                  onOpenSettings={() => openAuxiliaryView("settings")}
+                />
                 {mode === "WBFM" && (
                   <FmStationSummary controller={controller} />
                 )}
@@ -4449,9 +4564,10 @@ export function ReceiverApp({
                 className="advanced-settings channel-advanced-settings"
                 key={mode}
                 open={channelAdvancedOpen}
-                onToggle={(event) =>
-                  setChannelAdvancedOpen(event.currentTarget.open)
-                }
+                onToggle={(event) => {
+                  // Ignore a queued toggle from the previous mode's detached details node.
+                  if (event.currentTarget.isConnected) setChannelAdvancedOpen(event.currentTarget.open);
+                }}
               >
                 <summary>
                   <span>Advanced channel settings</span>
@@ -4596,6 +4712,7 @@ export function ReceiverApp({
                       <output>{beatToneHz.toLocaleString()} Hz</output>
                       <input
                         type="range"
+                        aria-label="CW beat tone"
                         min={CW_TONE_MIN_HZ}
                         max={CW_TONE_MAX_HZ}
                         step="10"
@@ -4619,6 +4736,7 @@ export function ReceiverApp({
                   )}
                 </div>
               </details>
+              </div>
             </section>
           </div>
 
@@ -4628,6 +4746,8 @@ export function ReceiverApp({
         <WebGpuSpectrum
           active={activeView === "receiver"}
           pipeline={analysis}
+          displaySettings={spectrumDisplay}
+          onDisplaySettingsChange={setSpectrumDisplay}
           session={liveSession}
           onTune={running && !transitioning && !scanActive ? tune : undefined}
           tuningControls={<ReceiverTuningControl
@@ -4646,15 +4766,16 @@ export function ReceiverApp({
           onStatusChange={setSpectrumStatus}
           onOpenAcquire={() => {
             setActiveView("receiver");
+            setLayout((old) => ({ ...old, sourceCollapsed: false }));
             document
               .getElementById("acquire-heading")
               ?.scrollIntoView({ block: "start" });
           }}
-          onOpenDiagnostics={() => setActiveView("diagnostics")}
+          onOpenDiagnostics={() => openAuxiliaryView("diagnostics")}
         />
 
         <section
-          className={`receiver-dock ${receiverDockExpanded ? "is-expanded" : "is-collapsed"}`}
+          className={`receiver-dock ${receiverDockExpanded ? "is-expanded" : "is-collapsed"}${receiverDockLarge && receiverDockExpanded ? " is-large" : ""}`}
           aria-label="Receiver tools"
         >
           <div className="receiver-dock-bar">
@@ -4714,6 +4835,11 @@ export function ReceiverApp({
                 <AppIcon name="file" />Session
               </button>
             </div>
+            <div className="dock-actions">
+              {receiverDockExpanded && <button type="button" className="secondary dock-size-toggle"
+                aria-pressed={receiverDockLarge} onClick={() => setReceiverDockLarge((large) => !large)}>
+                <AppIcon name={receiverDockLarge ? "collapse" : "expand"} />{receiverDockLarge ? "Less space" : "More space"}
+              </button>}
             <button
               type="button"
               className="secondary dock-toggle"
@@ -4722,6 +4848,7 @@ export function ReceiverApp({
             >
               <AppIcon name={receiverDockExpanded ? "collapse" : "expand"} />{receiverDockExpanded ? "Collapse" : "Expand"}
             </button>
+            </div>
           </div>
 
           <ReceiverDecodePanel
@@ -4739,12 +4866,8 @@ export function ReceiverApp({
             aria-labelledby="recording-heading"
             hidden={!receiverDockExpanded || receiverDockView !== "capture"}
           >
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Capture & replay</p>
-                <h2 id="recording-heading">I/Q recordings</h2>
-              </div>
-            </div>
+            <h2 id="recording-heading" className="visually-hidden">I/Q recordings</h2>
+            <div className="capture-topline">
             <div
               className="workspace-subtabs"
               role="tablist"
@@ -4796,12 +4919,7 @@ export function ReceiverApp({
                 <AppIcon name="folder" />Open recording
               </button>
             </div>
-            <div
-              id="record-panel"
-              role="tabpanel"
-              aria-labelledby="record-tab"
-              hidden={captureView !== "record"}
-            >
+              {captureView === "record" && <>
               <div
                 className={`recording-state ${preparedCaptureAvailable && !recordingStatus && !exportingRecording ? "is-ready" : ""}`}
                 role="status"
@@ -4844,65 +4962,7 @@ export function ReceiverApp({
                   </span>
                 )}
               </div>
-              {retainedCapture.captureWarning && <p className="display-note" role="status">{retainedCapture.captureWarning}</p>}
-              {recordingSupported &&
-                !retainedCapturePresent &&
-                !recordingStatus && (
-                  <p className="display-note">
-                    Up to {Math.min(3600, recordingCapacitySeconds(captureRateHz, preferredRecordingStorageMode() === "opfs" ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES, captureBytesPerSample)).toFixed(1)} s
-                    at this sample rate · {preferredRecordingStorageMode() === "opfs" ? "2 GiB private browser storage limit" : "32 MiB memory fallback"}
-                    .
-                  </p>
-                )}
-              <label className="checkbox-control channel-capture-toggle">
-                <input type="checkbox" checked={captureCurrentChannel}
-                  disabled={Boolean(recordingStatus) || exportingRecording}
-                  onChange={event => setCaptureCurrentChannel(event.currentTarget.checked)} />
-                Capture current channel only
-              </label>
-              {captureCurrentChannel && (
-                <p className="display-note" aria-live="polite">
-                  {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
-                    : channelCapturePreview.error}
-                </p>
-              )}
-              <div className="recording-controls">
-                <label className="recording-format">
-                  Export format
-                  <select
-                    aria-label="Recording export format"
-                    value={recordingFormat}
-                    disabled={
-                      !recordingSupported ||
-                      formatControlDisabled(recordingStatus, exportingRecording)
-                    }
-                    onChange={(event) =>
-                      setRecordingFormat(
-                        event.currentTarget.value as RecordingExportFormat,
-                      )
-                    }
-                  >
-                    {source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT) ? (
-                      <option value="sigmf">
-                        SigMF ci16_le (.sigmf-data + .sigmf-meta)
-                      </option>
-                    ) : recordingSupported ? (
-                      <>
-                        <option value="browsersdr">
-                          BrowserSDR replay (.{encoding} + .json)
-                        </option>
-                        <option value="sigmf">
-                          SigMF (.sigmf-data + .sigmf-meta)
-                        </option>
-                      </>
-                    ) : (
-                      <option value={recordingFormat}>
-                        Unavailable for this receive profile
-                      </option>
-                    )}
-                  </select>
-                </label>
+                <div className="recording-actions">
                 {recordingStatus ? (
                   <button
                     type="button"
@@ -4911,7 +4971,7 @@ export function ReceiverApp({
                   >
                     <AppIcon name="stop" />Stop recording
                   </button>
-                ) : (
+                ) : !retainedCapturePresent && (
                   <ActionButton
                     type="button"
                     disabled={
@@ -4975,13 +5035,90 @@ export function ReceiverApp({
                     </button>
                   </>
                 )}
+                </div>
+              </>}
+            </div>
+            <div
+              id="record-panel"
+              role="tabpanel"
+              aria-labelledby="record-tab"
+              hidden={captureView !== "record"}
+            >
+              <div className="capture-options">
+                <label className="recording-format">
+                  Export format
+                  <select
+                    aria-label="Recording export format"
+                    value={recordingFormat}
+                    disabled={
+                      !recordingSupported ||
+                      formatControlDisabled(recordingStatus, exportingRecording)
+                    }
+                    onChange={(event) =>
+                      setRecordingFormat(
+                        event.currentTarget.value as RecordingExportFormat,
+                      )
+                    }
+                  >
+                    {source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT) ? (
+                      <option value="sigmf">
+                        SigMF ci16_le (.sigmf-data + .sigmf-meta)
+                      </option>
+                    ) : recordingSupported ? (
+                      <>
+                        <option value="browsersdr">
+                          BrowserSDR replay (.{encoding} + .json)
+                        </option>
+                        <option value="sigmf">
+                          SigMF (.sigmf-data + .sigmf-meta)
+                        </option>
+                      </>
+                    ) : (
+                      <option value={recordingFormat}>
+                        Unavailable for this receive profile
+                      </option>
+                    )}
+                  </select>
+                </label>
+              <label className="checkbox-control channel-capture-toggle">
+                <input type="checkbox" checked={captureCurrentChannel}
+                  disabled={Boolean(recordingStatus) || exportingRecording}
+                  onChange={event => setCaptureCurrentChannel(event.currentTarget.checked)} />
+                Capture current channel only
+              </label>
+              <label className="capture-duration">Duration (s; 0 = manual)
+                <input aria-label="Timed capture seconds" type="number" min={0} max={300} step={1} value={captureDuration}
+                  disabled={!!recordingStatus || exportingRecording || atlasTransferActive}
+                  onChange={event => { const value=Number(event.currentTarget.value); if (Number.isFinite(value)) setCaptureDuration(Math.max(0,Math.min(300,value))); }} />
+              </label>
               </div>
+              {retainedCapture.captureWarning && <p className="display-note" role="status">{retainedCapture.captureWarning}</p>}
+              {recordingSupported &&
+                !retainedCapturePresent &&
+                !recordingStatus && (
+                  <p className="display-note capture-capacity">
+                    Up to {Math.min(3600, recordingCapacitySeconds(captureRateHz, preferredRecordingStorageMode() === "opfs" ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES, captureBytesPerSample)).toFixed(1)} s
+                    at this sample rate · {preferredRecordingStorageMode() === "opfs" ? "2 GiB private browser storage limit" : "32 MiB memory fallback"}
+                    .
+                  </p>
+                )}
+              {captureCurrentChannel && (
+                <p className="display-note" aria-live="polite">
+                  {channelCapturePreview.plan
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    : channelCapturePreview.error}
+                </p>
+              )}
+
               {retainedCapture.error && (
                 <p className="recording-error" role="alert">
                   {retainedCapture.error} {retainedCapture.status === "storage-failed"
                     ? "Capture storage failed; this recording cannot be exported. Discard it and start a new recording."
                     : "The recording is available in this tab. Download before reloading or closing the page."}
                 </p>
+              )}
+              {preparedCaptureAvailable && retainedCapture.status !== "download-requested" && (
+                <p className="display-note capture-retention-warning">Kept in this tab only. Download before reloading or closing.</p>
               )}
               {retainedCapture.status === "download-requested" && (
                 <p className="display-note">
@@ -5017,25 +5154,21 @@ export function ReceiverApp({
                   recording. A download request does not confirm that the
                   browser saved the file.
                 </p>
+              <p className="capture-guidance display-note">Stop when the saved range contains a validated PI and complete PS, or keep a provisional candidate if evidence is insufficient. A timed capture stops after approximately the selected wall time; capacity and source changes can stop it earlier.</p>
                 <p className="recording-message">{recordingMessage}</p>
               </details>
-              <label>Timed capture (seconds; 0 = manual)
-                <input aria-label="Timed capture seconds" type="number" min={0} max={300} step={1} value={captureDuration}
-                  disabled={!!recordingStatus || exportingRecording || atlasTransferActive}
-                  onChange={event => { const value=Number(event.currentTarget.value); if (Number.isFinite(value)) setCaptureDuration(Math.max(0,Math.min(300,value))); }} />
-              </label>
               {recordingStatus && <p className="capture-evidence-status" role="status">
                 Saved-range RDS: {recordingStatus.receptionEvidence?.at(-1)?.pi ?? "PI not decoded"} · {recordingStatus.receptionEvidence?.at(-1)?.ps ?? "Full PS not decoded"}.
                 {recordingStatus.receptionEvidence?.at(-1)?.ps ? " Identity evidence is available; stop when the desired recording duration is covered." : " Continue until sufficient evidence or retain a provisional candidate."}
               </p>}
-              <p className="capture-guidance display-note">Stop when the saved range contains a validated PI and complete PS, or keep a provisional candidate if evidence is insufficient. A timed capture stops after approximately the selected wall time; capacity and source changes can stop it earlier.</p>
+
               {previousSavedUrl && <a href={previousSavedUrl} target="_blank" rel="noreferrer">Previous saved recording</a>}
               {receptionCandidate && <p>Reception candidate: {receptionCandidate.station_name ?? "Catalog station"} · {(receptionCandidate.frequency_hz/1e6).toFixed(3)} MHz. This link proposes settings; Start remains a manual action.{receptionCandidate.bandwidth_hz !== bandwidthHz && <> Requested bandwidth {receptionCandidate.bandwidth_hz.toLocaleString()} Hz; applied {mode} profile {bandwidthHz.toLocaleString()} Hz. Plot and saved bounds use the applied profile.</>}</p>}
-              <AtlasRecoveryPanel transferActive={atlasTransferActive} connection={atlasConnection} onOpenSettings={() => setActiveView("settings")} />
+              <AtlasRecoveryPanel transferActive={atlasTransferActive} connection={atlasConnection} onOpenSettings={() => openAuxiliaryView("settings")} />
               {atlasPrepared && (
                 <AtlasSavePanel
                   connection={atlasConnection}
-                  onOpenSettings={() => setActiveView("settings")}
+                  onOpenSettings={() => openAuxiliaryView("settings")}
                   prepared={atlasPrepared}
                   onRecordNext={(url) => { setPreviousSavedUrl(url); discardPreparedRecording(); setRecordingMessage("Saved recording remains in SigIntAtlas. Tune the next station and start a capture."); }}
                   onActiveChange={setAtlasTransferActive}
@@ -5230,12 +5363,11 @@ export function ReceiverApp({
             aria-labelledby="session-heading"
             hidden={!receiverDockExpanded || receiverDockView !== "session"}
           >
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Receiver state</p>
-                <h2 id="session-heading">Session details</h2>
-              </div>
-            </div>
+            <h2 id="session-heading" className="visually-hidden">Session details</h2>
+            <SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
+              blockedReason={saveFavoriteBlockedReason}
+              applyBlockedReason={running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
+              onApply={applySharedSettings} />
             <dl className="session-grid">
               <div>
                 <dt>Receiver</dt>
@@ -5326,8 +5458,8 @@ export function ReceiverApp({
 
       <div
         id="settings-view"
-        role="tabpanel"
-        aria-labelledby="settings-tab"
+        role="region"
+        aria-label="Integration settings"
         hidden={activeView !== "settings"}
       >
         {activeView === "settings" && <AtlasSettingsPanel connection={atlasConnection} />}
@@ -5377,8 +5509,8 @@ export function ReceiverApp({
 
       <div
         id="diagnostics-view"
-        role="tabpanel"
-        aria-labelledby="diagnostics-tab"
+        role="region"
+        aria-label="Diagnostics"
         hidden={activeView !== "diagnostics"}
       >
         <DiagnosticsPanel
@@ -5474,8 +5606,8 @@ export function ReceiverApp({
 
       <div
         id="help-view"
-        role="tabpanel"
-        aria-labelledby="help-tab"
+        role="region"
+        aria-label="Help & setup"
         hidden={activeView !== "help"}
       >
         {activeView === "help" && (
@@ -5503,7 +5635,7 @@ export function ReceiverApp({
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => setActiveView("diagnostics")}
+                  onClick={() => openAuxiliaryView("diagnostics")}
                 >
                   Check this browser
                 </button>
@@ -6003,8 +6135,8 @@ export function ReceiverApp({
 
       <div
         id="about-view"
-        role="tabpanel"
-        aria-labelledby="about-tab"
+        role="region"
+        aria-label="About BrowserSDR"
         hidden={activeView !== "about"}
       >
         {activeView === "about" && <AboutPage />}

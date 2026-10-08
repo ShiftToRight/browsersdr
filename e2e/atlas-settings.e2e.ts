@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test, type Page } from "@playwright/test";
 
 const token = "settings-browser-test-credential-".repeat(2);
@@ -48,7 +49,7 @@ async function peer(page: Page, role = "operator") {
   return { requests, logins: () => logins };
 }
 async function settings(page: Page) {
-  await page.getByRole("tab", { name: /^Settings/ }).click();
+  await openApplicationView(page, "Settings");
   await expect(
     page.getByRole("heading", { name: "SigIntAtlas", exact: true }),
   ).toBeVisible();
@@ -106,7 +107,21 @@ test("SigIntAtlas memory-only credentials, viewer state and keyboard Settings fi
   await page.goto("/?browser-test=1");
   await page.getByRole("tab", { name: /^Explorer/ }).click();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("tab", { name: /^Settings/ })).toBeFocused();
+  await expect(
+    page.getByRole("tab", { name: "Receiver", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Compact", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Settings", { exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Integration settings", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
   const panel = page.locator(".atlas-settings-panel");
   await panel.getByLabel("Settings SigIntAtlas user token").fill(token);
   await panel.getByLabel("Remember on this browser").uncheck();

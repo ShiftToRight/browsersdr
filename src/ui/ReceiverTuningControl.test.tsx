@@ -58,9 +58,8 @@ async function setup(replay = false, channelPending = false, centerHz = 100e6) {
 it("validates receiver edits before tuning, supports Escape/Enter and centers on the accepted channel", async () => {
   const ui = await setup();
   expect(ui.input.value).toBe("100.000");
-  expect(ui.host.textContent).toContain("+100.000 kHz");
   await ui.edit("101");
-  expect(ui.button("Set center").disabled).toBe(true);
+  expect(ui.button("Set").disabled).toBe(true);
   expect(ui.input.getAttribute("aria-invalid")).toBe("true");
   expect(ui.host.textContent).toContain("selected channel outside");
   await act(async () =>
@@ -77,27 +76,26 @@ it("validates receiver edits before tuning, supports Escape/Enter and centers on
     ),
   );
   expect(ui.tune).toHaveBeenLastCalledWith(100.2e6);
-  await act(async () => ui.button("Center on channel").click());
+  await act(async () => ui.button("To channel").click());
   expect(ui.tune).toHaveBeenLastCalledWith(100.1e6);
 });
 it("keeps receiver center read-only for replay", async () => {
   const ui = await setup(true);
   expect(ui.input.disabled).toBe(true);
-  expect(ui.button("Center on channel").disabled).toBe(true);
+  expect(ui.button("To channel").disabled).toBe(true);
   expect(ui.host.textContent).toContain("fixed during replay");
 });
 it("keeps accepted hardware precision while displaying rounded MHz and editing at whole-Hz precision", async () => {
   const ui = await setup(false, false, 100e6 - 17);
   expect(ui.input.value).toBe("100.000");
-  expect(ui.host.textContent).toContain("+100.017 kHz");
   await act(async () => ui.input.focus());
   expect(ui.input.value).toBe("99.999983");
-  expect(ui.button("Set center").disabled).toBe(true);
+  expect(ui.button("Set").disabled).toBe(true);
   await act(async () => ui.input.blur());
   expect(ui.input.value).toBe("100.000");
   expect(ui.tune).not.toHaveBeenCalled();
   await ui.edit("100.123456");
-  await act(async () => ui.button("Set center").click());
+  await act(async () => ui.button("Set").click());
   expect(ui.tune).toHaveBeenCalledWith(100_123_456);
 });
 it("lets users enable auto re-center while a channel edit is pending", async () => {

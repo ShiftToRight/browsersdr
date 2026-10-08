@@ -1,3 +1,12 @@
+import {
+  ATLAS_UUID,
+  parseAtlasStation,
+  parseAtlasStationPage,
+  stationQueryParams,
+  type AtlasStation,
+  type AtlasStationPage,
+  type AtlasStationQuery,
+} from "./atlasStations";
 export const ATLAS_API_VERSION = "1.0.0" as const;
 export const ATLAS_ANALYSIS_CAPABILITIES_VERSION =
   "signal-atlas-analysis-capabilities-v1" as const;
@@ -171,6 +180,28 @@ export class AtlasClient {
   clearSession(): void {
     ++this.sessionGeneration;
     this.csrfToken = undefined;
+  }
+
+  async listStations(
+    query: AtlasStationQuery,
+    signal?: AbortSignal,
+  ): Promise<AtlasStationPage> {
+    const params = stationQueryParams(query);
+    return parseAtlasStationPage(
+      await this.request(`/stations?${params}`, { signal, cache: "no-store" }),
+    );
+  }
+  async getStation(id: string, signal?: AbortSignal): Promise<AtlasStation> {
+    if (!ATLAS_UUID.test(id)) throw new Error("Invalid station ID.");
+    const station = parseAtlasStation(
+      await this.request(`/stations/${encodeURIComponent(id)}`, {
+        signal,
+        cache: "no-store",
+      }),
+    );
+    if (station.id.toLowerCase() !== id.toLowerCase())
+      throw new Error("SigIntAtlas returned a different station.");
+    return station;
   }
 
   capabilities(signal?: AbortSignal): Promise<AtlasCapabilities> {

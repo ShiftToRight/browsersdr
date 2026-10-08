@@ -86,6 +86,174 @@ function dependencies(
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("RTL sample-rate transitions", () => {
+  type Block = import("@jtarrio/signals/radio/sample_block.js").SampleBlock;
+  const block = (value = 0.25): Block => ({
+    I: new Float32Array([value, value]), Q: new Float32Array([0, 0]), frequency: OPTIONS.channelFrequencyHz,
+  });
+  async function flush() { for (let i = 0; i < 25; i++) await Promise.resolve(); }
+  function fixture() {
+    vi.stubGlobal("navigator", { usb: {} });
+    const reads: { length: number; pending: ReturnType<typeof deferred<Block>> }[] = [];
+    let capture: (data: ArrayBuffer) => void = () => {};
+    const source = sourceWith(vi.fn(async () => {}), vi.fn(async () => {}));
+    source.setSampleRate = vi.fn(async (rate: number) => rate);
+    source.setCenterFrequency = vi.fn(async (frequency: number) => frequency);
+    source.readSamples = (length) => {
+      const pending = deferred<Block>(); reads.push({ length, pending });
+      return pending.promise.then((value) => {
+        capture(new Uint8Array([128, 128, 140, 128]).buffer);
+        return value;
+      });
+    };
+    const audio = audioContextWith(vi.fn(async () => {}));
+    const receiveSamples = vi.fn();
+    const analysis = {
+      begin: vi.fn(() => ({ setSampleRate: vi.fn(), receiveSamples })),
+      retune: vi.fn(), stop: vi.fn(), markDiscontinuity: vi.fn(),
+    };
+    const demodulator = {
+      setMode: vi.fn(), setVolume: vi.fn(), setFrequencyOffset: vi.fn(),
+      setSampleRate: vi.fn(), expectFrequencyAndSetOffset: vi.fn(), receiveSamples: vi.fn(),
+    };
+    const providerGet = vi.fn(async () => source);
+    const backend = new RtlSdrBackend(events(), analysis as unknown as import("../dsp/analysisPipeline").AnalysisPipeline,
+      1, OPTIONS.channelFrequencyHz, {
+        createAudioContext: () => audio, createDemodulator: () => demodulator,
+        createSourceProvider: (_permission, captureBytes) => { capture = captureBytes; return { get: providerGet }; },
+      });
+    const drain = () => { for (const read of reads.splice(0)) read.pending.resolve(block(0.75)); };
+    const close = async () => { const closing = backend.disconnect(); drain(); await closing; };
+    return { backend, source, reads, drain, close, audio, providerGet, analysis, receiveSamples, demodulator };
+  }
+
+  it("drains stale reads, flushes FIFO and delivers only fresh samples at the acknowledged rate", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    expect(f.reads).toHaveLength(2);
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    await flush();
+    expect(f.source.setSampleRate).toHaveBeenCalledTimes(1); // startup only
+    f.drain();
+    const accepted = await switching;
+    expect(accepted.actualSampleRateHz).toBe(2_400_000);
+    expect(f.receiveSamples).not.toHaveBeenCalled();
+    expect(f.source.startReceiving).toHaveBeenCalledTimes(2);
+    expect(f.source.setCenterFrequency).toHaveBeenCalledTimes(1);
+    expect(f.providerGet).toHaveBeenCalledTimes(1);
+    expect(f.audio.resume).toHaveBeenCalledTimes(1);
+    expect(f.audio.suspend).not.toHaveBeenCalled();
+    expect(f.analysis.retune).toHaveBeenCalledWith(expect.objectContaining({ actualSampleRateHz: 2_400_000, sessionGeneration: 2 }));
+    expect(f.reads.map((read) => read.length)).toEqual([120_320, 120_320]);
+    f.reads.shift()!.pending.resolve(block());
+    await flush();
+    expect(f.receiveSamples).toHaveBeenCalledTimes(1);
+    const shrinking = f.backend.configureSampleRate(1_024_000, 3);
+    f.drain(); await shrinking;
+    expect(f.reads.map((read) => read.length)).toEqual([51_200, 51_200]);
+    await f.close();
+  });
+
+  it("retains the selected channel and recenters only when the smaller span requires it", async () => {
+    const f = fixture();
+    await f.backend.start({ ...OPTIONS, sampleRateHz: 2_400_000 }, 1);
+    await f.backend.tune(100_800_000, 2);
+    const switching = f.backend.configureSampleRate(1_024_000, 3, { autoRecenter: true });
+    f.drain();
+    const accepted = await switching;
+    expect(accepted).toMatchObject({ hardwareCenterFrequencyHz: 100_800_000, selectedChannelFrequencyHz: 100_800_000 });
+    await f.close();
+  });
+
+  it("Stop during a register write retains the accepted rate without launching more reads", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    const rate = deferred<number>();
+    f.source.setSampleRate = vi.fn(() => rate.promise);
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    f.drain(); await flush();
+    const stopping = f.backend.stop();
+    rate.resolve(2_400_000);
+    expect((await switching).actualSampleRateHz).toBe(2_400_000);
+    await stopping;
+    expect(f.reads).toHaveLength(0);
+    expect(f.audio.suspend).toHaveBeenCalledTimes(1);
+    expect(f.source.close).not.toHaveBeenCalled();
+    await f.close();
+  });
+
+  it("Disconnect during a register write drains the operation and never resumes acquisition", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    const rate = deferred<number>();
+    f.source.setSampleRate = vi.fn(() => rate.promise);
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    const rejected = expect(switching).rejects.toMatchObject({ name: "AbortError" });
+    f.drain(); await flush();
+    const closing = f.backend.disconnect();
+    rate.resolve(2_400_000);
+    await rejected; await closing;
+    expect(f.reads).toHaveLength(0);
+    expect(f.source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("failed register writes leave no new reads or falsely accepted metadata", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    f.source.setSampleRate = vi.fn(async () => { throw new Error("Rate write failed"); });
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    f.drain();
+    await expect(switching).rejects.toThrow("Rate write failed");
+    expect(f.analysis.retune).not.toHaveBeenCalled();
+    expect(f.reads).toHaveLength(0);
+    await f.close();
+  });
+
+  it("a failed in-flight USB read aborts the change before programming the new rate", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    const rejected = expect(switching).rejects.toThrow("USB drain failed");
+    f.reads.shift()!.pending.reject(new Error("USB drain failed"));
+    f.drain(); await rejected;
+    expect(f.source.setSampleRate).toHaveBeenCalledTimes(1);
+    expect(f.analysis.retune).not.toHaveBeenCalled();
+    await f.close();
+  });
+
+  it("waits for a pending gain command and retains its acknowledgement before rate writes", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    const gain = deferred<number>();
+    f.source.setParameter = (() => gain.promise) as SignalSource["setParameter"];
+    const gaining = f.backend.setGain(15);
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    f.drain(); await flush();
+    expect(f.source.setSampleRate).toHaveBeenCalledTimes(1);
+    gain.resolve(15);
+    await gaining;
+    expect(await switching).toMatchObject({ actualSampleRateHz: 2_400_000, gainDb: 15 });
+    await f.close();
+  });
+
+  it("retains old-rate capture bytes and excludes stale reads from the next recording", async () => {
+    const f = fixture();
+    await f.backend.start({ ...OPTIONS, modeSettings: { mode: "OFF", bandwidthHz: 1, squelch: 0 } }, 1);
+    f.backend.startRecording();
+    f.reads.shift()!.pending.resolve(block()); await flush();
+    const old = f.backend.stopRecording("metadata-change")!;
+    const switching = f.backend.configureSampleRate(2_400_000, 2);
+    f.drain(); await switching;
+    expect(old.metadata).toMatchObject({ sampleRateHz: 1_024_000, sampleCount: 2, stopReason: "metadata-change" });
+    f.backend.startRecording();
+    expect(f.backend.getRecordingStatus()?.sampleCount).toBe(0);
+    f.reads.shift()!.pending.resolve(block()); await flush();
+    const next = f.backend.stopRecording("user")!;
+    expect(next.metadata).toMatchObject({ sampleRateHz: 2_400_000, sampleCount: 2 });
+    await f.close();
+  });
+});
+
 describe("RtlSdrBackend teardown", () => {
   it("keeps raw spectrum analysis active without feeding the demodulator in OFF mode", async () => {
     vi.stubGlobal("navigator", { usb: {} });

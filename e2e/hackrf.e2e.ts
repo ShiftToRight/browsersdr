@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
@@ -209,6 +210,9 @@ test("HackRF unsupported firmware fails with compatibility details before recept
 }) => {
   await installHackrfUsb(page, true);
   await openPro(page);
+  await page
+    .getByRole("button", { name: "Recovery help", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText(/API|profile/);
   await expect(
     page.getByRole("button", { name: "Start receiving", exact: true }),
@@ -252,7 +256,7 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await expect(
       page.getByRole("meter", { name: "Current channel quality" }),
     ).not.toHaveAttribute("aria-valuenow", "0");
-    await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+    await openApplicationView(page, "Diagnostics");
     await page.getByText("Raw counters & performance", { exact: true }).click();
     await expect(page.getByText("USB callback", { exact: true })).toBeVisible();
     await expect(

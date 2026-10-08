@@ -1,4 +1,6 @@
 import type { RdsSnapshot, SourceKind } from "./types";
+import type { IqRecording } from "./iqRecording";
+import type { SourceSessionMetadata } from "./types";
 import type { PreparedRecordingExport } from "./recordingExportFormat";
 
 export type CaptureOrigin = "real" | "synthetic" | "unknown";
@@ -134,5 +136,37 @@ export class CaptureRdsEvidence {
     return this.observations
       .filter((e) => BigInt(e.sample_count) <= BigInt(savedSamples))
       .map((e) => ({ ...e }));
+  }
+}
+
+/** Candidate context belongs to the capture boundary, never to completion-time UI state. */
+export class CaptureCandidateLatch {
+  private candidate?: ReceptionCandidate;
+  begin(
+    candidate: ReceptionCandidate | undefined,
+    session: SourceSessionMetadata | undefined,
+  ): void {
+    this.candidate =
+      candidate &&
+      session &&
+      session.mode === candidate.mode &&
+      Math.abs(session.selectedChannelFrequencyHz - candidate.frequency_hz) <=
+        session.channelBandwidthHz / 2
+        ? { ...candidate, bandwidth_hz: session.channelBandwidthHz }
+        : undefined;
+  }
+  complete(recording: IqRecording): void {
+    const candidate = this.candidate;
+    this.candidate = undefined;
+    if (
+      recording.metadata.reception &&
+      candidate &&
+      recording.metadata.mode === candidate.mode &&
+      Math.abs(
+        recording.metadata.selectedChannelFrequencyHz - candidate.frequency_hz,
+      ) <=
+        candidate.bandwidth_hz / 2
+    )
+      recording.metadata.reception.candidate = { ...candidate };
   }
 }

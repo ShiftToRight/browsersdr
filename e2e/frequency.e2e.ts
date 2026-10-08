@@ -12,8 +12,8 @@ test("receiver window and channel tune independently, with guarded automatic re-
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await channel.fill("100");
   await page.getByRole("button", { name: "Start demo", exact: true }).click();
-  const center = page.getByLabel("Receiver center", { exact: true });
-  const auto = page.getByRole("checkbox", { name: "Auto re-center" });
+  const center = page.getByLabel("Receiver center frequency", { exact: true });
+  const auto = page.getByRole("switch", { name: "Follow channel" });
   await expect(center).toBeEnabled();
   await expect(center).toHaveValue("100.000");
   await expect(auto).toBeChecked();
@@ -36,13 +36,11 @@ test("receiver window and channel tune independently, with guarded automatic re-
   await center.fill("101");
   await expect(center).toHaveAttribute("aria-invalid", "true");
   await expect(
-    page.getByRole("button", { name: "Set center", exact: true }),
+    page.getByRole("button", { name: "Set", exact: true }),
   ).toBeDisabled();
   await center.press("Escape");
   await expect(center).toHaveValue("100.200");
-  await page
-    .getByRole("button", { name: "Center on channel", exact: true })
-    .click();
+  await page.getByRole("button", { name: "To channel", exact: true }).click();
   await expect(center).toHaveValue("100.100");
   await auto.uncheck();
   await channel.fill("101");

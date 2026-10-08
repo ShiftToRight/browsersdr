@@ -166,9 +166,9 @@ export function planChannelTune(
     };
   }
   if (options.centerFrequencyHz !== undefined)
-    throw new Error("That receiver center would place the selected channel outside the usable RF window. Choose a closer center or use Center on channel.");
+    throw new Error("That receiver center would place the selected channel outside the usable RF window. Choose a closer center or use To channel.");
   if (options.autoRecenter === false)
-    throw new Error("The complete channel does not fit in the usable RF window. Enable Auto re-center or move the receiver center.");
+    throw new Error("The complete channel does not fit in the usable RF window. Enable Follow channel or move the receiver frequency.");
   return {
     hardwareCenterFrequencyHz: channelFrequencyHz,
     frequencyOffsetHz: 0,

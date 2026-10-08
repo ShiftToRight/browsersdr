@@ -25,6 +25,10 @@ import {
   ChevronDown,
   ChevronUp,
   CircleHelp,
+  Share2,
+  Star,
+  X,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 
@@ -55,6 +59,10 @@ const icons = {
   mute: VolumeX,
   expand: ChevronDown,
   collapse: ChevronUp,
+  share: Share2,
+  star: Star,
+  close: X,
+  plus: Plus,
 } satisfies Record<string, LucideIcon>;
 
 export type AppIconName = keyof typeof icons;

@@ -91,6 +91,8 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
       <WebGpuSpectrum pipeline={pipeline} session={session} active />,
     ),
   );
+  expect(host.querySelector(".diagnostic-message")).toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>(".spectrum-info-button")!.click());
   const frame = (sequence: number): SpectrumFrame => ({
     sessionGeneration: 0,
     sequence,

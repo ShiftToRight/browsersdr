@@ -89,9 +89,10 @@ export function ReceiverStatus({
             className={`receiver-status-label${issues ? " needs-attention" : recording || receiver.lifecycle === "running" || receiver.lifecycle === "connected" ? " is-working" : ""}`}
             aria-live="polite"
           >
-            <AppIcon name={issues ? "alert" : recording ? "record" : "radio"} />
+            <span className="receiver-status-dot" aria-hidden="true" />
             {label}
           </span>
+          <AppIcon name="expand" />
         </summary>
         <div
           className="receiver-health-panel"

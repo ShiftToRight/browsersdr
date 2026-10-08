@@ -1,4 +1,5 @@
 import { ActionButton } from "../ui/ActionButton";
+import { SpectrumInfo } from "./SpectrumInfo";
 import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -54,7 +55,11 @@ export function WebGpuSpectrum({
   onOpenDiagnostics,
   active = true,
   tuningControls,
+  displaySettings,
+  onDisplaySettingsChange,
 }: {
+  displaySettings?: { floorDb: number; rangeDb: number };
+  onDisplaySettingsChange?: (settings: { floorDb: number; rangeDb: number }) => void;
   active?: boolean;
   tuningControls?: ReactNode;
   onStatusChange?: (status: SpectrumDisplayStatus) => void;
@@ -87,6 +92,14 @@ export function WebGpuSpectrum({
   const [paused, setPaused] = useState(false);
   const [floorDb, setFloorDb] = useState(-105);
   const [rangeDb, setRangeDb] = useState(90);
+  useEffect(() => {
+    if (!displaySettings) return;
+    floorRef.current = displaySettings.floorDb;
+    rangeRef.current = displaySettings.rangeDb;
+    setFloorDb(displaySettings.floorDb);
+    setRangeDb(displaySettings.rangeDb);
+    renderRef.current();
+  }, [displaySettings]);
   const [gpuAttempt, setGpuAttempt] = useState(0);
   const latestBinsRef = useRef<Float32Array | undefined>(undefined);
   const lastFrameAt = useRef(0);
@@ -114,6 +127,7 @@ export function WebGpuSpectrum({
     rangeRef.current = scale.rangeDb;
     setFloorDb(scale.floorDb);
     setRangeDb(scale.rangeDb);
+    onDisplaySettingsChange?.(scale);
     renderRef.current();
   };
   const retryGraphics = () => {
@@ -726,9 +740,6 @@ export function WebGpuSpectrum({
           aria-label="Spectrum and receiver controls"
         >
           <div className="spectrum-display-tools">
-            <span className="display-units">
-              Relative dB <span>· not dBm</span>
-            </span>
             <div className="spectrum-actions">
               <ActionButton
                 type="button"
@@ -874,6 +885,27 @@ export function WebGpuSpectrum({
               Channel {formatFrequency(session.selectedChannelFrequencyHz)}
             </span>
           ) : null}
+          <div className="plot-metadata">
+            <span className="display-units">Relative dB · not dBm</span>
+            {session && (
+              <small className="receiver-offset">
+                Channel offset{" "}
+                {session.selectedChannelFrequencyHz - session.hardwareCenterFrequencyHz >= 0 ? "+" : ""}
+                {((session.selectedChannelFrequencyHz - session.hardwareCenterFrequencyHz) / 1_000).toFixed(3)}{" "}
+                kHz
+              </small>
+            )}
+          </div>
+          <SpectrumInfo>
+            <p className="diagnostic-message">{state.message}</p>
+            {fftMessage && <p className="display-note">{fftMessage}</p>}
+            <p className="display-note">
+              {fftSize}-point Hann FFT ·{" "}
+              {requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
+              · circular 240-row sample-clock history · relative dB (not dBm) ·
+              click plot to retune · background tabs may resume with marked gaps
+            </p>
+          </SpectrumInfo>
         </div>
       </div>
       <details className="display-settings">
@@ -883,6 +915,7 @@ export function WebGpuSpectrum({
             Floor <output>{floorDb} dB</output>
             <input
               type="range"
+              aria-label="Spectrum floor"
               min="-120"
               max="-30"
               step="1"
@@ -891,6 +924,7 @@ export function WebGpuSpectrum({
                 const value = event.currentTarget.valueAsNumber;
                 floorRef.current = value;
                 setFloorDb(value);
+                onDisplaySettingsChange?.({ floorDb: value, rangeDb });
                 renderRef.current();
               }}
             />
@@ -899,6 +933,7 @@ export function WebGpuSpectrum({
             Range <output>{rangeDb} dB</output>
             <input
               type="range"
+              aria-label="Spectrum range"
               min="20"
               max="120"
               step="1"
@@ -907,6 +942,7 @@ export function WebGpuSpectrum({
                 const value = event.currentTarget.valueAsNumber;
                 rangeRef.current = value;
                 setRangeDb(value);
+                onDisplaySettingsChange?.({ floorDb, rangeDb: value });
                 renderRef.current();
               }}
             />
@@ -916,17 +952,6 @@ export function WebGpuSpectrum({
           Auto scale fits the current spectrum. Display changes do not affect
           receiver gain.
         </small>
-      </details>
-      <details className="spectrum-details">
-        <summary>FFT &amp; display details</summary>
-        <p className="diagnostic-message">{state.message}</p>
-        {fftMessage && <p className="display-note">{fftMessage}</p>}
-        <p className="display-note">
-          {fftSize}-point Hann FFT ·{" "}
-          {requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
-          · circular 240-row sample-clock history · relative dB (not dBm) ·
-          click plot to retune · background tabs may resume with marked gaps
-        </p>
       </details>
     </section>
   );

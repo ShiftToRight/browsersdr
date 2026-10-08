@@ -1,0 +1,139 @@
+import { expect, test, type Locator } from "@playwright/test";
+
+async function fullyInside(element: Locator, container: Locator) {
+  const outer = (await container.boundingBox())!;
+  const inner = (await element.boundingBox())!;
+  expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+  expect(inner.y + inner.height).toBeLessThanOrEqual(
+    outer.y + outer.height + 1,
+  );
+}
+
+test("header layout controls and condensed docks keep primary actions fully visible", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Compact", exact: true }).click();
+  const dock = page.locator(".receiver-dock");
+  for (const viewport of [
+    { width: 1686, height: 903 },
+    { width: 1366, height: 768 },
+    { width: 1280, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator(".workspace-toolbar")).toHaveCount(0);
+    const compact = (await page
+      .getByRole("button", { name: "Compact", exact: true })
+      .boundingBox())!;
+    const status = (await page.locator(".receiver-status-menu").boundingBox())!;
+    expect(Math.abs(compact.y - status.y)).toBeLessThan(8);
+    for (const [tab, maximum] of [
+      ["Audio & decode", 165],
+      ["Session", 145],
+    ] as const) {
+      await page.getByRole("tab", { name: tab, exact: true }).click();
+      expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(maximum);
+    }
+    await page
+      .getByRole("tab", { name: "Capture & replay", exact: true })
+      .click();
+    expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(205);
+    for (const element of [
+      page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+      page.getByLabel("Recording export format"),
+      page.getByLabel("Timed capture seconds"),
+      page.getByLabel("Capture current channel only"),
+    ])
+      await fullyInside(element, dock);
+    await page
+      .getByRole("tab", { name: "Open recording", exact: true })
+      .click();
+    await fullyInside(
+      page.getByRole("button", { name: "Load files", exact: true }),
+      dock,
+    );
+    expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(185);
+    await page.getByRole("tab", { name: "Record", exact: true }).click();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(viewport.width);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+    ).toBe(viewport.height);
+    expect(
+      (await page.locator(".graphics-panel canvas").boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(120);
+  }
+  const small = (await dock.boundingBox())!.height;
+  await page.getByRole("button", { name: "More space", exact: true }).click();
+  expect((await dock.boundingBox())!.height).toBeGreaterThan(small);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Less space", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Settings", { exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(
+    page
+      .locator(".header-utility-menu")
+      .filter({ has: page.getByLabel("Settings", { exact: true }) }),
+  ).not.toHaveAttribute("open");
+  await expect(page.getByLabel("Settings", { exact: true })).toBeFocused();
+  await page.getByLabel("Settings", { exact: true }).click();
+  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Compact", exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "More space", exact: true }),
+  ).toBeVisible();
+});
+
+test("condensed recording keeps Stop, retained actions and reload warning visible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Compact", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("synthetic");
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  const dock = page.locator(".receiver-dock");
+  await page
+    .getByRole("button", { name: "Start I/Q recording", exact: true })
+    .click();
+  await fullyInside(
+    page.getByRole("button", { name: "Stop recording", exact: true }),
+    dock,
+  );
+  await expect(page.getByLabel("Recording export format")).toBeDisabled();
+  await expect
+    .poll(
+      async () => (await page.locator(".recording-state").textContent()) ?? "",
+    )
+    .toMatch(/[1-9][\d.]* MiB/);
+  await page
+    .getByRole("button", { name: "Stop recording", exact: true })
+    .click();
+  const download = page.getByRole("button", {
+    name: "Download ZIP",
+    exact: true,
+  });
+  await expect(download).toBeEnabled();
+  await fullyInside(download, dock);
+  await fullyInside(page.locator(".capture-retention-warning"), dock);
+  await expect(
+    page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+  ).toBeHidden();
+  await page
+    .getByRole("button", { name: "Discard prepared capture", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+});

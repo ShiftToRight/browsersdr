@@ -1,0 +1,5 @@
+# Personal Obsidian state must never enter a Docker build context.
+.obsidian
+.obsidian/**
+**/.obsidian
+**/.obsidian/**

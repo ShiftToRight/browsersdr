@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test } from "@playwright/test";
 
 test("About shows the optional visitor count quietly", async ({ page }) => {
@@ -17,7 +18,7 @@ test("About shows the optional visitor count quietly", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".receiver-status-menu > summary")).toBeVisible();
   expect(reads).toBe(0);
-  await page.getByRole("tab", { name: /About/ }).click();
+  await openApplicationView(page, "About");
   await expect(page.locator(".about-visitors")).toHaveText(
     "71 visitors since launch",
   );
@@ -48,7 +49,7 @@ for (const fixture of [
       else await route.fulfill({ json: fixture.value });
     });
     await page.goto("/");
-    await page.getByRole("tab", { name: /About/ }).click();
+    await openApplicationView(page, "About");
     await expect(
       page.getByRole("heading", { name: "Licences, privacy & provenance" }),
     ).toBeVisible();
@@ -68,7 +69,7 @@ test("About displays a measured zero visitor count", async ({ page }) => {
     });
   });
   await page.goto("/");
-  await page.getByRole("tab", { name: /About/ }).click();
+  await openApplicationView(page, "About");
   await expect(page.locator(".about-visitors")).toHaveText(
     "0 visitors since launch",
   );

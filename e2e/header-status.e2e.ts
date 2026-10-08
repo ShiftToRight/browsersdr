@@ -1,3 +1,4 @@
+import { openApplicationView } from "./application-navigation";
 import { expect, test } from "@playwright/test";
 
 test("header keeps receiver, spectrum, and recording states independent across views", async ({
@@ -47,10 +48,9 @@ test("header keeps receiver, spectrum, and recording states independent across v
     status.getByRole("button", { name: /^Recording:/ }),
   ).toContainText("Ready to download");
   await status.getByRole("button", { name: /^Spectrum:/ }).click();
-  await expect(page.getByRole("tab", { name: /Diagnostics/ })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(
+    page.getByRole("region", { name: "Diagnostics", exact: true }),
+  ).toBeVisible();
   await expect(status.locator("summary").first()).toBeVisible();
   await expect(status).toContainText("Synthetic RF demo running");
   await expect(status).toContainText("Ready to download");
@@ -125,7 +125,7 @@ test("header recovery wraps on small screens and remains usable outside the rece
   );
   await expect(status).toContainText("system driver may be using it");
   await expect(status.locator(".receiver-notice")).toBeHidden();
-  await page.getByRole("tab", { name: /Help/ }).click();
+  await openApplicationView(page, "Help");
   await status.locator(".receiver-status-menu > summary").click();
   await expect(status.locator(".receiver-notice")).toBeVisible();
   await expect(status.getByRole("button", { name: /^Receiver:/ })).toHaveClass(

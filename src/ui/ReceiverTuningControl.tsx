@@ -99,16 +99,16 @@ export function ReceiverTuningControl({
   };
   return (
     <div className="receiver-tuning" aria-label="Receiver window tuning">
-      <div className="receiver-tuning-row">
+      <div className="receiver-frequency-controls">
         <label className="receiver-center-field">
-          <span>Receiver center</span>
+          <span>Receiver</span>
           <span className="unit-input">
             <input
               type="number"
               step="0.000001"
               value={value}
               title={`${centerHz.toLocaleString(undefined, { maximumFractionDigits: 3 })} Hz accepted receiver center`}
-              aria-label="Receiver center"
+              aria-label="Receiver center frequency"
               aria-describedby={
                 replay
                   ? "receiver-center-help receiver-center-state"
@@ -146,65 +146,54 @@ export function ReceiverTuningControl({
             <span>MHz</span>
           </span>
         </label>
-        <div className="receiver-tuning-right">
-          <div className="receiver-tuning-actions">
-            <ActionButton
-              type="button"
-              className="secondary toolbar-action"
-              icon="crosshair"
-              disabled={busy || !pending || Boolean(invalid)}
-              disabledReason={
-                busyReason ?? invalid ?? "Edit the receiver frequency first."
-              }
-              onClick={() => void apply(requestedHz)}
-            >
-              Set center
-            </ActionButton>
-            <label
-              className="receiver-auto-center"
-              title="Move the receiver only when the complete channel no longer fits in the usable RF window"
-            >
-              <input
-                type="checkbox"
-                checked={autoRecenter}
-                disabled={disabled || applying || replay}
-                onChange={(event) =>
-                  onAutoRecenter(event.currentTarget.checked)
-                }
-              />
-              <span>Auto re-center</span>
-            </label>
-            <ActionButton
-              type="button"
-              className="secondary toolbar-action"
-              icon="crosshair"
-              disabled={
-                busy || session?.selectedChannelFrequencyHz === centerHz
-              }
-              disabledReason={
-                busyReason ?? "The receiver is already centered on the channel."
-              }
-              onClick={() =>
-                session && void apply(session.selectedChannelFrequencyHz)
-              }
-            >
-              Center on channel
-            </ActionButton>
-          </div>
-          {session && (
-            <small className="receiver-offset">
-              Channel offset{" "}
-              {(session.selectedChannelFrequencyHz - centerHz) / 1_000 >= 0
-                ? "+"
-                : ""}
-              {(
-                (session.selectedChannelFrequencyHz - centerHz) /
-                1_000
-              ).toFixed(3)}{" "}
-              kHz
-            </small>
-          )}
-        </div>
+
+        <ActionButton
+          type="button"
+          className="secondary toolbar-action"
+          title="Apply the entered receiver frequency"
+          disabled={busy || !pending || Boolean(invalid)}
+          disabledReason={
+            busyReason ?? invalid ?? "Edit the receiver frequency first."
+          }
+          onClick={() => void apply(requestedHz)}
+        >
+          Set
+        </ActionButton>
+      </div>
+      <div className="receiver-tuning-actions">
+        <label
+          className="receiver-auto-center"
+          title="Move the receiver window when needed to keep the complete channel in range"
+        >
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label="Follow channel"
+            checked={autoRecenter}
+            disabled={disabled || applying || replay}
+            onChange={(event) => onAutoRecenter(event.currentTarget.checked)}
+          />
+          <span className="receiver-switch-track" aria-hidden="true" />
+          <span>Follow channel</span>
+          <span className="receiver-switch-state" aria-hidden="true">
+            {autoRecenter ? "On" : "Off"}
+          </span>
+        </label>
+        <ActionButton
+          type="button"
+          className="secondary toolbar-action"
+          icon="crosshair"
+          title="Set the receiver frequency to the current channel once"
+          disabled={busy || session?.selectedChannelFrequencyHz === centerHz}
+          disabledReason={
+            busyReason ?? "The receiver is already centered on the channel."
+          }
+          onClick={() =>
+            session && void apply(session.selectedChannelFrequencyHz)
+          }
+        >
+          To channel
+        </ActionButton>
       </div>
       {replay && (
         <small id="receiver-center-help">
@@ -221,9 +210,9 @@ export function ReceiverTuningControl({
         {invalid ??
           message ??
           (applying
-            ? "Applying receiver center…"
+            ? "Applying receiver frequency…"
             : pending
-              ? "Change pending · press Set center or Enter"
+              ? "Change pending · press Set or Enter"
               : "")}
       </small>
     </div>

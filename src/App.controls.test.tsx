@@ -389,17 +389,12 @@ it("holds source ownership on cleanup failure and restores source-specific choic
   expect(control("RX VGA gain").value).toBe("26");
 });
 
-it("exposes a top-level help view with scoped compatibility evidence and a demo shortcut", async () => {
+it("exposes a menu-routed help view with scoped compatibility evidence and a demo shortcut", async () => {
   await change(control("Source"), "hackrf");
   await change(control("RX LNA state"), "33");
   await change(control("RX VGA gain"), "20");
   await toggle(control("RF amplifier") as HTMLInputElement);
-  await act(async () =>
-    (document.querySelector("#help-tab") as HTMLButtonElement).click(),
-  );
-  expect(
-    document.querySelector("#help-tab")?.getAttribute("aria-selected"),
-  ).toBe("true");
+  await click("Help & setup");
   expect(document.querySelector<HTMLDivElement>("#help-view")?.hidden).toBe(
     false,
   );
@@ -494,12 +489,7 @@ it("exposes a top-level help view with scoped compatibility evidence and a demo 
 });
 
 it("exposes licence, driver provenance, and privacy information in About", async () => {
-  await act(async () =>
-    (document.querySelector("#about-tab") as HTMLButtonElement).click(),
-  );
-  expect(
-    document.querySelector("#about-tab")?.getAttribute("aria-selected"),
-  ).toBe("true");
+  await click("About BrowserSDR");
   expect(document.querySelector<HTMLDivElement>("#about-view")?.hidden).toBe(
     false,
   );
@@ -624,9 +614,7 @@ it("shows CW filter presets and changes beat tone without changing RF frequency"
 });
 
 it("creates a reviewable diagnostic report and exposes reporting after a receiver failure", async () => {
-  await act(async () =>
-    (document.querySelector("#diagnostics-tab") as HTMLButtonElement).click(),
-  );
+  await click("Open diagnostics");
   expect(document.body.textContent).toContain("Help improve BrowserSDR");
   await click("Create diagnostic report");
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
@@ -669,9 +657,7 @@ it("polls visible diagnostics only while keeping hidden health snapshots", async
     await vi.advanceTimersByTimeAsync(500);
   });
   expect(reads).toHaveBeenCalledOnce(); // health monitor remains active
-  await act(async () =>
-    document.querySelector<HTMLElement>("#diagnostics-tab")!.click(),
-  );
+  await click("Open diagnostics");
   reads.mockClear();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);

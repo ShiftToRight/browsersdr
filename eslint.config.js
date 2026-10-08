@@ -32,6 +32,7 @@ export default tseslint.config(
       "src/**/*.{ts,tsx}",
       "e2e/**/*.ts",
       "vite.config.ts",
+      "vitest.config.ts",
       "playwright.config.ts",
     ],
     languageOptions: {

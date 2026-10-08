@@ -114,6 +114,13 @@ export interface ReceiverBackend {
     settings: ReceiverModeSettings,
   ): Omit<SourceSessionMetadata, "sessionGeneration">;
   setGain(gainDb: number | null): Promise<number | null>;
+  /** Change the RTL acquisition rate at a clean sample boundary, retaining USB
+   * and audio ownership. The old recording must be finished before invocation. */
+  configureSampleRate?(
+    sampleRateHz: number,
+    sessionGeneration: number,
+    options?: ReceiverTuneOptions,
+  ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   /** Finish the old capture before invocation. Backend must invalidate old samples,
    * apply settings at a clean boundary and return accepted metadata after settling.
    * Rejection closes the session; no partial accepted configuration is published. */
@@ -168,6 +175,7 @@ export class ReceiverController {
   private readonly squelchMeterListeners = new Set<SquelchMeterListener>();
   private backend?: ReceiverBackend;
   private startTask?: Promise<void>;
+  private sampleRateTask?: Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   private generation = 0;
   private source: SourceKind = "rtl-sdr";
   private autoRecenter = true;
@@ -339,6 +347,7 @@ export class ReceiverController {
 
     const generation = ++this.generation;
     const backend = this.backend;
+    const pendingRate = this.sampleRateTask;
     this.captureCompletedRecording(backend?.stopRecording?.("source-stop"));
     const persistent = Boolean(backend?.disconnect);
     const preserveConnection =
@@ -354,14 +363,18 @@ export class ReceiverController {
     });
 
     try {
-      if (preserveConnection && backend) await backend.stop();
+      let stoppedMetadata = this.snapshot.session;
+      if (preserveConnection && backend) {
+        await backend.stop();
+        if (pendingRate) stoppedMetadata = { ...await pendingRate, sessionGeneration: generation };
+      }
       else await this.cleanupBackend(backend);
       if (generation === this.generation) {
-        if (preserveConnection && this.snapshot.session)
+        if (preserveConnection && stoppedMetadata)
           this.publishConnected(
-            this.snapshot.session,
+            stoppedMetadata,
             generation,
-            `Reception stopped. ${sourceCapabilities(this.snapshot.session.source).label} remains connected.`,
+            `Reception stopped. ${sourceCapabilities(stoppedMetadata.source).label} remains connected.`,
           );
         else
           this.publish({
@@ -468,6 +481,33 @@ export class ReceiverController {
       await this.tune(channel, { centerFrequencyHz });
   }
 
+  /** Check a proposed channel/mode together without changing the active session. */
+  validateTune(channelFrequencyHz: number, options: ReceiverTuneOptions = {}, settings?: ReceiverModeSettings): ReceiverTuneOptions {
+    const session = this.snapshot.session;
+    if (this.snapshot.lifecycle !== "running" || !session)
+      throw new Error("Wait for active reception before checking a channel move.");
+    const modeSettings = settings ?? {
+      mode: session.mode, bandwidthHz: session.channelBandwidthHz,
+      squelch: session.squelch, beatToneHz: session.beatToneHz, srd: session.srd,
+    };
+    const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
+    validateSourceRoute(session.source, modeSettings, session.actualSampleRateHz, channelFrequencyHz);
+    const requiresCenter = ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
+      && !isWidebandRate(session.actualSampleRateHz) && ["DAB", "ADS-B"].includes(modeSettings.mode);
+    if (requiresCenter && tuneOptions.centerFrequencyHz === undefined && tuneOptions.autoRecenter)
+      tuneOptions.centerFrequencyHz = channelFrequencyHz;
+    const plan = planChannelTune(session.hardwareCenterFrequencyHz, channelFrequencyHz,
+      session.actualSampleRateHz, modeSettings.bandwidthHz, tuneOptions);
+    if (session.source === "replay" && plan.hardwareRetuneRequired)
+      throw new Error("The capture center is fixed during replay. Select a channel within the recorded RF window.");
+    if (requiresCenter && plan.hardwareCenterFrequencyHz !== channelFrequencyHz)
+      throw new Error(`${modeSettings.mode} requires the receiver center to match the channel at this sample rate.`);
+    if (plan.hardwareRetuneRequired)
+      validateSourceFrequency(session.source, plan.hardwareCenterFrequencyHz,
+        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0);
+    return tuneOptions;
+  }
+
   async tune(channelFrequencyHz: number, options: ReceiverTuneOptions = {}): Promise<void> {
     if (
       this.snapshot.lifecycle !== "running" ||
@@ -475,40 +515,9 @@ export class ReceiverController {
       !this.backend
     )
       return;
-    const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
+    let tuneOptions: ReceiverTuneOptions;
     try {
-      const session = this.snapshot.session;
-      validateSourceRoute(
-        session.source,
-        {
-          mode: session.mode,
-          bandwidthHz: session.channelBandwidthHz,
-          squelch: session.squelch,
-          beatToneHz: session.beatToneHz,
-        },
-        session.actualSampleRateHz,
-        channelFrequencyHz,
-      );
-      const requiresCenter = ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
-        && !isWidebandRate(session.actualSampleRateHz) && ["DAB", "ADS-B"].includes(session.mode);
-      if (requiresCenter && tuneOptions.centerFrequencyHz === undefined && tuneOptions.autoRecenter)
-        tuneOptions.centerFrequencyHz = channelFrequencyHz;
-      const plan = planChannelTune(
-        session.hardwareCenterFrequencyHz, channelFrequencyHz,
-        session.actualSampleRateHz, session.channelBandwidthHz,
-        tuneOptions,
-      );
-      if (session.source === "replay" && plan.hardwareRetuneRequired)
-        throw new Error("The capture center is fixed during replay. Select a channel within the recorded RF window.");
-      if (["hackrf", "bladerf", "usrp-b205"].includes(session.source)
-        && !isWidebandRate(session.actualSampleRateHz)
-        && ["DAB", "ADS-B"].includes(session.mode)
-        && plan.hardwareCenterFrequencyHz !== channelFrequencyHz)
-        throw new Error(`${session.mode} requires the receiver center to match the channel at this sample rate.`);
-      if (plan.hardwareRetuneRequired)
-        validateSourceFrequency(session.source, plan.hardwareCenterFrequencyHz,
-          ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0);
-
+      tuneOptions = this.validateTune(channelFrequencyHz, options);
     } catch (error) {
       this.publish({
         ...this.snapshot,
@@ -544,6 +553,53 @@ export class ReceiverController {
     } catch (error) {
       if (generation === this.generation && this.backend === backend)
         await this.failBackend(backend, error);
+    }
+  }
+
+  async configureSampleRate(sampleRateHz: number): Promise<void> {
+    const backend = this.backend;
+    const session = this.snapshot.session;
+    if (this.snapshot.lifecycle !== "running" || !backend?.configureSampleRate ||
+        !session || session.source !== "rtl-sdr") return;
+    if (sampleRateHz === session.requestedSampleRateHz) return;
+    const tuneOptions = { autoRecenter: this.autoRecenter };
+    try {
+      validateSourceConfiguration({
+        source: session.source,
+        channelFrequencyHz: session.selectedChannelFrequencyHz,
+        sampleRateHz,
+        modeSettings: {
+          mode: session.mode, bandwidthHz: session.channelBandwidthHz,
+          squelch: session.squelch, beatToneHz: session.beatToneHz,
+        },
+        gainDb: session.gainDb,
+      });
+      planChannelTune(session.hardwareCenterFrequencyHz, session.selectedChannelFrequencyHz,
+        sampleRateHz, session.channelBandwidthHz, tuneOptions);
+    } catch (error) {
+      this.publishCommandFailure(error);
+      return;
+    }
+    this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
+    const generation = ++this.generation;
+    this.publish({
+      lifecycle: "tuning",
+      message: `Switching RTL-SDR to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
+      sessionGeneration: generation,
+      session: { ...session, sessionGeneration: generation },
+      audioState: this.snapshot.audioState,
+    });
+    const task = backend.configureSampleRate(sampleRateHz, generation, tuneOptions);
+    this.sampleRateTask = task;
+    try {
+      const metadata = await task;
+      if (generation === this.generation && this.backend === backend)
+        this.publishRunning(metadata, generation);
+    } catch (error) {
+      if (generation === this.generation && this.backend === backend)
+        await this.failBackend(backend, error);
+    } finally {
+      if (this.sampleRateTask === task) this.sampleRateTask = undefined;
     }
   }
 

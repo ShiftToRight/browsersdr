@@ -81,6 +81,98 @@ function fakeBackend(
   };
 }
 
+describe("live RTL rate changes", () => {
+  function fixture(metadata = METADATA) {
+    const changed = deferred<typeof METADATA>();
+    const configureSampleRate = vi.fn(() => changed.promise);
+    const stopRecording = vi.fn();
+    const stop = vi.fn(async () => {});
+    const disconnect = vi.fn(async () => {});
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, async () => metadata, () => {}),
+      stop, disconnect, stopRecording, configureSampleRate,
+    }));
+    return { controller, changed, configureSampleRate, stopRecording, stop, disconnect };
+  }
+
+  it("validates before capture completion and preserves invalid/no-op sessions", async () => {
+    const f = fixture();
+    await f.controller.start(OPTIONS);
+    const generation = f.controller.getSnapshot().sessionGeneration;
+    await f.controller.configureSampleRate(123);
+    await f.controller.configureSampleRate(1_024_000);
+    expect(f.configureSampleRate).not.toHaveBeenCalled();
+    expect(f.stopRecording).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: generation });
+  });
+
+  it("rejects a shrinking passband with Follow channel off before changing generation", async () => {
+    const f = fixture({ ...METADATA, requestedSampleRateHz: 2_400_000,
+      actualSampleRateHz: 2_400_000, selectedChannelFrequencyHz: 100_800_000 });
+    await f.controller.start(OPTIONS);
+    f.controller.setAutoRecenter(false);
+    await f.controller.configureSampleRate(1_024_000);
+    expect(f.configureSampleRate).not.toHaveBeenCalled();
+    expect(f.stopRecording).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot().message).toContain("Follow channel");
+  });
+
+  it("rejects a rate incompatible with the active decoder before finishing its recording", async () => {
+    const configureSampleRate = vi.fn();
+    const stopRecording = vi.fn();
+    const controller = new ReceiverController((events) => ({
+      ...fakeBackend(events, async () => ({ ...METADATA, mode: "DAB",
+        channelBandwidthHz: 1_536_000, requestedSampleRateHz: 2_400_000,
+        actualSampleRateHz: 2_400_000 }), () => {}),
+      configureSampleRate, stopRecording,
+    }));
+    await controller.start({ ...OPTIONS, sampleRateHz: 2_400_000,
+      modeSettings: { mode: "DAB", bandwidthHz: 1_536_000, squelch: 0 } });
+    await controller.configureSampleRate(1_024_000);
+    expect(configureSampleRate).not.toHaveBeenCalled();
+    expect(stopRecording).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", session: { mode: "DAB", actualSampleRateHz: 2_400_000 } });
+  });
+
+  it("retains the old recording, serializes commands and publishes only acknowledged metadata", async () => {
+    const f = fixture();
+    await f.controller.start(OPTIONS);
+    const recording = createDeterministicRecordingFixture();
+    f.stopRecording.mockReturnValue(recording);
+    const switching = f.controller.configureSampleRate(2_400_000);
+    expect(f.stopRecording).toHaveBeenCalledWith("metadata-change");
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "tuning", session: { actualSampleRateHz: 1_024_000 } });
+    await f.controller.configureSampleRate(1_024_000);
+    expect(f.configureSampleRate).toHaveBeenCalledTimes(1);
+    f.changed.resolve({ ...METADATA, requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_002 });
+    await switching;
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", session: { actualSampleRateHz: 2_400_002 } });
+    expect(f.controller.takeCompletedRecording()).toBe(recording);
+    expect(f.disconnect).not.toHaveBeenCalled();
+  });
+
+  it("Stop waits for accepted rate metadata without resurrecting reception", async () => {
+    const f = fixture();
+    await f.controller.start(OPTIONS);
+    const switching = f.controller.configureSampleRate(2_400_000);
+    const stopping = f.controller.stop();
+    f.changed.resolve({ ...METADATA, requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_000 });
+    await Promise.all([switching, stopping]);
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "connected", session: { actualSampleRateHz: 2_400_000 } });
+    expect(f.disconnect).not.toHaveBeenCalled();
+  });
+
+  it("closes a failed rate command instead of claiming the old rate is still valid", async () => {
+    const f = fixture();
+    await f.controller.start(OPTIONS);
+    const switching = f.controller.configureSampleRate(2_400_000);
+    f.changed.reject(new Error("Rate register write failed"));
+    await switching;
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "error" });
+    expect(f.disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("ReceiverController", () => {
   it("publishes squelch telemetry only to its dedicated subscribers", async () => {
     let backendEvents!: ReceiverBackendEvents;
@@ -857,7 +949,7 @@ describe("receiver center and channel policy", () => {
     }));
     return { controller, tune, stopRecording };
   }
-  it("preserves channel selection for Set center and Center on channel", async () => {
+  it("preserves channel selection for Set and To channel", async () => {
     const f = tuningFixture();
     await f.controller.start(OPTIONS);
     await f.controller.tune(100.1e6);
@@ -889,7 +981,7 @@ describe("receiver center and channel policy", () => {
     const calls = f.tune.mock.calls.length;
     await f.controller.tune(101e6);
     expect(f.tune).toHaveBeenCalledTimes(calls);
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("Auto re-center") });
+    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("Follow channel") });
     f.controller.setAutoRecenter(true);
     await f.controller.tune(101e6);
     expect(f.controller.getSnapshot().session).toMatchObject({ hardwareCenterFrequencyHz: 101e6, selectedChannelFrequencyHz: 101e6 });
