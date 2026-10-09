@@ -42,17 +42,38 @@ jobs:
       - name: Verify static SEO documents and discovery files
         run: node scripts/verify-seo.mjs dist
 
+  browser:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium-dev, chromium-production]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
       - name: Install Chromium for browser integration tests
         run: npx playwright install --with-deps chromium
 
-      - name: Run development and production browser integration tests
-        run: npm run test:e2e
+      - name: Run browser integration tests
+        run: npm run test:e2e -- --project=${{ matrix.project }}
 
       - name: Upload browser failure artifacts
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.project }}
           path: |
             playwright-report/
             test-results/
