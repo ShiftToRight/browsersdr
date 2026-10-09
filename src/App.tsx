@@ -1,3 +1,4 @@
+import { RemoteReceiver } from "./ui/RemoteReceiver";
 import { SettingsSharePanel } from "./ui/SettingsSharePanel";
 import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
 import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
@@ -173,7 +174,7 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "receiver" | "explorer" | "settings" | "diagnostics" | "help" | "about";
+type AppView = "remote" | "receiver" | "explorer" | "settings" | "diagnostics" | "help" | "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type CompatibilityDetailView = "modes" | "recording" | "browsers";
 type ReplayImportFormat = "browsersdr" | "sigmf";
@@ -2415,6 +2416,9 @@ export function ReceiverApp({
   const autoConnectAttempted = useRef(false);
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveViewState] = useState<AppView>("receiver");
+  const [remoteStatus, setRemoteStatus] = useState("disconnected");
+  const [remoteOpening, setRemoteOpening] = useState(false);
+  const [remoteEntryIssue, setRemoteEntryIssue] = useState("");
   const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "explorer">("receiver");
   const setActiveView = useCallback((view: AppView) => {
     setActiveViewState(view);
@@ -3033,7 +3037,25 @@ export function ReceiverApp({
   };
 
   const recordingStartPending = useRef(false);
-  const stationUseBlockedReason = stationSelectionBusy ? "Applying station settings…"
+  const remoteBlockedReason = running || scanActive ? "Stop receiving or scanning before opening a remote receiver."
+    : transitioning || receiver.cleanupRequired || remoteOpening || stationSelectionBusy ? "Wait for the current receiver operation to finish."
+    : recordingStatus || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish and discard the retained capture before opening a remote receiver."
+    : undefined;
+  const openRemoteReceiver = async () => {
+    if (remoteBlockedReason || recordingStartPending.current || controller.getRecordingStatus() ||
+      !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) || atlasConnection.getSnapshot().transferActive) {
+      setRemoteEntryIssue(remoteBlockedReason ?? "Finish the current receiver operation first."); return;
+    }
+    setRemoteOpening(true); setRemoteEntryIssue(""); autoConnectAttempted.current = true;
+    try {
+      await controller.disconnect();
+      if (controller.getSnapshot().cleanupRequired) throw new Error("Release the local receiver before connecting remotely.");
+      setActiveView("remote");
+    } catch (reason) { setRemoteEntryIssue((reason as Error).message); }
+    finally { setRemoteOpening(false); }
+  };
+
+  const stationUseBlockedReason = activeView === "remote" ? "Return to the local receiver before applying local station settings or favorites." : stationSelectionBusy ? "Applying station settings…"
     : source === "replay" ? "Choose a live receiver source or the demo to use a station."
     : transitioning || receiver.cleanupRequired ? "Wait for the receiver operation or scan to finish."
     : recordingStatus || exportingRecording ? "Stop recording and finish preparation before selecting a station."
@@ -3103,12 +3125,13 @@ export function ReceiverApp({
     }
   };
   const applySharedSettings = async (shared: SharedSettings) => {
+    if (activeView === "remote") throw new Error("Return to the local receiver before applying shared settings.");
     if (controller.getSnapshot().lifecycle === "running") throw new Error("Stop reception before applying shared settings.");
     await recallFavorite(sharedSettingsBookmark(shared));
     setSpectrumDisplay({ floorDb: shared.display.floorDb, rangeDb: shared.display.rangeDb });
     setLayout((old) => ({ ...old, compact: shared.display.compact }));
   };
-  const saveFavoriteBlockedReason = transitioning ? "Wait for the receiver operation to finish."
+  const saveFavoriteBlockedReason = activeView === "remote" ? "Remote presets are separate from local Favorites and settings sharing." : transitioning ? "Wait for the receiver operation to finish."
     : !frequencyValid || frequencyPending || channelFrequencyDraft !== undefined ? "Apply or cancel the channel frequency edit before saving."
     : undefined;
   const newFavorite = () => {
@@ -3560,8 +3583,8 @@ export function ReceiverApp({
               type="button"
               role="tab"
               id="receiver-tab"
-              aria-selected={activeView === "receiver"}
-              aria-controls="receiver-view"
+              aria-selected={activeView === "receiver" || activeView === "remote"}
+              aria-controls={activeView === "remote" ? "remote-view" : "receiver-view"}
               tabIndex={lastWorkspace === "receiver" ? 0 : -1}
               onClick={() => setActiveView("receiver")}
               onKeyDown={handleTabKeyDown}
@@ -3602,7 +3625,7 @@ export function ReceiverApp({
           onHelp={() => openAuxiliaryView("help")}
           onAbout={() => openAuxiliaryView("about")}
         />
-        <ReceiverStatus
+        {activeView === "remote" ? <div className="receiver-status remote-header-status" role="status">Remote · {remoteStatus}</div> : <ReceiverStatus
           receiver={receiver}
           spectrum={spectrumStatus}
           recording={recordingStatus}
@@ -3647,7 +3670,7 @@ export function ReceiverApp({
               disabled={transitioning || scanActive}
             />
           )}
-        </ReceiverStatus>
+        </ReceiverStatus>}
       </div>
 
       {activeView !== "receiver" && activeView !== "explorer" && (
@@ -3656,7 +3679,7 @@ export function ReceiverApp({
             setActiveView(lastWorkspace);
             requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
           }}>Back to {lastWorkspace === "receiver" ? "Receiver" : "Explorer"}</button>
-          <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
+          <span>{activeView === "remote" ? "Remote web receiver" : activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
         </div>
       )}
 
@@ -3706,7 +3729,7 @@ export function ReceiverApp({
                       transitioning || Boolean(receiver.cleanupRequired)
                     }
                     onChange={(event) =>
-                      void switchSource(event.currentTarget.value as SourceKind)
+                      event.currentTarget.value === "remote" ? void openRemoteReceiver() : void switchSource(event.currentTarget.value as SourceKind)
                     }
                     aria-label="Signal source"
                   >
@@ -3724,8 +3747,10 @@ export function ReceiverApp({
                     </option>
                     <option value="synthetic">Synthetic spectrum demo</option>
                     <option value="replay">I/Q recording replay</option>
+                    <option value="remote" disabled={Boolean(remoteBlockedReason)}>Remote web receiver · OpenWebRX / KiwiSDR</option>
                   </select>
                 </label>
+                {(remoteBlockedReason || remoteEntryIssue) && <p className="remote-entry-hint">{remoteEntryIssue || remoteBlockedReason}</p>}
                 {(source === "usrp-b205" || source === "bladerf") && (
                   <div className="setup-checklist" aria-label="Setup files">
                     <p className="setup-caption">
@@ -5366,7 +5391,7 @@ export function ReceiverApp({
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
             <SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
-              applyBlockedReason={running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
+              applyBlockedReason={activeView === "remote" ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
               onApply={applySharedSettings} />
             <dl className="session-grid">
               <div>
@@ -5455,6 +5480,8 @@ export function ReceiverApp({
           </section>
         </section>
       </div>
+
+      {activeView === "remote" && <div id="remote-view" role="tabpanel" aria-labelledby="receiver-tab"><RemoteReceiver onStatus={setRemoteStatus} /></div>}
 
       <div
         id="settings-view"
@@ -5964,8 +5991,12 @@ export function ReceiverApp({
                     <details>
                       <summary>Does BrowserSDR upload my radio data?</summary>
                       <p>
-                        Live processing, recordings, replay, decoded content,
-                        spectrum data and audio stay in the browser. The
+                        Local receiver processing, replay and decoded content
+                        stay in the browser. Recordings go to SigIntAtlas only
+                        when you choose Save. A remote receiver connection sends
+                        connection and tuning requests to that receiver's
+                        operator and receives its processed audio and spectrum.
+                        BrowserSDR does not send it local recordings or Atlas tokens. The
                         Diagnostics view can send a separately reviewed error
                         report. Automatic error reporting is on by default and
                         can be turned off there. Reports exclude radio data, USB serial

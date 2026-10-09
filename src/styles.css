@@ -4768,3 +4768,38 @@ button:has(> .app-icon) {
 
 /* Renderer choice remains inside the optional display controls. */
 .display-controls select { grid-column: 1 / -1; width: 100%; min-width: 0; }
+
+/* Processed remote receiver workspace; independent of the local raw-I/Q layout. */
+.remote-receiver { border: 1px solid var(--border, #28415a); border-radius: 14px; padding: 18px; background: var(--panel, #101c2c); min-width: 0; }
+.remote-heading, .remote-connect-row, .remote-channel-row, .remote-spectrum-heading, .remote-filters { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.remote-heading, .remote-spectrum-heading { align-items: center; justify-content: space-between; }
+.remote-heading h2 { margin: 0 0 12px; }
+.remote-heading .eyebrow { margin: 0 0 4px; }
+.remote-connect-row label, .remote-channel-row label, .remote-filters label { display: grid; gap: 4px; font-size: .8rem; min-width: 0; }
+.remote-address { flex: 1 1 320px; }
+.remote-connect-row input { width: 100%; }
+.remote-channel-row input:not([type=range]) { width: 150px; }
+.remote-channel-row select { max-width: 300px; }
+.remote-channel-row .remote-volume { flex: 1 1 140px; max-width: 220px; }
+.remote-message { color: var(--muted, #a8bbcf); font-size: .85rem; min-height: 1.3em; }
+.remote-error { color: #ffb4a6; }
+.remote-spectrum-panel { margin-top: 16px; border: 1px solid #28415a; border-radius: 10px; overflow: hidden; }
+.remote-spectrum-heading { padding: 8px 12px; font-size: .8rem; }
+.remote-spectrum { display: block; width: 100%; height: clamp(260px, 45vh, 520px); background: #071321; }
+.remote-footer { color: var(--muted, #a8bbcf); font-size: .8rem; line-height: 1.5; }
+.remote-footer > p { margin: 10px 0; }
+.remote-filters input { max-width: 160px; }
+.remote-header-status { font-size: .85rem; padding: 8px 12px; }
+.remote-entry-hint { font-size: .75rem; color: var(--muted, #a8bbcf); }
+@media (max-width: 600px) {
+  .remote-receiver { padding: 12px; }
+  .remote-connect-row a { overflow-wrap: anywhere; }
+  .remote-channel-row label { flex: 1 1 110px; }
+  .remote-channel-row input:not([type=range]), .remote-channel-row select { width: 100%; max-width: 100%; }
+  .remote-spectrum-heading { align-items: start; }
+  .remote-spectrum { height: 320px; }
+}
+.remote-requested { display: block; color: #a8bbcf; font-size: .75rem; margin-top: 3px; }
+
+.remote-protocol { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.remote-protocol label { display: grid; gap: 4px; font-size: .8rem; }

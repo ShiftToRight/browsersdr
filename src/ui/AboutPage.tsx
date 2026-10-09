@@ -59,8 +59,15 @@ export function AboutPage() {
         >
           <p className="eyebrow">Privacy</p>
           <h3 id="privacy-heading">
-            Radio data stays local; error reports are optional
+            Local radio processing; explicit remote connections
           </h3>
+          <p>
+            Local reception and replay are processed in your browser. Saving to
+            SigIntAtlas is an explicit upload. Connecting to OpenWebRX or KiwiSDR contacts
+            the receiver operator, who can see the connection and tuning
+            requests; its audio and spectrum are processed remotely. BrowserSDR
+            does not forward local captures or Atlas credentials to that receiver.
+          </p>
           <p>
             Automatic error reporting is on by default. You can turn it off in
             Diagnostics; a saved opt-out is respected. Compatibility reports
