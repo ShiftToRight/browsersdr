@@ -4,8 +4,29 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   test: {
-    // Release/validation snapshots under .local are reference material, not suites.
-    include: ["src/**/*.test.{ts,tsx}"],
     maxWorkers: 2,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "standard",
+          // Release/validation snapshots under .local are reference material.
+          include: ["src/**/*.test.{ts,tsx}"],
+          exclude: ["src/dsp/signalCenter.test.ts"],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        test: {
+          name: "native-fine-tuning",
+          include: ["src/dsp/signalCenter.test.ts"],
+          // Native-rate fixtures process millions of IQ samples. Give them
+          // a separate phase instead of competing with another DSP worker.
+          maxWorkers: 1,
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
+      },
+    ],
   },
 });

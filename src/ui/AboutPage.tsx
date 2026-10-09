@@ -1,4 +1,6 @@
 import packageInfo from "../../package.json";
+import applicationLicence from "../../LICENSE?raw";
+import applicationNotice from "../../NOTICE?raw";
 import thirdPartyNotices from "../../THIRD_PARTY_NOTICES.md?raw";
 import { VisitorCounter } from "./VisitorCounter";
 
@@ -35,16 +37,33 @@ export function AboutPage() {
 
       <div className="about-grid">
         <section
-          className="about-panel"
+          className="about-panel legal-notices"
           aria-labelledby="application-licence-heading"
         >
           <p className="eyebrow">Application terms</p>
           <h3 id="application-licence-heading">BrowserSDR licence</h3>
           <p>
-            Until one is published by the copyright holder, no open-source
-            licence is granted for BrowserSDR itself. Third-party components
-            retain their own licences, listed below.
+            BrowserSDR first-party software is licensed under the PolyForm
+            Perimeter License 1.0.1. Personal, educational and ordinary business
+            use are permitted when they do not provide a competing product or
+            service. Competing offerings are excluded, even when free. The full
+            licence sets out the permissions and conditions.
           </p>
+          <p>
+            Third-party components retain their own licences, listed below.
+            You can also read the supplied{" "}
+            <a href={`${import.meta.env.BASE_URL}LICENSE.txt`}>licence file</a>{" "}
+            and{" "}
+            <a href={`${import.meta.env.BASE_URL}NOTICE.txt`}>distribution notice</a>.
+          </p>
+          <details>
+            <summary>Read full application licence</summary>
+            <pre>{applicationLicence}</pre>
+          </details>
+          <details>
+            <summary>Read application distribution notice</summary>
+            <pre>{applicationNotice}</pre>
+          </details>
           <p>
             BrowserSDR is provided without a promise that reception will be
             continuous, complete or suitable for safety-critical use. Users are
@@ -146,8 +165,7 @@ export function AboutPage() {
         <p className="eyebrow">Attribution</p>
         <h3 id="notices-heading">Third-party notices</h3>
         <p>
-          These notices apply independently of the licence eventually selected
-          for BrowserSDR.
+          These notices apply independently of BrowserSDR's first-party licence.
         </p>
         <details>
           <summary>Read detailed bundled notices</summary>

@@ -40,8 +40,30 @@ function measure(
   } = {},
 ): SignalCenterResult | undefined {
   const estimator = new SignalCenterEstimator(session);
-  let phase = 0,
-    otherPhase = 0;
+  let otherPhase = 0;
+  let carrierI = 1, carrierQ = 0;
+  const rate = session.actualSampleRateHz;
+  const tone = (hz: number) => {
+    const angle = (2 * Math.PI * hz) / rate;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    let i = 1, q = 0, count = 0;
+    return () => {
+      const value = q;
+      const next = i * cos - q * sin;
+      q = i * sin + q * cos;
+      i = next;
+      if (++count % 4096 === 0) {
+        const norm = Math.hypot(i, q);
+        i /= norm;
+        q /= norm;
+      }
+      return value;
+    };
+  };
+  const modulation = tone(Math.min(1000, session.channelBandwidthHz / 8));
+  const slowModulation = tone(71);
+  const fading = tone(4);
+  const adjacentModulation = tone(731);
   let seed = 12345;
   const noise = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -54,6 +76,9 @@ function measure(
     (session.mode === "WBFM"
       ? 55_000
       : Math.min(2500, session.channelBandwidthHz * 0.2));
+  const fixedCarrier = options.dc || (session.mode === "AM" && !options.drift);
+  const fixedAngle = (2 * Math.PI * (options.dc ? 0 : native + offset)) / rate;
+  const fixedI = Math.cos(fixedAngle), fixedQ = Math.sin(fixedAngle);
   for (
     let start = 0;
     start < session.actualSampleRateHz * (options.duration ?? 0.7);
@@ -66,20 +91,31 @@ function measure(
       const mod =
         options.modulation === false
           ? 0
-          : Math.sin(
-              2 * Math.PI * Math.min(1000, session.channelBandwidthHz / 8) * t,
-            ) +
-            (options.depth === 1 ? 0 : 0.1 * Math.sin(2 * Math.PI * 71 * t));
+          : modulation() +
+            (options.depth === 1 ? 0 : 0.1 * slowModulation());
       const f = options.dc
         ? 0
         : native +
           offset +
           (options.drift ?? 0) * t +
           (session.mode === "AM" ? 0 : deviation * mod);
-      phase += (2 * Math.PI * f) / session.actualSampleRateHz;
+      // Generate the same phase-integrated carrier with bounded oscillator
+      // state. Fixed AM needs no trig calls per native sample; FM evaluates
+      // only its small phase increment instead of a growing absolute phase.
+      const angle = (2 * Math.PI * f) / rate;
+      const rotationI = fixedCarrier ? fixedI : Math.cos(angle);
+      const rotationQ = fixedCarrier ? fixedQ : Math.sin(angle);
+      const nextI = carrierI * rotationI - carrierQ * rotationQ;
+      carrierQ = carrierI * rotationQ + carrierQ * rotationI;
+      carrierI = nextI;
+      if ((n & 4095) === 4095) {
+        const norm = Math.hypot(carrierI, carrierQ);
+        carrierI /= norm;
+        carrierQ /= norm;
+      }
       const amplitude =
         (options.burst && t > 0.2 ? 0 : (options.amplitude ?? 0.7)) *
-        (options.fade ? 0.2 + 0.8 * Math.sin(2 * Math.PI * 4 * t) ** 2 : 1) *
+        (options.fade ? 0.2 + 0.8 * fading() ** 2 : 1) *
         (session.mode === "AM" ? 1 + (options.depth ?? 0.6) * mod : 1);
       otherPhase +=
         (2 *
@@ -87,22 +123,24 @@ function measure(
           (native +
             (options.adjacent ?? 0) +
             (options.adjacentModulation
-              ? deviation * Math.sin(2 * Math.PI * 731 * t)
+              ? deviation * adjacentModulation()
               : 0))) /
         session.actualSampleRateHz;
       I[n] =
-        amplitude * Math.cos(phase) +
+        amplitude * carrierI +
         (options.noise ?? 0.015) * noise() +
         (options.adjacent === undefined
           ? 0
           : (options.adjacentAmplitude ?? 0.7) * Math.cos(otherPhase));
       Q[n] =
-        amplitude * Math.sin(phase) +
+        amplitude * carrierQ +
         (options.noise ?? 0.015) * noise() +
         (options.adjacent === undefined
           ? 0
           : (options.adjacentAmplitude ?? 0.7) * Math.sin(otherPhase));
     }
+    // Keep trig argument reduction inexpensive without changing the waveform.
+    otherPhase %= 2 * Math.PI;
     const result = estimator.accept(I, Q);
     if (result) return result;
   }

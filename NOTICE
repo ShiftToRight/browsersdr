@@ -1,0 +1,12 @@
+BrowserSDR application notice
+
+Required Notice: BrowserSDR first-party software is licensed under the PolyForm Perimeter License 1.0.1.
+
+The unchanged licence text is supplied in LICENSE (LICENSE.txt in the built
+application). It applies to first-party BrowserSDR software, including its
+application code, workers and first-party WebAssembly code.
+
+Third-party components, adapted third-party material, assets and separately
+licensed fixtures retain their respective terms. See THIRD_PARTY_NOTICES.md
+(THIRD_PARTY_NOTICES.txt in the built application) and the notices supplied
+with those components. This first-party licence does not replace their terms.

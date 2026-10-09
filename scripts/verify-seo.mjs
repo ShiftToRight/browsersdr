@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import { SEO_ORIGIN, SEO_ROUTES } from "./seo-site.mjs";
 
+const legalDocuments = new Set(["/LICENSE.txt", "/NOTICE.txt", "/THIRD_PARTY_NOTICES.txt"]);
+
 function validateDocuments(documents) {
   const sitemap = new JSDOM(documents.get("/sitemap.xml"), { contentType: "application/xml" }).window.document;
   assert.equal(sitemap.documentElement.namespaceURI, "http://www.sitemaps.org/schemas/sitemap/0.9", "Sitemap namespace");
@@ -57,6 +59,11 @@ function validateDocuments(documents) {
       const url = new URL(raw, `${SEO_ORIGIN}${path}`);
       if (url.origin !== SEO_ORIGIN) continue;
       if (node.tagName === "A") {
+        if (legalDocuments.has(url.pathname)) {
+          assert.ok(!url.hash, `${path}: legal document has no HTML fragment`);
+          assets.add(url.pathname);
+          continue;
+        }
         assert.ok(SEO_ROUTES.includes(url.pathname), `${path}: unknown internal page ${url.pathname}`);
         if (url.hash) assert.ok(parsed.get(url.pathname).getElementById(decodeURIComponent(url.hash.slice(1))), `${path}: broken fragment ${url.href}`);
       } else if (!SEO_ROUTES.includes(url.pathname)) {

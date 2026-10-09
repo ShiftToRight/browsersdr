@@ -4803,3 +4803,12 @@ button:has(> .app-icon) {
 
 .remote-protocol { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .remote-protocol label { display: grid; gap: 4px; font-size: .8rem; }
+
+.remote-favorites-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.remote-favorites-trigger > span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.remote-preset-review { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.remote-preset-review p { flex: 1 1 260px; margin: 0; font-size: .8rem; }
+.remote-incoming-trigger { position: fixed; right: 16px; bottom: 16px; z-index: 20; }
+.remote-preset-link { display: grid; gap: 8px; }
+.remote-preset-link textarea, .settings-share-summary dd { overflow-wrap: anywhere; }
+.remote-presets-panel .favorite-editor p { margin: 0; }

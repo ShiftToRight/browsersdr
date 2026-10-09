@@ -1458,6 +1458,33 @@ test("About exposes licence, driver provenance, and privacy boundaries", async (
   await expect(
     page.getByRole("row", { name: /AD9364 receive driver/ }),
   ).toContainText("BSD-3-Clause");
+  const applicationTerms = page.getByRole("region", {
+    name: "BrowserSDR licence",
+  });
+  await expect(applicationTerms).toContainText(
+    "PolyForm Perimeter License 1.0.1",
+  );
+  await applicationTerms
+    .getByText("Read full application licence", { exact: true })
+    .click();
+  const licence = await readFile(
+    new URL("../LICENSE", import.meta.url),
+    "utf8",
+  );
+  await expect(applicationTerms.locator("pre").first()).toHaveText(licence);
+  // Verify delivered terms as well as the visible notice on dev and production.
+  for (const [asset, original] of [
+    ["LICENSE.txt", "LICENSE"],
+    ["NOTICE.txt", "NOTICE"],
+    ["THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.md"],
+  ] as const) {
+    const response = await page.request.get(new URL(asset, page.url()).href);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["content-type"]).toContain("text/plain");
+    expect(await response.text()).toBe(
+      await readFile(new URL(`../${original}`, import.meta.url), "utf8"),
+    );
+  }
 });
 
 test("automatic diagnostics send by default, deduplicate errors, and respect a saved opt-out", async ({

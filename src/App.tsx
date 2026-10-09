@@ -1,4 +1,6 @@
 import { RemoteReceiver } from "./ui/RemoteReceiver";
+import { RemotePresetSharePanel } from "./ui/RemotePresetSharePanel";
+import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
 import { SettingsSharePanel } from "./ui/SettingsSharePanel";
 import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
 import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
@@ -2067,7 +2069,7 @@ export function ReceiverApp({
   const [initialPreferences] = useState(() =>
     loadSourcePreferences(preferenceStorage, initialSource),
   );
-  const [receptionCandidate, setReceptionCandidate] = useState<ReceptionCandidate | undefined>(() => hasSettingsShare(location.hash) ? undefined : readReceptionCandidate(location.search));
+  const [receptionCandidate, setReceptionCandidate] = useState<ReceptionCandidate | undefined>(() => (hasSettingsShare(location.hash) || hasRemoteShare(location.hash)) ? undefined : readReceptionCandidate(location.search));
   const [mode, setMode] = useState(receptionCandidate?.mode ?? initialPreferences.modeSettings.mode);
   const [layout, setLayout] = useWorkspaceLayout();
   const favorites = useFavorites();
@@ -2417,6 +2419,7 @@ export function ReceiverApp({
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveViewState] = useState<AppView>("receiver");
   const [remoteStatus, setRemoteStatus] = useState("disconnected");
+  const [remotePreset, setRemotePreset] = useState<RemotePreset>();
   const [remoteOpening, setRemoteOpening] = useState(false);
   const [remoteEntryIssue, setRemoteEntryIssue] = useState("");
   const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "explorer">("receiver");
@@ -2653,7 +2656,7 @@ export function ReceiverApp({
   }, [controller]);
 
   useEffect(() => {
-    if (autoConnectAttempted.current || hasSettingsShare(location.hash)) return;
+    if (autoConnectAttempted.current || (hasSettingsShare(location.hash) || hasRemoteShare(location.hash))) return;
     if (
       source === "usrp-b205" &&
       (!usrpImageChecked ||
@@ -3041,17 +3044,19 @@ export function ReceiverApp({
     : transitioning || receiver.cleanupRequired || remoteOpening || stationSelectionBusy ? "Wait for the current receiver operation to finish."
     : recordingStatus || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish and discard the retained capture before opening a remote receiver."
     : undefined;
-  const openRemoteReceiver = async () => {
+  const openRemoteReceiver = async (preset?: RemotePreset): Promise<boolean> => {
     if (remoteBlockedReason || recordingStartPending.current || controller.getRecordingStatus() ||
       !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) || atlasConnection.getSnapshot().transferActive) {
-      setRemoteEntryIssue(remoteBlockedReason ?? "Finish the current receiver operation first."); return;
+      setRemoteEntryIssue(remoteBlockedReason ?? "Finish the current receiver operation first."); return false;
     }
     setRemoteOpening(true); setRemoteEntryIssue(""); autoConnectAttempted.current = true;
     try {
       await controller.disconnect();
       if (controller.getSnapshot().cleanupRequired) throw new Error("Release the local receiver before connecting remotely.");
+      setRemotePreset(preset);
       setActiveView("remote");
-    } catch (reason) { setRemoteEntryIssue((reason as Error).message); }
+      return true;
+    } catch (reason) { setRemoteEntryIssue((reason as Error).message); return false; }
     finally { setRemoteOpening(false); }
   };
 
@@ -5481,7 +5486,7 @@ export function ReceiverApp({
         </section>
       </div>
 
-      {activeView === "remote" && <div id="remote-view" role="tabpanel" aria-labelledby="receiver-tab"><RemoteReceiver onStatus={setRemoteStatus} /></div>}
+      {activeView === "remote" && <div id="remote-view" role="tabpanel" aria-labelledby="receiver-tab"><RemoteReceiver onStatus={setRemoteStatus} initialPreset={remotePreset} /></div>}
 
       <div
         id="settings-view"
@@ -6173,6 +6178,9 @@ export function ReceiverApp({
       >
         {activeView === "about" && <AboutPage />}
       </div>
+      <RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {
+        if (!await openRemoteReceiver(preset)) throw new Error(remoteBlockedReason ?? "The receiver could not be released. Finish the current operation and try again.");
+      }} />
     </main>
   );
 }

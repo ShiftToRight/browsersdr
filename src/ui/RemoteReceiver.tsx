@@ -8,6 +8,12 @@ import {
   type RemoteTune,
 } from "../remote/openWebRxProtocol";
 import { RemoteSpectrum } from "../remote/RemoteSpectrum";
+import { RemotePresetsPanel, useRemotePresets } from "./RemotePresetsPanel";
+import {
+  validateRemotePreset,
+  type RemotePreset,
+  type RemoteKind,
+} from "../remote/remotePresets";
 function savedAddress(key: string) {
   try {
     return localStorage.getItem(key) ?? "";
@@ -18,16 +24,50 @@ function savedAddress(key: string) {
 
 export function RemoteReceiver({
   onStatus,
+  initialPreset,
 }: {
   onStatus: (status: string) => void;
+  initialPreset?: RemotePreset;
 }) {
-  const [kind, setKind] = useState<"openwebrx" | "kiwi">("openwebrx");
+  const [selection, setSelection] = useState<{
+    kind: RemoteKind;
+    preset?: RemotePreset;
+    revision: number;
+  }>(() => ({
+    kind: initialPreset?.kind ?? "openwebrx",
+    preset: initialPreset,
+    revision: 0,
+  }));
+  const external = useRef(initialPreset);
+  const library = useRemotePresets();
+  useEffect(() => {
+    if (initialPreset && initialPreset !== external.current) {
+      external.current = initialPreset;
+      setSelection((old) => ({
+        kind: initialPreset.kind,
+        preset: initialPreset,
+        revision: old.revision + 1,
+      }));
+    }
+  }, [initialPreset]);
   return (
     <RemoteReceiverView
-      key={kind}
-      kind={kind}
-      onKind={setKind}
+      key={`${selection.kind}-${selection.revision}`}
+      kind={selection.kind}
+      onKind={(kind) =>
+        setSelection((old) => ({ kind, revision: old.revision + 1 }))
+      }
       onStatus={onStatus}
+      loaded={selection.preset}
+      library={library}
+      onLoad={(value) => {
+        const preset = validateRemotePreset(value);
+        setSelection((old) => ({
+          kind: preset.kind,
+          preset,
+          revision: old.revision + 1,
+        }));
+      }}
     />
   );
 }
@@ -36,10 +76,16 @@ function RemoteReceiverView({
   kind,
   onKind,
   onStatus,
+  loaded,
+  library,
+  onLoad,
 }: {
   kind: "openwebrx" | "kiwi";
   onKind: (kind: "openwebrx" | "kiwi") => void;
   onStatus: (status: string) => void;
+  loaded?: RemotePreset;
+  library: ReturnType<typeof useRemotePresets>;
+  onLoad: (preset: RemotePreset) => void;
 }) {
   const [client] = useState(() =>
     kind === "kiwi" ? new KiwiClient() : new OpenWebRxClient(),
@@ -47,12 +93,18 @@ function RemoteReceiverView({
   const addressKey = `browsersdr.${kind === "kiwi" ? "kiwisdr" : "openwebrx"}.address`;
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const kiwiState = kind === "kiwi" ? (state as KiwiSnapshot) : undefined;
-  const [address, setAddress] = useState(() => savedAddress(addressKey));
+  const [address, setAddress] = useState(
+    () => loaded?.address ?? savedAddress(addressKey),
+  );
   const [draft, setDraft] = useState<RemoteTune>();
   const [frequency, setFrequency] = useState("");
   const [volume, setVolume] = useState(0.38);
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState("");
+  const [savedChannel, setSavedChannel] = useState(() =>
+    loaded?.tune ? loaded : undefined,
+  );
+  const [applyingPreset, setApplyingPreset] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     input.current?.focus();
@@ -89,6 +141,7 @@ function RemoteReceiverView({
     return { ...draft, frequency: Math.round(hz) };
   };
   const apply = async () => {
+    if (savedChannel || pending || !connected) return;
     setError("");
     try {
       const tune = currentTune();
@@ -101,6 +154,68 @@ function RemoteReceiverView({
   const modes = state.modes.length
     ? state.modes
     : (Object.keys(REMOTE_MODES) as RemoteMode[]);
+  const finishPreset = (preset: RemotePreset) => {
+    if (!preset.tune) return;
+    client.validateTune(preset.tune);
+    if (client instanceof KiwiClient && preset.zoom !== undefined) {
+      if (preset.zoom > (kiwiState?.maxZoom ?? 0))
+        throw new Error(
+          "The saved zoom is unavailable on this receiver. Edit the preset or choose another receiver.",
+        );
+      client.setZoom(preset.zoom);
+    }
+    setDraft(preset.tune);
+    setFrequency(String(preset.tune.frequency / 1e6));
+    setSavedChannel(undefined);
+    setApplyingPreset(false);
+    setError("");
+  };
+  const preparePreset = () => {
+    if (!savedChannel?.tune || state.status !== "connected" || pending) return;
+    setError("");
+    try {
+      if (
+        kind === "openwebrx" &&
+        savedChannel.profile &&
+        savedChannel.profile !== state.config?.profile
+      ) {
+        if (
+          !state.profiles.some((profile) => profile.id === savedChannel.profile)
+        )
+          throw new Error(
+            "The saved receiver band is unavailable. Edit the preset or choose another receiver.",
+          );
+        setApplyingPreset(true);
+        client.selectProfile(savedChannel.profile);
+      } else finishPreset(savedChannel);
+    } catch (reason) {
+      setApplyingPreset(false);
+      setError((reason as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (!applyingPreset || !savedChannel) return;
+    if (state.status === "error" || state.status === "disconnected") {
+      setApplyingPreset(false);
+      return;
+    }
+    if (state.pendingProfile || state.config?.profile !== savedChannel.profile)
+      return;
+    try {
+      finishPreset(savedChannel);
+    } catch (reason) {
+      setApplyingPreset(false);
+      setError((reason as Error).message);
+    }
+    // Wait for this explicitly requested band's actual confirmation. Never Listen here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    applyingPreset,
+    savedChannel,
+    state.config,
+    state.pendingProfile,
+    state.status,
+  ]);
   return (
     <section className="remote-receiver" aria-labelledby="remote-heading">
       <div className="remote-heading">
@@ -181,6 +296,37 @@ function RemoteReceiverView({
         <p role="alert" className="remote-error">
           {error}
         </p>
+      )}
+      {savedChannel && (
+        <div className="remote-preset-review">
+          <p>
+            {loaded?.name} · {savedChannel.tune!.frequency / 1e6} MHz ·{" "}
+            {REMOTE_MODES[savedChannel.tune!.mode]}. Connect, then apply this
+            saved channel before Listen.
+            {savedChannel.profile &&
+              " Applying can select the saved receiver band."}
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!connected || listening || pending || applyingPreset}
+            onClick={preparePreset}
+          >
+            {applyingPreset ? "Waiting for saved band…" : "Apply saved channel"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={pending}
+            onClick={() => {
+              setSavedChannel(undefined);
+              setApplyingPreset(false);
+              setError("");
+            }}
+          >
+            Use receiver defaults
+          </button>
+        </div>
       )}
       <div className="remote-channel-row">
         {kind === "openwebrx" ? (
@@ -287,11 +433,32 @@ function RemoteReceiverView({
         </label>
         <button
           type="button"
-          disabled={!connected || pending}
+          disabled={!connected || pending || Boolean(savedChannel)}
           onClick={() => void apply()}
         >
           {listening ? "Tune" : "Listen"}
         </button>
+        <RemotePresetsPanel
+          library={library}
+          receiver={{ kind, address }}
+          channel={
+            connected && !pending && !savedChannel
+              ? () => {
+                  const tune = currentTune();
+                  client.validateTune(tune);
+                  return {
+                    kind,
+                    address: state.website,
+                    tune,
+                    ...(kind === "kiwi"
+                      ? { zoom: kiwiState?.zoom ?? 0 }
+                      : { profile: state.config?.profile }),
+                  };
+                }
+              : undefined
+          }
+          onLoad={onLoad}
+        />
         <label className="remote-volume">
           Volume
           <input
@@ -346,9 +513,9 @@ function RemoteReceiverView({
           {kind === "kiwi" &&
             "Connect reserves a receiver channel and receives server data; browser audio stays off until Listen. "}
           Audio and spectrum are processed by this remote receiver. Raw I/Q
-          recording, local decoders, Explorer, Favorites and session sharing
-          apply to local sources. Returning to the local workspace disconnects
-          this stream.
+          recording, local decoders, Explorer, local Favorites and live session
+          sharing apply to local sources. Returning to the local workspace
+          disconnects this stream.
         </p>
         <details>
           <summary>Stream details & filters</summary>

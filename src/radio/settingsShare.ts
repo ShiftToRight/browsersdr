@@ -74,6 +74,7 @@ export function readSettingsShare(hash: string): {
     const encoded = params.get("settings")!;
     if (
       params.getAll("settings").length !== 1 ||
+      params.has("remote") ||
       !/^[A-Za-z0-9_-]+$/.test(encoded)
     )
       throw new Error("Invalid settings link encoding.");

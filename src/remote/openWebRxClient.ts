@@ -232,7 +232,7 @@ export class OpenWebRxClient {
       this.starting
     )
       return;
-    const request = tuneMessage(config, tune);
+    const request = this.validateTune(tune);
     this.starting = true;
     const generation = this.generation;
     try {
@@ -258,7 +258,7 @@ export class OpenWebRxClient {
   tune(tune: RemoteTune) {
     if (this.snapshot.status !== "listening" || !this.snapshot.config)
       throw new Error("Start listening before applying a channel change.");
-    this.send(tuneMessage(this.snapshot.config, tune));
+    this.send(this.validateTune(tune));
     this.audio.flush();
     this.publish({
       tune,
@@ -268,6 +268,12 @@ export class OpenWebRxClient {
   }
   volume(value: number) {
     this.audio.volume(value);
+  }
+  validateTune(tune: RemoteTune) {
+    if (!this.snapshot.config) throw new Error("Connect to review this channel.");
+    if (this.snapshot.modes.length && !this.snapshot.modes.includes(tune.mode))
+      throw new Error("This receiver does not advertise the saved mode. Choose a supported mode.");
+    return tuneMessage(this.snapshot.config, tune);
   }
   async resume(volume: number) {
     if (this.snapshot.status === "listening") {

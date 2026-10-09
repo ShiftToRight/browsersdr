@@ -439,12 +439,7 @@ export class KiwiClient {
   }
   async start(tune: RemoteTune, volume: number) {
     if (this.snapshot.status !== "connected" || this.starting) return;
-    const command = kiwiTune(
-        tune,
-        this.bandwidth,
-        this.offset,
-        this.snapshot.sampleRate,
-      ),
+    const command = this.validateTune(tune),
       generation = this.generation;
     this.starting = true;
     try {
@@ -472,7 +467,7 @@ export class KiwiClient {
       throw new Error("Press Listen before tuning.");
     this.send(
       "sound",
-      kiwiTune(tune, this.bandwidth, this.offset, this.snapshot.sampleRate),
+      this.validateTune(tune),
     );
     this.audio.flush();
     this.sequence = undefined;
@@ -481,6 +476,10 @@ export class KiwiClient {
   }
   volume(value: number) {
     this.audio.volume(value);
+  }
+  validateTune(tune: RemoteTune) {
+    if (!this.snapshot.config) throw new Error("Connect to review this channel.");
+    return kiwiTune(tune, this.bandwidth, this.offset, this.snapshot.sampleRate);
   }
   async resume(volume: number) {
     const generation = this.generation;

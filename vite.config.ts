@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -8,6 +9,19 @@ const LOCAL_USRP_PREFIX = "/local/usrp-b205/";
 const LOCAL_USRP_ARTIFACTS = new Set(["ad9364-no-os.js", "ad9364-no-os.wasm"]);
 const localUsrpDirectory = fileURLToPath(new URL("./.local/usrp-b205/", import.meta.url));
 const ASYNCIFY_READY_MARKER = "wasmExports=await (createWasm());run();";
+
+// Ship the same terms shown in About with every static build, without
+// maintaining separate copies in public/ that can drift from the originals.
+function staticSiteDocuments(): Record<string, string> {
+  return {
+    ...seoAssets(),
+    "LICENSE.txt": readFileSync(new URL("./LICENSE", import.meta.url), "utf8"),
+    "NOTICE.txt": readFileSync(new URL("./NOTICE", import.meta.url), "utf8"),
+    "THIRD_PARTY_NOTICES.txt": readFileSync(
+      new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8",
+    ),
+  };
+}
 
 function prepareLocalNoOsJavascript(bytes: Buffer): Buffer {
   const source = bytes.toString("utf8");
@@ -35,14 +49,14 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: "static-seo-guides",
+      name: "static-site-documents",
       generateBundle() {
-        for (const [fileName, source] of Object.entries(seoAssets())) {
+        for (const [fileName, source] of Object.entries(staticSiteDocuments())) {
           this.emitFile({ type: "asset", fileName, source });
         }
       },
       configureServer(server) {
-        const assets = seoAssets();
+        const assets = staticSiteDocuments();
         server.middlewares.use((request, response, next) => {
           const url = new URL(request.url ?? "/", "http://localhost");
           const key = url.pathname.slice(1);
