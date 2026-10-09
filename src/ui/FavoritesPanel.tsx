@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
+import { useOverlayDialog } from "./useOverlayDialog";
 import {
   BOOKMARK_KEY,
   MAX_BOOKMARK_BYTES,
@@ -117,21 +118,12 @@ export function FavoritesPanel({
   useEffect(() => {
     if (draft) setOpen(true);
   }, [draft]);
-  useEffect(() => {
-    const panel = dialog.current;
-    if (!panel) return;
-    if (open) {
-      if (!panel.open) panel.showModal();
-      panel
-        .querySelector<HTMLInputElement>(
-          draft ? ".favorite-editor input" : 'input[type="search"]',
-        )
-        ?.focus();
-    } else if (panel.open) {
-      panel.close();
-      trigger.current?.focus();
-    }
-  }, [open, draft]);
+  useOverlayDialog(
+    open,
+    dialog,
+    trigger,
+    draft ? ".favorite-editor input" : 'input[type="search"]',
+  );
   const perform = (action: () => void, result: string) => {
     try {
       action();
@@ -203,7 +195,7 @@ export function FavoritesPanel({
         <dialog
           ref={dialog}
           id={dialogId}
-          className="favorites-panel"
+          className="favorites-panel overlay-motion"
           aria-labelledby={`${dialogId}-heading`}
           aria-describedby={`${dialogId}-help`}
           onCancel={(event) => {

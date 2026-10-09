@@ -130,6 +130,7 @@ describe("remote receiver lifecycle", () => {
     });
     client.selectProfile("radio|vhf");
     expect(client.getSnapshot().pendingProfile).toBe("radio|vhf");
+    expect(client.getSnapshot().config).toBeUndefined();
     socket.emit({ type: "config", value: { center_freq: 144000000 } });
     expect(client.getSnapshot().pendingProfile).toBe("radio|vhf");
     socket.emit({
@@ -141,6 +142,114 @@ describe("remote receiver lifecycle", () => {
     vi.advanceTimersByTime(9000);
     expect(client.getSnapshot().status).toBe("connected");
     client.stop();
+  });
+  it("waits through literal VK4DL null detach metadata and publishes only the confirmed new band", async () => {
+    const { client, socket, audio, ready } = setup();
+    ready();
+    const frames = vi.fn();
+    const oldTune = client.getSnapshot().tune!;
+    client.subscribeFrames(frames);
+    socket.emit({
+      type: "profiles",
+      value: [{ id: "second|20m", name: "20m" }],
+    });
+    client.selectProfile("second|20m");
+    socket.emit({
+      type: "config",
+      value: {
+        center_freq: null,
+        samp_rate: null,
+        start_freq: null,
+        start_mod: null,
+        sdr_id: "radio",
+        profile_id: null,
+        waterfall_levels: { min: -80, max: -30 },
+      },
+    });
+    expect(client.getSnapshot().status).toBe("connected");
+    expect(client.getSnapshot().pendingProfile).toBe("second|20m");
+    expect(client.getSnapshot().config).toBeUndefined();
+    expect(socket.close).not.toHaveBeenCalled();
+    // Old-generation frames and an identity-only acknowledgement cannot enable Listen.
+    socket.emit(Uint8Array.of(1, 0).buffer);
+    socket.emit({
+      type: "config",
+      value: { sdr_id: "second", profile_id: "20m" },
+    });
+    await client.start(oldTune, 0.5);
+    expect(audio.resume).not.toHaveBeenCalled();
+    expect(client.getSnapshot().pendingProfile).toBe("second|20m");
+    expect(frames).toHaveBeenCalledTimes(1); // selection cleared the old display
+    socket.emit({
+      type: "config",
+      value: {
+        center_freq: 14175000,
+        samp_rate: 384000,
+        start_freq: 14200000,
+        start_mod: "usb",
+      },
+    });
+    expect(client.getSnapshot().pendingProfile).toBe("");
+    expect(client.getSnapshot().config).toMatchObject({
+      center: 14175000,
+      rate: 384000,
+      profile: "second|20m",
+      fftSize: 128,
+    });
+    expect(client.getSnapshot().tune).toMatchObject({
+      frequency: 14200000,
+      mode: "usb",
+    });
+    expect(audio.resume).not.toHaveBeenCalled();
+    await client.start(client.getSnapshot().tune!, 0.5);
+    expect(client.getSnapshot().status).toBe("listening");
+    client.stop();
+  });
+  it("keeps unconfirmed or missing band coordinates bounded by the original timeout", () => {
+    const { client, socket, ready } = setup();
+    ready();
+    socket.emit({
+      type: "profiles",
+      value: [{ id: "radio|vhf", name: "VHF" }],
+    });
+    client.selectProfile("radio|vhf");
+    socket.emit({
+      type: "config",
+      value: { center_freq: null, samp_rate: null, profile_id: null },
+    });
+    socket.emit({ type: "config", value: wireConfig }); // stale old profile
+    socket.emit({ type: "config", value: { profile_id: "vhf" } });
+    expect(client.getSnapshot().config).toBeUndefined();
+    expect(client.getSnapshot().pendingProfile).toBe("radio|vhf");
+    vi.advanceTimersByTime(8000);
+    expect(client.getSnapshot().status).toBe("error");
+    expect(client.getSnapshot().message).toContain("did not confirm");
+    expect(socket.close).toHaveBeenCalledOnce();
+  });
+  it("still rejects unsolicited null band metadata and malformed numeric replacement bands", async () => {
+    for (const state of ["connected", "listening", "pending"] as const) {
+      const { client, socket, ready } = setup();
+      ready();
+      if (state === "listening")
+        await client.start(client.getSnapshot().tune!, 0.5);
+      if (state === "pending") {
+        socket.emit({
+          type: "profiles",
+          value: [{ id: "radio|vhf", name: "VHF" }],
+        });
+        client.selectProfile("radio|vhf");
+      }
+      socket.emit({
+        type: "config",
+        value:
+          state === "pending"
+            ? { center_freq: 144000000, samp_rate: 0, profile_id: "vhf" }
+            : { center_freq: null, samp_rate: null },
+      });
+      expect(client.getSnapshot().status).toBe("error");
+      expect(client.getSnapshot().message).toContain("Invalid receiver band");
+      expect(socket.close).toHaveBeenCalledOnce();
+    }
   });
   it("fails safely on handshake, malformed data, timeouts and unconfirmed bands", () => {
     for (const failure of [

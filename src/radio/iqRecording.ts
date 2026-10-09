@@ -1,3 +1,4 @@
+import { snapshotReceiverLocation, validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { ChannelRecordingWorker } from "./channelRecordingWorker";
 import { CHANNEL_RECORDING_FORMAT, ChannelCaptureFilter, planChannelCapture, validateChannelRecording, type ChannelRecordingFormat, type RecordingOptions } from "./channelRecording";
 import { CHANNEL_MAX_SAMPLES } from "./widebandChannel";
@@ -49,6 +50,7 @@ export interface Cu8RecordingFormat {
 export type RecordingSampleFormat = Cu8RecordingFormat | Ci8RecordingFormat | UsrpB205Ci16RecordingFormat | BladeRfSc16RecordingFormat | ChannelRecordingFormat;
 export const CU8_FORMAT: Cu8RecordingFormat = { format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: 2, normalization: CU8_NORMALIZATION };
 interface CommonRecordingMetadata {
+  receiverLocation?: ReceiverLocation;
   reception?: import("./receptionEvidence").ReceptionContext;
   sampleRateHz: number;
   centerFrequencyHz: number;
@@ -212,6 +214,7 @@ export class IqRecorder {
   private gaps: RecordingGap[] = [];
   private readonly maxBytes: number;
   private readonly spool?: OpfsRecordingSpool;
+  private readonly receiverLocation?: ReceiverLocation;
   private readonly inputEncoding: RecordingSampleFormat;
   private readonly channelFilter?: ChannelCaptureFilter;
   private gapRemainder = 0;
@@ -229,6 +232,9 @@ export class IqRecorder {
     storageMode: RecordingStorageMode = "memory",
     options: RecordingOptions = {},
   ) {
+    this.receiverLocation = session.source === "replay"
+      ? (options.receiverLocation ? validateReceiverLocation(options.receiverLocation) : undefined)
+      : snapshotReceiverLocation(options.receiverLocation ?? survey?.site?.location ?? (survey?.site?.latitude !== undefined && survey.site.longitude !== undefined ? { version: 1, source: "manual", latitude: survey.site.latitude, longitude: survey.site.longitude, label: survey.site.label } : undefined), captureStartedAt);
     validateSampleEncoding(encoding);
     if (session.source === "bladerf" && encoding.format !== BLADERF_SC16_RECORDING_FORMAT) throw new Error("bladeRF requires unchanged native SC16 Q11 recording bytes.");
     if (session.source === "hackrf" && encoding.format !== CI8_RECORDING_FORMAT) throw new Error("HackRF requires the native signed-I/Q recording path.");
@@ -482,6 +488,7 @@ export class IqRecorder {
         stopReason: this.capacityReached ? "capacity" : reason,
         ...(this.captureWarning ? { captureWarning: this.captureWarning } : {}),
         ...(this.provenance ? { provenance: this.channelFilter ? `Processed channel capture. Input source context: ${this.provenance}` : this.provenance } : {}),
+        ...(this.receiverLocation ? { receiverLocation: structuredClone(this.receiverLocation) } : {}),
         ...(this.survey ? { survey: structuredClone(this.survey) } : {}),
       } as IqRecordingMetadata,
     };
@@ -563,6 +570,7 @@ export function validateRecordingMetadata(
   if (!["user", "capacity", "source-stop", "metadata-change", "import"].includes(metadata.stopReason!)) throw new Error("Recording has an invalid stop reason.");
   if (metadata.captureWarning !== undefined && (typeof metadata.captureWarning !== "string" || metadata.captureWarning.length > 1024)) throw new Error("Recording has invalid capture warning.");
   if (metadata.provenance !== undefined && (typeof metadata.provenance !== "string" || metadata.provenance.length > 4096)) throw new Error("Recording has invalid provenance.");
+  const receiverLocation = metadata.receiverLocation === undefined ? undefined : validateReceiverLocation(metadata.receiverLocation);
   const survey = metadata.survey === undefined ? undefined : validateSurveyCaptureContext(metadata.survey);
   if (typeof metadata.captureStartedAt !== "string" || !Number.isFinite(Date.parse(metadata.captureStartedAt))) throw new Error("Recording metadata has an invalid capture start time.");
   if (!Number.isSafeInteger(metadata.sampleCount) || metadata.sampleCount !== byteLength / metadata.bytesPerComplexSample!) {
@@ -584,7 +592,7 @@ export function validateRecordingMetadata(
     if (typeof gap.reason !== "string" || gap.reason.length > 1024) throw new Error("Recording metadata contains an invalid gap reason.");
   }
   if ((metadata.sampleCount! + missingSamples) / metadata.sampleRateHz > 3600) throw new Error("Replay duration including known gaps exceeds one hour.");
-  return structuredClone({ ...metadata, ...(settings.srd ? { srd: settings.srd } : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
+  return structuredClone({ ...metadata, ...(receiverLocation ? { receiverLocation } : {}), ...(settings.srd ? { srd: settings.srd } : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
 }
 
 export function recordingMetadataJson(recording: IqRecording): string {

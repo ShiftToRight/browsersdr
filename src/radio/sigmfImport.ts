@@ -1,3 +1,4 @@
+import { validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
 import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
 import { CI16_RECORDING_FORMAT, type UsrpB205Ci16RecordingFormat } from "./ci16Recording";
@@ -193,11 +194,13 @@ export async function importSigmfRecording(
     ? new Uint8Array(binary.buffer, binary.byteOffset, binary.byteLength)
     : new Uint8Array(binary);
 
+  const receiverLocation = importReceiverLocation(root.captures, global["core:geolocation"]);
   const metadata = validateRecordingMetadata({
     ...(nativeFormat ? nativeFormat as unknown as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat : encoding === "ci8" ? unknownCi8Format(sampleRateHz) : {
       format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: BYTES_PER_COMPLEX_SAMPLE,
       normalization: CU8_NORMALIZATION, gainDb: null,
     }),
+    ...(receiverLocation ? { receiverLocation } : {}),
     sampleRateHz,
     centerFrequencyHz,
     selectedChannelFrequencyHz,
@@ -225,4 +228,21 @@ export async function importSigmfRecording(
       ...(optionalFilename(options.metadataFilename, "metadata filename") ? { metadataFilename: options.metadataFilename } : {}),
     },
   };
+}
+
+function importReceiverLocation(captures: unknown, globalPoint: unknown): ReceiverLocation | undefined {
+  let first: ReceiverLocation | undefined;
+  for (const value of captures as JsonObject[]) {
+    const point = value["core:geolocation"] === undefined ? globalPoint : value["core:geolocation"];
+    const provenance = value["browsersdr:receiver_location"];
+    if (point === undefined && provenance === undefined) continue;
+    if (!first && value !== (captures as JsonObject[])[0]) throw new Error("Replay currently requires a site at the first capture segment; moving location tracks are unsupported.");
+    const p = object(point, "capture geolocation");
+    if (p.type !== "Point" || !Array.isArray(p.coordinates) || p.coordinates.length < 2 || p.coordinates.length > 3) throw new Error("Invalid SigMF capture geolocation.");
+    const site = validateReceiverLocation(provenance ?? { version: 1, longitude: p.coordinates[0], latitude: p.coordinates[1], ...(p.coordinates.length === 3 ? { altitudeMeters: p.coordinates[2] } : {}), source: "imported" });
+    if (site.longitude !== p.coordinates[0] || site.latitude !== p.coordinates[1] || site.altitudeMeters !== p.coordinates[2]) throw new Error("SigMF site provenance disagrees with core:geolocation.");
+    if (first && JSON.stringify(first) !== JSON.stringify(site)) throw new Error("Replay currently supports one acquisition site, not moving location tracks.");
+    first = site;
+  }
+  return first;
 }

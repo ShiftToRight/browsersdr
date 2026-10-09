@@ -26,11 +26,12 @@ export interface SigmfGlobal {
 }
 
 export interface SigmfCapture {
+  "browsersdr:receiver_location"?: import("./receiverLocation").ReceiverLocation;
   "core:sample_start": number;
   "core:frequency": number;
   "core:datetime"?: string;
   "core:global_index"?: number;
-  "core:geolocation"?: { type: "Point"; coordinates: [number, number] };
+  "core:geolocation"?: { type: "Point"; coordinates: [number, number] | [number, number, number] };
 }
 
 export interface SigmfAnnotation {
@@ -192,7 +193,10 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
     "core:frequency": metadata.centerFrequencyHz,
     "core:datetime": metadata.captureStartedAt,
     "core:global_index": 0,
-    ...(metadata.survey?.site?.latitude !== undefined && metadata.survey.site.longitude !== undefined
+    ...(metadata.receiverLocation ? {
+      "core:geolocation": { type: "Point" as const, coordinates: (metadata.receiverLocation.altitudeMeters === undefined ? [metadata.receiverLocation.longitude, metadata.receiverLocation.latitude] : [metadata.receiverLocation.longitude, metadata.receiverLocation.latitude, metadata.receiverLocation.altitudeMeters]) as [number, number] | [number, number, number] },
+      "browsersdr:receiver_location": metadata.receiverLocation,
+    } : metadata.survey?.site?.latitude !== undefined && metadata.survey.site.longitude !== undefined
       ? { "core:geolocation": { type: "Point" as const, coordinates: [metadata.survey.site.longitude, metadata.survey.site.latitude] as [number, number] } }
       : {}),
   }];
@@ -273,6 +277,7 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
         "browsersdr:sample_format": recordingSampleFormat(metadata) as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat,
       } : {}),
       ...(metadata.source === "rtl-sdr" ? { "core:hw": "RTL-SDR via WebUSB" } : {}),
+      ...(metadata.receiverLocation ? { "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }] } : {}),
       ...(metadata.reception ? {
         "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }],
         "browsersdr:reception": metadata.reception,

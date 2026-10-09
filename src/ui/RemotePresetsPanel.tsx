@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useOverlayDialog } from "./useOverlayDialog";
 import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
 import {
@@ -103,21 +104,12 @@ export function RemotePresetsPanel({
   const editingBase = useRef<string | undefined>(undefined);
   const id = useId();
   const editing = Boolean(draft);
-  useEffect(() => {
-    const panel = dialog.current;
-    if (!panel) return;
-    if (open) {
-      if (!panel.open) panel.showModal();
-      panel
-        .querySelector<HTMLInputElement>(
-          editing ? ".remote-preset-editor input" : 'input[type="search"]',
-        )
-        ?.focus();
-    } else if (panel.open) {
-      panel.close();
-      trigger.current?.focus();
-    }
-  }, [open, editing]);
+  useOverlayDialog(
+    open,
+    dialog,
+    trigger,
+    editing ? ".remote-preset-editor input" : 'input[type="search"]',
+  );
   const perform = (action: () => void, success = "") => {
     try {
       action();
@@ -214,7 +206,7 @@ export function RemotePresetsPanel({
         <dialog
           ref={dialog}
           id={id}
-          className="favorites-panel remote-presets-panel"
+          className="favorites-panel remote-presets-panel overlay-motion"
           aria-labelledby={`${id}-heading`}
           onCancel={(e) => {
             e.preventDefault();

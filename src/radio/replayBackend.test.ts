@@ -480,3 +480,18 @@ it("decodes a complete DAB ensemble and programme through recorded I/Q replay", 
   expect(f.events.sourceEnded).toHaveBeenCalledOnce();
   await f.backend.stop();
 }, 20_000);
+
+it("keeps the acquisition site when replay recording is offered a new listener site", async () => {
+  const original = { version: 1 as const, latitude: 48, longitude: 11, source: "manual" as const, observedAt: "2026-09-01T00:00:00.000Z", snapshotAt: "2026-09-08T00:00:00.000Z", stale: false };
+  for (const known of [true, false]) {
+    const f = setup();
+    if (known) f.recording.metadata.receiverLocation = original;
+    await f.backend.start(f.options);
+    f.backend.startRecording({ site: { label: "Listener", latitude: 51, longitude: 13 } }, { receiverLocation: { version: 1, latitude: 51, longitude: 13, source: "browser", observedAt: new Date().toISOString() } });
+    await vi.advanceTimersByTimeAsync(200);
+    const result = f.backend.stopRecording()!;
+    expect(result.metadata.receiverLocation).toEqual(known ? original : undefined);
+    expect(result.metadata.survey?.site).toBeUndefined();
+    await f.backend.stop();
+  }
+});

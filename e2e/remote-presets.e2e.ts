@@ -307,7 +307,9 @@ test("remote favorite sharing previews on another page, preserves local settings
   ).toHaveValue(address);
   expect(recipientWire.sockets).toHaveLength(0);
   expect(new URL(recipient.url()).hash).toBe("");
-  await recipient.getByRole("tab", { name: /Receiver/ }).click();
+  await recipient
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("rtl-sdr");
   await expect(
     recipient.getByRole("spinbutton", {
       name: "Channel frequency",

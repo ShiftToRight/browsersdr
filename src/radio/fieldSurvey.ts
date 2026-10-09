@@ -1,3 +1,4 @@
+import { snapshotReceiverLocation, validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import type { SignalCandidate } from "./spectrumScan";
 import type { SourceSessionMetadata } from "./types";
 
@@ -7,6 +8,7 @@ export type SurveyDetectorMode = "average" | "max-hold" | "occupancy" | "wideban
 export type SurveyConfidence = "unknown" | "low" | "medium" | "high";
 
 export interface SurveySite {
+  location?: ReceiverLocation;
   label: string;
   latitude?: number;
   longitude?: number;
@@ -91,7 +93,7 @@ export function createSurveyRunSnapshot(
   return {
     sessionId,
     startedAt,
-    profile: validateSurveyProfile({ ...profile, site: { ...profile.site }, bands: effectiveBands.map((band) => ({ ...band })) }),
+    profile: validateSurveyProfile({ ...profile, site: { ...profile.site, ...(profile.site.location ? { location: snapshotReceiverLocation(profile.site.location, startedAt) } : {}) }, bands: effectiveBands.map((band) => ({ ...band })) }),
     receiver: structuredClone(receiver),
   };
 }
@@ -181,6 +183,7 @@ export function validateSurveyProfile(value: unknown): SurveyProfile {
     name,
     site: {
       label: siteLabel,
+      ...validatedSiteLocation(candidate.site),
       ...(latitude === undefined ? {} : { latitude }),
       ...(longitude === undefined ? {} : { longitude }),
       ...(optionalText(candidate.site.antenna) ? { antenna: optionalText(candidate.site.antenna) } : {}),
@@ -211,6 +214,7 @@ export function validateSurveyCaptureContext(value: unknown): SurveyCaptureConte
     if (longitude !== undefined && (longitude < -180 || longitude > 180)) throw new Error("Longitude must be between -180 and 180.");
     site = {
       label,
+      ...validatedSiteLocation(candidate.site),
       ...(latitude === undefined ? {} : { latitude }),
       ...(longitude === undefined ? {} : { longitude }),
       ...(optionalText(candidate.site.antenna) ? { antenna: optionalText(candidate.site.antenna) } : {}),
@@ -278,4 +282,11 @@ export function surveyManifestCsv(manifest: SurveyManifest): string {
     candidate.annotation.confidence,
   ]);
   return `${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+}
+
+function validatedSiteLocation(site: SurveySite): { location?: ReceiverLocation } {
+  if (site.location === undefined) return {};
+  const location = validateReceiverLocation(site.location);
+  if (location.latitude !== site.latitude || location.longitude !== site.longitude) throw new Error("Survey coordinates disagree with the antenna-site provenance.");
+  return { location };
 }

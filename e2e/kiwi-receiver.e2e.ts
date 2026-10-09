@@ -75,7 +75,7 @@ test("KiwiSDR manual audio, per-client tuning, CW, zoom and cleanup preserve loc
   await expect(page.locator(".remote-header-status")).toContainText(
     "connected",
   );
-  await page.getByText("Stream details & filters", { exact: true }).click();
+  await page.getByText("Stream details", { exact: true }).click();
   await expect(page.locator(".remote-footer")).toContainText("0 audio samples");
   expect(urls).toHaveLength(2);
   expect(commands).toContain("SET compression=0");
@@ -121,7 +121,9 @@ test("KiwiSDR manual audio, per-client tuning, CW, zoom and cleanup preserve loc
   await expect
     .poll(() => commands)
     .toContain("SET mod=cw low_cut=300 high_cut=1100 freq=7099.300");
-  await page.getByRole("tab", { name: /Receiver/ }).click();
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("rtl-sdr");
   await expect.poll(() => closed.length).toBe(2);
   await expect(page.getByRole("combobox", { name: /^Mode/ })).toHaveValue(
     "WBFM",

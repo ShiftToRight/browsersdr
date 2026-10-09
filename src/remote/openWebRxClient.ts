@@ -48,6 +48,14 @@ type AudioSink = Pick<
   RemoteAudio,
   "resume" | "push" | "volume" | "flush" | "close" | "state" | "drops"
 >;
+const bandParams = [
+  "center_freq",
+  "samp_rate",
+  "start_freq",
+  "start_offset_freq",
+  "start_mod",
+  "profile_id",
+] as const;
 export class OpenWebRxClient {
   private snapshot = initial();
   private listeners = new Set<() => void>();
@@ -270,9 +278,12 @@ export class OpenWebRxClient {
     this.audio.volume(value);
   }
   validateTune(tune: RemoteTune) {
-    if (!this.snapshot.config) throw new Error("Connect to review this channel.");
+    if (!this.snapshot.config)
+      throw new Error("Connect to review this channel.");
     if (this.snapshot.modes.length && !this.snapshot.modes.includes(tune.mode))
-      throw new Error("This receiver does not advertise the saved mode. Choose a supported mode.");
+      throw new Error(
+        "This receiver does not advertise the saved mode. Choose a supported mode.",
+      );
     return tuneMessage(this.snapshot.config, tune);
   }
   async resume(volume: number) {
@@ -291,9 +302,15 @@ export class OpenWebRxClient {
     )
       return;
     this.send({ type: "selectprofile", params: { profile: id } });
+    // A new band must supply its own RF coordinates. Keep connection-wide
+    // encoding/FFT settings, but never combine the new profile with old tuning.
+    for (const key of bandParams) delete this.params[key];
+    this.decoder = new ImaDecoder();
     this.resetFrames();
     this.publish({
       pendingProfile: id,
+      config: undefined,
+      tune: undefined,
       message: "Waiting for receiver band configuration…",
     });
     clearTimeout(this.timer);
@@ -321,6 +338,19 @@ export class OpenWebRxClient {
       if (message.type === "config") {
         const old = this.snapshot.config;
         const incoming = object(message.value);
+        const pending = this.snapshot.pendingProfile;
+        const incomingSdr = text(incoming.sdr_id);
+        const knownSdr = incomingSdr || text(this.params.sdr_id);
+        // A late old-profile reply must not seed the replacement's coordinates.
+        if (
+          pending &&
+          ((incomingSdr && !pending.startsWith(`${incomingSdr}|`)) ||
+            (typeof incoming.profile_id === "string" &&
+              knownSdr &&
+              pending.startsWith(`${knownSdr}|`) &&
+              pending !== `${knownSdr}|${text(incoming.profile_id)}`))
+        )
+          return;
         for (const key of [
           "center_freq",
           "samp_rate",
@@ -334,10 +364,22 @@ export class OpenWebRxClient {
           "profile_id",
           "waterfall_levels",
         ]) {
-          if (Object.hasOwn(incoming, key)) this.params[key] = incoming[key];
+          if (Object.hasOwn(incoming, key)) {
+            // OpenWebRX sends null band properties while detaching the old
+            // profile. Only an explicit, bounded profile switch accepts this
+            // invalidation; ordinary malformed/live configs still fail closed.
+            if (
+              this.snapshot.pendingProfile &&
+              incoming[key] === null &&
+              (bandParams.some((field) => field === key) || key === "sdr_id")
+            )
+              delete this.params[key];
+            else this.params[key] = incoming[key];
+          }
         }
         const config = configFrom(this.params);
         if (!config) return;
+        if (pending && pending !== config.profile) return;
         const changed =
           old &&
           (old.center !== config.center ||
@@ -356,7 +398,6 @@ export class OpenWebRxClient {
           this.resetFrames();
           this.decoder = new ImaDecoder();
         }
-        const pending = this.snapshot.pendingProfile;
         if (!pending || pending === config.profile) clearTimeout(this.timer);
         this.publish({
           config,

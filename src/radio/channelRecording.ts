@@ -4,6 +4,7 @@ import { planChannelTune, validateModeSampleRate } from "./receiverConfig";
 import type { SourceKind, SourceSessionMetadata } from "./types";
 
 export interface RecordingOptions {
+  receiverLocation?: import("./receiverLocation").ReceiverLocation;
   captureCurrentChannel?: boolean;
   storageMode?: "memory" | "opfs";
 }

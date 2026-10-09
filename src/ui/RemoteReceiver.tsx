@@ -1,4 +1,23 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { RemoteLocationPanel } from "./ReceiverLocationPanel";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import type { SourceKind } from "../radio/types";
+import type { WorkspaceLayout } from "./WorkspaceLayout";
+import { ReceiverWorkspace, ReceiverSourceOptions } from "./ReceiverWorkspace";
+import { AppIcon } from "./AppIcon";
+
+interface RemoteWorkspaceProps {
+  active: boolean;
+  layout: WorkspaceLayout;
+  onLayoutChange: Dispatch<SetStateAction<WorkspaceLayout>>;
+  onSource: (source: SourceKind) => void;
+}
 import { OpenWebRxClient } from "../remote/openWebRxClient";
 import { KiwiClient, type KiwiSnapshot } from "../remote/kiwiClient";
 import {
@@ -25,10 +44,11 @@ function savedAddress(key: string) {
 export function RemoteReceiver({
   onStatus,
   initialPreset,
+  ...workspace
 }: {
   onStatus: (status: string) => void;
   initialPreset?: RemotePreset;
-}) {
+} & RemoteWorkspaceProps) {
   const [selection, setSelection] = useState<{
     kind: RemoteKind;
     preset?: RemotePreset;
@@ -60,6 +80,7 @@ export function RemoteReceiver({
       onStatus={onStatus}
       loaded={selection.preset}
       library={library}
+      workspace={workspace}
       onLoad={(value) => {
         const preset = validateRemotePreset(value);
         setSelection((old) => ({
@@ -79,6 +100,7 @@ function RemoteReceiverView({
   loaded,
   library,
   onLoad,
+  workspace,
 }: {
   kind: "openwebrx" | "kiwi";
   onKind: (kind: "openwebrx" | "kiwi") => void;
@@ -86,7 +108,10 @@ function RemoteReceiverView({
   loaded?: RemotePreset;
   library: ReturnType<typeof useRemotePresets>;
   onLoad: (preset: RemotePreset) => void;
+  workspace: RemoteWorkspaceProps;
 }) {
+  const { active, layout, onLayoutChange, onSource } = workspace;
+  const [tool, setTool] = useState<"audio" | "session">("audio");
   const [client] = useState(() =>
     kind === "kiwi" ? new KiwiClient() : new OpenWebRxClient(),
   );
@@ -107,9 +132,12 @@ function RemoteReceiverView({
   const [applyingPreset, setApplyingPreset] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    input.current?.focus();
+    if (input.current?.getClientRects().length) input.current.focus();
     return () => client.stop();
   }, [client]);
+  useEffect(() => {
+    if (!active) client.stop();
+  }, [active, client]);
   useEffect(() => {
     onStatus(state.status);
   }, [onStatus, state.status]);
@@ -217,279 +245,382 @@ function RemoteReceiverView({
     state.status,
   ]);
   return (
-    <section className="remote-receiver" aria-labelledby="remote-heading">
-      <div className="remote-heading">
-        <div>
-          <p className="eyebrow">Remote web receiver</p>
-          <h2 id="remote-heading">
-            {kind === "kiwi" ? "KiwiSDR" : "OpenWebRX"}
-          </h2>
-        </div>
-        <div className="remote-protocol">
-          <label>
-            Receiver type
-            <select
-              aria-label="Remote receiver type"
-              title="Changing receiver type disconnects the current remote stream"
-              value={kind}
-              onChange={(e) => onKind(e.currentTarget.value as typeof kind)}
-            >
-              <option value="openwebrx">OpenWebRX</option>
-              <option value="kiwi">KiwiSDR</option>
-            </select>
-          </label>
-          <a
-            href="https://www.receiverbook.de/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Find a receiver ↗
-          </a>
-        </div>
-      </div>
-      <div className="remote-connect-row">
-        <label className="remote-address">
-          Receiver website
-          <input
-            ref={input}
-            type="url"
-            value={address}
-            disabled={connected || pending}
-            placeholder="https://receiver.example/"
-            onChange={(e) => setAddress(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !connected && !pending)
-                client.connect(address);
-            }}
-          />
-        </label>
-        {!connected && !pending ? (
+    <ReceiverWorkspace id="remote-view" hidden={!active}>
+      <section
+        className="signal-stage acquire-stage remote-source"
+        aria-labelledby="remote-heading"
+      >
+        <div className="stage-heading">
+          <span aria-hidden="true">01</span>
+          <div>
+            <p>Acquire</p>
+            <h3 id="remote-heading" className="icon-label">
+              <AppIcon name="radio" />
+              Signal source
+            </h3>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              setError("");
-              client.connect(address);
-            }}
+            className="stage-collapse secondary"
+            aria-label={
+              layout.sourceCollapsed
+                ? "Expand source panel"
+                : "Collapse source panel"
+            }
+            aria-expanded={!layout.sourceCollapsed}
+            aria-controls="remote-source-body"
+            onClick={() =>
+              onLayoutChange((old) => ({
+                ...old,
+                sourceCollapsed: !old.sourceCollapsed,
+              }))
+            }
           >
-            Connect
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => client.stop()}
-          >
-            {listening ? "Stop listening" : "Disconnect"}
-          </button>
-        )}
-        {state.website && (
-          <a href={state.website} target="_blank" rel="noopener noreferrer">
-            Open receiver website ↗
-          </a>
-        )}
-      </div>
-      <p className="remote-message" role="status">
-        {state.title && `${state.title} · `}
-        {state.message}
-      </p>
-      {error && (
-        <p role="alert" className="remote-error">
-          {error}
-        </p>
-      )}
-      {savedChannel && (
-        <div className="remote-preset-review">
-          <p>
-            {loaded?.name} · {savedChannel.tune!.frequency / 1e6} MHz ·{" "}
-            {REMOTE_MODES[savedChannel.tune!.mode]}. Connect, then apply this
-            saved channel before Listen.
-            {savedChannel.profile &&
-              " Applying can select the saved receiver band."}
-          </p>
-          <button
-            type="button"
-            className="secondary"
-            disabled={!connected || listening || pending || applyingPreset}
-            onClick={preparePreset}
-          >
-            {applyingPreset ? "Waiting for saved band…" : "Apply saved channel"}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={pending}
-            onClick={() => {
-              setSavedChannel(undefined);
-              setApplyingPreset(false);
-              setError("");
-            }}
-          >
-            Use receiver defaults
+            {layout.sourceCollapsed ? "+" : "−"}
           </button>
         </div>
-      )}
-      <div className="remote-channel-row">
-        {kind === "openwebrx" ? (
-          <label>
-            Band
-            <select
-              aria-label="Remote band"
-              disabled={!connected || listening || pending}
-              value={state.pendingProfile || state.config?.profile || ""}
-              onChange={(e) => {
-                setError("");
-                try {
-                  client.selectProfile(e.currentTarget.value);
-                } catch (reason) {
-                  setError((reason as Error).message);
-                }
-              }}
-            >
-              <option value="" disabled>
-                Receiver band
-              </option>
-              {state.config &&
-                !state.profiles.some((p) => p.id === state.config?.profile) && (
-                  <option value={state.config.profile}>Current band</option>
-                )}
-              {state.profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label>
-            Waterfall zoom
-            <select
-              aria-label="Waterfall zoom"
-              disabled={!connected}
-              value={kiwiState?.zoom ?? 0}
-              onChange={(e) => {
-                setError("");
-                try {
-                  if (client instanceof KiwiClient)
-                    client.setZoom(Number(e.currentTarget.value));
-                } catch (reason) {
-                  setError((reason as Error).message);
-                }
-              }}
-            >
-              {Array.from(
-                {
-                  length: (kiwiState?.maxZoom ?? 0) + 1,
-                },
-                (_, zoom) => (
-                  <option key={zoom} value={zoom}>
-                    {zoom === 0 ? "Full band" : `${2 ** zoom}×`}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-        )}
-        <label>
-          Channel · MHz
-          <input
-            aria-label="Remote channel MHz"
-            inputMode="decimal"
-            value={frequency}
-            disabled={!connected || pending}
-            onChange={(e) => setFrequency(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void apply();
-            }}
-          />
-        </label>
-        <label>
-          Mode
-          <select
-            aria-label="Remote mode"
-            value={draft?.mode ?? "am"}
-            disabled={!connected || pending}
-            onChange={(e) => {
-              if (!state.config || !draft) return;
-              const tune = defaultTune(
-                state.config,
-                e.currentTarget.value as RemoteMode,
-              );
-              if (kind === "kiwi" && tune.mode === "nfm") {
-                tune.lowCut = -Math.min(
-                  5000,
-                  Math.floor((kiwiState?.sampleRate ?? 12000) / 2),
-                );
-                tune.highCut = -tune.lowCut;
-              }
-              setDraft({ ...tune, frequency: draft.frequency });
-            }}
-          >
-            {modes.map((mode) => (
-              <option key={mode} value={mode}>
-                {REMOTE_MODES[mode]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          disabled={!connected || pending || Boolean(savedChannel)}
-          onClick={() => void apply()}
+        <div
+          id="remote-source-body"
+          className="stage-body"
+          hidden={layout.sourceCollapsed}
         >
-          {listening ? "Tune" : "Listen"}
-        </button>
-        <RemotePresetsPanel
-          library={library}
-          receiver={{ kind, address }}
-          channel={
-            connected && !pending && !savedChannel
-              ? () => {
-                  const tune = currentTune();
-                  client.validateTune(tune);
-                  return {
-                    kind,
-                    address: state.website,
-                    tune,
-                    ...(kind === "kiwi"
-                      ? { zoom: kiwiState?.zoom ?? 0 }
-                      : { profile: state.config?.profile }),
-                  };
-                }
-              : undefined
-          }
-          onLoad={onLoad}
-        />
-        <label className="remote-volume">
-          Volume
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={Math.round(volume * 100)}
-            onChange={(e) => {
-              const value = Number(e.currentTarget.value) / 100;
-              setVolume(value);
-              client.volume(value);
-            }}
-          />
-        </label>
-        {listening && state.audioState !== "running" && (
+          <div className="stage-controls acquire-controls remote-source-controls">
+            <label>
+              Source
+              <select
+                aria-label="Signal source"
+                value="remote"
+                onChange={(e) => {
+                  if (e.currentTarget.value !== "remote") {
+                    client.stop();
+                    onSource(e.currentTarget.value as SourceKind);
+                  }
+                }}
+              >
+                <ReceiverSourceOptions />
+              </select>
+            </label>
+            <label>
+              Receiver type
+              <select
+                aria-label="Remote receiver type"
+                title="Changing receiver type disconnects the current remote stream"
+                value={kind}
+                onChange={(e) => onKind(e.currentTarget.value as typeof kind)}
+              >
+                <option value="openwebrx">OpenWebRX</option>
+                <option value="kiwi">KiwiSDR</option>
+              </select>
+            </label>
+            <h4 className="remote-kind">
+              {kind === "kiwi" ? "KiwiSDR" : "OpenWebRX"}
+            </h4>
+            <div className="remote-connect-row">
+              <label className="remote-address">
+                Receiver website
+                <input
+                  ref={input}
+                  type="url"
+                  value={address}
+                  disabled={connected || pending}
+                  placeholder="https://receiver.example/"
+                  onChange={(e) => setAddress(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !connected && !pending)
+                      client.connect(address);
+                  }}
+                />
+              </label>
+              {!connected && !pending ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    client.connect(address);
+                  }}
+                >
+                  Connect
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => client.stop()}
+                >
+                  {listening ? "Stop listening" : "Disconnect"}
+                </button>
+              )}
+              {state.website && (
+                <a
+                  href={state.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open receiver website ↗
+                </a>
+              )}
+            </div>
+            <p className="remote-message" role="status">
+              {state.title && `${state.title} · `}
+              {state.message}
+            </p>
+            {error && (
+              <p role="alert" className="remote-error">
+                {error}
+              </p>
+            )}
+            {kind === "openwebrx" && (
+              <div className="remote-band-control">
+                {" "}
+                <label>
+                  Band
+                  <select
+                    aria-label="Remote band"
+                    disabled={!connected || listening || pending}
+                    value={state.pendingProfile || state.config?.profile || ""}
+                    onChange={(e) => {
+                      setError("");
+                      try {
+                        client.selectProfile(e.currentTarget.value);
+                      } catch (reason) {
+                        setError((reason as Error).message);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>
+                      Receiver band
+                    </option>
+                    {state.config &&
+                      !state.profiles.some(
+                        (p) => p.id === state.config?.profile,
+                      ) && (
+                        <option value={state.config.profile}>
+                          Current band
+                        </option>
+                      )}
+                    {state.profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            {connected && !pending && state.website && <RemoteLocationPanel
+              key={`${kind}:${state.website}:${state.config?.profile ?? "unknown"}`}
+              scope={`remote:${kind}:${state.website}:${state.config?.profile ?? "unknown"}`}
+            />}
+            <a
+              href="https://www.receiverbook.de/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Find a receiver ↗
+            </a>
+          </div>
+        </div>
+      </section>
+      <section
+        className="signal-stage demodulate-stage remote-channel"
+        aria-labelledby="remote-channel-heading"
+      >
+        <div className="stage-heading">
+          <span aria-hidden="true">03</span>
+          <div>
+            <p>Tune & listen</p>
+            <h3 id="remote-channel-heading" className="icon-label">
+              <AppIcon name="sliders" />
+              Channel settings
+            </h3>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              void client
-                .resume(volume)
-                .catch((reason) => setError((reason as Error).message));
-            }}
+            className="stage-collapse secondary"
+            aria-label={
+              layout.channelCollapsed
+                ? "Expand channel panel"
+                : "Collapse channel panel"
+            }
+            aria-expanded={!layout.channelCollapsed}
+            aria-controls="remote-channel-body"
+            onClick={() =>
+              onLayoutChange((old) => ({
+                ...old,
+                channelCollapsed: !old.channelCollapsed,
+              }))
+            }
           >
-            Resume audio
+            {layout.channelCollapsed ? "+" : "−"}
           </button>
-        )}
-      </div>
-      <div className="remote-spectrum-panel">
-        <div className="remote-spectrum-heading">
+        </div>
+        <div
+          id="remote-channel-body"
+          className="stage-body"
+          hidden={layout.channelCollapsed}
+        >
+          {savedChannel && (
+            <div className="remote-preset-review">
+              <p>
+                {loaded?.name} · {savedChannel.tune!.frequency / 1e6} MHz ·{" "}
+                {REMOTE_MODES[savedChannel.tune!.mode]}. Connect, then apply
+                this saved channel before Listen.
+                {savedChannel.profile &&
+                  " Applying can select the saved receiver band."}
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!connected || listening || pending || applyingPreset}
+                onClick={preparePreset}
+              >
+                {applyingPreset
+                  ? "Waiting for saved band…"
+                  : "Apply saved channel"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={pending}
+                onClick={() => {
+                  setSavedChannel(undefined);
+                  setApplyingPreset(false);
+                  setError("");
+                }}
+              >
+                Use receiver defaults
+              </button>
+            </div>
+          )}
+          <div className="stage-controls remote-channel-controls">
+            <label>
+              Channel · MHz
+              <input
+                aria-label="Remote channel MHz"
+                inputMode="decimal"
+                value={frequency}
+                disabled={!connected || pending}
+                onChange={(e) => setFrequency(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void apply();
+                }}
+              />
+            </label>
+            <label>
+              Mode
+              <select
+                aria-label="Remote mode"
+                value={draft?.mode ?? "am"}
+                disabled={!connected || pending}
+                onChange={(e) => {
+                  if (!state.config || !draft) return;
+                  const tune = defaultTune(
+                    state.config,
+                    e.currentTarget.value as RemoteMode,
+                  );
+                  if (kind === "kiwi" && tune.mode === "nfm") {
+                    tune.lowCut = -Math.min(
+                      5000,
+                      Math.floor((kiwiState?.sampleRate ?? 12000) / 2),
+                    );
+                    tune.highCut = -tune.lowCut;
+                  }
+                  setDraft({ ...tune, frequency: draft.frequency });
+                }}
+              >
+                {modes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {REMOTE_MODES[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={!connected || pending || Boolean(savedChannel)}
+              onClick={() => void apply()}
+            >
+              {listening ? "Tune" : "Listen"}
+            </button>
+            <RemotePresetsPanel
+              library={library}
+              receiver={{ kind, address }}
+              channel={
+                connected && !pending && !savedChannel
+                  ? () => {
+                      const tune = currentTune();
+                      client.validateTune(tune);
+                      return {
+                        kind,
+                        address: state.website,
+                        tune,
+                        ...(kind === "kiwi"
+                          ? { zoom: kiwiState?.zoom ?? 0 }
+                          : { profile: state.config?.profile }),
+                      };
+                    }
+                  : undefined
+              }
+              onLoad={onLoad}
+            />
+          </div>
+          <details className="advanced-controls">
+            <summary>Filter settings</summary>
+            <div className="remote-filters">
+              {(["lowCut", "highCut", "squelch"] as const)
+                .filter((key) => kind !== "kiwi" || key !== "squelch")
+                .map((key) => (
+                  <label key={key}>
+                    {key === "lowCut"
+                      ? "Low cut · Hz"
+                      : key === "highCut"
+                        ? "High cut · Hz"
+                        : "Squelch · relative dB"}
+                    <input
+                      type="number"
+                      value={draft?.[key] ?? ""}
+                      disabled={!connected || pending}
+                      onChange={(e) => {
+                        if (draft)
+                          setDraft({
+                            ...draft,
+                            [key]: Number(e.currentTarget.value),
+                          });
+                      }}
+                    />
+                  </label>
+                ))}
+            </div>
+            <p>
+              CW uses a 700 Hz beat tone; CW filter edges are relative to that
+              oscillator. Filter and mode changes take effect with Listen or
+              Tune. Tuning is requested, without a hardware acknowledgement or
+              transmitter identity claim.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section
+        className="graphics-panel remote-graphics"
+        aria-labelledby="remote-spectrum-heading"
+      >
+        <div className="panel-heading spectrum-heading">
+          <div className="stage-heading">
+            <span aria-hidden="true">02</span>
+            <div>
+              <p>View</p>
+              <h2 id="remote-spectrum-heading">Spectrum & waterfall</h2>
+            </div>
+          </div>
+          <span className="remote-spectrum-origin">
+            Server FFT · relative power
+          </span>
+        </div>
+        <div className="spectrum-toolbar remote-spectrum-toolbar">
           <span>
-            Server spectrum & waterfall · relative power
+            {state.config
+              ? `${(state.config.center / 1e6).toFixed(6)} MHz · ${(state.config.rate / 1e6).toFixed(3)} MHz span`
+              : "Connect to view the receiver band"}
             {listening && state.tune && (
               <small className="remote-requested">
                 Requested channel {(state.tune.frequency / 1e6).toFixed(6)} MHz
@@ -497,79 +628,218 @@ function RemoteReceiverView({
               </small>
             )}
           </span>
+          {kind === "kiwi" && (
+            <div className="remote-zoom-control">
+              <label>
+                Waterfall zoom
+                <select
+                  aria-label="Waterfall zoom"
+                  disabled={!connected}
+                  value={kiwiState?.zoom ?? 0}
+                  onChange={(e) => {
+                    setError("");
+                    try {
+                      if (client instanceof KiwiClient)
+                        client.setZoom(Number(e.currentTarget.value));
+                    } catch (reason) {
+                      setError((reason as Error).message);
+                    }
+                  }}
+                >
+                  {Array.from(
+                    {
+                      length: (kiwiState?.maxZoom ?? 0) + 1,
+                    },
+                    (_, zoom) => (
+                      <option key={zoom} value={zoom}>
+                        {zoom === 0 ? "Full band" : `${2 ** zoom}×`}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+            </div>
+          )}
           <button
             type="button"
             className="secondary"
             aria-pressed={paused}
             onClick={() => setPaused((p) => !p)}
           >
+            <AppIcon name={paused ? "play" : "pause"} />
             {paused ? "Resume display" : "Pause display"}
           </button>
         </div>
-        <RemoteSpectrum client={client} config={state.config} paused={paused} />
-      </div>
-      <div className="remote-footer">
-        <p>
-          {kind === "kiwi" &&
-            "Connect reserves a receiver channel and receives server data; browser audio stays off until Listen. "}
-          Audio and spectrum are processed by this remote receiver. Raw I/Q
-          recording, local decoders, Explorer, local Favorites and live session
-          sharing apply to local sources. Returning to the local workspace
-          disconnects this stream.
-        </p>
-        <details>
-          <summary>Stream details & filters</summary>
-          <p>
-            {state.version || "Version not received"} ·{" "}
-            {state.fftFrames.toLocaleString()} spectrum frames ·{" "}
-            {state.audioSamples.toLocaleString()} audio samples · audio{" "}
-            {state.audioState} · {state.audioDrops} audio drops/resets
-          </p>
-          {state.config && (
-            <p>
-              Receiver {(state.config.center / 1e6).toFixed(6)} MHz ·{" "}
-              {(state.config.rate / 1e6).toFixed(3)} MHz span ·{" "}
-              {state.config.fftSize} bins · audio{" "}
-              {state.config.audioCompression}, spectrum{" "}
-              {state.config.fftCompression}.{" "}
-              {kind === "kiwi"
-                ? `${kiwiState?.sampleRate.toFixed(3) ?? ""} samples/s server audio; ${kiwiState?.packetDiscontinuities ?? 0} audio packet discontinuities.`
-                : "Band selection can change a shared receiver; use its website for access rules."}
-            </p>
-          )}
-          <div className="remote-filters">
-            {(["lowCut", "highCut", "squelch"] as const)
-              .filter((key) => kind !== "kiwi" || key !== "squelch")
-              .map((key) => (
-                <label key={key}>
-                  {key === "lowCut"
-                    ? "Low cut · Hz"
-                    : key === "highCut"
-                      ? "High cut · Hz"
-                      : "Squelch · relative dB"}
-                  <input
-                    type="number"
-                    value={draft?.[key] ?? ""}
-                    disabled={!connected || pending}
-                    onChange={(e) => {
-                      if (draft)
-                        setDraft({
-                          ...draft,
-                          [key]: Number(e.currentTarget.value),
-                        });
-                    }}
-                  />
-                </label>
-              ))}
+        <div className="spectrum-display">
+          <div className="canvas-frame">
+            <RemoteSpectrum
+              client={client}
+              config={state.config}
+              paused={paused}
+              active={active}
+            />
           </div>
+        </div>
+      </section>
+      <section
+        className={`receiver-dock remote-footer ${layout.dockExpanded ? "is-expanded" : "is-collapsed"}${layout.dockLarge && layout.dockExpanded ? " is-large" : ""}`}
+        aria-label="Receiver tools"
+      >
+        <div className="receiver-dock-bar">
+          <div
+            className="receiver-dock-tabs"
+            role="tablist"
+            aria-label="Receiver tool panels"
+            onKeyDown={(e) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
+                return;
+              e.preventDefault();
+              const next =
+                e.key === "Home"
+                  ? "audio"
+                  : e.key === "End"
+                    ? "session"
+                    : tool === "audio"
+                      ? "session"
+                      : "audio";
+              setTool(next);
+              onLayoutChange((old) => ({ ...old, dockExpanded: true }));
+              document.getElementById(`remote-${next}-tab`)?.focus();
+            }}
+          >
+            {(["audio", "session"] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                id={`remote-${view}-tab`}
+                aria-selected={tool === view}
+                tabIndex={tool === view ? 0 : -1}
+                aria-controls={`remote-${view}-panel`}
+                onClick={() => {
+                  setTool(view);
+                  onLayoutChange((old) => ({ ...old, dockExpanded: true }));
+                }}
+              >
+                <AppIcon name={view === "audio" ? "headphones" : "file"} />
+                {view === "audio" ? "Audio" : "Session"}
+              </button>
+            ))}
+          </div>
+          <div className="dock-actions">
+            {layout.dockExpanded && (
+              <button
+                type="button"
+                className="secondary dock-size-toggle"
+                aria-pressed={layout.dockLarge}
+                onClick={() =>
+                  onLayoutChange((old) => ({
+                    ...old,
+                    dockLarge: !old.dockLarge,
+                  }))
+                }
+              >
+                <AppIcon name={layout.dockLarge ? "collapse" : "expand"} />
+                {layout.dockLarge ? "Less space" : "More space"}
+              </button>
+            )}
+            <button
+              type="button"
+              className="secondary dock-toggle"
+              aria-expanded={layout.dockExpanded}
+              onClick={() =>
+                onLayoutChange((old) => ({
+                  ...old,
+                  dockExpanded: !old.dockExpanded,
+                }))
+              }
+            >
+              <AppIcon name={layout.dockExpanded ? "collapse" : "expand"} />
+              {layout.dockExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+        </div>
+        <section
+          id="remote-audio-panel"
+          role="tabpanel"
+          aria-labelledby="remote-audio-tab"
+          className="receiver-dock-panel"
+          hidden={!layout.dockExpanded || tool !== "audio"}
+        >
+          <div className="remote-audio-controls">
+            <label className="remote-volume">
+              Volume
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round(volume * 100)}
+                onChange={(e) => {
+                  const value = Number(e.currentTarget.value) / 100;
+                  setVolume(value);
+                  client.volume(value);
+                }}
+              />
+            </label>
+            {listening && state.audioState !== "running" && (
+              <button
+                type="button"
+                onClick={() => {
+                  void client
+                    .resume(volume)
+                    .catch((reason) => setError((reason as Error).message));
+                }}
+              >
+                Resume audio
+              </button>
+            )}
+            <span className="status-pill">
+              {listening ? `Audio ${state.audioState}` : "Audio off"}
+            </span>
+          </div>
+          <details className="remote-stream-details">
+            <summary>Stream details</summary>
+            <p>
+              {state.version || "Version not received"} ·{" "}
+              {state.fftFrames.toLocaleString()} spectrum frames ·{" "}
+              {state.audioSamples.toLocaleString()} audio samples · audio{" "}
+              {state.audioState} · {state.audioDrops} audio drops/resets
+            </p>
+            {state.config && (
+              <p>
+                Receiver {(state.config.center / 1e6).toFixed(6)} MHz ·{" "}
+                {(state.config.rate / 1e6).toFixed(3)} MHz span ·{" "}
+                {state.config.fftSize} bins · audio{" "}
+                {state.config.audioCompression}, spectrum{" "}
+                {state.config.fftCompression}.{" "}
+                {kind === "kiwi"
+                  ? `${kiwiState?.sampleRate.toFixed(3) ?? ""} samples/s server audio; ${kiwiState?.packetDiscontinuities ?? 0} audio packet discontinuities.`
+                  : "Band selection can change a shared receiver; use its website for access rules."}
+              </p>
+            )}
+          </details>
+        </section>
+        <section
+          id="remote-session-panel"
+          role="tabpanel"
+          aria-labelledby="remote-session-tab"
+          className="receiver-dock-panel"
+          hidden={!layout.dockExpanded || tool !== "session"}
+        >
           <p>
-            CW uses a 700 Hz beat tone; CW filter edges are relative to that
-            oscillator. Filter and mode changes take effect with Listen or Tune.
-            Tuning is requested, without a hardware acknowledgement or
-            transmitter identity claim.
+            Audio and spectrum are processed by{" "}
+            {kind === "kiwi" ? "KiwiSDR" : "OpenWebRX"}. This source does not
+            provide raw I/Q for recording, local decoders or Explorer. Remote
+            presets and links are available in Remote favorites.
           </p>
-        </details>
-      </div>
-    </section>
+          <p>
+            Changing source or leaving Receiver disconnects this stream. Return,
+            Connect and Listen explicitly to resume.
+            {kind === "kiwi" &&
+              " Connect reserves a remote receiver channel with browser audio off."}
+          </p>
+        </section>
+      </section>
+    </ReceiverWorkspace>
   );
 }

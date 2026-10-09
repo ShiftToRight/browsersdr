@@ -29,6 +29,9 @@ import {
   Star,
   X,
   Plus,
+  MapPin,
+  LocateFixed,
+  SquareArrowOutUpRight,
   type LucideIcon,
 } from "lucide-react";
 
@@ -63,6 +66,9 @@ const icons = {
   star: Star,
   close: X,
   plus: Plus,
+  pin: MapPin,
+  locate: LocateFixed,
+  overlay: SquareArrowOutUpRight,
 } satisfies Record<string, LucideIcon>;
 
 export type AppIconName = keyof typeof icons;

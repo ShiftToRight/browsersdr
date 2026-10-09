@@ -6,10 +6,12 @@ export function RemoteSpectrum({
   client,
   config,
   paused,
+  active = true,
 }: {
   client: Pick<OpenWebRxClient, "subscribeFrames">;
   config?: RemoteConfig;
   paused: boolean;
+  active?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const pauseRef = useRef(paused);
@@ -24,6 +26,7 @@ export function RemoteSpectrum({
     levels.current = { floor: config?.floor, ceiling: config?.ceiling };
   }, [config?.floor, config?.ceiling]);
   useEffect(() => {
+    if (!active) return;
     const element = canvas.current,
       context = element?.getContext("2d");
     if (!element || !context) return;
@@ -117,7 +120,7 @@ export function RemoteSpectrum({
       unsubscribe();
       cancelAnimationFrame(animation);
     };
-  }, [client, center, rate, fftSize]); // Config fields own the display generation.
+  }, [client, center, rate, fftSize, active]); // Config fields own the display generation.
   return (
     <canvas
       ref={canvas}

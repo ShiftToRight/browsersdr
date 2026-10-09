@@ -11,7 +11,7 @@ const config = {
   sdr_id: "radio",
   profile_id: "hf",
 };
-async function fixture(page: Page) {
+async function fixture(page: Page, confirmProfiles = true) {
   const commands: string[] = [],
     connections: WebSocketRoute[] = [],
     closed: string[] = [];
@@ -68,18 +68,34 @@ async function fixture(page: Page) {
             );
           socket.send(pcm);
         }
-        if (request.type === "selectprofile")
+        if (request.type === "selectprofile") {
+          // Literal receiver-detach shape observed on VK4DL/SDR1.
           socket.send(
             JSON.stringify({
               type: "config",
               value: {
-                center_freq: 144000000,
-                samp_rate: 2400000,
-                start_freq: 144500000,
-                profile_id: "vhf",
+                center_freq: null,
+                samp_rate: null,
+                start_freq: null,
+                start_mod: null,
+                sdr_id: "radio",
+                profile_id: null,
               },
             }),
           );
+          if (confirmProfiles)
+            socket.send(
+              JSON.stringify({
+                type: "config",
+                value: {
+                  center_freq: 144000000,
+                  samp_rate: 2400000,
+                  start_freq: 144500000,
+                  profile_id: "vhf",
+                },
+              }),
+            );
+        }
       }
     });
   });
@@ -114,7 +130,7 @@ test("native remote audio and spectrum require explicit listening and leave loca
   await expect(page.locator(".remote-header-status")).toContainText(
     "listening",
   );
-  await page.getByText("Stream details & filters", { exact: true }).click();
+  await page.getByText("Stream details", { exact: true }).click();
   await expect(page.locator(".remote-footer")).toContainText(
     "1,200 audio samples",
   );
@@ -146,7 +162,9 @@ test("native remote audio and spectrum require explicit listening and leave loca
     .getByRole("button", { name: "Stop listening", exact: true })
     .click();
   await expect.poll(() => closed.length).toBe(1);
-  await page.getByRole("tab", { name: /Receiver/ }).click();
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("rtl-sdr");
   await expect(
     page.getByRole("combobox", { name: "Signal source", exact: true }),
   ).toHaveValue("rtl-sdr");
@@ -179,9 +197,13 @@ test("remote profile confirmation, keyboard controls, narrow layout and navigati
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  await page.getByRole("tab", { name: /Explorer/ }).click();
+  await expect(page.getByRole("tab", { name: /Explorer/ })).toBeDisabled();
+  await page.locator("summary[aria-label=Settings]").click();
+  await page
+    .getByRole("button", { name: "Integration settings", exact: true })
+    .click();
   await expect.poll(() => closed.length).toBe(1);
-  await expect(page.locator("#remote-view")).toHaveCount(0);
+  await expect(page.locator("#remote-view")).toBeHidden();
 });
 test("local active reception and retained capture block remote entry without discarding data", async ({
   page,
@@ -253,10 +275,21 @@ test("waterfall history survives repeated configuration and pause freezes the re
 }) => {
   const { connections } = await fixture(page);
   await enter(page);
+  const canvas = page.getByRole("img", {
+    name: "Remote server spectrum and waterfall, relative power",
+  });
+  const newestRow = () =>
+    canvas.evaluate((element: HTMLCanvasElement) =>
+      Array.from(element.getContext("2d")!.getImageData(20, 112, 1, 1).data),
+    );
   const fft = Buffer.alloc(513);
   fft[0] = 1;
-  for (let i = 0; i < 128; i++) fft.writeFloatLE(-50, 1 + i * 4);
   for (let i = 0; i < 28; i++) {
+    const before = await newestRow();
+    // Alternate visible levels and wait for each rendered frame. Fixed delays
+    // can coalesce frames under load, leaving the historical row unfilled.
+    for (let bin = 0; bin < 128; bin++)
+      fft.writeFloatLE(i % 2 ? -60 : -50, 1 + bin * 4);
     connections[0]!.send(
       JSON.stringify({
         type: "config",
@@ -264,11 +297,8 @@ test("waterfall history survives repeated configuration and pause freezes the re
       }),
     );
     connections[0]!.send(fft);
-    await page.waitForTimeout(50);
+    await expect.poll(newestRow).not.toEqual(before);
   }
-  const canvas = page.getByRole("img", {
-    name: "Remote server spectrum and waterfall, relative power",
-  });
   const row = await canvas.evaluate((element: HTMLCanvasElement) =>
     Array.from(element.getContext("2d")!.getImageData(20, 135, 1, 1).data),
   );
@@ -348,7 +378,7 @@ test("compressed FFT/audio and a standard-to-HD mode change preserve the continu
   });
   await enter(page);
   await page.getByRole("button", { name: "Listen", exact: true }).click();
-  await page.getByText("Stream details & filters", { exact: true }).click();
+  await page.getByText("Stream details", { exact: true }).click();
   await expect(page.locator(".remote-footer")).toContainText("2 audio samples");
   await page
     .getByRole("combobox", { name: "Remote mode", exact: true })
@@ -398,11 +428,229 @@ test("incoming local settings links cannot change the hidden local receiver duri
   await expect(page.locator(".remote-header-status")).toContainText(
     "listening",
   );
-  await page.getByRole("tab", { name: /Receiver/ }).click();
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("rtl-sdr");
   await expect(page.getByRole("combobox", { name: /^Mode/ })).toHaveValue(
     "WBFM",
   );
   await expect(
     page.getByRole("spinbutton", { name: "Channel frequency", exact: true }),
   ).toHaveValue("100.000");
+});
+
+test("unified remote workspace shares compact layout, panel hiding and source selection with local reception", async ({
+  page,
+}) => {
+  const { closed } = await fixture(page);
+  await enter(page);
+  await page.getByRole("button", { name: "Compact", exact: true }).click();
+  await page.getByRole("button", { name: "Listen", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Back to Receiver", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /Explorer/ })).toBeDisabled();
+  await expect(
+    page.getByRole("tab", { name: "Capture & replay", exact: true }),
+  ).toHaveCount(0);
+  const source = await page
+    .locator("#remote-view .acquire-stage")
+    .boundingBox();
+  const spectrum = await page
+    .locator("#remote-view .graphics-panel")
+    .boundingBox();
+  const channel = await page
+    .locator("#remote-view .demodulate-stage")
+    .boundingBox();
+  expect(source!.x + source!.width).toBeLessThanOrEqual(spectrum!.x);
+  expect(spectrum!.x + spectrum!.width).toBeLessThanOrEqual(channel!.x);
+  expect(Math.abs(source!.y - spectrum!.y)).toBeLessThan(2);
+  expect(Math.abs(channel!.y - spectrum!.y)).toBeLessThan(2);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBeLessThanOrEqual(1000);
+  await page.getByRole("tab", { name: /Receiver/ }).click();
+  await page.getByRole("tab", { name: /Receiver/ }).press("End");
+  await expect(page.locator(".remote-header-status")).toContainText(
+    "listening",
+  );
+  expect(closed).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Collapse source panel", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Collapse channel panel", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Receiver website", { exact: true }),
+  ).toBeHidden();
+  await expect(
+    page.getByLabel("Remote channel MHz", { exact: true }),
+  ).toBeHidden();
+  await expect(page.locator(".remote-header-status")).toContainText(
+    "listening",
+  );
+  await page
+    .getByRole("button", { name: "Expand source panel", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("synthetic");
+  await expect.poll(() => closed.length).toBe(1);
+  await expect(page.getByRole("tab", { name: /Explorer/ })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Compact", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Expand channel panel", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Compact", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Expand channel panel", exact: true }),
+  ).toBeVisible();
+});
+
+test("leaving unified Receiver closes the stream and returning preserves settings without reconnecting", async ({
+  page,
+}) => {
+  const { connections, closed } = await fixture(page);
+  await enter(page);
+  await page.getByLabel("Remote channel MHz", { exact: true }).fill("10.02");
+  await page.getByRole("button", { name: "Listen", exact: true }).click();
+  await page.getByRole("tab", { name: "Session", exact: true }).click();
+  await expect(page.locator("#remote-session-panel")).toContainText(
+    "does not provide raw I/Q",
+  );
+  await page.locator("summary[aria-label=Settings]").click();
+  await page
+    .getByRole("button", { name: "Integration settings", exact: true })
+    .click();
+  await expect.poll(() => closed.length).toBe(1);
+  await expect(page.locator("#remote-view")).toBeHidden();
+  await page
+    .getByRole("button", { name: "Back to Receiver", exact: true })
+    .click();
+  await expect(page.locator("#remote-view")).toBeVisible();
+  await expect(
+    page.getByLabel("Receiver website", { exact: true }),
+  ).toHaveValue(address);
+  await expect(
+    page.getByLabel("Remote channel MHz", { exact: true }),
+  ).toHaveValue("10.02");
+  await expect(
+    page.getByRole("button", { name: "Connect", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Listen", exact: true }),
+  ).toBeDisabled();
+  expect(connections).toHaveLength(1);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Listen", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator(".remote-header-status")).toContainText(
+    "connected",
+  );
+  expect(connections).toHaveLength(2);
+});
+
+test("unified remote filters reject invalid passbands and narrow controls remain reachable", async ({
+  page,
+}) => {
+  const { commands } = await fixture(page);
+  await enter(page);
+  await page.getByText("Filter settings", { exact: true }).click();
+  await page.getByLabel("Low cut · Hz", { exact: true }).fill("9000");
+  await page.getByLabel("High cut · Hz", { exact: true }).fill("-9000");
+  const count = commands.length;
+  await page.getByRole("button", { name: "Listen", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("filter");
+  expect(commands).toHaveLength(count);
+  await page.getByLabel("Low cut · Hz", { exact: true }).fill("-3000");
+  await page.getByLabel("High cut · Hz", { exact: true }).fill("3000");
+  await page.getByRole("button", { name: "Listen", exact: true }).click();
+  await expect(page.locator(".remote-header-status")).toContainText(
+    "listening",
+  );
+  for (const width of [1024, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await expect(
+      page.getByRole("button", { name: "Tune", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Volume", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^Remote favorites/ }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Remote favorites",
+      exact: true,
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.press("Escape");
+    await expect(
+      page.getByRole("button", { name: /^Remote favorites/ }),
+    ).toBeFocused();
+  }
+});
+
+test("band switches wait through null detach and partial acknowledgements without stale tuning or autoplay", async ({
+  page,
+}) => {
+  const { commands, connections, closed } = await fixture(page, false);
+  await enter(page);
+  const band = page.getByRole("combobox", { name: "Remote band", exact: true });
+  const listen = page.getByRole("button", { name: "Listen", exact: true });
+  const channel = page.getByRole("textbox", {
+    name: "Remote channel MHz",
+    exact: true,
+  });
+  const spectrum = page.locator("#remote-view .remote-spectrum-toolbar");
+  const reply = (value: Record<string, unknown>) =>
+    connections[0]!.send(JSON.stringify({ type: "config", value }));
+  await band.selectOption("radio|vhf");
+  await expect(band).toBeDisabled();
+  await expect(listen).toBeDisabled();
+  await expect(spectrum).toContainText("Connect to view the receiver band");
+  expect(closed).toHaveLength(0);
+  reply({ sdr_id: "radio", profile_id: "vhf" });
+  await expect(listen).toBeDisabled();
+  reply({
+    center_freq: 144000000,
+    samp_rate: 2400000,
+    start_freq: 144500000,
+    start_mod: "nfm",
+  });
+  await expect(band).toBeEnabled();
+  await expect(band).toHaveValue("radio|vhf");
+  await expect(channel).toHaveValue("144.5");
+  await expect(spectrum).toContainText("144.000000 MHz · 2.400 MHz span");
+  await expect(listen).toBeEnabled();
+  expect(commands.some((c) => c.includes('"action":"start"'))).toBe(false);
+  // Switch back on the same socket; stale old coordinates cannot confirm the target.
+  await band.selectOption("radio|hf");
+  reply({ center_freq: 144000000, samp_rate: 2400000, profile_id: "vhf" });
+  await expect(listen).toBeDisabled();
+  reply({ sdr_id: "radio", profile_id: "hf" });
+  await expect(listen).toBeDisabled();
+  reply(config);
+  await expect(channel).toHaveValue("10");
+  await expect(band).toHaveValue("radio|hf");
+  await listen.click();
+  await expect(page.locator(".remote-header-status")).toContainText(
+    "listening",
+  );
+  expect(connections).toHaveLength(1);
+  expect(closed).toHaveLength(0);
+  expect(commands.filter((c) => c.includes('"action":"start"'))).toHaveLength(
+    1,
+  );
 });

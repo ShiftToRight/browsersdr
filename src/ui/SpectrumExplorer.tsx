@@ -1,3 +1,4 @@
+import { snapshotReceiverLocation, type ReceiverLocation } from "../radio/receiverLocation";
 import { ActionButton } from "./ActionButton";
 import { sourceCapabilities } from "../radio/sourceCapabilities";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -422,6 +423,7 @@ export function SpectrumExplorer({
   receiver,
   initialFrequencyHz: _initialFrequencyHz,
   volume,
+  receiverLocation,
   recordingBlocked,
   startReceptionForScan,
   onOpenReceiver,
@@ -434,6 +436,7 @@ export function SpectrumExplorer({
   receiver: ReceiverSnapshot;
   initialFrequencyHz: number;
   volume: number;
+  receiverLocation?: ReceiverLocation;
   recordingBlocked: boolean;
   startReceptionForScan: () => Promise<ReceiverSnapshot>;
   onOpenReceiver?: () => void;
@@ -1414,6 +1417,13 @@ export function SpectrumExplorer({
                   }
                 />
               </label>
+              <button type="button" className="secondary" disabled={scanning || capturing || !receiverLocation} onClick={() => {
+                if (!receiverLocation) return;
+                const location = snapshotReceiverLocation(receiverLocation)!;
+                updateProfile({ ...profile, site: { ...profile.site, label: location.label || profile.site.label, latitude: location.latitude, longitude: location.longitude, location } });
+              }}>Use receiver site</button>
+              <small>Copy the chosen antenna site explicitly. Profile and result exports include these coordinates.</small>
+              {profile.site.location && <small>Site source: {profile.site.location.source} · fix/entry time {profile.site.location.observedAt ?? "unknown"} · accuracy {profile.site.location.accuracyMeters === undefined ? "unknown" : `${profile.site.location.accuracyMeters} m`}</small>}
               <label>
                 Latitude (optional)
                 <input
@@ -1428,6 +1438,7 @@ export function SpectrumExplorer({
                       ...profile,
                       site: {
                         ...profile.site,
+                        location: undefined,
                         latitude:
                           e.currentTarget.value === ""
                             ? undefined
@@ -1451,6 +1462,7 @@ export function SpectrumExplorer({
                       ...profile,
                       site: {
                         ...profile.site,
+                        location: undefined,
                         longitude:
                           e.currentTarget.value === ""
                             ? undefined

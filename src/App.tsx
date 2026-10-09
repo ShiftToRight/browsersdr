@@ -1,3 +1,5 @@
+import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
+import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 import { RemoteReceiver } from "./ui/RemoteReceiver";
 import { RemotePresetSharePanel } from "./ui/RemotePresetSharePanel";
 import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
@@ -2055,6 +2057,7 @@ export function ReceiverApp({
   usrpImageRef = { current: undefined },
   usrpFirmwareRef = { current: undefined },
 }: AppRuntime) {
+  const antennaSite = useReceiverLocation("local");
   const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
     controller.getSnapshot(),
   );
@@ -2418,15 +2421,17 @@ export function ReceiverApp({
   const autoConnectAttempted = useRef(false);
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveViewState] = useState<AppView>("receiver");
+  const [remoteSelected, setRemoteSelected] = useState(false);
   const [remoteStatus, setRemoteStatus] = useState("disconnected");
   const [remotePreset, setRemotePreset] = useState<RemotePreset>();
   const [remoteOpening, setRemoteOpening] = useState(false);
   const [remoteEntryIssue, setRemoteEntryIssue] = useState("");
   const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "explorer">("receiver");
   const setActiveView = useCallback((view: AppView) => {
-    setActiveViewState(view);
-    if (view === "receiver" || view === "explorer") setLastWorkspace(view);
-  }, []);
+    setActiveViewState(view === "receiver" && remoteSelected ? "remote" : view);
+    if (view === "receiver" || view === "remote") setLastWorkspace("receiver");
+    else if (view === "explorer") setLastWorkspace(view);
+  }, [remoteSelected]);
   const openAuxiliaryView = (view: AppView) => {
     setActiveView(view);
     requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
@@ -3054,13 +3059,14 @@ export function ReceiverApp({
       await controller.disconnect();
       if (controller.getSnapshot().cleanupRequired) throw new Error("Release the local receiver before connecting remotely.");
       setRemotePreset(preset);
+      setRemoteSelected(true);
       setActiveView("remote");
       return true;
     } catch (reason) { setRemoteEntryIssue((reason as Error).message); return false; }
     finally { setRemoteOpening(false); }
   };
 
-  const stationUseBlockedReason = activeView === "remote" ? "Return to the local receiver before applying local station settings or favorites." : stationSelectionBusy ? "Applying station settings…"
+  const stationUseBlockedReason = remoteSelected ? "Return to the local receiver before applying local station settings or favorites." : stationSelectionBusy ? "Applying station settings…"
     : source === "replay" ? "Choose a live receiver source or the demo to use a station."
     : transitioning || receiver.cleanupRequired ? "Wait for the receiver operation or scan to finish."
     : recordingStatus || exportingRecording ? "Stop recording and finish preparation before selecting a station."
@@ -3130,13 +3136,13 @@ export function ReceiverApp({
     }
   };
   const applySharedSettings = async (shared: SharedSettings) => {
-    if (activeView === "remote") throw new Error("Return to the local receiver before applying shared settings.");
+    if (remoteSelected) throw new Error("Return to the local receiver before applying shared settings.");
     if (controller.getSnapshot().lifecycle === "running") throw new Error("Stop reception before applying shared settings.");
     await recallFavorite(sharedSettingsBookmark(shared));
     setSpectrumDisplay({ floorDb: shared.display.floorDb, rangeDb: shared.display.rangeDb });
     setLayout((old) => ({ ...old, compact: shared.display.compact }));
   };
-  const saveFavoriteBlockedReason = activeView === "remote" ? "Remote presets are separate from local Favorites and settings sharing." : transitioning ? "Wait for the receiver operation to finish."
+  const saveFavoriteBlockedReason = remoteSelected ? "Remote presets are separate from local Favorites and settings sharing." : transitioning ? "Wait for the receiver operation to finish."
     : !frequencyValid || frequencyPending || channelFrequencyDraft !== undefined ? "Apply or cancel the channel frequency edit before saving."
     : undefined;
   const newFavorite = () => {
@@ -3149,12 +3155,13 @@ export function ReceiverApp({
     favorites.change((items) => [...items, bookmarkFromCandidate(candidate)]);
   };
   const startRecording = async () => {
+    const captureSite = antennaSite.site;
     if (recordingStartPending.current || stationSelectionPending.current) return;
     recordingStartPending.current = true;
     let status: RecordingStatus | undefined;
     try {
       const storageMode = await prepareRecordingStorage();
-      status = controller.startRecording(undefined, { captureCurrentChannel, storageMode });
+      status = controller.startRecording(undefined, { captureCurrentChannel, storageMode, receiverLocation: captureSite });
       if (status) captureCandidateLatch.begin(receptionCandidate, controller.getSnapshot().session);
     }
     catch (error) { setRecordingMessage(error instanceof Error ? error.message : "Recording could not start."); return; }
@@ -3382,7 +3389,7 @@ export function ReceiverApp({
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     let nextView: AppView | undefined;
-    const views: AppView[] = ["receiver", "explorer"];
+    const views: AppView[] = remoteSelected ? ["receiver"] : ["receiver", "explorer"];
     const currentIndex = event.currentTarget.id === "explorer-tab" ? 1 : 0;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const direction = event.key === "ArrowRight" ? 1 : -1;
@@ -3391,7 +3398,7 @@ export function ReceiverApp({
     } else if (event.key === "Home") {
       nextView = "receiver";
     } else if (event.key === "End") {
-      nextView = "explorer";
+      nextView = remoteSelected ? "receiver" : "explorer";
     }
     if (!nextView) return;
     event.preventDefault();
@@ -3558,7 +3565,7 @@ export function ReceiverApp({
 
   return (
     <main
-      className={`app-shell${activeView === "receiver" ? " receiver-workspace" : ""}${layout.compact ? " density-compact" : ""}${layout.sourceCollapsed ? " source-collapsed" : ""}${layout.channelCollapsed ? " channel-collapsed" : ""}`}
+      className={`app-shell${(activeView === "receiver" || activeView === "remote") ? " receiver-workspace" : ""}${layout.compact ? " density-compact" : ""}${layout.sourceCollapsed ? " source-collapsed" : ""}${layout.channelCollapsed ? " channel-collapsed" : ""}`}
     >
       <div className="app-topbar">
         <header className="app-header">
@@ -3601,6 +3608,8 @@ export function ReceiverApp({
               type="button"
               role="tab"
               id="explorer-tab"
+              disabled={remoteSelected}
+              title={remoteSelected ? "Select a local I/Q source to use Explorer." : undefined}
               aria-selected={activeView === "explorer"}
               aria-controls="explorer-view"
               tabIndex={lastWorkspace === "explorer" ? 0 : -1}
@@ -3612,7 +3621,7 @@ export function ReceiverApp({
             </button>
           </div>
           <p>
-            {activeView === "receiver"
+            {activeView === "receiver" || activeView === "remote"
               ? "Live radio workspace"
               : activeView === "explorer"
                 ? "Wideband spectrum survey"
@@ -3630,7 +3639,7 @@ export function ReceiverApp({
           onHelp={() => openAuxiliaryView("help")}
           onAbout={() => openAuxiliaryView("about")}
         />
-        {activeView === "remote" ? <div className="receiver-status remote-header-status" role="status">Remote · {remoteStatus}</div> : <ReceiverStatus
+        {remoteSelected ? <div className="receiver-status remote-header-status" role="status">Remote · {remoteStatus}</div> : <ReceiverStatus
           receiver={receiver}
           spectrum={spectrumStatus}
           recording={recordingStatus}
@@ -3678,22 +3687,17 @@ export function ReceiverApp({
         </ReceiverStatus>}
       </div>
 
-      {activeView !== "receiver" && activeView !== "explorer" && (
+      {activeView !== "receiver" && activeView !== "remote" && activeView !== "explorer" && (
         <div className="auxiliary-view-header">
           <button id="auxiliary-return" type="button" className="secondary" onClick={() => {
             setActiveView(lastWorkspace);
             requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
           }}>Back to {lastWorkspace === "receiver" ? "Receiver" : "Explorer"}</button>
-          <span>{activeView === "remote" ? "Remote web receiver" : activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
+          <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
         </div>
       )}
 
-      <div
-        id="receiver-view"
-        role="tabpanel"
-        aria-labelledby="receiver-tab"
-        hidden={activeView !== "receiver"}
-      >
+      <ReceiverWorkspace id="receiver-view" hidden={activeView !== "receiver"}>
         <section
           className="control-panel signal-chain-panel"
           aria-labelledby="receiver-heading"
@@ -3738,21 +3742,7 @@ export function ReceiverApp({
                     }
                     aria-label="Signal source"
                   >
-                    <option value="rtl-sdr">
-                      {sourceCapabilities("rtl-sdr").label} device
-                    </option>
-                    <option value="hackrf">
-                      {sourceCapabilities("hackrf").label} device
-                    </option>
-                    <option value="bladerf">
-                      {sourceCapabilities("bladerf").label} device
-                    </option>
-                    <option value="usrp-b205">
-                      {sourceCapabilities("usrp-b205").label} device
-                    </option>
-                    <option value="synthetic">Synthetic spectrum demo</option>
-                    <option value="replay">I/Q recording replay</option>
-                    <option value="remote" disabled={Boolean(remoteBlockedReason)}>Remote web receiver · OpenWebRX / KiwiSDR</option>
+                    <ReceiverSourceOptions remoteDisabled={Boolean(remoteBlockedReason)} />
                   </select>
                 </label>
                 {(remoteBlockedReason || remoteEntryIssue) && <p className="remote-entry-hint">{remoteEntryIssue || remoteBlockedReason}</p>}
@@ -4027,6 +4017,8 @@ export function ReceiverApp({
                     </button>
                   </div>
                 )}
+                <ReceiverLocationPanel key={`antenna:${source}`} value={antennaSite} />
+                {source === "replay" && <small>Replay uses the original acquisition site; the current site applies to future live recordings.</small>}
                 {caps.requiresUsb && (
                   <details
                     className="advanced-settings"
@@ -5396,7 +5388,7 @@ export function ReceiverApp({
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
             <SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
-              applyBlockedReason={activeView === "remote" ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
+              applyBlockedReason={remoteSelected ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
               onApply={applySharedSettings} />
             <dl className="session-grid">
               <div>
@@ -5484,9 +5476,15 @@ export function ReceiverApp({
             )}
           </section>
         </section>
-      </div>
+      </ReceiverWorkspace>
 
-      {activeView === "remote" && <div id="remote-view" role="tabpanel" aria-labelledby="receiver-tab"><RemoteReceiver onStatus={setRemoteStatus} initialPreset={remotePreset} /></div>}
+      {remoteSelected && <RemoteReceiver active={activeView === "remote"} layout={layout} onLayoutChange={setLayout}
+        onStatus={setRemoteStatus} initialPreset={remotePreset} onSource={(next) => {
+          setRemoteSelected(false);
+          setActiveViewState("receiver");
+          setLastWorkspace("receiver");
+          void switchSource(next);
+        }} />}
 
       <div
         id="settings-view"
@@ -5507,6 +5505,7 @@ export function ReceiverApp({
           pipeline={analysis}
           controller={controller}
           receiver={receiver}
+          receiverLocation={antennaSite.site}
           initialFrequencyHz={frequencyMhz * 1_000_000}
           volume={volume}
           recordingBlocked={

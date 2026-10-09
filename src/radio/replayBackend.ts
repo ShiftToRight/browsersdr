@@ -242,7 +242,7 @@ export class ReplayBackend implements ReceiverBackend {
     const offset = this.position + this.elapsedGapSamples;
     const timestamp = new Date(Date.parse(original.captureStartedAt) + offset / original.sampleRateHz * 1000).toISOString();
     const provenance = `${(original.provenance ?? "").slice(0, 3500)} Re-recorded original bytes during replay from dataset sample ${this.position}; acquisition timestamp advanced by known sample-clock time only, excluding unknown gap durations. No new hardware observation.`;
-    this.recorder = new IqRecorder({ ...this.metadata, actualSampleRateHz: original.sampleRateHz }, timestamp, undefined, provenance, survey ?? original.survey, recordingSampleFormat(original), preferredRecordingStorageMode(options?.storageMode), options);
+    this.recorder = new IqRecorder({ ...this.metadata, actualSampleRateHz: original.sampleRateHz }, timestamp, undefined, provenance, survey ? { ...survey, site: original.survey?.site } : original.survey, recordingSampleFormat(original), preferredRecordingStorageMode(options?.storageMode), { ...options, receiverLocation: original.receiverLocation });
     this.recordingChannelOnly = Boolean(options?.captureCurrentChannel);
     return this.recorder.status();
   }
