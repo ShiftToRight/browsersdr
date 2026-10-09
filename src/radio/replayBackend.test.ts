@@ -1,3 +1,4 @@
+import { packetRecordingFixture } from "../testing/packetRecordingFixture";
 import { createDabEnsembleFixture } from "../testing/dabEnsembleFixture";
 import { readFile } from "node:fs/promises";
 import { WasmChannelFilter, type ChannelExports } from "./wasmChannel";
@@ -49,7 +50,7 @@ function setupRecording(recording: IqRecording, compiledChannel?: (rate: number)
   };
   const events: ReceiverBackendEvents = {
     permissionGranted: vi.fn(), runtimeError: vi.fn(), audioStateChanged: vi.fn(), sourceEnded: vi.fn(), rdsChanged: vi.fn(),
-    dabChanged: vi.fn(), adsbChanged: vi.fn(), aisChanged: vi.fn(),
+    dabChanged: vi.fn(), adsbChanged: vi.fn(), aisChanged: vi.fn(), aprsChanged: vi.fn(), rs41Changed: vi.fn(),
   };
   const backend = new ReplayBackend(events, analysis as unknown as AnalysisPipeline, recording, 1, compiledChannel ?? (async rate => {
     const { instance } = await WebAssembly.instantiate(await readFile(new URL("../wasm/pkg/spectrum_analysis.wasm", import.meta.url)), {});
@@ -193,6 +194,8 @@ describe("real replay backend integration", () => {
     expect((await backend.configureMode(defaultModeSettings("DAB"), 5)).mode).toBe("DAB");
     expect((await backend.configureMode(defaultModeSettings("SRD"), 6)).mode).toBe("SRD");
     expect((await backend.configureMode(defaultModeSettings("AM"), 7)).mode).toBe("AM");
+    expect((await backend.configureMode(defaultModeSettings("APRS"), 8)).mode).toBe("APRS");
+    expect((await backend.configureMode(defaultModeSettings("RS41"), 9)).mode).toBe("RS41");
     await backend.stop();
   });
 
@@ -494,4 +497,41 @@ it("keeps the acquisition site when replay recording is offered a new listener s
     expect(result.metadata.survey?.site).toBeUndefined();
     await f.backend.stop();
   }
+});
+
+
+describe("packet decoder product replay", () => {
+  it.each(["APRS", "RS41"] as const)("decodes %s at a nonzero offset, flushes EOF and rejects corrupt RF", async mode => {
+    for (const rate of [1_024_000, 2_400_000, 9_600_000]) {
+      const fixture = packetRecordingFixture(mode, rate);
+      const { backend, options, events } = setupRecording(fixture);
+      await backend.start(options);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(events.runtimeError).not.toHaveBeenCalled();
+      expect(events.sourceEnded).toHaveBeenCalledOnce();
+      if (mode === "APRS") {
+        expect(vi.mocked(events.aprsChanged!).mock.calls.at(-1)?.[0].stations[0]?.key).toBe("N0CALL-1");
+        expect(vi.mocked(events.aprsChanged!).mock.calls.at(-1)?.[0].stations[0]?.position?.latitudeDegrees).toBeCloseTo(49.058333, 5);
+      } else {
+        expect(vi.mocked(events.rs41Changed!).mock.calls.at(-1)?.[0].sondes[0]?.sondeId).toBe("K1930293");
+        expect(vi.mocked(events.rs41Changed!).mock.calls.at(-1)?.[0].sondes[0]?.position?.altitudeMeters).toBeCloseTo(28410.02, 1);
+      }
+      await backend.stop();
+    }
+    const { backend, options, events } = setupRecording(packetRecordingFixture(mode, 1_024_000, -37_000, true));
+    await backend.start(options); await vi.advanceTimersByTimeAsync(2_000);
+    if (mode === "APRS") expect(vi.mocked(events.aprsChanged!).mock.calls.at(-1)?.[0].stations).toHaveLength(0);
+    else expect(vi.mocked(events.rs41Changed!).mock.calls.at(-1)?.[0].sondes).toHaveLength(0);
+    await backend.stop();
+  }, 30_000);
+
+  it.each(["APRS", "RS41"] as const)("does not stitch %s across a replay gap", async mode => {
+    const fixture = packetRecordingFixture(mode);
+    fixture.metadata.knownGaps = [{ afterSample: Math.floor(fixture.metadata.sampleCount / 2), missingSamples: 102_400, reason: "test source discontinuity" }];
+    const { backend, options, events } = setupRecording(fixture);
+    await backend.start(options); await vi.advanceTimersByTimeAsync(2_000);
+    const state = mode === "APRS" ? vi.mocked(events.aprsChanged!).mock.calls.at(-1)?.[0] : vi.mocked(events.rs41Changed!).mock.calls.at(-1)?.[0];
+    expect(state && ("stations" in state ? state.stations : state.sondes)).toHaveLength(0);
+    await backend.stop();
+  });
 });

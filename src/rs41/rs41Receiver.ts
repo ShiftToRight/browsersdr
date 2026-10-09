@@ -98,6 +98,9 @@ export class Rs41Receiver implements StreamingDigitalDecoder<
     this.modem!.reset();
     this.publish();
   }
+  /** Publish the final state at an explicit end-of-input barrier. */
+  flush(): void { this.requireConfigured(); this.publish(); }
+
   snapshot(): DigitalPublication<Rs41Snapshot> {
     this.requireConfigured();
     return this.cached!;

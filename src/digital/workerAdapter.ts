@@ -24,10 +24,12 @@ export type DigitalWorkerInput<
       I: Float32Array<ArrayBuffer>;
       Q: Float32Array<ArrayBuffer>;
     }
+  | { type: "flush"; generation: number; sequence: number }
   | { type: "dispose" };
 
 export type DigitalWorkerOutput<TSnapshot, TEvent> =
   | { type: "ready"; generation: number }
+  | { type: "flushed"; generation: number; sequence: number }
   | {
       type: "consumed";
       generation: number;
@@ -91,6 +93,9 @@ export class BoundedDigitalWorkerAdapter<
   private staleResults = 0;
   private pendingDiscontinuity?: DigitalDiscontinuity;
   private closed = false;
+  private readyGeneration = -1;
+  private readonly readiness = new Set<{ resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
+  private readonly flushes = new Map<number, { resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(
     private readonly worker: DigitalWorkerPort<TSnapshot, TEvent>,
@@ -129,6 +134,9 @@ export class BoundedDigitalWorkerAdapter<
   configure(configuration: TConfiguration): void {
     this.requireOpen();
     validateDigitalConfiguration(configuration);
+    this.readyGeneration = -1;
+    for (const waiter of this.readiness) { clearTimeout(waiter.timer); waiter.reject(new Error("Digital configuration changed before readiness.")); }
+    this.readiness.clear();
     this.generation = configuration.generation;
     this.pendingDiscontinuity = undefined;
     this.worker.postMessage({
@@ -201,9 +209,34 @@ export class BoundedDigitalWorkerAdapter<
     } satisfies DigitalWorkerInput<TConfiguration>);
   }
 
+  /** Await validated worker configuration before acquisition starts. */
+  whenReady(): Promise<void> {
+    this.requireOpen();
+    if (this.readyGeneration === this.generation) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, timer: setTimeout(() => { this.readiness.delete(waiter); reject(new Error("Digital decoder configuration timed out.")); }, 3_000) };
+      this.readiness.add(waiter);
+    });
+  }
+
+  /** Ordered end-of-input barrier; snapshots arrive before acknowledgement. */
+  flush(): Promise<void> {
+    this.requireOpen();
+    const sequence = this.sequence++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.flushes.delete(sequence); reject(new Error("Digital decoder flush timed out.")); }, 3_000);
+      this.flushes.set(sequence, { resolve, reject, timer });
+      this.worker.postMessage({ type: "flush", generation: this.generation, sequence } satisfies DigitalWorkerInput<TConfiguration>);
+    });
+  }
+
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
+    for (const waiter of this.readiness) { clearTimeout(waiter.timer); waiter.reject(new Error("Digital decoder was disposed before readiness.")); }
+    this.readiness.clear();
+    for (const waiter of this.flushes.values()) { clearTimeout(waiter.timer); waiter.reject(new Error("Digital decoder was disposed before flush.")); }
+    this.flushes.clear();
     this.worker.postMessage({
       type: "dispose",
     } satisfies DigitalWorkerInput<TConfiguration>);
@@ -227,10 +260,22 @@ export class BoundedDigitalWorkerAdapter<
       return;
     }
     if (message.type === "error") {
+      for (const waiter of this.readiness) { clearTimeout(waiter.timer); waiter.reject(new Error(message.message)); }
+      this.readiness.clear();
       this.callbacks.error?.(new Error(message.message));
       return;
     }
-    if (message.type === "ready") return;
+    if (message.type === "flushed") {
+      const waiter = this.flushes.get(message.sequence);
+      if (waiter) { clearTimeout(waiter.timer); this.flushes.delete(message.sequence); waiter.resolve(); }
+      return;
+    }
+    if (message.type === "ready") {
+      this.readyGeneration = message.generation;
+      for (const waiter of this.readiness) { clearTimeout(waiter.timer); waiter.resolve(); }
+      this.readiness.clear();
+      return;
+    }
     if (
       estimatePayloadBytes(message.publication.value) > this.maximumResultBytes
     ) {

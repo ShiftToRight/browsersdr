@@ -10,5 +10,5 @@
     "noEmit": true,
     "types": ["node", "@playwright/test"]
   },
-  "include": ["playwright.config.ts", "e2e"]
+  "include": ["playwright.config.ts", "e2e", "src/webusb.d.ts"]
 }

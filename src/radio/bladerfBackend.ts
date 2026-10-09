@@ -468,6 +468,9 @@ export class BladeRfBackend implements ReceiverBackend {
       if (!hardware) {
         this.selection = selection;
         this.publish(this.configured!, selection);
+        if (["APRS", "RS41"].includes((this.metadata!).mode)) {
+          await this.pipeline.prepare(this.metadata!);
+        }
         this.pipeline.retune(this.metadata!);
         return this.result();
       }

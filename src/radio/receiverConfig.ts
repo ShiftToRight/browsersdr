@@ -9,7 +9,7 @@ import {
   type SrdModeSettings,
 } from "../srd/settings";
 
-export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD";
+export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD" | "APRS" | "RS41";
 
 export const CW_FILTER_BANDWIDTHS_HZ = [100, 250, 500, 1_000] as const;
 export const CW_DEFAULT_BANDWIDTH_HZ = 500;
@@ -34,7 +34,7 @@ export interface ModeCapabilities {
   squelchSettable: boolean;
 }
 
-export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD"];
+export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"];
 export const SQUELCH_MIN = 0;
 export const SQUELCH_MAX = 6;
 export const MANUAL_GAIN_MIN_DB = 0;
@@ -54,6 +54,8 @@ const MODE_CAPABILITIES: Record<ReceiverMode, ModeCapabilities> = {
   DAB: { bandwidthSettable: false, minimumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, maximumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelchSettable: false },
   "ADS-B": { bandwidthSettable: false, minimumBandwidthHz: ADSB_BANDWIDTH_HZ, maximumBandwidthHz: ADSB_BANDWIDTH_HZ, squelchSettable: false },
   AIS: { bandwidthSettable: false, minimumBandwidthHz: AIS_BANDWIDTH_HZ, maximumBandwidthHz: AIS_BANDWIDTH_HZ, squelchSettable: false },
+  APRS: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
+  RS41: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
   SRD: { bandwidthSettable: false, minimumBandwidthHz: 32_000, maximumBandwidthHz: 32_000, squelchSettable: false },
 };
 
@@ -67,6 +69,7 @@ export function defaultModeSettings(mode: ReceiverMode): ReceiverModeSettings {
   if (mode === "DAB") return { mode, bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
   if (mode === "ADS-B") return { mode, bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
   if (mode === "AIS") return { mode, bandwidthHz: AIS_BANDWIDTH_HZ, squelch: 0 };
+  if (mode === "APRS" || mode === "RS41") return { mode, bandwidthHz: 20_000, squelch: 0 };
   if (mode === "SRD") return { mode, bandwidthHz: 32_000, squelch: 0, srd: defaultSrdModeSettings() };
   const parameters = modeParameters(getMode(mode));
   return {
@@ -92,6 +95,7 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
   if (settings.mode === "DAB") return { mode: "DAB", bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
   if (settings.mode === "ADS-B") return { mode: "ADS-B", bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
   if (settings.mode === "AIS") return { mode: "AIS", bandwidthHz: AIS_BANDWIDTH_HZ, squelch: 0 };
+  if (settings.mode === "APRS" || settings.mode === "RS41") return { mode: settings.mode, bandwidthHz: 20_000, squelch: 0 };
   if (settings.mode === "SRD") {
     const srd = structuredClone(settings.srd ?? defaultSrdModeSettings());
     // Reuse the core validator with a representative supported route.
@@ -111,7 +115,7 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
 export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   const normalized = normalizeModeSettings(settings);
   if (normalized.mode === "OFF") throw new Error("OFF does not use the analog demodulator.");
-  if (["DAB", "ADS-B", "AIS", "SRD"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
+  if (["DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
   const parameters = modeParameters(getMode(normalized.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(normalized.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);
@@ -124,8 +128,8 @@ export function validateModeSampleRate(mode: ReceiverMode, sampleRateHz: number)
   if (mode === "DAB") validateDabSampleRate(sampleRateHz);
   else if (mode === "ADS-B") validateAdsbSampleRate(sampleRateHz);
   else if (mode === "AIS") validateAisSampleRate(sampleRateHz);
-  else if (mode === "SRD" && sampleRateHz !== 1_024_000 && sampleRateHz !== 2_400_000)
-    throw new Error("SRD requires an effective channel rate of 1.024 or 2.4 MS/s.");
+  else if (["SRD", "APRS", "RS41"].includes(mode) && sampleRateHz !== 1_024_000 && sampleRateHz !== 2_400_000)
+    throw new Error(`${mode} requires an effective channel rate of 1.024 or 2.4 MS/s.`);
 }
 
 export interface TuningPlan {

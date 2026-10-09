@@ -4903,3 +4903,9 @@ button:has(> .app-icon) {
 @media (max-width: 600px) { .antenna-site-panel { inset-inline: 8px; } }
 @media (max-width: 380px) { .antenna-site-coordinates { grid-template-columns: minmax(0, 1fr); } }
 .antenna-site-panel .antenna-site-remember input { min-height: 0; }
+
+.packet-record-list { max-height: 20rem; overflow: auto; overflow-wrap: anywhere; padding-left: 1.4rem; }
+.packet-record-list li { margin: .5rem 0; }
+.packet-record-list small { display: block; color: var(--text-muted); }
+.packet-record-list p { margin: .3rem 0; white-space: pre-wrap; }
+.packet-decode-panel > button { margin-top: .6rem; }

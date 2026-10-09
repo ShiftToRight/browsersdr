@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Independent APRS modem-audio test fixture
+
+`src/aprs/fixtures/picoSoundcard.s16le` is an unchanged PCM excerpt from
+`eleccoder/raspi-pico-aprs-tnc` revision
+`bc291e2ec9ccd0bf4829b5a75c486fd84b0d95e9`,
+copyright (C) 2021–2023 Thomas Glau, DL3TG, under GPL-3.0-or-later.
+The original license is retained in `src/aprs/fixtures/PICO-LICENSE.txt`;
+source, hashes and extraction details are in
+`src/aprs/fixtures/picoSoundcard.md`. This independent soundcard recording is
+used only in tests and is not bundled into the application. Source:
+<https://github.com/eleccoder/raspi-pico-aprs-tnc>.
+
 ## Natural Earth map data
 
 The map assets under `src/assets/natural-earth-*` are derived from Natural

@@ -32,7 +32,7 @@ export function ReceiverHealth({
   const running = receiver.lifecycle === "running";
   const noAudio =
     receiver.session?.source === "synthetic" ||
-    ["OFF", "ADS-B", "AIS", "SRD"].includes(receiver.session?.mode ?? "");
+    ["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(receiver.session?.mode ?? "");
   const graphicsFailed =
     spectrum.kind === "unsupported" || spectrum.kind === "error";
   const readyRecording =

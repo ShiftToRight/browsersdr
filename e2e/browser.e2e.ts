@@ -398,7 +398,9 @@ function highRateReplayFiles() {
     knownGaps: [
       {
         afterSample: 200_000,
-        missingSamples: 24_000_000,
+        // Keep the route fixture alive through this 20-second UI test.
+        // EOF/flush behavior is exercised separately by packet-decoders.e2e.ts.
+        missingSamples: 72_000_000,
         reason: "Deterministic test pause",
       },
     ],
@@ -751,7 +753,15 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
     "effective rate 2,400,000 samples/s",
   );
 
-  for (const mode of ["AIS", "DAB", "ADS-B", "SRD", "AM"] as const) {
+  for (const mode of [
+    "AIS",
+    "DAB",
+    "ADS-B",
+    "SRD",
+    "APRS",
+    "RS41",
+    "AM",
+  ] as const) {
     await page.getByRole("combobox", { name: /^Mode/ }).selectOption(mode);
     await expect(page.locator(".receiver-session-details")).toContainText(
       `· ${mode} ·`,
@@ -779,6 +789,17 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
         .click();
       expect((await download).suggestedFilename()).toContain("srd");
     }
+    if (mode === "APRS" || mode === "RS41") {
+      await page.getByRole("tab", { name: "Audio & decode" }).click();
+      await expect(
+        page.getByRole("heading", {
+          name: mode === "APRS" ? "APRS stations" : "RS41 radiosondes",
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: `Export ${mode} data (JSON)` }),
+      ).toBeEnabled();
+    }
     if (mode === "AM") {
       await page.getByRole("tab", { name: "Receiver" }).click();
       await expect(
@@ -793,6 +814,10 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
   await expect(
     page.getByRole("heading", { name: "Radio Data System" }),
   ).not.toBeVisible();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Start replay" }),
+  ).toBeEnabled();
 });
 
 test("imports a bounded SigMF pair into paced replay without requesting USB", async ({

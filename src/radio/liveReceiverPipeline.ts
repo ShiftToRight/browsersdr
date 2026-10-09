@@ -26,6 +26,10 @@ import { DabPlusProgrammeDecoder } from "../dab/dabPlusSuperframe";
 import { DabEnsembleWorkerDecoder } from "../dab/dabEnsembleWorker";
 import { AdsbReceiver } from "../adsb/adsbReceiver";
 import { AisReceiver } from "../ais/aisReceiver";
+import { AprsDigitalReceiver } from "../aprs/aprsDigitalReceiver";
+import { Rs41DigitalReceiver } from "../rs41/rs41DigitalReceiver";
+import { defaultAprsConfiguration } from "../aprs/settings";
+import { defaultRs41Configuration } from "../rs41/settings";
 import { SrdDigitalReceiver } from "../srd/srdDigitalReceiver";
 import { srdConfigurationForRoute } from "../srd/settings";
 import {
@@ -71,6 +75,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
+  private aprs?: AprsDigitalReceiver;
+  private rs41?: Rs41DigitalReceiver;
   private srd?: SrdDigitalReceiver;
   private readonly receiver: AudioFirstRdsReceiver;
   private generation?: number;
@@ -272,6 +278,11 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
   async prepare(metadata: SourceSessionMetadata): Promise<void> {
     this.requireOpen();
+    if (metadata.mode === "APRS" || metadata.mode === "RS41") this.enabled = false;
+    this.preparePackets(metadata);
+    if (metadata.mode === "APRS") await this.aprs!.prepare();
+    if (metadata.mode === "RS41") await this.rs41!.prepare();
+    this.requireOpen();
     const dabReady =
       metadata.mode === "DAB"
         ? (this.ensureDabResources().ensemble?.prepare?.() ?? Promise.resolve())
@@ -349,9 +360,12 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.analysis?.markDiscontinuity(missingSamples ?? 0);
     this.player.reset();
     this.rds.reset();
-    this.receiver.resetDigitalReceiver();
+    if (this.metadata.mode === "APRS" || this.metadata.mode === "RS41") {
+      const missing = missingSamples === null ? null : missingSamples / (this.metadata.actualSampleRateHz / channelSampleRate(this.metadata.actualSampleRateHz));
+      (this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
+    } else this.receiver.resetDigitalReceiver();
     this.dabResources?.reset();
-    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(this.metadata.mode)) {
+    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(this.metadata.mode)) {
       this.demodulator.setMode(createSignalsMode({
         mode: this.metadata.mode,
         bandwidthHz: this.metadata.channelBandwidthHz,
@@ -369,10 +383,23 @@ export class LiveReceiverPipeline implements SampleReceiver {
 
   updateAnalogMode(settings: ReceiverModeSettings): void {
     this.requireOpen();
-    if (["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(settings.mode))
+    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(settings.mode))
       throw new Error(`${settings.mode} does not use the analog audio path.`);
     this.demodulator.setCwToneFrequency?.(settings.beatToneHz ?? 600);
     this.demodulator.setMode(createSignalsMode(settings));
+  }
+
+  private preparePackets(metadata: SourceSessionMetadata): void {
+    const rate = channelSampleRate(metadata.actualSampleRateHz);
+    const offset = isWidebandRate(metadata.actualSampleRateHz) ? 0 : metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz;
+    if (metadata.mode === "APRS") {
+      this.aprs ??= new AprsDigitalReceiver(({ snapshot, diagnostics }) => this.events.aprsChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
+      this.aprs.configureSession(defaultAprsConfiguration(rate as 1_024_000 | 2_400_000, metadata.sessionGeneration, offset));
+    }
+    if (metadata.mode === "RS41") {
+      this.rs41 ??= new Rs41DigitalReceiver(({ snapshot, diagnostics }) => this.events.rs41Changed?.(snapshot, diagnostics), error => this.events.runtimeError(error));
+      this.rs41.configureSession(defaultRs41Configuration(rate as 1_024_000 | 2_400_000, metadata.sessionGeneration, offset));
+    }
   }
 
   private route(metadata: SourceSessionMetadata): void {
@@ -407,6 +434,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
         ),
       );
     }
+    this.preparePackets(metadata);
     const digital =
       metadata.mode === "DAB"
         ? this.ensureDabResources().receiver
@@ -416,6 +444,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
           ? this.ais
           : metadata.mode === "SRD"
             ? this.srd
+          : metadata.mode === "APRS" ? this.aprs
+          : metadata.mode === "RS41" ? this.rs41
           : undefined;
     this.outputEnabled = metadata.mode !== "OFF";
     if (wideband && this.outputEnabled) {
@@ -442,6 +472,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (metadata.mode !== "DAB") this.releaseDabResources();
     if (digital !== this.adsb) this.adsb.reset();
     if (digital !== this.ais) this.ais.reset();
+    if (digital !== this.aprs) this.aprs?.reset();
+    if (digital !== this.rs41) this.rs41?.reset();
     if (digital !== this.srd) this.srd?.reset({ reason: "reconfigure", missingInputSamples: null });
     if (!digital && this.outputEnabled)
       this.demodulator.setCwToneFrequency?.(metadata.beatToneHz ?? 600);
@@ -478,6 +510,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.adsb.reset();
     this.ais.reset();
     this.srd?.reset();
+    this.aprs?.reset();
+    this.rs41?.reset();
   }
   async suspend(): Promise<void> {
     if (this.audioContext.state === "running")
@@ -490,6 +524,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.reset();
     const task = (async () => {
       this.srd?.dispose();
+      this.aprs?.dispose();
+      this.rs41?.dispose();
       if (this.audioContext.state !== "closed") await this.audioContext.close();
       this.audioContext.removeEventListener("statechange", this.audioChanged);
       this.closed = true;

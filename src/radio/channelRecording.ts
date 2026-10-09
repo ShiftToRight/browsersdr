@@ -67,13 +67,13 @@ export function planChannelCapture(
   const minRate = Math.max(
     48_000,
     session.channelBandwidthHz / (session.mode === "ADS-B" ? 0.9 : 0.7),
-    session.mode === "SRD" ? channelSampleRate(nominalRate) : 0,
+    ["SRD", "APRS", "RS41"].includes(session.mode) ? channelSampleRate(nominalRate) : 0,
   );
   let decimation = 1;
   while (decimation < 512 && nominalRate / (decimation * 2) >= minRate) {
     const candidate = nominalRate / (decimation * 2);
     try {
-      if (session.mode !== "SRD")
+      if (!["SRD", "APRS", "RS41"].includes(session.mode))
         validateModeSampleRate(session.mode, candidate);
     } catch {
       break;

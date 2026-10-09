@@ -616,6 +616,9 @@ export class Usrpb205Backend implements ReceiverBackend {
       if (!hardware) {
         const metadata = this.publish(this.details!, selection);
         this.check(token);
+        if (["APRS", "RS41"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
+          await this.pipeline.prepare({ ...metadata, sessionGeneration: generation });
+        }
         this.pipeline.retune({ ...metadata, sessionGeneration: generation });
         return this.result();
       }
@@ -633,6 +636,9 @@ export class Usrpb205Backend implements ReceiverBackend {
       this.check(token);
       if (!this.workerSession)
         this.adapter.ready({ generation: this.transport!.diagnostics.generation, details });
+      if (["APRS", "RS41"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
+        await this.pipeline.prepare({ ...metadata, sessionGeneration: generation });
+      }
       this.pipeline.retune({ ...metadata, sessionGeneration: generation });
       this.receiving = true;
       return this.result();

@@ -315,6 +315,10 @@ export class RtlSdrBackend implements ReceiverBackend {
     );
     validateModeSampleRate(modeSettings.mode, metadata.actualSampleRateHz);
     this.modeSettings = modeSettings;
+    if (["APRS", "RS41"].includes(({ ...metadata, sessionGeneration }).mode)) {
+      await this.pipeline.prepare({ ...metadata, sessionGeneration });
+      this.throwIfDisconnectRequested();
+    }
     this.pipeline.begin({ ...metadata, sessionGeneration }, options.volume);
     this.pipeline.requireRunning();
     try {
@@ -405,6 +409,10 @@ export class RtlSdrBackend implements ReceiverBackend {
         actualSampleRateHz, hardwareCenterFrequencyHz, gainDb: this.metadata!.gainDb };
       this.sessionGeneration = sessionGeneration;
       if (epoch === this.receptionEpoch) {
+        if (["APRS", "RS41"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
+          await this.pipeline.prepare({ ...this.metadata, sessionGeneration });
+          this.throwIfDisconnectRequested();
+        }
         this.pipeline.retune({ ...this.metadata, sessionGeneration });
         this.pipeline.markDiscontinuity(null);
         this.receiving = true;
@@ -476,6 +484,10 @@ export class RtlSdrBackend implements ReceiverBackend {
     }
     planChannelTune(provisional.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.modeSettings.bandwidthHz, { autoRecenter: false });
     this.metadata = provisional;
+    if (["APRS", "RS41"].includes(({ ...provisional, sessionGeneration }).mode)) {
+      await this.pipeline.prepare({ ...provisional, sessionGeneration });
+      this.throwIfDisconnectRequested();
+    }
     this.pipeline.retune({ ...provisional, sessionGeneration });
     return provisional;
   }
@@ -505,6 +517,10 @@ export class RtlSdrBackend implements ReceiverBackend {
       ...provisional,
       hardwareCenterFrequencyHz: actualFrequencyHz,
     };
+    if (["APRS", "RS41"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
+      await this.pipeline.prepare({ ...this.metadata, sessionGeneration });
+      this.throwIfDisconnectRequested();
+    }
     this.pipeline.retune({ ...this.metadata, sessionGeneration });
     return this.metadata;
   }

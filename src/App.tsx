@@ -1,3 +1,4 @@
+import { PacketDecodePanel } from "./ui/PacketDecodePanel";
 import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 import { RemoteReceiver } from "./ui/RemoteReceiver";
@@ -1419,7 +1420,7 @@ function ReceiverDecodePanel({
                 ? "Demodulation disabled"
                 : mode === "DAB"
                   ? "DAB+ audio output"
-                  : mode === "ADS-B" || mode === "AIS" || mode === "SRD"
+                  : ["ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode)
                     ? "Data acquisition"
                     : "Audio output"}
           </span>
@@ -1430,6 +1431,10 @@ function ReceiverDecodePanel({
                 ? "No audio or decoder output"
                 : mode === "DAB"
                   ? (receiver.dab?.message ?? "Not active")
+                  : mode === "APRS"
+                    ? `${receiver.aprs?.stations.length ?? 0} validated station(s)`
+                  : mode === "RS41"
+                    ? `${receiver.rs41?.sondes.length ?? 0} validated sonde(s)`
                   : mode === "ADS-B"
                     ? (receiver.adsb?.message ?? "Not active")
                     : mode === "AIS"
@@ -1447,6 +1452,8 @@ function ReceiverDecodePanel({
               ? "Raw I/Q continues to feed the spectrum, waterfall, surveys and recordings."
               : mode === "DAB"
                 ? `Mode I · browser HE-AAC · ${Math.round(volume * 100)}% volume`
+                : mode === "APRS" ? "1200-baud Bell-202 · AX.25 FCS"
+                : mode === "RS41" ? "4800 bit/s · unencrypted RS41"
                 : mode === "ADS-B"
                   ? "1090ES · CRC-validated Mode S frames"
                   : mode === "AIS"
@@ -1458,7 +1465,7 @@ function ReceiverDecodePanel({
                         : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
           </small>
         <span
-          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
         >
           {modeChangePending
             ? "reconfiguring"
@@ -1468,6 +1475,8 @@ function ReceiverDecodePanel({
                 ? (receiver.dab?.state ?? "not started")
                 : mode === "ADS-B"
                   ? `${receiver.adsb?.validFrames ?? 0} valid frames`
+                  : mode === "APRS" ? `${receiver.aprs?.counters.validAx25Frames ?? 0} FCS-valid packets`
+                  : mode === "RS41" ? `${(receiver.rs41?.counters.uncorrectedFrames ?? 0) + (receiver.rs41?.counters.correctedFrames ?? 0)} integrity-valid frames`
                   : mode === "AIS"
                     ? `${receiver.ais?.validFrames ?? 0} valid frames`
                     : mode === "SRD"
@@ -1480,7 +1489,7 @@ function ReceiverDecodePanel({
         </span>
         </div>
         {source !== "synthetic" &&
-          ["WBFM", "DAB", "ADS-B", "AIS", "SRD"].includes(mode) && (
+          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode) && (
             <div className="rds-content">
               <h3>
                 {mode === "OFF"
@@ -1491,6 +1500,8 @@ function ReceiverDecodePanel({
                       ? "Aircraft targets"
                       : mode === "AIS"
                         ? "Vessel targets"
+                        : mode === "APRS" ? "APRS stations"
+                        : mode === "RS41" ? "RS41 radiosondes"
                         : mode === "SRD"
                           ? "Short-range devices"
                           : "Radio Data System"}
@@ -1500,6 +1511,8 @@ function ReceiverDecodePanel({
                   Spectrum-only mode keeps RF acquisition and analysis active
                   without sending samples to an audio or digital decoder.
                 </p>
+              ) : mode === "APRS" || mode === "RS41" ? (
+                <PacketDecodePanel receiver={receiver} mode={mode} />
               ) : mode === "SRD" ? (
                 <>
                   <div className="target-table-wrap">
@@ -2092,7 +2105,7 @@ export function ReceiverApp({
   }, [spectrumDisplay]);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
-    !["OFF", "WBFM", "SRD"].includes(initialPreferences.modeSettings.mode),
+    !["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(initialPreferences.modeSettings.mode),
   );
   const [channelTuneIssue, setChannelTuneIssue] = useState<string>();
   const [autoRecenter, setAutoRecenter] = useState(() =>
@@ -2844,7 +2857,7 @@ export function ReceiverApp({
     setSquelch(next.modeSettings.squelch);
     setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
     setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(next.modeSettings.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(next.modeSettings.mode));
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
@@ -2867,7 +2880,7 @@ export function ReceiverApp({
       setBeatToneHz(loadedReplay.metadata.beatToneHz ?? 600);
       setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
       setChannelAdvancedOpen(
-        !["OFF", "WBFM", "SRD"].includes(loadedReplay.metadata.mode),
+        !["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(loadedReplay.metadata.mode),
       );
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
@@ -2934,7 +2947,7 @@ export function ReceiverApp({
       const active = controller.getSnapshot().session;
       if (
         active?.mode === settings.mode &&
-        !["OFF", "DAB", "ADS-B", "AIS", "SRD"].includes(settings.mode)
+        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(settings.mode)
       ) {
         controller.updateAnalogMode(settings);
         return;
@@ -2968,7 +2981,7 @@ export function ReceiverApp({
   const chooseMode = (nextMode: ReceiverMode) => {
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(nextMode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
@@ -3128,7 +3141,7 @@ export function ReceiverApp({
       setChannelTuneIssue(undefined);
       // A stored catalog reference is not a freshly checked receiver candidate.
       setReceptionCandidate(undefined);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(accepted.settings.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(accepted.settings.mode));
       return `Recalled ${accepted.name}. ${running ? "Applied to reception." : "Start remains manual."}${accepted.atlasReference ? " Saved Atlas reference has not been rechecked; station identity is unconfirmed." : ""}`;
     } finally {
       stationSelectionPending.current = false;
@@ -3441,7 +3454,7 @@ export function ReceiverApp({
     setLoadedReplay(recording);
     setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
     setMode(recording.metadata.mode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD"].includes(recording.metadata.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(recording.metadata.mode));
     setBandwidthHz(recording.metadata.channelBandwidthHz);
     setSquelch(recording.metadata.squelch);
     setBeatToneHz(recording.metadata.beatToneHz ?? 600);
@@ -4494,7 +4507,7 @@ export function ReceiverApp({
                   <FmStationSummary controller={controller} />
                 )}
                 {source !== "synthetic" &&
-                  !["OFF", "ADS-B", "AIS", "SRD"].includes(mode) && (
+                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode) && (
                     <>
                       <label>
                         <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} />Volume <output>{Math.round(volume * 100)}%</output></span>
@@ -4516,6 +4529,8 @@ export function ReceiverApp({
                       </label>
                     </>
                   )}
+                {mode === "APRS" && <p className="support-copy">1200-baud VHF APRS · receive only. IARU Region 1 suggestion: 144.800 MHz; tuning remains yours.</p>}
+                {mode === "RS41" && <p className="support-copy">Unencrypted RS41 · select the sonde frequency. Calibrated PTU and encrypted SGM are unsupported.</p>}
                 {mode === "SRD" && (
                   <div className="mode-primary-controls" aria-label="SRD reception settings">
                       <label>
@@ -5127,7 +5142,7 @@ export function ReceiverApp({
               {captureCurrentChannel && (
                 <p className="display-note" aria-live="polite">
                   {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
                     : channelCapturePreview.error}
                 </p>
               )}

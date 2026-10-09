@@ -479,6 +479,9 @@ export class HackrfBackend implements ReceiverBackend {
       if (!hardware) {
         this.publishMetadata(this.transportSession!, selection);
         this.adapter.ready({ ...this.transportSession!, generation });
+        if (["APRS", "RS41"].includes((this.metadata!).mode)) {
+          await this.pipeline.prepare(this.metadata!);
+        }
         this.pipeline.retune(this.metadata!);
         this.sampleBase = undefined;
         this.sequence = 0;

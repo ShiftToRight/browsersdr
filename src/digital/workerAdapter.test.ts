@@ -159,3 +159,19 @@ describe("BoundedDigitalWorkerAdapter", () => {
     expect(() => adapter.submitOwned(block(4, 0))).toThrow(/disposed/);
   });
 });
+
+it("orders final input flush and ignores acknowledgements from another generation", async () => {
+  const worker = new FakeWorker();
+  const adapter = new BoundedDigitalWorkerAdapter(worker);
+  adapter.configure(config(9));
+  const flushed = vi.fn();
+  const barrier = adapter.flush().then(flushed);
+  const message = worker.messages.at(-1)!;
+  expect(message.type).toBe("flush");
+  if (message.type !== "flush") throw new Error("Missing flush");
+  worker.reply({ type: "flushed", generation: 8, sequence: message.sequence });
+  await Promise.resolve(); expect(flushed).not.toHaveBeenCalled();
+  worker.reply({ type: "flushed", generation: 9, sequence: message.sequence });
+  await barrier; expect(flushed).toHaveBeenCalledOnce();
+  adapter.dispose();
+});

@@ -1,0 +1,21 @@
+{
+  "project": "eleccoder/raspi-pico-aprs-tnc",
+  "revision": "bc291e2ec9ccd0bf4829b5a75c486fd84b0d95e9",
+  "revisionDate": "2025-12-22T10:45:49Z",
+  "sourcePath": "doc/aprs_pico_beacon_demo.wav",
+  "sourceSha256": "4b3119170d9e5981532ce67cd67f21f3ef99064d7f9db7a691800a1a0d9b1375",
+  "format": "signed 16-bit little-endian mono PCM",
+  "sampleRateHz": 44100,
+  "sourceStartSample": 17640,
+  "sampleCount": 57330,
+  "excerptSha256": "b71eb320569c937bb3891e1de49f2dc34c52c324f044122671606a9aca07b17b",
+  "evidence": "Recorded Raspberry Pi Pico modem line-out audio; not off-air RF or wideband I/Q",
+  "license": "GPL-3.0-or-later; PICO-LICENSE.txt",
+  "expectedSource": "DL3TG-9",
+  "expectedDestination": "APPIPI",
+  "expectedPath": ["WIDE1-1", "WIDE2-2"],
+  "expectedLatitudeDegrees": 48.75588,
+  "expectedLongitudeDegrees": 9.19011,
+  "expectedAltitudeMeters": 483,
+  "expectedInformation": "!/5n5qPkBr>   /A=001585APRS by RPi-Pico - https://github.com/eleccoder/raspi-pico-aprs-tnc"
+}

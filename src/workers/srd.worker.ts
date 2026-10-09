@@ -28,6 +28,11 @@ self.onmessage = (event: MessageEvent<DigitalWorkerInput<SrdConfiguration>>) => 
       return;
     }
     if (message.generation !== generation) return;
+    if (message.type === "flush") {
+      publish();
+      send({ type: "flushed", generation, sequence: message.sequence });
+      return;
+    }
     if (message.type === "reset") receiver.reset(message.discontinuity);
     else {
       receiver.receive({

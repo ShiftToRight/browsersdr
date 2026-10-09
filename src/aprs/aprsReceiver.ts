@@ -133,6 +133,9 @@ export class AprsReceiver implements StreamingDigitalDecoder<
     this.publish();
   }
 
+  /** Publish the final state at an explicit end-of-input barrier. */
+  flush(): void { this.requireConfigured(); this.publish(); }
+
   snapshot(): DigitalPublication<AprsSnapshot> {
     this.requireConfigured();
     return this.cached!;
