@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { RdsDecoder } from "./rdsDecoder";
 import { createRdsMultiplexFixture } from "../testing/rdsFixture";
 
-function decodeInBlocks(samples: Float32Array, blocks: readonly number[] = [samples.length]) {
+function decodeInBlocks(samples: Float32Array, blocks: readonly number[] = [samples.length], rate = 228_000) {
   const decoder = new RdsDecoder();
-  decoder.configure(228_000);
+  decoder.configure(rate);
   let position = 0;
   let block = 0;
   while (position < samples.length) {
@@ -16,6 +16,31 @@ function decodeInBlocks(samples: Float32Array, blocks: readonly number[] = [samp
 }
 
 describe("RDS decoder", () => {
+  it.each([228_000, 336_000])("isolates low-level RDS from stronger mono, pilot and stereo at %i sample/s", rate => {
+    const fixture = createRdsMultiplexFixture({ sampleRate: rate, rdsAmplitude: 0.03,
+      pilotAmplitude: 0.09, audioAmplitude: 0.36, stereoAmplitude: 0.18, carrierOffsetHz: 0.3 });
+    const decoder = decodeInBlocks(fixture.subarray(37), [1, 173, 4097, 29, 8192], rate);
+    expect(decoder.getState()).toMatchObject({ pi: "C201", programmeService: "CODEX FM",
+      radioText: "BrowserSDR RDS fixture" });
+    expect(decoder.getState().validGroups).toBeGreaterThanOrEqual(10);
+    expect(decoder.getState()).toEqual(decodeInBlocks(fixture.subarray(37), undefined, rate).getState());
+  });
+
+  it("withholds station data on noise with strong audio and pilot", () => {
+    const samples = new Float32Array(228_000);
+    let seed = 1;
+    for (let n = 0; n < samples.length; n++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const time = n / 228_000;
+      samples[n] = 0.1 * (seed / 2 ** 32 - 0.5)
+        + 0.1 * Math.cos(2 * Math.PI * 19_000 * time)
+        + 0.4 * Math.sin(2 * Math.PI * 1_000 * time);
+    }
+    expect(decodeInBlocks(samples).getState()).toEqual({
+      pi: null, programmeService: null, radioText: null, validGroups: 0,
+    });
+  });
+
   it("recovers validated PI, Programme Service and RadioText across arbitrary blocks", () => {
     const decoder = decodeInBlocks(createRdsMultiplexFixture().subarray(37), [1, 173, 4097, 29, 8192]);
     expect(decoder.getState()).toMatchObject({

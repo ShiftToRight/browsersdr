@@ -10,6 +10,11 @@ export interface RdsFixtureOptions {
   radioText?: string;
   radioTextAb?: 0 | 1;
   corruptGroup?: number;
+  rdsAmplitude?: number;
+  pilotAmplitude?: number;
+  audioAmplitude?: number;
+  stereoAmplitude?: number;
+  carrierOffsetHz?: number;
 }
 
 /**
@@ -47,14 +52,14 @@ export function createRdsMultiplexFixture(options: RdsFixtureOptions = {}): Floa
     chips.push(encoded, encoded ^ 1);
   }
   const samplesPerChip = sampleRate / (FIXTURE_BIT_RATE * 2);
-  if (!Number.isInteger(samplesPerChip)) throw new Error("Fixture sample rate must contain an integer number of samples per RDS chip.");
-  const out = new Float32Array(chips.length * samplesPerChip);
+  const out = new Float32Array(Math.ceil(chips.length * samplesPerChip));
   for (let sample = 0; sample < out.length; sample += 1) {
     const chip = chips[Math.floor(sample / samplesPerChip)]! ? 1 : -1;
     const time = sample / sampleRate;
-    out[sample] = 0.18 * chip * Math.cos(2 * Math.PI * FIXTURE_SUBCARRIER_HZ * time)
-      + 0.05 * Math.cos(2 * Math.PI * 19_000 * time)
-      + 0.04 * Math.sin(2 * Math.PI * 1_000 * time);
+    out[sample] = (options.rdsAmplitude ?? 0.18) * chip * Math.cos(2 * Math.PI * (FIXTURE_SUBCARRIER_HZ + (options.carrierOffsetHz ?? 0)) * time)
+      + (options.pilotAmplitude ?? 0.05) * Math.cos(2 * Math.PI * 19_000 * time)
+      + (options.audioAmplitude ?? 0.04) * Math.sin(2 * Math.PI * 1_000 * time)
+      + (options.stereoAmplitude ?? 0) * Math.cos(2 * Math.PI * 38_000 * time) * Math.sin(2 * Math.PI * 7_000 * time);
   }
   return out;
 }

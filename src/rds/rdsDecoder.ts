@@ -1,5 +1,7 @@
-export const RDS_BIT_RATE = 1_187.5;
-export const RDS_SUBCARRIER_HZ = 57_000;
+import { RdsSymbolRecovery, RDS_BIT_PATHS } from "./rdsSymbolRecovery";
+
+import { RDS_BIT_RATE, RDS_SUBCARRIER_HZ } from "./constants";
+export { RDS_BIT_RATE, RDS_SUBCARRIER_HZ } from "./constants";
 
 const OFFSETS = { A: 0x0fc, B: 0x198, C: 0x168, Cprime: 0x350, D: 0x1b4 } as const;
 const POLYNOMIAL = 0x5b9;
@@ -16,31 +18,26 @@ export interface RdsDecoderOptions {
 }
 
 interface BitPath {
-  encodedPrevious?: number;
   bits: number[];
 }
 
 /**
  * Streaming IEC/EN 62106 RDS decoder. Input is the real, discriminator-output
  * FM multiplex, before audio filtering or de-emphasis. It performs coherent
- * 57 kHz down-conversion, integrate-and-dump biphase recovery, differential
+ * 57 kHz down-conversion, narrow filtering and soft biphase recovery, differential
  * decoding, CRC/offset-word validation and group assembly.
  */
 export class RdsDecoder {
   private sampleRate = 228_000;
-  private samplesPerChip = this.sampleRate / (RDS_BIT_RATE * 2);
   private sampleClock = 0;
-  private chipClock = 0;
-  private chipI = 0;
-  private chipQ = 0;
-  private referenceI?: number;
-  private referenceQ?: number;
-  private basebandI = 0;
-  private basebandQ = 0;
-  private previousBasebandSign?: number;
-  private chipCount = 0;
-  private previousChip?: number;
-  private readonly paths: [BitPath, BitPath] = [{ bits: [] }, { bits: [] }];
+  private lastGroupSample = -Infinity;
+  private lastGroup?: readonly number[];
+  private readonly paths: BitPath[] = Array.from({ length: RDS_BIT_PATHS }, () => ({ bits: [] }));
+  private readonly recovery = new RdsSymbolRecovery((path, bit, sample) => {
+    this.sampleClock = sample;
+    this.paths[path]!.bits.push(bit);
+    this.scan(this.paths[path]!);
+  });
   private state: RdsState = emptyRdsState();
   private stationPi?: number;
   private ps = Array<string>(8).fill(" ");
@@ -56,26 +53,16 @@ export class RdsDecoder {
       throw new Error("RDS multiplex rate must be finite and above 114 ksample/s.");
     }
     this.sampleRate = sampleRate;
-    this.samplesPerChip = sampleRate / (RDS_BIT_RATE * 2);
+    this.recovery.configure(sampleRate);
     this.reset();
   }
 
   reset(): void {
     this.sampleClock = 0;
-    this.chipClock = 0;
-    this.chipI = 0;
-    this.chipQ = 0;
-    this.referenceI = undefined;
-    this.referenceQ = undefined;
-    this.basebandI = 0;
-    this.basebandQ = 0;
-    this.previousBasebandSign = undefined;
-    this.chipCount = 0;
-    this.previousChip = undefined;
-    for (const path of this.paths) {
-      path.encodedPrevious = undefined;
-      path.bits = [];
-    }
+    this.lastGroupSample = -Infinity;
+    this.lastGroup = undefined;
+    this.recovery.reset();
+    for (const path of this.paths) path.bits = [];
     this.stationPi = undefined;
     this.ps.fill(" ");
     this.psMask = 0;
@@ -88,70 +75,7 @@ export class RdsDecoder {
   getState(): RdsState { return { ...this.state }; }
 
   process(samples: Float32Array): void {
-    const phaseStep = 2 * Math.PI * RDS_SUBCARRIER_HZ / this.sampleRate;
-    for (let index = 0; index < samples.length; index += 1) {
-      const phase = phaseStep * this.sampleClock;
-      const sample = samples[index] ?? 0;
-      const mixedI = sample * Math.cos(phase);
-      const mixedQ = -sample * Math.sin(phase);
-      this.chipI += mixedI;
-      this.chipQ += mixedQ;
-      // A low-pass baseband sign transition should land on a biphase chip
-      // boundary. Pull the fractional chip clock gently toward that edge;
-      // this tracks arbitrary initial phase and small station/sample-clock drift.
-      this.basebandI += 0.08 * (mixedI - this.basebandI);
-      this.basebandQ += 0.08 * (mixedQ - this.basebandQ);
-      if (this.referenceI !== undefined && this.referenceQ !== undefined) {
-        const sign = this.basebandI * this.referenceI + this.basebandQ * this.referenceQ >= 0 ? 1 : 0;
-        if (this.previousBasebandSign !== undefined && sign !== this.previousBasebandSign) {
-          const error = this.chipClock < this.samplesPerChip / 2
-            ? this.chipClock
-            : this.chipClock - this.samplesPerChip;
-          this.chipClock -= error * 0.04;
-        }
-        this.previousBasebandSign = sign;
-      }
-      this.sampleClock += 1;
-      this.chipClock += 1;
-      if (this.chipClock + 1e-9 >= this.samplesPerChip) {
-        this.finishChip();
-        this.chipClock -= this.samplesPerChip;
-        this.chipI = 0;
-        this.chipQ = 0;
-      }
-    }
-  }
-
-  private finishChip(): void {
-    if (this.referenceI === undefined || this.referenceQ === undefined) {
-      this.referenceI = this.chipI;
-      this.referenceQ = this.chipQ;
-    }
-    const chip = this.chipI * this.referenceI + this.chipQ * this.referenceQ >= 0 ? 1 : 0;
-    // Remove the BPSK sign and slowly follow the carrier phasor. This Costas-like
-    // decision-directed update tolerates unknown phase and small 57 kHz offset.
-    const polarity = chip === 1 ? 1 : -1;
-    this.referenceI += 0.02 * (polarity * this.chipI - this.referenceI);
-    this.referenceQ += 0.02 * (polarity * this.chipQ - this.referenceQ);
-    for (let pairing = 0; pairing < 2; pairing += 1) {
-      if (this.previousChip === undefined || this.chipCount < pairing + 1 || (this.chipCount - pairing) % 2 !== 1) continue;
-      const first = this.previousChip;
-      const second = chip;
-      if (first === second) {
-        this.paths[pairing]!.encodedPrevious = undefined;
-        this.paths[pairing]!.bits = [];
-        continue;
-      }
-      const path = this.paths[pairing]!;
-      const encoded = first;
-      if (path.encodedPrevious !== undefined) {
-        path.bits.push(encoded ^ path.encodedPrevious);
-        this.scan(path);
-      }
-      path.encodedPrevious = encoded;
-    }
-    this.previousChip = chip;
-    this.chipCount += 1;
+    this.recovery.process(samples);
   }
 
   private scan(path: BitPath): void {
@@ -179,6 +103,13 @@ export class RdsDecoder {
   }
 
   private acceptGroup(a: number, b: number, c: number, d: number): void {
+    const words = [a, b, c, d];
+    // Timing hypotheses may validate the same on-air group a fraction of a bit
+    // apart. Count it once, while preserving later repeated broadcasts.
+    if (this.sampleClock - this.lastGroupSample < 2 * this.sampleRate / RDS_BIT_RATE
+      && this.lastGroup?.every((word, index) => word === words[index])) return;
+    this.lastGroupSample = this.sampleClock;
+    this.lastGroup = words;
     if (this.stationPi !== a) {
       this.stationPi = a;
       this.ps.fill(" ");
