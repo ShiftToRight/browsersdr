@@ -310,6 +310,14 @@ test("an in-page shared proposal requires Stop and preserves an active/retained 
   await page
     .getByRole("button", { name: "Start I/Q recording", exact: true })
     .click();
+  // A retained capture requires samples, not just an armed recorder. Wait for
+  // the synthetic source to deliver bytes before testing the retention guard.
+  await expect
+    .poll(async () => {
+      const text = await page.locator(".recording-state").textContent();
+      return Number(text?.match(/([0-9.]+) \/ (?:32|2048) MiB/)?.[1] ?? 0);
+    })
+    .toBeGreaterThan(0);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByRole("tab", { name: "Session", exact: true }).click();
   await page.getByRole("button", { name: "Review shared settings" }).click();
