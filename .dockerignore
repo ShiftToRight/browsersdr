@@ -6,18 +6,18 @@
 
 # Private knowledge, recordings, evidence and deployment operations stay local.
 /AGENTS.md
-/BrowserSDR/
+/BrowserSDR
 /docs
-/samples/
-/visualizations/
+/samples
+/visualizations
 /*.jpg
 /*.jpeg
 /*.png
 /deploy/README.md
-/deploy/apache/
+/deploy/apache
 /deploy/hosteurope-release.sh
 /deploy/seo-apache.py
-/deploy/visitors/
+/deploy/visitors
 /scripts/create-release.py
 /scripts/verify-production.mjs
 /public/brand/*
@@ -43,3 +43,13 @@ __pycache__/
 .git
 .local
 node_modules
+.agents
+.codex
+.aws
+.env
+.env.*
+dist
+.vite
+coverage
+playwright-report
+test-results

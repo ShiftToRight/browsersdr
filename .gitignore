@@ -5,31 +5,31 @@ wasm/spectrum-analysis/target/
 coverage/
 playwright-report/
 test-results/
-.local/
+.local
 *.local
-.agents/
-.codex/
+.agents
+.codex
+.aws
 .env
 .env.*
-!.env.example
 
 # Obsidian preferences, workspace state and local plugins are personal.
-**/.obsidian/
+**/.obsidian
 
 # Private knowledge, recordings, evidence and deployment operations stay local.
 /AGENTS.md
-/BrowserSDR/
+/BrowserSDR
 /docs
-/samples/
-/visualizations/
+/samples
+/visualizations
 /*.jpg
 /*.jpeg
 /*.png
 /deploy/README.md
-/deploy/apache/
+/deploy/apache
 /deploy/hosteurope-release.sh
 /deploy/seo-apache.py
-/deploy/visitors/
+/deploy/visitors
 /scripts/create-release.py
 /scripts/verify-production.mjs
 /public/brand/*
