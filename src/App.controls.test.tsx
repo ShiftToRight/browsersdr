@@ -529,7 +529,7 @@ it("keeps the header quiet and progressively reveals mode-aware settings", async
   await click("Start receiving");
   expect(
     document.querySelector(".acquire-connection-status")?.textContent,
-  ).toBe("● Receiving");
+  ).toBe("Receiving");
 });
 
 it("applies AM bandwidth and squelch live while leaving Tune as the explicit action", async () => {
@@ -730,7 +730,7 @@ it("shows connection activity until initialization finishes, then enables recept
   expect(document.querySelector(".acquire-connect")).toBeNull();
   expect(
     document.querySelector(".acquire-connection-status")?.textContent,
-  ).toBe("✓ Connected");
+  ).toBe("Connected");
   expect(
     document.querySelector<HTMLButtonElement>(".acquire-receive")?.disabled,
   ).toBe(false);

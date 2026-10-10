@@ -3867,28 +3867,81 @@ export function ReceiverApp({
                   )}
                 {caps.persistentConnection ? (
                   <div className="connection-stack">
-                    <span
-                      className={`acquire-connection-status ${hardwareConnected ? "is-connected" : ""}`}
-                      role="status"
-                    >
-                      {hardwareConnected
-                        ? running
-                          ? "● Receiving"
-                          : "✓ Connected"
-                        : receiver.lifecycle === "requesting-permission"
-                          ? "Choose your device in the USB dialog"
-                          : receiver.lifecycle === "connecting"
-                            ? "Preparing device"
-                            : receiver.lifecycle === "disconnecting"
-                              ? "Disconnecting…"
-                              : receiver.cleanupRequired
-                                ? "Disconnect to release the device"
-                                : receiver.issue?.code === "selection-cancelled"
-                                  ? "Not connected"
-                                  : receiver.lifecycle === "error"
-                                    ? "Needs attention"
-                                    : "Not connected"}
-                    </span>
+                    <div className={`acquire-connection-control ${hardwareConnected ? "is-connected" : ""}`}>
+                      <span
+                        className={`acquire-connection-status ${hardwareConnected ? "is-connected" : ""}`}
+                        role="status"
+                      >
+                        {hardwareConnected
+                          ? running
+                            ? "Receiving"
+                            : "Connected"
+                          : receiver.lifecycle === "requesting-permission"
+                            ? "Choose your device in the USB dialog"
+                            : receiver.lifecycle === "connecting"
+                              ? "Preparing device"
+                              : receiver.lifecycle === "disconnecting"
+                                ? "Disconnecting…"
+                                : receiver.cleanupRequired
+                                  ? "Disconnect to release the device"
+                                  : receiver.issue?.code === "selection-cancelled"
+                                    ? "Not connected"
+                                    : receiver.lifecycle === "error"
+                                      ? "Needs attention"
+                                      : "Not connected"}
+                      </span>
+                      {hardwareConnected ||
+                      receiver.cleanupRequired ||
+                      receiver.lifecycle === "disconnecting" ? (
+                        <button
+                          type="button"
+                          className="acquire-disconnect secondary"
+                          onClick={() => void disconnectReceiver()}
+                          disabled={
+                            scanActive || receiver.lifecycle === "disconnecting"
+                          }
+                        >
+                          {receiver.lifecycle === "disconnecting"
+                            ? "Disconnecting…"
+                            : "Disconnect"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`acquire-connect ${receiver.lifecycle === "connecting" ? "is-connecting" : ""}`}
+                          aria-busy={
+                            receiver.lifecycle === "connecting" ||
+                            receiver.lifecycle === "requesting-permission"
+                          }
+                          onClick={connectReceiver}
+                          disabled={
+                            importingUsrpImage ||
+                            importingUsrpFirmware ||
+                            importingFpgaImage ||
+                            (source === "usrp-b205" &&
+                              (!usrpImageChecked ||
+                                !usrpImageRef.current ||
+                                !usrpFirmwareChecked ||
+                                !usrpFirmwareRef.current)) ||
+                            (receiver.lifecycle !== "idle" &&
+                              receiver.lifecycle !== "error")
+                          }
+                        >
+                          <AppIcon name="plug" />
+                          <span>
+                            {receiver.lifecycle === "requesting-permission"
+                              ? "Choose USB device…"
+                              : receiver.lifecycle === "connecting"
+                                ? source === "usrp-b205"
+                                  ? "Connecting & initializing…"
+                                  : "Connecting…"
+                                : receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled"
+                                  ? "Retry connection"
+                                  : "Connect"}
+                          </span>
+                        </button>
+                      )}
+                    </div>
                     {receiver.issue && receiver.issue.code !== "selection-cancelled" && (
                       <button
                         type="button"
@@ -3905,58 +3958,6 @@ export function ReceiverApp({
                         }}
                       >
                         <AppIcon name="help" />Recovery help
-                      </button>
-                    )}
-                    {hardwareConnected ||
-                    receiver.cleanupRequired ||
-                    receiver.lifecycle === "disconnecting" ? (
-                      <button
-                        type="button"
-                        className="acquire-disconnect secondary"
-                        onClick={() => void disconnectReceiver()}
-                        disabled={
-                          scanActive || receiver.lifecycle === "disconnecting"
-                        }
-                      >
-                        <AppIcon name="unplug" />
-                        {receiver.lifecycle === "disconnecting"
-                          ? "Disconnecting…"
-                          : "Disconnect"}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`acquire-connect ${receiver.lifecycle === "connecting" ? "is-connecting" : ""}`}
-                        aria-busy={
-                          receiver.lifecycle === "connecting" ||
-                          receiver.lifecycle === "requesting-permission"
-                        }
-                        onClick={connectReceiver}
-                        disabled={
-                          importingUsrpImage ||
-                          importingUsrpFirmware ||
-                          importingFpgaImage ||
-                          (source === "usrp-b205" &&
-                            (!usrpImageChecked ||
-                              !usrpImageRef.current ||
-                              !usrpFirmwareChecked ||
-                              !usrpFirmwareRef.current)) ||
-                          (receiver.lifecycle !== "idle" &&
-                            receiver.lifecycle !== "error")
-                        }
-                      >
-                        <AppIcon name="plug" />
-                        <span>
-                          {receiver.lifecycle === "requesting-permission"
-                            ? "Choose USB device…"
-                            : receiver.lifecycle === "connecting"
-                              ? source === "usrp-b205"
-                                ? "Connecting & initializing…"
-                                : "Connecting…"
-                              : receiver.lifecycle === "error" && receiver.issue?.code !== "selection-cancelled"
-                                ? "Retry connection"
-                                : "Connect"}
-                        </span>
                       </button>
                     )}
                     {(receiver.lifecycle === "connecting" ||

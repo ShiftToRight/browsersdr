@@ -3782,6 +3782,35 @@ label output {
   color: #a3b4ce;
   font-size: 0.8rem;
 }
+.acquire-connection-control {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+.acquire-connection-control.is-connected {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(3, 12, 29, 0.82);
+}
+.acquire-connection-control.is-connected .acquire-connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+.acquire-connection-control.is-connected .acquire-connection-status::before {
+  content: "";
+  flex: 0 0 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
 .acquire-controls .acquire-disconnect {
   justify-self: start;
   min-height: 38px;
@@ -3791,6 +3820,36 @@ label output {
   color: var(--cyan-soft);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.acquire-controls .acquire-connection-control.is-connected .acquire-disconnect {
+  align-self: stretch;
+  justify-self: stretch;
+  min-height: 38px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  color: var(--ink);
+  background: var(--secondary-background);
+  font-weight: 500;
+  text-decoration: none;
+}
+.acquire-controls .acquire-connection-control.is-connected .acquire-disconnect:hover:not(:disabled) {
+  transform: none;
+}
+.density-compact .acquire-controls .acquire-connection-control.is-connected .acquire-disconnect {
+  min-height: 32px;
+}
+.acquire-controls .acquire-connection-control.is-connected .acquire-disconnect:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .acquire-controls .acquire-connection-control.is-connected .acquire-disconnect,
+  .density-compact .acquire-controls .acquire-connection-control.is-connected .acquire-disconnect {
+    min-height: 44px;
+  }
 }
 .acquire-connect {
   position: relative;
