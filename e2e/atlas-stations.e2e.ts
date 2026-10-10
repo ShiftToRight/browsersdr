@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { unzipSync } from "fflate";
-import fixture from "../docs/implementation/atlas-settings-search/fixtures/browsersdr-station-search-v1.json" with { type: "json" };
+import fixture from "../src/testing/fixtures/atlas/browsersdr-station-search-v1.json" with { type: "json" };
 const token = "invented-station-browser-token-".repeat(2);
 async function setup(page: Page) {
   await page.addInitScript((token) => {

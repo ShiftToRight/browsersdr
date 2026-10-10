@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import fixture from "../../docs/implementation/atlas-settings-search/fixtures/browsersdr-station-search-v1.json";
+import fixture from "../testing/fixtures/atlas/browsersdr-station-search-v1.json";
 import { AtlasClient } from "./atlasClient";
 import {
   parseAtlasStationPage,

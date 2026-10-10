@@ -16,7 +16,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ATLAS = ROOT.parent / "SignalAtlas"
 DEFAULT_EXPLORER = ROOT.parent / "SignalExplorer" / "poc"
-FIXTURE = ROOT / "docs/implementation/atlas-integration/fixtures/browsersdr-cu8-v1.json"
+FIXTURE = ROOT / "src/testing/fixtures/atlas/browsersdr-cu8-v1.json"
 
 
 def run(command: list[str], *, env: dict[str, str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:

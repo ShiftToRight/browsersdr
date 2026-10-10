@@ -12,5 +12,5 @@
   "memberSha256": "f4da0becf906af957c954a7a1c276aa91f79ca369d7aedf7c2f5c7fdebf4c351",
   "legacyHash": "0x1624155e",
   "fpgaCompatibility": "7.0",
-  "notice": "The FPGA binary is not present. Release 1 requires verified user import. See docs/implementation/usrp-b205/PROTOCOL.md for licensing and provenance."
+  "notice": "The FPGA binary is not present. Release 1 requires verified user import. See https://github.com/cybearde/browsersdr/wiki/Receivers for licensing and provenance."
 }

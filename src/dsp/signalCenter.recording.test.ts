@@ -1,9 +1,10 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { SignalCenterEstimator, type SignalCenterResult } from "./signalCenter";
 import type { SourceSessionMetadata } from "../radio/types";
 
-it("measures the Bayern 2 RF recording and tracks imposed tuning offsets", async () => {
+it.skipIf(!existsSync(new URL("../../samples/munich-2026-09-23/munich_089500_wendelstein_bayern2_wbfm_rds.sigmf-data", import.meta.url)))("measures the Bayern 2 RF recording and tracks imposed tuning offsets", async () => {
   const data = await readFile(
     new URL(
       "../../samples/munich-2026-09-23/munich_089500_wendelstein_bayern2_wbfm_rds.sigmf-data",
@@ -49,7 +50,7 @@ it("measures the Bayern 2 RF recording and tracks imposed tuning offsets", async
   // This validates tracking on recorded RF; its transmitter's absolute error is unknown.
 });
 
-it("isolates the live RTL-SDR station that failed the wide envelope/SNR checks", async () => {
+it.skipIf(!existsSync(new URL("../../samples/center-signal-2026-10-02/rtl-089600-noisy-wbfm.sigmf-data", import.meta.url)))("isolates the live RTL-SDR station that failed the wide envelope/SNR checks", async () => {
   const data = await readFile(
     new URL(
       "../../samples/center-signal-2026-10-02/rtl-089600-noisy-wbfm.sigmf-data",

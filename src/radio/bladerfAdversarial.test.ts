@@ -12,7 +12,7 @@ const firmwareMatrix = models.flatMap((model) =>
 );
 const vectors = JSON.parse(
   readFileSync(
-    "docs/implementation/bladerf-variants/WIRE-VECTORS.json",
+    "src/testing/fixtures/bladerf/WIRE-VECTORS.json",
     "utf8",
   ),
 ) as { pages: { name: string; hex: string }[] };

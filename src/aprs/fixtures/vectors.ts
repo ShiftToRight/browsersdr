@@ -1,4 +1,4 @@
-/** Independently asserted examples; see docs/aprs-reception.md for provenance. */
+/** Independently asserted examples; see https://github.com/cybearde/browsersdr/wiki/Signals for provenance. */
 export const APRS_FIXTURE_VECTORS = {
   uncompressed: {
     information: "!4903.50N/07201.75W-Test",

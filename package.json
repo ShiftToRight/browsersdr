@@ -25,7 +25,8 @@
     "test:e2e:production": "playwright test --project=chromium-production",
     "test:report-service": "node --test deploy/report-service/report-service-tests.mjs",
     "typecheck": "tsc -b --pretty false",
-    "check": "npm run lint && npm run format:check && npm run test:wasm && npm run test:report-service && npm test && npm run build && npm run test:e2e"
+    "check": "npm run public:check && npm run lint && npm run format:check && npm run test:wasm && npm run test:report-service && npm test && npm run build && npm run test:e2e",
+    "public:check": "node scripts/check-public-source.mjs"
   },
   "dependencies": {
     "@jtarrio/signals": "0.10.1",

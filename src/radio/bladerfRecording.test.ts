@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import schema from "../../docs/vendor/sigmf-v1.2.6/sigmf-schema.json";
+import schema from "../testing/fixtures/sigmf-v1.2.6/sigmf-schema.json";
 import { bladeRfRecordingFixture } from "../testing/bladerfRecordingFixture";
 import { BLADERF_SC16_RECORDING_FORMAT } from "./bladerfRecording";
 import {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import wireVectors from "../../docs/implementation/bladerf-variants/WIRE-VECTORS.json";
+import wireVectors from "../testing/fixtures/bladerf/WIRE-VECTORS.json";
 import {
   detectBladeRfMicroModel,
   parseBladeRfCalibration,

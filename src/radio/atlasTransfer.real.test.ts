@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import fixture from "../../docs/implementation/atlas-integration/fixtures/browsersdr-cu8-v1.json";
+import fixture from "../testing/fixtures/atlas/browsersdr-cu8-v1.json";
 import { AtlasClient } from "./atlasClient";
 import { AtlasTransferController } from "./atlasTransfer";
 import type { PreparedRecordingExport } from "./recordingExportFormat";

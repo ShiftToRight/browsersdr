@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
@@ -134,7 +135,7 @@ describe("bounded SigMF import", () => {
     await expect(importSigmfRecording(oversized, Uint8Array.from([1, 2]), options)).rejects.toThrow(/1 MiB/);
   });
 
-  it.each([
+  it.skipIf(!existsSync(new URL("../../samples/munich-2026-09-23/", import.meta.url))).each([
     ["munich_089500_wendelstein_bayern2_wbfm_rds", "WBFM"],
     ["munich_220352_dab11c_partial", "AM"],
     ["munich_434048_srd_unknown_narrowband", "NBFM"],

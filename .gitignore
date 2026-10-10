@@ -15,3 +15,42 @@ test-results/
 
 # Obsidian preferences, workspace state and local plugins are personal.
 **/.obsidian/
+
+# Private knowledge, recordings, evidence and deployment operations stay local.
+/AGENTS.md
+/BrowserSDR/
+/docs
+/samples/
+/visualizations/
+/*.jpg
+/*.jpeg
+/*.png
+/deploy/README.md
+/deploy/apache/
+/deploy/hosteurope-release.sh
+/deploy/seo-apache.py
+/deploy/visitors/
+/scripts/create-release.py
+/scripts/verify-production.mjs
+/public/brand/*
+!/public/brand/logo-observatory-dish-v3-theme-aligned.png
+*.sigmf-data
+*.sigmf-meta
+*.cu8
+*.ci8
+*.ci16
+*.rbf
+*.hex
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.har
+*.log
+__pycache__/
+
+# Also exclude a dependency directory supplied as a symlink.
+/node_modules

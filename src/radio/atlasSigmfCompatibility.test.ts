@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import contractSnapshot from "../../docs/implementation/atlas-integration/fixtures/p0-01-contract-snapshot.json";
+import contractSnapshot from "../testing/fixtures/atlas/p0-01-contract-snapshot.json";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { unknownCi8Format } from "./ci8Recording";
 import { IqRecorder, type IqRecording } from "./iqRecording";
@@ -17,7 +17,7 @@ import {
 } from "./atlasSigmfCompatibility";
 import { createSigmfExport, type SigmfMetadata } from "./sigmf";
 
-const fixtureUrl = new URL("../../docs/implementation/atlas-integration/fixtures/browsersdr-cu8-v1.json", import.meta.url);
+const fixtureUrl = new URL("../testing/fixtures/atlas/browsersdr-cu8-v1.json", import.meta.url);
 
 async function productionFixture() {
   const recording = createDeterministicRecordingFixture(64);

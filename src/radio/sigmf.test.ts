@@ -1,7 +1,7 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { describe, expect, it } from "vitest";
-import schema from "../../docs/vendor/sigmf-v1.2.6/sigmf-schema.json";
+import schema from "../testing/fixtures/sigmf-v1.2.6/sigmf-schema.json";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
 import { buildSigmfMetadata, createSigmfExport } from "./sigmf";
 
