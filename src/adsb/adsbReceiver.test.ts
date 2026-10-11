@@ -143,3 +143,36 @@ describe("AdsbReceiver", () => {
     });
   });
 });
+
+
+it.each([[4, 7, "A7"], [4, 1, "A1"], [4, 3, "A3"], [3, 7, "B7"], [2, 1, "C1"], [1, 1, "D1"]])("parses CRC-valid identification category set %s / %s", (tc, category, expected) => {
+  let latest: AdsbSnapshot | undefined;
+  const receiver = new AdsbReceiver((snapshot) => { latest = snapshot; }, () => 1000);
+  receiver.setSampleRate(2_000_000);
+  const bytes = fromHex("8D4840D6202CC371C32CE0576098");
+  bytes[4] = (Number(tc) << 3) | Number(category);
+  receiver.receiveSamples(pulseFrame(appendCrc(bytes)));
+  expect(latest?.targets[0]?.category).toBe(expected);
+});
+
+it("retains only new CPR fixes and clears history at reset or expired identity reuse", () => {
+  let time = 1000, latest: AdsbSnapshot | undefined;
+  const receiver = new AdsbReceiver((snapshot) => { latest = snapshot; }, () => time);
+  receiver.setSampleRate(2_000_000);
+  const even = pulseFrame(fromHex("8D40621D58C386435CC412692AD6"));
+  const odd = pulseFrame(fromHex("8D40621D58C382D690C8AC2863A7"));
+  receiver.receiveSamples(even);
+  expect(latest?.targets[0]?.track).toEqual([]);
+  time += 1000; receiver.receiveSamples(odd);
+  const held = latest!;
+  expect(held.targets[0]?.track).toHaveLength(1);
+  time += 1000; receiver.receiveSamples(even);
+  expect(latest?.targets[0]?.track).toHaveLength(2);
+  expect(held.targets[0]?.track).toHaveLength(1);
+  time += 1000; receiver.receiveSamples(even);
+  expect(latest?.targets[0]?.track).toHaveLength(2);
+  time += 121_000; receiver.receiveSamples(odd);
+  expect(latest?.targets[0]?.track).toEqual([]);
+  receiver.reset();
+  expect(latest?.targets).toEqual([]);
+});

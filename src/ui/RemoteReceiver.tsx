@@ -14,6 +14,8 @@ import { AppIcon } from "./AppIcon";
 
 interface RemoteWorkspaceProps {
   active: boolean;
+  /** Presentation can be hidden while Decoder keeps the shared stream active. */
+  visible?: boolean;
   layout: WorkspaceLayout;
   onLayoutChange: Dispatch<SetStateAction<WorkspaceLayout>>;
   onSource: (source: SourceKind) => void;
@@ -245,7 +247,7 @@ function RemoteReceiverView({
     state.status,
   ]);
   return (
-    <ReceiverWorkspace id="remote-view" hidden={!active}>
+    <ReceiverWorkspace id="remote-view" hidden={!(workspace.visible ?? active)}>
       <section
         className="signal-stage acquire-stage remote-source"
         aria-labelledby="remote-heading"

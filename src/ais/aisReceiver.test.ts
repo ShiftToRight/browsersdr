@@ -4,10 +4,10 @@ import { AisChannelDemodulator, AisReceiver, crc16X25 } from "./aisReceiver";
 function write(bits: number[], start: number, length: number, value: number): void {
   for (let bit = 0; bit < length; bit += 1) bits[start + bit] = (value >> (length - bit - 1)) & 1;
 }
-function positionFrame(): Uint8Array {
+function positionFrame(latitude = 48.14, mmsi = 211_234_567): Uint8Array {
   const bits = new Array<number>(168).fill(0);
-  write(bits, 0, 6, 1); write(bits, 8, 30, 211_234_567); write(bits, 38, 4, 0); write(bits, 50, 10, 123);
-  write(bits, 61, 28, Math.round(11.58 * 600_000)); write(bits, 89, 27, Math.round(48.14 * 600_000)); write(bits, 116, 12, 875); write(bits, 128, 9, 88);
+  write(bits, 0, 6, 1); write(bits, 8, 30, mmsi); write(bits, 38, 4, 0); write(bits, 50, 10, 123);
+  write(bits, 61, 28, Math.round(11.58 * 600_000)); write(bits, 89, 27, Math.round(latitude * 600_000)); write(bits, 116, 12, 875); write(bits, 128, 9, 88);
   const payload = new Uint8Array(21);
   for (let bit = 0; bit < bits.length; bit += 1) payload[bit >> 3] = (payload[bit >> 3] ?? 0) | (bits[bit]! << (7 - (bit & 7)));
   let crc = 0xffff;
@@ -58,4 +58,27 @@ describe("AisReceiver", () => {
     expect(latest?.validFrames).toBe(1);
     expect(latest?.targets[0]?.mmsi).toBe(211_234_567);
   });
+});
+
+
+it("retains FCS-valid distinct fixes, bounds history/targets and isolates published snapshots and resets", () => {
+  let time = 1000, latest: import("./aisReceiver").AisSnapshot | undefined;
+  const receiver = new AisReceiver((snapshot) => { latest = snapshot; }, () => time);
+  receiver.receiveFrame(positionFrame());
+  const held = latest!;
+  time += 300; receiver.receiveFrame(positionFrame());
+  expect(latest?.targets[0]?.track).toHaveLength(1);
+  for (let i = 0; i < 40; i++) { time += 300; receiver.receiveFrame(positionFrame(49 + i / 100)); }
+  expect(latest?.targets[0]?.track).toHaveLength(32);
+  expect(held.targets[0]?.track).toHaveLength(1);
+  expect(held.targets[0]?.latitude).toBeCloseTo(48.14);
+  const corrupt = positionFrame(50); corrupt[10] = corrupt[10]! ^ 1;
+  time += 300; receiver.receiveFrame(corrupt);
+  expect(latest?.targets[0]?.track).toHaveLength(32);
+  time += 601_000; receiver.receiveFrame(positionFrame(50));
+  expect(latest?.targets[0]?.track).toHaveLength(1);
+  for (let i = 0; i < 51; i++) { time += 300; receiver.receiveFrame(positionFrame(50, 211_000_000 + i)); }
+  expect(latest?.targets).toHaveLength(50);
+  receiver.reset();
+  expect(latest?.targets).toEqual([]);
 });

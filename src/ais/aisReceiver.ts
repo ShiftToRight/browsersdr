@@ -1,4 +1,5 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
+import { appendTargetFix, boundTargets, type TargetTrackPoint } from "../digital/targetTrack";
 import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
 
 export const AIS_CENTER_FREQUENCY_HZ = 162_000_000;
@@ -10,6 +11,7 @@ export interface AisTarget {
   name: string | null;
   callSign: string | null;
   shipType: number | null;
+  track?: readonly TargetTrackPoint[];
   latitude: number | null;
   longitude: number | null;
   speedKnots: number | null;
@@ -141,6 +143,7 @@ export class AisChannelDemodulator {
 
 /** Dual-channel AIS 1/AIS 2 GMSK receiver and message decoder. */
 export class AisReceiver implements DigitalSampleReceiver {
+  private inputSamples = 0;
   private sampleRateHz = 1_024_000;
   private centerOffsetHz = 0;
   private frames = 0;
@@ -152,7 +155,7 @@ export class AisReceiver implements DigitalSampleReceiver {
   private readonly targets = new Map<number, MutableTarget>();
   private readonly channel1 = new AisChannelDemodulator(-25_000, (bytes) => this.frame(bytes, "AIS 1"));
   private readonly channel2 = new AisChannelDemodulator(25_000, (bytes) => this.frame(bytes, "AIS 2"));
-  constructor(private readonly onUpdate: (snapshot: AisSnapshot) => void, private readonly now = () => performance.now()) {}
+  constructor(private readonly onUpdate: (snapshot: AisSnapshot) => void, private readonly now = () => this.inputSamples / this.sampleRateHz * 1000) {}
   setSampleRate(sampleRateHz: number): void { validateAisSampleRate(sampleRateHz); this.sampleRateHz = sampleRateHz; this.reset(); }
   setFrequencyOffset(offsetHz: number): void { this.centerOffsetHz = offsetHz; this.reset(); }
   configure(sampleRateHz: number, frequencyOffsetHz: number): void {
@@ -163,11 +166,14 @@ export class AisReceiver implements DigitalSampleReceiver {
     this.reset();
   }
   reset(): void {
+    this.inputSamples = 0;
     this.frames = 0; this.validFrames = 0; this.rejectedFrames = 0; this.channel1Frames = 0; this.channel2Frames = 0;
     this.lastPublishMs = Number.NEGATIVE_INFINITY;
     this.targets.clear(); this.channel1.reset(); this.channel2.reset(); this.publish();
   }
   receiveSamples(block: SampleBlock): void {
+    // Block-end input time remains deterministic during replay and browser stalls.
+    this.inputSamples += block.I.length;
     this.channel1.receive(block, this.sampleRateHz, this.centerOffsetHz);
     this.channel2.receive(block, this.sampleRateHz, this.centerOffsetHz);
   }
@@ -179,8 +185,10 @@ export class AisReceiver implements DigitalSampleReceiver {
     this.validFrames += 1; if (channel === "AIS 1") this.channel1Frames += 1; else this.channel2Frames += 1;
     const bytes = bytesWithFcs.subarray(0, -2);
     const type = readUnsigned(bytes, 0, 6), mmsi = readUnsigned(bytes, 8, 30);
-    if (!mmsi) { this.publishThrottled(); return; }
-    const target = this.targets.get(mmsi) ?? { mmsi, name: null, callSign: null, shipType: null, latitude: null, longitude: null,
+    // Position reports need all 168 payload bits; an FCS alone cannot supply a fix.
+    if (!mmsi || (((type >= 1 && type <= 3) || type === 18) && bytes.length < 21)) { this.publishThrottled(); return; }
+    const previous = this.targets.get(mmsi);
+    const target = (previous && previous.lastSeenMs >= this.now() - 10 * 60_000 ? previous : undefined) ?? { mmsi, name: null, callSign: null, shipType: null, track: [], latitude: null, longitude: null,
       speedKnots: null, courseDegrees: null, headingDegrees: null, navigationStatus: null, channel, messages: 0, lastSeenMs: 0 };
     target.channel = channel; target.messages += 1; target.lastSeenMs = this.now();
     if (type >= 1 && type <= 3) {
@@ -203,13 +211,15 @@ export class AisReceiver implements DigitalSampleReceiver {
       if (part === 0) target.name = readText(bytes, 40, 120);
       else { target.shipType = readUnsigned(bytes, 40, 8); target.callSign = readText(bytes, 90, 42); }
     }
-    this.targets.set(mmsi, target); this.publishThrottled();
+    if ((type >= 1 && type <= 3) || type === 18)
+      target.track = appendTargetFix(target.track ?? [], target.latitude, target.longitude, target.lastSeenMs);
+    this.targets.set(mmsi, target); boundTargets(this.targets); this.publishThrottled();
   }
   private publishThrottled(): void { if (this.validFrames === 1 || this.now() - this.lastPublishMs >= 250) { this.lastPublishMs = this.now(); this.publish(); } }
   private publish(): void {
     const cutoff = this.now() - 10 * 60_000;
     for (const [mmsi, target] of this.targets) if (target.lastSeenMs < cutoff) this.targets.delete(mmsi);
-    const targets = [...this.targets.values()].sort((a, b) => b.lastSeenMs - a.lastSeenMs);
+    const targets = [...this.targets.values()].sort((a, b) => b.lastSeenMs - a.lastSeenMs).map((target) => ({ ...target }));
     this.onUpdate({ frames: this.frames, validFrames: this.validFrames, rejectedFrames: this.rejectedFrames,
       channel1Frames: this.channel1Frames, channel2Frames: this.channel2Frames, targets,
       message: this.validFrames ? `Tracking ${targets.length} AIS target${targets.length === 1 ? "" : "s"}.` : "Waiting for valid AIS frames on both channels…" });

@@ -1,15 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { openApplicationView } from "./application-navigation";
 
-test("primary workspace keyboard navigation stays within Receiver and Explorer", async ({
+test("primary workspace keyboard navigation stays within Receiver, Decoder and Explorer", async ({
   page,
 }) => {
   await page.goto("/");
   const tabs = page.getByRole("tablist", { name: "BrowserSDR views" });
-  await expect(tabs.getByRole("tab")).toHaveCount(2);
+  await expect(tabs.getByRole("tab")).toHaveCount(3);
   const receiver = tabs.getByRole("tab", { name: "Receiver", exact: true });
   const explorer = tabs.getByRole("tab", { name: "Explorer", exact: true });
+  const decoder = tabs.getByRole("tab", { name: "Decoder", exact: true });
   await receiver.focus();
+  await receiver.press("ArrowRight");
+  await expect(decoder).toBeFocused();
+  await expect(decoder).toHaveAttribute("aria-selected", "true");
   await receiver.press("End");
   await expect(explorer).toBeFocused();
   await expect(explorer).toHaveAttribute("aria-selected", "true");
@@ -86,7 +90,7 @@ test("header utilities fit desktop and mobile, with dismissible menus and retain
           return box.y + box.height / 2;
         }),
       );
-      expect(centers).toHaveLength(6);
+      expect(centers).toHaveLength(7);
       expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
     }
     for (const name of ["Settings", "Help"] as const) {

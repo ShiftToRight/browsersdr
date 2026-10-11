@@ -475,6 +475,17 @@ test("unified remote workspace shares compact layout, panel hiding and source se
     "listening",
   );
   expect(closed).toHaveLength(0);
+  await expect(
+    page.getByRole("tab", { name: "Decoder", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#remote-view")).toBeHidden();
+  await expect(page.locator("#decoder-view")).toContainText(
+    "Remote audio/FFT does not provide the raw I/Q",
+  );
+  await expect(page.locator("#decoder-view")).toContainText("No raw I/Q rate");
+  await page.getByRole("tab", { name: "Receiver", exact: true }).click();
+  await expect(page.locator("#remote-view")).toBeVisible();
+  expect(closed).toHaveLength(0);
   await page
     .getByRole("button", { name: "Collapse source panel", exact: true })
     .click();

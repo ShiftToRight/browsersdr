@@ -1,4 +1,5 @@
-import { PacketDecodePanel } from "./ui/PacketDecodePanel";
+import { ReceiverDecodePanel } from "./ui/DecodedResults";
+import { DecoderWorkspace } from "./ui/DecoderWorkspace";
 import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 import { RemoteReceiver } from "./ui/RemoteReceiver";
@@ -24,13 +25,11 @@ import { BLADERF_SC16_RECORDING_FORMAT } from "./radio/bladerfRecording";
 import { DEFAULT_BLADERF_RX_SETTINGS, BLADERF_GAIN_MODES, type BladeRfRxSettings } from "./radio/bladerfSettings";
 import { BladeRfControls } from "./ui/BladeRfControls";
 import { usePageVisible } from "./ui/usePageVisible";
-import { PositionMap } from "./ui/PositionMap";
 import { SetupFileRow } from "./ui/SetupFileRow";
 import { DabStationControl, FmStationSummary } from "./ui/ChannelProgramme";
 import { ReceiverHealth } from "./ui/ReceiverHealth";
 import { AppIcon } from "./ui/AppIcon";
 import { ReceiverStatus } from "./ui/ReceiverStatus";
-import { DabMetadata } from "./ui/DabMetadata";
 import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
 import {
   memo,
@@ -179,7 +178,7 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "remote" | "receiver" | "explorer" | "settings" | "diagnostics" | "help" | "about";
+type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type CompatibilityDetailView = "modes" | "recording" | "browsers";
 type ReplayImportFormat = "browsersdr" | "sigmf";
@@ -984,62 +983,6 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
-function downloadDecodedTargets(mode: string, targets: unknown[]): void {
-  const url = URL.createObjectURL(
-    new Blob(
-      [
-        JSON.stringify(
-          { mode, exportedAt: new Date().toISOString(), targets },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
-    ),
-  );
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `browsersdr-${mode.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-targets.json`;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function downloadSrdSnapshot(receiver: ReceiverSnapshot): void {
-  if (!receiver.srd || !receiver.session) return;
-  const session = receiver.session;
-  downloadDecodedTargets("SRD", [
-    {
-      schema: "browsersdr-srd-export-v1",
-      settings: session.srd,
-      provenance: {
-        source: session.source,
-        generation: session.sessionGeneration,
-        actualInputSampleRateHz: session.actualSampleRateHz,
-        hardwareCenterFrequencyHz: session.hardwareCenterFrequencyHz,
-        selectedChannelFrequencyHz: session.selectedChannelFrequencyHz,
-        selectedChannelOffsetHz:
-          session.selectedChannelFrequencyHz -
-          session.hardwareCenterFrequencyHz,
-        decoderInputOffsetHz: isWidebandRate(session.actualSampleRateHz)
-          ? 0
-          : session.selectedChannelFrequencyHz -
-            session.hardwareCenterFrequencyHz,
-      },
-      integrityPolicy: "Only protocol-validated readings are included.",
-      units: {
-        temperatureC: "degC",
-        humidityPercent: "percent",
-        moisturePercent: "percent",
-        batteryMillivolts: "mV",
-      },
-      counters: receiver.srd.counters,
-      readings: receiver.srd.recentReadings.slice(-32),
-      bursts: receiver.srd.bursts.slice(-4),
-      worker: receiver.srdWorker,
-    },
-  ]);
-}
-
 function DiagnosticsPanel({
   health,
   active,
@@ -1373,692 +1316,6 @@ function DiagnosticsPanel({
         </dl>
       </details>
       <DiagnosticReportCard context={reportContext} />
-    </section>
-  );
-}
-
-/** Decoder telemetry must not rebuild the controls, Explorer and Help on every
- * FIC/PCM update: long main-thread renders starve WebUSB despite fast DSP workers. */
-function ReceiverDecodePanel({
-  controller,
-  source,
-  mode,
-  volume,
-  active,
-}: {
-  controller: ReceiverController;
-  source: SourceKind;
-  mode: ReceiverMode;
-  volume: number;
-  active: boolean;
-}) {
-  const receiver = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-  );
-  // A mode switch publishes the selected mode before the new decoder has
-  // finished configuring. Avoid pairing that mode with the previous decoder's
-  // last status during the tuning window.
-  const modeChangePending =
-    receiver.lifecycle === "tuning" && receiver.message.startsWith("Applying ");
-  return (
-    <section
-      id="decode-panel"
-      role="tabpanel"
-      className="control-panel rds-panel decode-panel receiver-dock-panel"
-      data-mode={mode}
-      aria-labelledby="decode-heading"
-      hidden={!active}
-    >
-      <h2 id="decode-heading" className="visually-hidden">Decoded data</h2>
-      <div className="decode-layout">
-        <div className="audio-summary">
-          <span>
-            {modeChangePending
-              ? "Mode change"
-              : mode === "OFF"
-                ? "Demodulation disabled"
-                : mode === "DAB"
-                  ? "DAB+ audio output"
-                  : ["ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode)
-                    ? "Data acquisition"
-                    : "Audio output"}
-          </span>
-          <strong>
-            {modeChangePending
-              ? receiver.message
-              : mode === "OFF"
-                ? "No audio or decoder output"
-                : mode === "DAB"
-                  ? (receiver.dab?.message ?? "Not active")
-                  : mode === "APRS"
-                    ? `${receiver.aprs?.stations.length ?? 0} validated station(s)`
-                  : mode === "RS41"
-                    ? `${receiver.rs41?.sondes.length ?? 0} validated sonde(s)`
-                  : mode === "ADS-B"
-                    ? (receiver.adsb?.message ?? "Not active")
-                    : mode === "AIS"
-                      ? (receiver.ais?.message ?? "Not active")
-                      : mode === "SRD"
-                        ? receiver.srd
-                          ? `${receiver.srd.devices.length} validated device(s)`
-                          : "Not active"
-                        : source === "synthetic"
-                          ? "Not available in demo"
-                          : (receiver.audioState ?? "Not active")}
-          </strong>
-          <small>
-            {mode === "OFF"
-              ? "Raw I/Q continues to feed the spectrum, waterfall, surveys and recordings."
-              : mode === "DAB"
-                ? `Mode I · browser HE-AAC · ${Math.round(volume * 100)}% volume`
-                : mode === "APRS" ? "1200-baud Bell-202 · AX.25 FCS"
-                : mode === "RS41" ? "4800 bit/s · unencrypted RS41"
-                : mode === "ADS-B"
-                  ? "1090ES · CRC-validated Mode S frames"
-                  : mode === "AIS"
-                    ? "AIS 1 + AIS 2 · dual-channel GMSK"
-                    : mode === "SRD"
-                      ? "OOK / 2-FSK signal inspection"
-                      : source === "synthetic"
-                        ? "Use a hardware source or replay to listen."
-                        : `${mode} demodulation · ${Math.round(volume * 100)}% volume`}
-          </small>
-        <span
-          className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
-        >
-          {modeChangePending
-            ? "reconfiguring"
-            : mode === "OFF"
-              ? "spectrum only"
-              : mode === "DAB"
-                ? (receiver.dab?.state ?? "not started")
-                : mode === "ADS-B"
-                  ? `${receiver.adsb?.validFrames ?? 0} valid frames`
-                  : mode === "APRS" ? `${receiver.aprs?.counters.validAx25Frames ?? 0} FCS-valid packets`
-                  : mode === "RS41" ? `${(receiver.rs41?.counters.uncorrectedFrames ?? 0) + (receiver.rs41?.counters.correctedFrames ?? 0)} integrity-valid frames`
-                  : mode === "AIS"
-                    ? `${receiver.ais?.validFrames ?? 0} valid frames`
-                    : mode === "SRD"
-                      ? `${receiver.srd?.counters.bursts ?? 0} bursts`
-                      : receiver.rds?.validGroups
-                        ? `${receiver.rds.validGroups} valid groups`
-                        : source === "synthetic"
-                          ? "no audio"
-                          : `${mode} audio`}
-        </span>
-        </div>
-        {source !== "synthetic" &&
-          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode) && (
-            <div className="rds-content">
-              <h3>
-                {mode === "OFF"
-                  ? "Spectrum explorer"
-                  : mode === "DAB"
-                    ? "Digital Audio Broadcasting"
-                    : mode === "ADS-B"
-                      ? "Aircraft targets"
-                      : mode === "AIS"
-                        ? "Vessel targets"
-                        : mode === "APRS" ? "APRS stations"
-                        : mode === "RS41" ? "RS41 radiosondes"
-                        : mode === "SRD"
-                          ? "Short-range devices"
-                          : "Radio Data System"}
-              </h3>
-              {mode === "OFF" ? (
-                <p className="rds-empty">
-                  Spectrum-only mode keeps RF acquisition and analysis active
-                  without sending samples to an audio or digital decoder.
-                </p>
-              ) : mode === "APRS" || mode === "RS41" ? (
-                <PacketDecodePanel receiver={receiver} mode={mode} />
-              ) : mode === "SRD" ? (
-                <>
-                  <div className="target-table-wrap">
-                    <table className="target-table">
-                      <thead>
-                        <tr>
-                          <th>Device</th>
-                          <th>Protocol / integrity</th>
-                          <th>Measurements</th>
-                          <th>Last sample</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(receiver.srd?.devices ?? [])
-                          .slice(0, 32)
-                          .map((device) => {
-                            const reading = device.reading;
-                            return (
-                              <tr key={device.key}>
-                                <td>
-                                  <strong>{reading.deviceId}</strong>
-                                  <small>
-                                    {device.readings} validated reading(s)
-                                  </small>
-                                </td>
-                                <td>
-                                  {reading.protocol}
-                                  <small>{reading.integrity}</small>
-                                </td>
-                                <td>
-                                  {reading.protocol === "acurite-592txr"
-                                    ? `${reading.temperatureC.toFixed(1)} °C${reading.humidityPercent == null ? "" : ` · ${reading.humidityPercent}% RH`}`
-                                    : `${reading.moisturePercent}% moisture · ${reading.batteryMillivolts} mV`}
-                                </td>
-                                <td>
-                                  {device.lastInputSampleIndex.toLocaleString()}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        {!receiver.srd?.devices.length && (
-                          <tr>
-                            <td colSpan={4}>
-                              No integrity-validated sensor reading yet.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!receiver.srd}
-                    onClick={() => downloadSrdSnapshot(receiver)}
-                  >
-                    Export device data (JSON)
-                  </button>
-                  <details className="decoder-details">
-                    <summary>Decoder details</summary>{" "}
-                    <dl className="rds-grid">
-                      <div>
-                        <dt>Bursts</dt>
-                        <dd>{receiver.srd?.counters.bursts ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Validated readings</dt>
-                        <dd>{receiver.srd?.counters.validatedReadings ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Unknown / rejected</dt>
-                        <dd>
-                          {receiver.srd?.counters.rejectedProtocolFrames ?? 0}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Queue drops</dt>
-                        <dd>{receiver.srdWorker?.droppedInputBlocks ?? 0}</dd>
-                      </div>
-                    </dl>{" "}
-                    <div
-                      className="srd-trace"
-                      aria-label="Bounded SRD pulse inspector"
-                    >
-                      {(receiver.srd?.trace ?? [])
-                        .slice(-512)
-                        .map((point, index) => (
-                          <i
-                            key={`${point.inputSampleIndex}:${index}`}
-                            className={point.level ? "high" : "low"}
-                            title={`${point.inputSampleIndex}: envelope ${point.envelope.toFixed(3)}, discriminator ${point.discriminatorHz.toFixed(0)} Hz`}
-                          />
-                        ))}
-                    </div>
-                    <p className="display-note">
-                      {receiver.srd?.activeBurst
-                        ? "Burst in progress…"
-                        : receiver.srd?.bursts.length
-                          ? `${receiver.srd.bursts.length} recent burst(s); truncated bursts are marked below.`
-                          : "Waiting for a signal burst. Unknown signals appear in the inspector."}
-                    </p>
-                    <details>
-                      <summary>Recent pulse bursts</summary>
-                      <ul className="srd-burst-list">
-                        {(receiver.srd?.bursts ?? []).slice(-4).map((burst) => (
-                          <li key={burst.id}>
-                            Burst {burst.id}: {burst.pulses.length} pulses
-                            {burst.truncated
-                              ? ` · truncated (${burst.truncationReason ?? "unknown"})`
-                              : ""}
-                            {burst.timingCandidates[0]
-                              ? ` · candidate ${burst.timingCandidates[0].symbolUs.toFixed(0)} µs (${burst.timingCandidates[0].basis})`
-                              : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </details>
-                </>
-              ) : mode === "DAB" ? (
-                <>
-                  <p className="display-note">
-                    Ensemble:{" "}
-                    <strong>
-                      {receiver.dab?.ensemble?.label ||
-                        "Waiting for ensemble name…"}
-                    </strong>
-                  </p>
-                  <DabMetadata metadata={receiver.dab?.programmeMetadata} />
-                  <details className="decoder-details">
-                    <summary>Decoder details</summary>
-                    <p className="display-note">
-                      Broadcast metadata:{" "}
-                      {receiver.dab?.padStatistics?.padUnits ?? 0} PAD units ·{" "}
-                      {receiver.dab?.padStatistics?.labelGroups ?? 0} text
-                      segments · {receiver.dab?.padStatistics?.motGroups ?? 0}{" "}
-                      image segments ·{" "}
-                      {receiver.dab?.padStatistics?.motObjects ?? 0} completed
-                      images
-                      {receiver.dab?.padStatistics?.motBytes
-                        ? ` · ${(receiver.dab.padStatistics.motBytes / 1024).toFixed(1)} KB assembling`
-                        : ""}
-                    </p>
-                    <dl className="rds-grid">
-                      <div>
-                        <dt>Transmission frames</dt>
-                        <dd>{receiver.dab?.frameCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Null symbols</dt>
-                        <dd>{receiver.dab?.nullSymbolCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Estimated signal/null</dt>
-                        <dd>
-                          {receiver.dab?.estimatedSnrDb == null
-                            ? "—"
-                            : `${receiver.dab.estimatedSnrDb.toFixed(1)} dB`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Coarse frequency offset</dt>
-                        <dd>
-                          {receiver.dab?.coarseFrequencyOffsetHz == null
-                            ? "—"
-                            : `${receiver.dab.coarseFrequencyOffsetHz.toFixed(0)} Hz`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Valid FIC blocks</dt>
-                        <dd>
-                          {receiver.dab?.ficBlockCount ?? 0} /{" "}
-                          {receiver.dab?.ficBlockAttempts ?? 0}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>FIC-bearing frames</dt>
-                        <dd>
-                          {receiver.dab?.ficFramesWithAny ?? 0} /{" "}
-                          {receiver.dab?.ficFrameCount ?? 0} (
-                          {receiver.dab?.ficCompleteFrames ?? 0} complete)
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>FIBs per frame</dt>
-                        <dd>
-                          {receiver.dab?.ficSuccessHistogram
-                            ?.map((count, valid) =>
-                              count > 0 ? `${valid}:${count}` : "",
-                            )
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Valid FIBs by coding group</dt>
-                        <dd>
-                          {receiver.dab?.ficGroupBlocks?.join(" · ") || "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Decoder frequency correction</dt>
-                        <dd>
-                          {receiver.dab?.decoderCoarseCarrierOffsetHz ?? 0} Hz
-                          coarse
-                          {receiver.dab?.decoderCoarseCarrierLocked
-                            ? " (locked)"
-                            : ""}
-                          ,{" "}
-                          {receiver.dab?.decoderFineFrequencyCorrectionHz?.toFixed(
-                            1,
-                          ) ?? "0.0"}{" "}
-                          Hz fine
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Decoder timing start</dt>
-                        <dd>
-                          {receiver.dab?.decoderTimingStartSamples ?? 0} samples
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Frame interval / missed frames</dt>
-                        <dd>
-                          {(
-                            (receiver.dab?.frameIntervalSamples ?? 0) / 2048
-                          ).toFixed(1)}{" "}
-                          ms / {receiver.dab?.missedFrames ?? 0}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>OFDM/FEC processing (last / peak)</dt>
-                        <dd>
-                          {receiver.dab?.processingMs?.toFixed(1) ?? "0"} /{" "}
-                          {receiver.dab?.maxProcessingMs?.toFixed(1) ?? "0"} ms
-                          per 96 ms frame
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Q convention</dt>
-                        <dd>{receiver.dab?.quadraturePolarity ?? "—"}</dd>
-                      </div>
-                      <div>
-                        <dt>Selected service</dt>
-                        <dd>
-                          {receiver.dab?.serviceId == null
-                            ? "—"
-                            : `0x${receiver.dab.serviceId.toString(16).toUpperCase()}`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>MSC subchannel</dt>
-                        <dd>{receiver.dab?.subchannelId ?? "—"}</dd>
-                      </div>
-                      <div>
-                        <dt>MSC logical frames</dt>
-                        <dd>{receiver.dab?.logicalFrameCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>DAB+ superframes</dt>
-                        <dd>{receiver.dab?.superframeCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Superframe candidates</dt>
-                        <dd>{receiver.dab?.superframeCandidateCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>RS-rejected candidates</dt>
-                        <dd>{receiver.dab?.reedSolomonFailureCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>RS columns (last / best)</dt>
-                        <dd>
-                          {receiver.dab?.lastCorrectedRsColumns ?? 0} /{" "}
-                          {receiver.dab?.bestCorrectedRsColumns ?? 0}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Fire-code failures</dt>
-                        <dd>{receiver.dab?.fireCodeFailureCount ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Audio format</dt>
-                        <dd>
-                          {receiver.dab?.audioFormat
-                            ? `DAB+ · ${receiver.dab.audioFormat.dacRate ? "48" : "32"} kHz · ${receiver.dab.audioFormat.stereo || receiver.dab.audioFormat.parametricStereo ? "Stereo" : "Mono"}${receiver.dab.audioFormat.sbr ? " · SBR" : ""}${receiver.dab.audioFormat.parametricStereo ? " · PS" : ""}`
-                            : "Waiting for audio format…"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Browser audio decoder</dt>
-                        <dd>
-                          {receiver.dab?.audioDecoderMessage ??
-                            "Waiting for validated audio"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Decoded PCM audio</dt>
-                        <dd>
-                          {receiver.dab?.decodedAudioSeconds?.toFixed(2) ??
-                            "0.00"}{" "}
-                          s
-                          {receiver.dab?.pcmSampleRateHz
-                            ? ` at ${receiver.dab.pcmSampleRateHz.toLocaleString()} Hz`
-                            : ""}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>AAC access units</dt>
-                        <dd>{receiver.dab?.accessUnitCount ?? 0}</dd>
-                      </div>
-                    </dl>
-                    <p className="display-note">
-                      The first available DAB+ station plays automatically. Use
-                      the station selector above to change programmes. Legacy
-                      MPEG Layer II DAB and encrypted services are not sent to
-                      the HE-AAC output path.
-                    </p>
-                  </details>
-                </>
-              ) : mode === "ADS-B" ? (
-                <>
-                  <PositionMap
-                    label="ADS-B target positions"
-                    points={(receiver.adsb?.targets ?? []).map((target) => ({
-                      latitude: target.latitude,
-                      longitude: target.longitude,
-                      label: target.callsign ?? target.icao,
-                    }))}
-                  />
-                  <div className="target-table-wrap">
-                    <table className="target-table">
-                      <thead>
-                        <tr>
-                          <th>Aircraft</th>
-                          <th>Altitude</th>
-                          <th>Speed / track</th>
-                          <th>Position</th>
-                          <th>Messages</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(receiver.adsb?.targets ?? [])
-                          .slice(0, 50)
-                          .map((target) => (
-                            <tr key={target.icao}>
-                              <td>
-                                <strong>{target.callsign ?? "—"}</strong>
-                                <small>{target.icao}</small>
-                              </td>
-                              <td>
-                                {target.altitudeFt == null
-                                  ? "—"
-                                  : `${target.altitudeFt.toLocaleString()} ft`}
-                              </td>
-                              <td>
-                                {target.groundSpeedKt == null
-                                  ? "—"
-                                  : `${target.groundSpeedKt.toFixed(0)} kt · ${target.trackDegrees?.toFixed(0) ?? "—"}°`}
-                              </td>
-                              <td>
-                                {target.latitude == null
-                                  ? "—"
-                                  : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
-                              </td>
-                              <td>{target.messages}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!receiver.adsb?.targets.length}
-                    onClick={() =>
-                      downloadDecodedTargets(
-                        "ADS-B",
-                        receiver.adsb?.targets ?? [],
-                      )
-                    }
-                  >
-                    Export targets JSON
-                  </button>
-                  <details className="decoder-details">
-                    <summary>Decoder details</summary>{" "}
-                    <dl className="rds-grid">
-                      <div>
-                        <dt>Preamble candidates</dt>
-                        <dd>{receiver.adsb?.preamblesDetected ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>CRC-valid Mode S</dt>
-                        <dd>{receiver.adsb?.crcValidFrames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Supported DF17/DF18</dt>
-                        <dd>{receiver.adsb?.validFrames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>CRC-valid unsupported DF</dt>
-                        <dd>{receiver.adsb?.unsupportedFrames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>CRC failures</dt>
-                        <dd>{receiver.adsb?.crcFailures ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Ambiguous bit decisions</dt>
-                        <dd>{receiver.adsb?.ambiguousFrames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Targets</dt>
-                        <dd>{receiver.adsb?.targets.length ?? 0}</dd>
-                      </div>
-                    </dl>
-                    <p className="display-note">
-                      CRC-valid counts zero-remainder parity. Address- or
-                      interrogator-overlaid Mode S replies cannot be
-                      independently validated here.
-                    </p>
-                  </details>
-                </>
-              ) : mode === "AIS" ? (
-                <>
-                  <PositionMap
-                    label="AIS vessel positions"
-                    points={(receiver.ais?.targets ?? []).map((target) => ({
-                      latitude: target.latitude,
-                      longitude: target.longitude,
-                      label: target.name ?? String(target.mmsi),
-                    }))}
-                  />
-                  <div className="target-table-wrap">
-                    <table className="target-table">
-                      <thead>
-                        <tr>
-                          <th>Vessel</th>
-                          <th>Channel</th>
-                          <th>Speed / course</th>
-                          <th>Position</th>
-                          <th>Messages</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(receiver.ais?.targets ?? [])
-                          .slice(0, 50)
-                          .map((target) => (
-                            <tr key={target.mmsi}>
-                              <td>
-                                <strong>{target.name ?? "—"}</strong>
-                                <small>{target.callSign ?? target.mmsi}</small>
-                              </td>
-                              <td>{target.channel}</td>
-                              <td>
-                                {target.speedKnots == null
-                                  ? "—"
-                                  : `${target.speedKnots.toFixed(1)} kt · ${target.courseDegrees?.toFixed(1) ?? "—"}°`}
-                              </td>
-                              <td>
-                                {target.latitude == null
-                                  ? "—"
-                                  : `${target.latitude.toFixed(4)}, ${target.longitude?.toFixed(4)}`}
-                              </td>
-                              <td>{target.messages}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!receiver.ais?.targets.length}
-                    onClick={() =>
-                      downloadDecodedTargets("AIS", receiver.ais?.targets ?? [])
-                    }
-                  >
-                    Export targets JSON
-                  </button>
-                  <details className="decoder-details">
-                    <summary>Decoder details</summary>{" "}
-                    <dl className="rds-grid">
-                      <div>
-                        <dt>AIS 1 frames</dt>
-                        <dd>{receiver.ais?.channel1Frames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>AIS 2 frames</dt>
-                        <dd>{receiver.ais?.channel2Frames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Rejected</dt>
-                        <dd>{receiver.ais?.rejectedFrames ?? 0}</dd>
-                      </div>
-                      <div>
-                        <dt>Vessels</dt>
-                        <dd>{receiver.ais?.targets.length ?? 0}</dd>
-                      </div>
-                    </dl>
-                  </details>
-                </>
-              ) : mode !== "WBFM" ? (
-                <p className="rds-empty">
-                  RDS decoding is available only in WBFM. Audio remains
-                  available for the selected mode.
-                </p>
-              ) : !receiver.rds?.validGroups ? (
-                <p className="rds-empty">
-                  No validated station data decoded yet.
-                </p>
-              ) : (
-                <dl className="rds-grid">
-                  <div>
-                    <dt>PI identifier</dt>
-                    <dd>{receiver.rds.pi ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Programme Service</dt>
-                    <dd>
-                      {receiver.rds.programmeService ??
-                        "Waiting for all PS segments…"}
-                    </dd>
-                  </div>
-                  <div className="rds-text">
-                    <dt>RadioText</dt>
-                    <dd>
-                      {receiver.rds.radioText ?? "Waiting for RadioText…"}
-                    </dd>
-                  </div>
-                </dl>
-              )}
-              {mode === "WBFM" && (
-                <details className="decoder-details">
-                  <summary>Decoder details</summary>
-                  <p className="display-note">
-                    Text appears only after CRC and block-offset validation.
-                    Retuning, changing station PI, or leaving WBFM clears prior
-                    data.
-                  </p>
-                </details>
-              )}
-            </div>
-          )}
-      </div>
     </section>
   );
 }
@@ -2439,11 +1696,11 @@ export function ReceiverApp({
   const [remotePreset, setRemotePreset] = useState<RemotePreset>();
   const [remoteOpening, setRemoteOpening] = useState(false);
   const [remoteEntryIssue, setRemoteEntryIssue] = useState("");
-  const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "explorer">("receiver");
+  const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "decoder" | "explorer">("receiver");
   const setActiveView = useCallback((view: AppView) => {
     setActiveViewState(view === "receiver" && remoteSelected ? "remote" : view);
     if (view === "receiver" || view === "remote") setLastWorkspace("receiver");
-    else if (view === "explorer") setLastWorkspace(view);
+    else if (view === "explorer" || view === "decoder") setLastWorkspace(view);
   }, [remoteSelected]);
   const openAuxiliaryView = (view: AppView) => {
     setActiveView(view);
@@ -3402,8 +2659,8 @@ export function ReceiverApp({
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     let nextView: AppView | undefined;
-    const views: AppView[] = remoteSelected ? ["receiver"] : ["receiver", "explorer"];
-    const currentIndex = event.currentTarget.id === "explorer-tab" ? 1 : 0;
+    const views: AppView[] = remoteSelected ? ["receiver", "decoder"] : ["receiver", "decoder", "explorer"];
+    const currentIndex = views.indexOf(event.currentTarget.id.replace("-tab", "") as AppView);
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const direction = event.key === "ArrowRight" ? 1 : -1;
       nextView =
@@ -3411,7 +2668,7 @@ export function ReceiverApp({
     } else if (event.key === "Home") {
       nextView = "receiver";
     } else if (event.key === "End") {
-      nextView = remoteSelected ? "receiver" : "explorer";
+      nextView = views[views.length - 1];
     }
     if (!nextView) return;
     event.preventDefault();
@@ -3617,6 +2874,13 @@ export function ReceiverApp({
               <span className="icon-label"><AppIcon name="radio" />Receiver</span>
               <small>Tune, listen & record</small>
             </button>
+            <button type="button" role="tab" id="decoder-tab"
+              aria-selected={activeView === "decoder"} aria-controls="decoder-view"
+              tabIndex={lastWorkspace === "decoder" ? 0 : -1}
+              onClick={() => setActiveView("decoder")} onKeyDown={handleTabKeyDown}>
+              <span className="icon-label"><AppIcon name="overlay" />Decoder</span>
+              <small>Messages, maps & metadata</small>
+            </button>
             <button
               type="button"
               role="tab"
@@ -3636,6 +2900,8 @@ export function ReceiverApp({
           <p>
             {activeView === "receiver" || activeView === "remote"
               ? "Live radio workspace"
+              : activeView === "decoder"
+                ? "Decoded data workbench"
               : activeView === "explorer"
                 ? "Wideband spectrum survey"
                 : activeView === "settings"
@@ -3700,12 +2966,12 @@ export function ReceiverApp({
         </ReceiverStatus>}
       </div>
 
-      {activeView !== "receiver" && activeView !== "remote" && activeView !== "explorer" && (
+      {activeView !== "receiver" && activeView !== "remote" && activeView !== "explorer" && activeView !== "decoder" && (
         <div className="auxiliary-view-header">
           <button id="auxiliary-return" type="button" className="secondary" onClick={() => {
             setActiveView(lastWorkspace);
             requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
-          }}>Back to {lastWorkspace === "receiver" ? "Receiver" : "Explorer"}</button>
+          }}>Back to {lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}</button>
           <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
         </div>
       )}
@@ -4895,6 +4161,7 @@ export function ReceiverApp({
             mode={liveMode}
             volume={volume}
             active={receiverDockExpanded && receiverDockView === "decode"}
+            onOpenDecoder={() => setActiveView("decoder")}
           />
 
           <section
@@ -5494,7 +4761,26 @@ export function ReceiverApp({
         </section>
       </ReceiverWorkspace>
 
-      {remoteSelected && <RemoteReceiver active={activeView === "remote"} layout={layout} onLayoutChange={setLayout}
+      <DecoderWorkspace key={`${source}:${remoteSelected}`} controller={controller} source={source} mode={liveMode} configuredMode={mode}
+        volume={volume} frequencyHz={frequencyMhz * 1_000_000} sampleRateHz={sampleRateHz}
+        active={activeView === "decoder"} remote={remoteSelected}
+        unavailableReason={modeUnavailable}
+        configurationPreview={(candidate) => {
+          const nextRate = sourceConfigurationEditable ? compatibleSourceRate(source, candidate, sampleRateHz) ?? sampleRateHz : receiver.session?.actualSampleRateHz ?? sampleRateHz;
+          const nextFrequency = caps.requiresUsb && sourceConfigurationEditable ? candidate === "ADS-B" ? ADSB_FREQUENCY_HZ : candidate === "AIS" ? AIS_CENTER_FREQUENCY_HZ : frequencyMhz * 1_000_000 : receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000;
+          return `Channel ${((receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000) / 1e6).toLocaleString()} → ${(nextFrequency / 1e6).toLocaleString()} MHz; input ${(receiver.session?.actualSampleRateHz ?? sampleRateHz).toLocaleString()} → ${nextRate.toLocaleString()} samples/s; bandwidth ${defaultModeSettings(candidate).bandwidthHz.toLocaleString()} Hz. Applying does not connect or start reception.`;
+        }}
+        blockedReason={transitioning || receiver.cleanupRequired || (running && frequencyPending) ? "Wait for the current receiver operation or frequency edit to finish."
+          : recordingStatus || recordingStartPending.current || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish the recording or retained capture workflow before changing decoder configuration." : undefined}
+        onApply={chooseMode} onVolumeChange={updateVolume}
+        onOpenReceiver={() => setActiveView("receiver")}
+        onOpenRecording={() => {
+          setActiveView("receiver"); setReceiverDockExpanded(true); setReceiverDockView("capture"); setCaptureView("open");
+          requestAnimationFrame(() => document.getElementById("open-recording-tab")?.focus());
+        }}
+        serviceControl={<DabStationControl controller={controller} />} />
+
+      {remoteSelected && <RemoteReceiver active={activeView === "remote" || activeView === "decoder"} visible={activeView === "remote"} layout={layout} onLayoutChange={setLayout}
         onStatus={setRemoteStatus} initialPreset={remotePreset} onSource={(next) => {
           setRemoteSelected(false);
           setActiveViewState("receiver");

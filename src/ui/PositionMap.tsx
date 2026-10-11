@@ -11,13 +11,20 @@ import {
   longitudeToX,
   xForViewport,
   type MapViewport,
-  type PositionedMapPoint,
 } from "./positionMapGeometry";
+
+import {
+  targetTrackPaths,
+  TARGET_SYMBOL_PATHS,
+  type TargetMapPresentation,
+} from "./targetMapPresentation";
 
 export interface PositionMapPoint {
   latitude: number | null;
   longitude: number | null;
   label: string;
+  key?: string;
+  map?: TargetMapPresentation;
 }
 
 type PlaceRow = readonly [
@@ -73,15 +80,18 @@ function selectLabels(
       population,
       labelRank,
     }))
-    .filter(
-      ({ x }) => x >= viewport.x && x <= viewport.x + viewport.width,
-    )
+    .filter(({ x }) => x >= viewport.x && x <= viewport.x + viewport.width)
     .sort(
       (left, right) =>
         left.labelRank - right.labelRank || right.population - left.population,
     );
 
-  const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
+  const occupied: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  }[] = [];
   const selected: MapLabel[] = [];
   for (const candidate of candidates) {
     const screenX = ((candidate.x - viewport.x) / viewport.width) * 720;
@@ -133,26 +143,60 @@ function RepeatedMapLayer({
 export function PositionMap({
   points,
   label,
+  selectedKey,
+  onPointSelect,
+  showTracks = false,
 }: {
   points: readonly PositionMapPoint[];
   label: string;
+  selectedKey?: string;
+  onPointSelect?: (key: string) => void;
+  showTracks?: boolean;
 }) {
   const positioned = useMemo(
     () =>
       points.filter(
-        (point): point is PositionedMapPoint =>
-          point.latitude !== null && point.longitude !== null,
+        (
+          point,
+        ): point is PositionMapPoint & {
+          latitude: number;
+          longitude: number;
+        } =>
+          point.latitude !== null &&
+          point.longitude !== null &&
+          Number.isFinite(point.latitude) &&
+          Number.isFinite(point.longitude) &&
+          Math.abs(point.latitude) <= 90 &&
+          Math.abs(point.longitude) <= 180,
       ),
     [points],
   );
-  const viewport = useMemo(() => computeMapViewport(positioned), [positioned]);
+  const viewport = useMemo(
+    () =>
+      computeMapViewport(
+        showTracks
+          ? positioned.flatMap((point) => [
+              point,
+              ...(point.map?.track ?? [])
+                .filter(
+                  (fix) =>
+                    Number.isFinite(fix.latitude) &&
+                    Number.isFinite(fix.longitude) &&
+                    Math.abs(fix.latitude) <= 90 &&
+                    Math.abs(fix.longitude) <= 180,
+                )
+                .map((fix) => ({ ...fix, label: point.label })),
+            ])
+          : positioned,
+      ),
+    [positioned, showTracks],
+  );
   const [places, setPlaces] = useState<readonly PlaceRow[]>([]);
   useEffect(() => {
     if (!viewport.local || places.length > 0) return;
     let active = true;
     void import("../assets/natural-earth-10m-places.json").then((module) => {
-      if (active)
-        setPlaces(module.default as unknown as readonly PlaceRow[]);
+      if (active) setPlaces(module.default as unknown as readonly PlaceRow[]);
     });
     return () => {
       active = false;
@@ -246,16 +290,50 @@ export function PositionMap({
             </g>
           ))}
         </g>
+        {showTracks &&
+          positioned.map(
+            (point) =>
+              point.map && (
+                <g
+                  key={point.key ?? point.label}
+                  className={`map-track${point.key === selectedKey ? " map-track-selected" : ""}`}
+                  aria-hidden="true"
+                >
+                  {targetTrackPaths(
+                    point.map.track,
+                    viewport,
+                    point.map.maximumGapMs,
+                  ).map((path, index) => (
+                    <path key={index} d={path} />
+                  ))}
+                </g>
+              ),
+          )}
         {positioned.map((point, index) => {
           const x = xForViewport(point.longitude, viewport);
           const y = latitudeToY(point.latitude);
           return (
             <g
-              className="map-target"
+              className={`map-target${point.key === selectedKey && selectedKey ? " map-target-selected" : ""}`}
               key={`${point.label}-${point.latitude}-${point.longitude}-${index}`}
               transform={`translate(${x} ${y})`}
+              onClick={
+                point.key && onPointSelect
+                  ? () => onPointSelect(point.key!)
+                  : undefined
+              }
+              style={onPointSelect ? { cursor: "pointer" } : undefined}
             >
-              <circle r={markerRadius} />
+              {point.map && point.map.symbol !== "generic" ? (
+                <path
+                  className="map-target-symbol"
+                  data-symbol={point.map.symbol}
+                  d={TARGET_SYMBOL_PATHS[point.map.symbol]}
+                  transform={`rotate(${Number.isFinite(point.map.direction) ? point.map.direction : 0}) scale(${markerRadius / 5})`}
+                />
+              ) : (
+                <circle r={markerRadius} />
+              )}
               {positioned.length <= 20 && (
                 <text
                   x={markerRadius * 1.7}
@@ -266,7 +344,12 @@ export function PositionMap({
                   {point.label}
                 </text>
               )}
-              <title>{point.label}</title>
+              <title>
+                {point.label}
+                {point.map
+                  ? ` · ${point.map.categoryLabel}${point.map.direction == null ? " · direction unknown" : ""}`
+                  : ""}
+              </title>
             </g>
           );
         })}
@@ -276,6 +359,15 @@ export function PositionMap({
           ? `Natural Earth 1:10m · auto-framed around ${positioned.length} transmitted position${positioned.length === 1 ? "" : "s"} · minimum 50 km radius context`
           : "Public-domain Natural Earth overview · waiting for transmitted coordinates"}
       </small>
+      {positioned.some((point) => point.map) && (
+        <small>
+          {positioned.some((point) => point.map?.symbol !== "vessel") &&
+            "Symbols: rotorcraft · light/small plane · large/heavy plane · dot for other/unknown categories. "}
+          {showTracks
+            ? "Tracks: last 32 distinct received fixes per target; gaps are separated."
+            : "Tracks hidden."}
+        </small>
+      )}
     </div>
   );
 }

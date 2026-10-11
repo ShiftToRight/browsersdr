@@ -1,4 +1,5 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
+import { appendTargetFix, boundTargets, type TargetTrackPoint } from "../digital/targetTrack";
 import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
 
 export const ADSB_FREQUENCY_HZ = 1_090_000_000;
@@ -8,6 +9,9 @@ export const ADSB_BANDWIDTH_HZ = 2_000_000;
 export interface AdsbTarget {
   icao: string;
   callsign: string | null;
+  /** Reported emitter category (A0–D7); absent in older snapshots. */
+  category?: string | null;
+  track?: readonly TargetTrackPoint[];
   altitudeFt: number | null;
   latitude: number | null;
   longitude: number | null;
@@ -50,6 +54,7 @@ const TIMING_PHASES = [
 ] as const;
 /** Dependency-free Mode S / 1090ES pulse receiver. */
 export class AdsbReceiver implements DigitalSampleReceiver {
+  private inputSamples = 0;
   private sampleRateHz = 2_400_000;
   private resampleAccumulator = 0;
   private resampleWeight = 0;
@@ -73,7 +78,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
   private lastPublishMs = Number.NEGATIVE_INFINITY;
   private readonly targets = new Map<string, MutableTarget>();
 
-  constructor(private readonly onUpdate: (snapshot: AdsbSnapshot) => void, private readonly now = () => performance.now()) {}
+  constructor(private readonly onUpdate: (snapshot: AdsbSnapshot) => void, private readonly now = () => this.inputSamples / this.sampleRateHz * 1000) {}
 
   setSampleRate(sampleRateHz: number): void {
     validateAdsbSampleRate(sampleRateHz);
@@ -90,6 +95,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
   }
 
   reset(): void {
+    this.inputSamples = 0;
     this.resampleAccumulator = 0; this.resampleWeight = 0; this.samples = []; this.scanAt = 0;
     this.alternateSamples = [];
     this.chipBaseIndex = 0; this.nativeSamples = []; this.nativeBaseIndex = 0;
@@ -100,6 +106,8 @@ export class AdsbReceiver implements DigitalSampleReceiver {
   }
 
   receiveSamples(block: SampleBlock): void {
+    // Block-end input time remains deterministic during replay and browser stalls.
+    this.inputSamples += block.I.length;
     // Integrate magnitude into exact 0.5 us chips. This is stable at the RTL's
     // non-integer 2.4-to-2.0 MS/s ratio and acts as a pulse-matched box filter.
     const step = this.sampleRateHz / ADSB_MIN_SAMPLE_RATE_HZ;
@@ -291,14 +299,16 @@ export class AdsbReceiver implements DigitalSampleReceiver {
 
   private decodeExtendedSquitter(bytes: Uint8Array): void {
     const icao = [...bytes.subarray(1, 4)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
-    const target = this.targets.get(icao) ?? {
-      icao, callsign: null, altitudeFt: null, latitude: null, longitude: null,
+    const previous = this.targets.get(icao);
+    const target = (previous && previous.lastSeenMs >= this.now() - 120_000 ? previous : undefined) ?? {
+      icao, callsign: null, category: null, track: [], altitudeFt: null, latitude: null, longitude: null,
       groundSpeedKt: null, trackDegrees: null, verticalRateFpm: null, emergency: null,
       messages: 0, lastSeenMs: 0,
     };
     target.messages += 1; target.lastSeenMs = this.now();
     const typeCode = bytes[4]! >> 3;
     if (typeCode >= 1 && typeCode <= 4) {
+      target.category = `${"DCBA"[typeCode - 1]}${bytes[4]! & 7}`;
       let callsign = "";
       for (let bit = 40; bit < 88; bit += 6) callsign += CALLSIGN_CHARS[readBits(bytes, bit, 6)] ?? " ";
       target.callsign = callsign.replace(/[_#]/g, " ").trim() || null;
@@ -309,7 +319,10 @@ export class AdsbReceiver implements DigitalSampleReceiver {
       const frame = { lat: readBits(bytes, 54, 17), lon: readBits(bytes, 71, 17), time: target.lastSeenMs };
       if (odd) target.odd = frame; else target.even = frame;
       const position = decodeGlobalCpr(target.even, target.odd);
-      if (position) { target.latitude = position.latitude; target.longitude = position.longitude; }
+      if (position) {
+        target.latitude = position.latitude; target.longitude = position.longitude;
+        target.track = appendTargetFix(target.track ?? [], position.latitude, position.longitude, target.lastSeenMs);
+      }
     } else if (typeCode === 19) {
       const subtype = readBits(bytes, 37, 3);
       if (subtype === 1 || subtype === 2) {
@@ -324,6 +337,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
       target.emergency = ["none", "general", "lifeguard", "minimum fuel", "no communications", "unlawful interference", "downed aircraft", "reserved"][readBits(bytes, 40, 3)] ?? null;
     }
     this.targets.set(icao, target);
+    boundTargets(this.targets);
   }
 
   private publish(): void {

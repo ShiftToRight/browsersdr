@@ -2,9 +2,16 @@ import type { Page } from "@playwright/test";
 
 export async function openApplicationView(
   page: Page,
-  view: "Receiver" | "Explorer" | "Settings" | "Diagnostics" | "Help" | "About",
+  view:
+    | "Receiver"
+    | "Decoder"
+    | "Explorer"
+    | "Settings"
+    | "Diagnostics"
+    | "Help"
+    | "About",
 ) {
-  if (view === "Receiver" || view === "Explorer") {
+  if (view === "Receiver" || view === "Decoder" || view === "Explorer") {
     await page.getByRole("tab", { name: view, exact: true }).click();
     return;
   }
