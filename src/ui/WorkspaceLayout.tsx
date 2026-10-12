@@ -117,8 +117,11 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onAbou
     <div className="workspace-controls" aria-label="Layout and application options">
       <button ref={compactButton} type="button" className="secondary"
         aria-pressed={layout.compact}
+        title="Compact spacing keeps more controls visible on short screens"
+        aria-describedby={!layout.compact ? "compact-layout-hint" : undefined}
         onClick={() => onChange((old) => ({ ...old, compact: !old.compact }))}
       >Compact</button>
+      {!layout.compact && <span id="compact-layout-hint" className="compact-layout-hint">Short screen? Try Compact.</span>}
       <HeaderMenu label="Settings" icon="settings" active={activeView === "settings"}>
         <button type="button" className="secondary" aria-controls="settings-view" onClick={onSettings}>
           <AppIcon name="plug" />Integration settings

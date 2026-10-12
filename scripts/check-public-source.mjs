@@ -8,7 +8,7 @@ const paths = execFileSync(
 ).split("\0").filter(Boolean);
 const rootFiles = new Set([
   ".dockerignore", ".gitignore", ".nvmrc", ".prettierignore", ".prettierrc.json",
-  "LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "eslint.config.js",
+  "LICENSE", "NOTICE", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "eslint.config.js",
   "index.html", "package-lock.json", "package.json", "playwright.config.ts",
   "tsconfig.app.json", "tsconfig.e2e.json", "tsconfig.json", "tsconfig.node.json",
   "vite.config.ts", "vitest.config.ts",

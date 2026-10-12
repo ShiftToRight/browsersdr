@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import "./ui/DecoderWorkspace.css";
 import { exposeBrowserTestUnmount } from "./testing/browserTestBridge";
 import { defaultDiagnosticRecorder, installGlobalDiagnosticHandlers } from "./diagnostics/diagnosticRecorder";
 import { ApplicationErrorBoundary } from "./ui/ApplicationErrorBoundary";

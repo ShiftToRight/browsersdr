@@ -29,6 +29,7 @@ export class RecordingExportCoordinator {
     const retained = this.retained;
     if (!retained) return { status: this.lastStatus, retainedBytes: 0, downloadRequests: 0 };
     return {
+      ...(retained.recording.libraryId && retained.status !== "storage-failed" && retained.status !== "preparing" ? { libraryId: retained.recording.libraryId } : {}),
       status: retained.status, format: retained.format, basename: retained.prepared?.basename,
       sampleCount: retained.recording.metadata.sampleCount,
       sampleRateHz: retained.recording.metadata.sampleRateHz,

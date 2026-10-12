@@ -1,3 +1,4 @@
+import { Rs41DigitalReceiver } from "../rs41/rs41DigitalReceiver";
 import { packetRecordingFixture } from "../testing/packetRecordingFixture";
 import { createDabEnsembleFixture } from "../testing/dabEnsembleFixture";
 import { readFile } from "node:fs/promises";
@@ -534,4 +535,59 @@ describe("packet decoder product replay", () => {
     expect(state && ("stations" in state ? state.stations : state.sondes)).toHaveLength(0);
     await backend.stop();
   });
+});
+
+it("plays a file-backed range, pauses the sample clock, and preserves gap reset semantics", async () => {
+  const fixture = createDeterministicRecordingFixture(24000);
+  fixture.metadata.knownGaps = [{ afterSample: 12000, missingSamples: 2400, reason: "fixture gap" }];
+  const f = setupRecording({ ...fixture, data: new Uint8Array(), dataBlob: new Blob([fixture.data as Uint8Array<ArrayBuffer>]), replayRange: { startSample: 8000, endSample: 20000 } });
+  await f.backend.start(f.options);
+  f.backend.setReplayPaused(true);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.backend.getReplayPosition()).toBe(8000);
+  f.backend.setReplayPaused(false);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.backend.getReplayPosition()).toBe(20000);
+  expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+  expect(f.analysis.markDiscontinuity).toHaveBeenCalledWith(2400);
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+  await f.backend.stop();
+});
+
+it("does not deliver a late file read after stop", async () => {
+  const fixture = createDeterministicRecordingFixture(24000);
+  let resolve!: (blob: Blob) => void;
+  const dataBlob = new Promise<Blob>(done => { resolve = done; });
+  const f = setupRecording({ ...fixture, data: new Uint8Array(), dataBlob });
+  await f.backend.start(f.options);
+  await vi.advanceTimersByTimeAsync(1);
+  await f.backend.stop();
+  resolve(new Blob([fixture.data as Uint8Array<ArrayBuffer>]));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.samples).toHaveLength(0);
+  expect(f.events.sourceEnded).not.toHaveBeenCalled();
+  expect(f.events.runtimeError).not.toHaveBeenCalled();
+});
+
+
+it("waits for a saturated packet decoder without advancing or losing file samples", async () => {
+  const fixture = packetRecordingFixture("RS41", 1_024_000, 37_000);
+  const f = setupRecording({ ...fixture, data: new Uint8Array(), dataBlob: new Blob([fixture.data as Uint8Array<ArrayBuffer>]) });
+  let full = true;
+  const queue = vi.spyOn(Rs41DigitalReceiver.prototype, "diagnostics", "get").mockImplementation(() => ({
+    generation: 1, queuedBlocks: full ? 4 : 0, queueCapacityBlocks: 4,
+    peakQueuedBlocks: 4, droppedInputBlocks: 0, droppedInputSamples: 0, staleResults: 0,
+  }));
+  try {
+    await f.backend.start(f.options);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(f.backend.getReplayPosition()).toBe(0);
+    expect(f.samples).toHaveLength(0);
+    full = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(f.backend.getReplayPosition()).toBe(fixture.metadata.sampleCount);
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    expect(vi.mocked(f.events.rs41Changed!).mock.calls.at(-1)?.[0].sondes[0]?.sondeId).toBe("K1930293");
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+  } finally { queue.mockRestore(); await f.backend.stop(); }
 });

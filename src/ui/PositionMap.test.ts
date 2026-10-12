@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   computeMapViewport,
   latitudeToY,
+  mapViewportForSurface,
+  mapViewportInReference,
+  panMapViewport,
   xForViewport,
 } from "./positionMapGeometry";
 
@@ -65,5 +68,55 @@ describe("computeMapViewport", () => {
       latitudeToY(latitude) - latitudeToY(latitude + latitudeDegreesForTenKm);
 
     expect(horizontalDistance).toBeCloseTo(verticalDistance, 8);
+  });
+});
+
+describe("panning", () => {
+  it("moves the view while preserving target/bitmap alignment across the longitude seam", () => {
+    const original = computeMapViewport([
+      { latitude: 52, longitude: 179.9, label: "Aircraft" },
+    ]);
+    const moved = panMapViewport(original, 1, 0.25);
+    expect(moved.centerLongitude).toBeLessThan(-179);
+    const reference = mapViewportInReference(moved, original);
+    expect(reference.x - original.x).toBeCloseTo(1);
+    expect(moved.y - original.y).toBeCloseTo(0.25);
+    const before = xForViewport(179.9, original) - original.x;
+    const after = xForViewport(179.9, moved) - moved.x;
+    expect(after - before).toBeCloseTo(-1);
+    expect(moved.width).toBe(original.width);
+    expect(moved.height).toBe(original.height);
+  });
+  it("stops vertical panning at the poles", () => {
+    const original = computeMapViewport([
+      { latitude: 52, longitude: 13, label: "Aircraft" },
+    ]);
+    expect(panMapViewport(original, 0, -1000).y).toBe(0);
+    expect(panMapViewport(original, 0, 1000).y + original.height).toBe(360);
+  });
+});
+
+describe("mapViewportForSurface", () => {
+  it("fills wide and narrow surfaces by adding context without clipping the fitted bounds", () => {
+    const original = computeMapViewport([
+      { latitude: 52.52, longitude: 13.405, label: "Berlin" },
+      { latitude: 48.137, longitude: 11.575, label: "Munich" },
+    ]);
+    for (const [width, height] of [
+      [1646, 430],
+      [320, 360],
+    ]) {
+      const fitted = mapViewportForSurface(original, width!, height!);
+      expect(fitted.width / fitted.height).toBeCloseTo(width! / height!);
+      expect(fitted.x).toBeLessThanOrEqual(original.x);
+      expect(fitted.y).toBeLessThanOrEqual(original.y);
+      expect(fitted.x + fitted.width).toBeGreaterThanOrEqual(
+        original.x + original.width,
+      );
+      expect(fitted.y + fitted.height).toBeGreaterThanOrEqual(
+        original.y + original.height,
+      );
+      expect(fitted.longitudeScale).toBe(original.longitudeScale);
+    }
   });
 });

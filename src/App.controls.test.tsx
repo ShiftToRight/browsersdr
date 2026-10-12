@@ -235,7 +235,8 @@ async function click(label: string) {
 it("exposes independent Pro stages, validates gain drafts before commands and shows accepted values", async () => {
   await change(control("Source"), "hackrf");
   expect(control("RX VGA gain").value).toBe("12");
-  expect(document.querySelector('option[value="auto"]')).toBeNull();
+  expect(document.querySelector('#source-stage-body')).not.toBeNull();
+  expect(document.querySelector('#source-stage-body option[value="auto"]')).toBeNull();
   await click("Connect");
   expect(options[0]?.source).toBe("hackrf");
   expect(options[0]).not.toHaveProperty("gainDb");
@@ -954,4 +955,37 @@ it("disables center signal with a pending channel frequency edit", async () => {
   const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent === "Fine-tune signal")!;
   expect(button.disabled).toBe(false);
   await change(control("Channel frequency"), "100.13"); expect(button.disabled).toBe(true);
+});
+
+it("keeps replay paused through an asynchronous tuning transition", async () => {
+  await change(control("Source"), "replay");
+  await click("Open example recording");
+  metadata = { ...metadata, source: "replay", hackrf: undefined };
+  const pause = vi.spyOn(controller, "setReplayPaused");
+  await click("Start replay");
+  await click("Pause replay");
+  expect(pause).toHaveBeenLastCalledWith(true);
+  let finishTune!: () => void;
+  tuningWait = new Promise<void>((resolve) => {
+    finishTune = resolve;
+  });
+  let operation!: Promise<void>;
+  await act(async () => {
+    operation = controller.tune(metadata.selectedChannelFrequencyHz + 1000);
+  });
+  try {
+    expect(controller.getSnapshot().lifecycle).toBe("tuning");
+    expect(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.textContent === "Resume replay",
+      ),
+    ).toBe(true);
+  } finally {
+    await act(async () => {
+      finishTune();
+      await operation;
+    });
+  }
+  await click("Resume replay");
+  expect(pause).toHaveBeenLastCalledWith(false);
 });

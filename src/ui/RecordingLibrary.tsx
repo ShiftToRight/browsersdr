@@ -1,0 +1,134 @@
+import { useEffect, useState } from "react";
+import {
+  deleteRecording,
+  listRecordings,
+  openRecording,
+  type LibraryEntry,
+} from "../radio/recordingLibrary";
+import type { IqRecording } from "../radio/iqRecording";
+
+export function RecordingLibrary({
+  blocked,
+  revision,
+  onOpen,
+}: {
+  blocked: boolean;
+  revision: string;
+  onOpen: (recording: IqRecording, replay: boolean) => Promise<void>;
+}) {
+  const [entries, setEntries] = useState<LibraryEntry[]>([]);
+  const [message, setMessage] = useState("");
+  const [working, setWorking] = useState(false);
+  const [quota, setQuota] = useState("");
+  const refresh = async () => {
+    try {
+      setEntries(await listRecordings());
+      const estimate = await navigator.storage?.estimate?.();
+      if (estimate)
+        setQuota(
+          (
+            Math.max(0, (estimate.quota ?? 0) - (estimate.usage ?? 0)) /
+            1024 ** 3
+          ).toFixed(2) + " GiB estimated free for this origin",
+        );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+  useEffect(() => {
+    void refresh();
+  }, [revision]);
+  const run = async (action: () => Promise<void>) => {
+    setWorking(true);
+    setMessage("");
+    try {
+      await action();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorking(false);
+      await refresh();
+    }
+  };
+  return (
+    <details className="recording-library">
+      <summary>Local recording library ({entries.length})</summary>
+      <p>
+        Captures in browser storage survive reload. Interrupted captures offer
+        only committed samples. Browser eviction or clearing site data can still
+        remove them; download a backup. Memory fallback captures remain
+        tab-local.
+      </p>
+      <p>{quota}</p>
+      <button type="button" disabled={working} onClick={() => void refresh()}>
+        Refresh library
+      </button>
+      <button
+        type="button"
+        disabled={working}
+        onClick={() =>
+          void run(async () => {
+            const granted = await navigator.storage?.persist?.();
+            setMessage(
+              granted
+                ? "Persistent storage granted. Keep external backups."
+                : "Persistent storage was not granted; browser eviction remains possible.",
+            );
+          })
+        }
+      >
+        Keep browser storage
+      </button>
+      {entries.map((entry) => (
+        <div key={entry.id} className="recording-library-entry">
+          <p>
+            {entry.metadata?.captureStartedAt ?? entry.id} · {entry.state} ·{" "}
+            {(entry.bytes / 1024 ** 2).toFixed(2)} MiB
+            {entry.metadata && (
+              <>
+                {" "}
+                · {(entry.metadata.centerFrequencyHz / 1e6).toFixed(3)} MHz ·{" "}
+                {entry.metadata.durationSeconds.toFixed(2)} s
+              </>
+            )}
+            {entry.error && <> · {entry.error}</>}
+          </p>
+          {(["ready", "interrupted"] as string[]).includes(entry.state) && (
+            <>
+              <button
+                type="button"
+                disabled={blocked || working}
+                onClick={() =>
+                  void run(async () =>
+                    onOpen(await openRecording(entry.id), true),
+                  )
+                }
+              >
+                Replay retained recording
+              </button>
+              <button
+                type="button"
+                disabled={blocked || working}
+                onClick={() =>
+                  void run(async () =>
+                    onOpen(await openRecording(entry.id), false),
+                  )
+                }
+              >
+                Prepare retained download
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            disabled={blocked || working || entry.state === "in-use"}
+            onClick={() => void run(async () => deleteRecording(entry.id))}
+          >
+            Delete retained recording
+          </button>
+        </div>
+      ))}
+      <p role="status">{message}</p>
+    </details>
+  );
+}

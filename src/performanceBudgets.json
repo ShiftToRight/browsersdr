@@ -1,0 +1,16 @@
+{
+  "initialJsGzipBytes": 350000,
+  "overviewMapGzipBytes": 40000,
+  "optionalMapRawBytes": 16000000,
+  "mapRasterBytes": 8388608,
+  "mapPresentationBytes": 4194304,
+  "packetIdlePoolBytes": 8388608,
+  "surveyWritesInFlight": 1,
+  "surveyPendingSnapshots": 1,
+  "capturePendingBytes": 67108864,
+  "replayReadWindowBytes": 1048576,
+  "coldStartTargetMs": 8000,
+  "overviewReadyTargetMs": 3000,
+  "interactionTargetMs": 200,
+  "longTaskThresholdMs": 50
+}

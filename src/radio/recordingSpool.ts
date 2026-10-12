@@ -205,7 +205,7 @@ export function recordingStorageUsable(): boolean {
 
 /** Test creation and writing before acquisition, falling back to the bounded memory recorder. */
 export async function prepareRecordingStorage(): Promise<"opfs" | "memory"> {
-  if (!recordingStorageUsable()) return "memory";
+  if (!recordingStorageUsable() || !navigator.locks) return "memory";
   let root: FileSystemDirectoryHandle | undefined;
   let stream: FileSystemWritableFileStream | undefined;
   const filename = `probe-${crypto.randomUUID()}`;

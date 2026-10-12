@@ -20,6 +20,7 @@ function rotateRight(value: number, bits: number): number {
 /** Incremental SHA-256 for bounded browser part hashing without a whole-file copy. */
 export class IncrementalSha256 {
   private readonly state = new Uint32Array(INITIAL);
+  private readonly words = new Uint32Array(64);
   private readonly block = new Uint8Array(64);
   private blockLength = 0;
   private byteLength = 0;
@@ -58,7 +59,7 @@ export class IncrementalSha256 {
   }
 
   private compress(block: Uint8Array): void {
-    const words = new Uint32Array(64);
+    const words = this.words;
     for (let index = 0; index < 16; index += 1) {
       const offset = index * 4;
       words[index] = (((block[offset] ?? 0) << 24) | ((block[offset + 1] ?? 0) << 16) |

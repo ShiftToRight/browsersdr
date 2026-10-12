@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useVisibleReceiver } from "./useVisibleReceiver";
 import type {
   ReceiverController,
   ReceiverSnapshot,
@@ -762,9 +762,6 @@ export function ReceiverDecodePanel(props: {
   active: boolean;
   onOpenDecoder?: () => void;
 }) {
-  const receiver = useSyncExternalStore(
-    props.controller.subscribe,
-    props.controller.getSnapshot,
-  );
-  return <DecodedResults {...props} receiver={receiver} />;
+  const { receiver, presenting } = useVisibleReceiver(props.controller, props.active);
+  return presenting ? <DecodedResults {...props} receiver={receiver} /> : null;
 }

@@ -26,6 +26,7 @@ export interface PreparedRecordingExport {
   files: [PreparedRecordingFile, PreparedRecordingFile];
 }
 export interface RecordingRetentionSnapshot {
+  libraryId?: string;
   status: RecordingRetentionStatus;
   format?: RecordingExportFormat;
   basename?: string;

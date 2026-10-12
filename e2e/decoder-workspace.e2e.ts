@@ -4,16 +4,20 @@ import { targetRecordingFixture } from "../src/testing/targetRecordingFixture";
 import { packetRecordingFixture } from "../src/testing/packetRecordingFixture";
 import { openApplicationView } from "./application-navigation";
 
-async function openFixture(page: Page, corrupt = false) {
-  const fixture = packetRecordingFixture("APRS", 1_024_000, 37_000, corrupt);
+async function openFixture(
+  page: Page,
+  corrupt = false,
+  mode: "APRS" | "RS41" = "APRS",
+) {
+  const fixture = packetRecordingFixture(mode, 1_024_000, 37_000, corrupt);
   const inputs = page.locator(".file-picker-input");
   await inputs.nth(0).setInputFiles({
-    name: "APRS.cu8",
+    name: `${mode}.cu8`,
     mimeType: "application/octet-stream",
     buffer: Buffer.from(fixture.data),
   });
   await inputs.nth(1).setInputFiles({
-    name: "APRS.json",
+    name: `${mode}.json`,
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(fixture.metadata)),
   });
@@ -53,10 +57,11 @@ test("Decoder reviews actual worker replay, exports a frozen selection and clear
   await expect(workspace.locator(".decoder-state")).toHaveText(
     "Display frozen",
   );
-  await workspace.getByLabel("Export scope").selectOption("selected");
+  await workspace.locator(".decoder-record").first().click();
+  await workspace.locator(".decoder-export-menu > summary").click();
   const download = page.waitForEvent("download");
   await workspace
-    .getByRole("button", { name: "Export JSON", exact: true })
+    .getByRole("button", { name: "Export selected record", exact: true })
     .click();
   const path = await (await download).path();
   const exported = JSON.parse(await readFile(path!, "utf8"));
@@ -76,7 +81,7 @@ test("Decoder reviews actual worker replay, exports a frozen selection and clear
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBe(width);
     await expect(
-      workspace.getByRole("button", { name: "Export JSON", exact: true }),
+      workspace.locator(".decoder-export-menu > summary"),
     ).toBeVisible();
   }
   await workspace
@@ -182,9 +187,47 @@ for (const mode of ["ADS-B", "AIS"] as const) {
       mode === "ADS-B" ? "helicopter" : "vessel",
     );
     await expect(workspace.locator(".map-track path")).toHaveCount(1);
+    await expect(workspace.locator("canvas.map-basemap")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+    const symbolBounds = await workspace
+      .locator(".map-target-symbol")
+      .boundingBox();
+    const hitBounds = await workspace.locator(".map-target-hit").boundingBox();
+    expect(Math.max(symbolBounds!.width, symbolBounds!.height)).toBeLessThan(
+      24,
+    );
+    expect(hitBounds!.width).toBeGreaterThanOrEqual(43);
+    expect(hitBounds!.height).toBeGreaterThanOrEqual(43);
+    await expect(workspace.locator(".decoder-inspector")).toHaveCount(0);
+    const footer = await workspace.locator(".decoder-footer").boundingBox();
+    expect(footer!.y + footer!.height).toBeLessThanOrEqual(1000);
+    await workspace
+      .getByRole("button", { name: "Hide results", exact: true })
+      .click();
+    await expect(workspace.locator(".decoder-table-wrap")).toBeHidden();
+    await expect(workspace.locator(".target-plot .map-overlay")).toBeVisible();
+    await workspace
+      .getByRole("button", { name: "Show results", exact: true })
+      .click();
+    // EOF advances the generation and clears selection. Review after cleanup.
     await expect(workspace.locator(".decoder-state")).toHaveText(
       "Retained / idle",
     );
+    const marker = workspace.locator(".map-target").first();
+    await marker.focus();
+    await marker.press("Enter");
+    await expect(marker).toHaveCSS("outline-style", "none");
+    await expect(workspace.locator(".decoder-inspector")).toBeVisible();
+    await workspace
+      .getByRole("button", { name: "Close record details" })
+      .click();
+    await expect(marker).toBeFocused();
+    await expect(workspace.locator(".decoder-inspector")).toHaveCount(0);
+    await page.screenshot({
+      path: test.info().outputPath(`${mode}-focused-overview.png`),
+    });
     await workspace
       .getByRole("button", { name: "Freeze display", exact: true })
       .click();
@@ -192,17 +235,24 @@ for (const mode of ["ADS-B", "AIS"] as const) {
       "Display frozen",
     );
     const track = await workspace.locator(".map-track path").getAttribute("d");
+    const framing = await workspace
+      .locator(".target-plot .map-overlay")
+      .getAttribute("viewBox");
     await workspace.getByRole("checkbox", { name: "Show tracks" }).uncheck();
     await expect(workspace.locator(".map-track path")).toHaveCount(0);
     await expect(workspace.locator(".map-target-symbol")).toHaveCount(1);
+    await expect(
+      workspace.locator(".target-plot .map-overlay"),
+    ).toHaveAttribute("viewBox", framing!);
     await workspace.getByRole("checkbox", { name: "Show tracks" }).check();
     await expect(workspace.locator(".map-track path")).toHaveAttribute(
       "d",
       track!,
     );
+    await workspace.locator(".decoder-export-menu > summary").click();
     const download = page.waitForEvent("download");
     await workspace
-      .getByRole("button", { name: "Export JSON", exact: true })
+      .getByRole("button", { name: "Export retained results", exact: true })
       .click();
     const exported = JSON.parse(
       await readFile((await (await download).path())!, "utf8"),
@@ -221,3 +271,59 @@ for (const mode of ["ADS-B", "AIS"] as const) {
     }
   });
 }
+
+test("RS41 uses the geographic canvas and retains labelled telemetry in narrow selected detail", async ({
+  page,
+}) => {
+  await page.goto("/?browser-test=1");
+  await page
+    .getByRole("combobox", { name: "Signal source" })
+    .selectOption("replay");
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  await openFixture(page, false, "RS41");
+  await openApplicationView(page, "Decoder");
+  const workspace = page.locator("#decoder-view");
+  await expect(workspace.locator(".target-plot .map-overlay")).toBeVisible();
+  await expect(workspace.locator(".decoder-target-table")).toContainText(
+    "K1930293",
+  );
+  await expect(workspace.locator(".decoder-inspector")).toHaveCount(0);
+  await workspace.locator(".decoder-record").first().click();
+  await expect(workspace.locator(".decoder-inspector")).toContainText(
+    "Ellipsoidal altitude",
+  );
+  await expect(workspace.locator(".decoder-inspector")).toContainText(
+    "GPS time",
+  );
+  await expect(workspace.locator(".decoder-inspector")).toContainText(
+    "not UTC",
+  );
+  await page.screenshot({
+    path: test.info().outputPath("RS41-focused-detail.png"),
+  });
+  for (const width of [1024, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 950 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
+    await expect(
+      workspace.getByRole("button", { name: "Close record details" }),
+    ).toBeVisible();
+    await expect(
+      workspace.getByRole("button", { name: "Hide results" }),
+    ).toBeVisible();
+  }
+  await page.screenshot({
+    path: test.info().outputPath("RS41-focused-mobile.png"),
+  });
+  await workspace.getByRole("button", { name: "Close record details" }).click();
+  await workspace.getByRole("button", { name: "Frames", exact: true }).click();
+  await expect(workspace.locator(".target-plot")).toHaveCount(0);
+  await expect(workspace.locator(".decoder-record-list")).toContainText(
+    "K1930293",
+  );
+  await workspace
+    .getByRole("button", { name: "Map & results", exact: true })
+    .click();
+  await expect(workspace.locator(".target-plot .map-overlay")).toBeVisible();
+});

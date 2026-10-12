@@ -86,7 +86,12 @@ export class BoundedDigitalWorkerAdapter<
 > {
   private generation = -1;
   private sequence = 0;
-  private readonly inFlight = new Set<string>();
+  private readonly inFlight = new Map<string, number>();
+  private readonly returned: { I: Float32Array<ArrayBuffer>; Q: Float32Array<ArrayBuffer> }[] = [];
+  private returnedBytes = 0;
+  private allocatedInputBytes = 0;
+  private reusedInputBlocks = 0;
+  private poolsBorrowedInput = false;
   private peakQueuedBlocks = 0;
   private droppedInputBlocks = 0;
   private droppedInputSamples = 0;
@@ -145,6 +150,42 @@ export class BoundedDigitalWorkerAdapter<
     } satisfies DigitalWorkerInput<TConfiguration>);
   }
 
+  /** Copy borrowed fan-out samples only after checking capacity. Never detach the source. */
+  submitBorrowed(block: DigitalInputBlock): boolean {
+    this.poolsBorrowedInput = true;
+    this.requireOpen();
+    validateDigitalInputBlock(block);
+    if (!this.accepts(block)) return false;
+    const index = this.returned.findIndex(pair => pair.I.length === block.I.length);
+    const pair = index < 0
+      ? { I: new Float32Array(block.I.length), Q: new Float32Array(block.Q.length) }
+      : this.returned.splice(index, 1)[0]!;
+    if (index < 0) this.allocatedInputBytes += pair.I.byteLength + pair.Q.byteLength;
+    else { this.returnedBytes -= pair.I.buffer.byteLength + pair.Q.buffer.byteLength; this.reusedInputBlocks++; }
+    pair.I.set(block.I); pair.Q.set(block.Q);
+    return this.submitOwned({ ...block, ...pair });
+  }
+
+  get bufferDiagnostics() {
+    return { allocatedInputBytes: this.allocatedInputBytes, reusedInputBlocks: this.reusedInputBlocks,
+      pooledBytes: this.returnedBytes, pooledBlocks: this.returned.length };
+  }
+
+  private accepts(block: DigitalInputBlock): boolean {
+    if (block.generation !== this.generation) return false;
+    if (this.inFlight.size < this.queueCapacityBlocks) return true;
+    this.droppedInputBlocks++;
+    this.droppedInputSamples += block.I.length;
+    const pending = this.pendingDiscontinuity;
+    this.pendingDiscontinuity = {
+      reason: "queue-overflow",
+      missingInputSamples: (pending?.missingInputSamples ?? 0) + block.I.length,
+      droppedInputBlocks: (pending?.droppedInputBlocks ?? 0) + 1,
+    };
+    this.callbacks.dropped?.(this.pendingDiscontinuity);
+    return false;
+  }
+
   /**
    * On true, ownership of both buffers moved to the worker until `consumed`.
    * On false, ownership stays with the caller and the next accepted block carries a gap.
@@ -152,20 +193,7 @@ export class BoundedDigitalWorkerAdapter<
   submitOwned(block: DigitalInputBlock): boolean {
     this.requireOpen();
     validateDigitalInputBlock(block);
-    if (block.generation !== this.generation) return false;
-    if (this.inFlight.size >= this.queueCapacityBlocks) {
-      this.droppedInputBlocks++;
-      this.droppedInputSamples += block.I.length;
-      const pending = this.pendingDiscontinuity;
-      this.pendingDiscontinuity = {
-        reason: "queue-overflow",
-        missingInputSamples:
-          (pending?.missingInputSamples ?? 0) + block.I.length,
-        droppedInputBlocks: (pending?.droppedInputBlocks ?? 0) + 1,
-      };
-      this.callbacks.dropped?.(this.pendingDiscontinuity);
-      return false;
-    }
+    if (!this.accepts(block)) return false;
     if (
       !(block.I.buffer instanceof ArrayBuffer) ||
       !(block.Q.buffer instanceof ArrayBuffer)
@@ -174,7 +202,7 @@ export class BoundedDigitalWorkerAdapter<
         "Digital worker input requires transferable ArrayBuffer-backed I/Q.",
       );
     const sequence = this.sequence++;
-    this.inFlight.add(key(block.generation, sequence));
+    this.inFlight.set(key(block.generation, sequence), block.I.length);
     this.peakQueuedBlocks = Math.max(this.peakQueuedBlocks, this.inFlight.size);
     const discontinuityBefore = mergeDiscontinuities(
       this.pendingDiscontinuity,
@@ -242,13 +270,37 @@ export class BoundedDigitalWorkerAdapter<
     } satisfies DigitalWorkerInput<TConfiguration>);
     this.worker.terminate();
     this.inFlight.clear();
+    this.returned.length = 0;
+    this.returnedBytes = 0;
   }
 
   private handle(message: DigitalWorkerOutput<TSnapshot, TEvent>): void {
     if (this.closed) return;
     if (message.type === "consumed") {
-      this.inFlight.delete(key(message.generation, message.sequence));
-      this.callbacks.consumed?.(message.I, message.Q);
+      const inputKey = key(message.generation, message.sequence);
+      const length = this.inFlight.get(inputKey);
+      if (length === undefined) return; // Duplicate/unsubmitted returns never enter the pool.
+      this.inFlight.delete(inputKey);
+      if (message.I.length !== length || message.Q.length !== length ||
+          !(message.I.buffer instanceof ArrayBuffer) || !(message.Q.buffer instanceof ArrayBuffer) ||
+          message.I.buffer === message.Q.buffer) {
+        this.callbacks.error?.(new Error("Digital worker returned invalid input buffers."));
+        return;
+      }
+      if (this.callbacks.consumed) this.callbacks.consumed(message.I, message.Q);
+      else if (this.poolsBorrowedInput) {
+        const bytes = message.I.buffer.byteLength + message.Q.buffer.byteLength;
+        // The idle pool has both count and byte ceilings, including oversized backing buffers.
+        if (bytes <= 8 * 1024 * 1024) {
+          // New source/block sizes must replace cold entries instead of allocating forever.
+          while (this.returned.length && (this.returned.length >= this.queueCapacityBlocks || this.returnedBytes + bytes > 8 * 1024 * 1024)) {
+            const oldest = this.returned.shift()!;
+            this.returnedBytes -= oldest.I.buffer.byteLength + oldest.Q.buffer.byteLength;
+          }
+          this.returned.push({ I: message.I, Q: message.Q });
+          this.returnedBytes += bytes;
+        }
+      }
       return;
     }
     if (

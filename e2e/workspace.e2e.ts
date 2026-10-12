@@ -30,8 +30,8 @@ test("desktop receiver fills the window with all primary panels in view", async 
     for (const selector of [
       ".app-topbar",
       ".acquire-stage",
-      ".graphics-panel",
       ".demodulate-stage",
+      ".graphics-panel",
       ".receiver-status-menu",
       ".receiver-dock",
     ]) {
@@ -132,7 +132,7 @@ test("laptop windows fit primary panels and retain reachable internal tools", as
   await expect(record).toBeInViewport();
 });
 
-test("mobile follows the numbered acquire, analyze, demodulate and output order", async ({
+test("mobile keeps source and tuning controls before the spectrum and output", async ({
   page,
 }) => {
   await page.goto("/");
@@ -140,8 +140,8 @@ test("mobile follows the numbered acquire, analyze, demodulate and output order"
     await page.setViewportSize({ width, height: 900 });
     const panels = [
       ".acquire-stage",
-      ".graphics-panel",
       ".demodulate-stage",
+      ".graphics-panel",
       ".receiver-dock",
     ];
     const tops: number[] = [];

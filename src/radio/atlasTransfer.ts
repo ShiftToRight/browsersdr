@@ -4,9 +4,8 @@ import type { AtlasConnection } from "./atlasConnection";
 import { inspectBrowserSigmfLayoutForAtlas, type AtlasSigmfLayoutCompatibility } from "./atlasSigmfCompatibility";
 import type { PreparedRecordingExport, PreparedRecordingFile } from "./recordingExportFormat";
 import type { SigmfMetadata } from "./sigmf";
-import { IncrementalSha256 } from "./sha256";
+import { hashChunks } from "./hashing";
 
-const HASH_CHUNK_BYTES = 1024 * 1024;
 const CLIENT_MAX_INFLIGHT_PARTS = 2;
 
 interface TransferSource {
@@ -103,21 +102,9 @@ function positiveSafeDecimal(value: string, field: string): number {
   return parsed;
 }
 
-async function hashSource(item: TransferSource, partSize: number, signal: AbortSignal): Promise<HashedSource> {
-  const whole = new IncrementalSha256();
-  const partHashes: string[] = [];
-  for (let partStart = 0; partStart < item.size; partStart += partSize) {
-    const part = new IncrementalSha256();
-    const partEnd = Math.min(item.size, partStart + partSize);
-    for (let offset = partStart; offset < partEnd; offset += HASH_CHUNK_BYTES) {
-      signal.throwIfAborted();
-      const view = await item.view(offset, Math.min(partEnd, offset + HASH_CHUNK_BYTES));
-      signal.throwIfAborted();
-      whole.update(view); part.update(view);
-    }
-    partHashes.push(part.hex());
-  }
-  return { source: item, sha256: whole.hex(), partHashes, partSize };
+async function hashSource(item: TransferSource, partSize: number, signal: AbortSignal, progress: (bytes: number) => void): Promise<HashedSource> {
+  const result = await hashChunks(item.size, item.view, "sha256", partSize, signal, progress);
+  return { source: item, sha256: result.digest, partHashes: result.partHashes, partSize };
 }
 
 function failure(error: unknown): AtlasTransferFailure {
@@ -233,7 +220,8 @@ export class AtlasTransferController {
     this.update({ state: "hashing" });
     let data: HashedSource, metadata: HashedSource;
     if (pair) {
-      [data, metadata] = await Promise.all([hashSource(pair.data, partSize, signal), hashSource(pair.metadata, partSize, signal)]);
+      data = await hashSource(pair.data, partSize, signal, bytes => this.update({ message: "Hashing data: " + bytes.toLocaleString() + "/" + pair.data.size.toLocaleString() + " bytes" }));
+      metadata = await hashSource(pair.metadata, partSize, signal, bytes => this.update({ message: "Hashing metadata: " + bytes.toLocaleString() + "/" + pair.metadata.size.toLocaleString() + " bytes" }));
       this.receipt ??= readAtlasReceipts(this.receiptStorage).find(value => value.operatorId === session.operator_id && value.files.data.sha256 === data.sha256 && value.files.metadata.sha256 === metadata.sha256);
       if (!this.receipt) this.receipt = { version: 1, pairId: this.pairId, operatorId: session.operator_id, startedAt: new Date().toISOString(), request: { title: request.title, sourceKind: request.sourceKind ?? "unknown", analyzeAfterSave: request.analyzeAfterSave ?? false }, files: { data: {name:data.source.name,size:data.source.size,sha256:data.sha256,partSize}, metadata: {name:metadata.source.name,size:metadata.source.size,sha256:metadata.sha256,partSize} }, compatibility: inspectBrowserSigmfLayoutForAtlas(pair.metadataValue, pair.data.size), uploads: {}, attempts: {data:1,metadata:1}, jobs: {} };
     } else {

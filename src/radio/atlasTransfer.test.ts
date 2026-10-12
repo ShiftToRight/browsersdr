@@ -269,7 +269,7 @@ describe("bounded authenticated SigIntAtlas transfer", () => {
     const atlas = new FakeAtlas(); atlas.holdParts = true;
     const transfer = controller(await prepared(), atlas);
     const running = transfer.start(request);
-    while (atlas.activeParts === 0) await Promise.resolve();
+    while (atlas.activeParts === 0) await new Promise(resolve => setTimeout(resolve, 0));
     await transfer.cancel(); atlas.releaseParts();
     await expect(running).rejects.toMatchObject({ code: "cancelled" });
     expect(transfer.getSnapshot().state).toBe("cancelled"); expect(atlas.registrations).toBe(0);
@@ -279,7 +279,7 @@ describe("bounded authenticated SigIntAtlas transfer", () => {
     const atlas = new FakeAtlas(); atlas.holdParts = true;
     const transfer = controller(await prepared(128), atlas);
     const old = transfer.start(request);
-    while (atlas.activeParts === 0) await Promise.resolve();
+    while (atlas.activeParts === 0) await new Promise(resolve => setTimeout(resolve, 0));
     await transfer.replacePrepared(await prepared(64)); atlas.holdParts = false; atlas.releaseParts();
     await expect(old).rejects.toMatchObject({ code: "cancelled" });
     await expect(transfer.start({ ...request, title: "replacement" })).resolves.toMatchObject({ recordingId: expect.any(String) });

@@ -1,3 +1,6 @@
+import { ReplayReader } from "./replayReader";
+import { STREAMING_RECORDING_MAX_BYTES } from "./recordingSpool";
+import { recordingDataByteLength } from "./iqRecording";
 import { CHANNEL_RECORDING_FORMAT } from "./channelRecording";
 import type { RecordingOptions } from "./channelRecording";
 import { BLADERF_SC16_RECORDING_FORMAT } from "./bladerfRecording";
@@ -51,6 +54,10 @@ export class ReplayBackend implements ReceiverBackend {
   private closed = false;
   private closeTask?: Promise<void>;
   private position = 0;
+  private rangeStart = 0;
+  private rangeEnd = 0;
+  private pausedAt?: number;
+  private readonly reader: ReplayReader;
   private startedAtMs = 0;
   private metadata?: SourceSessionMetadata;
   private recorder?: IqRecorder;
@@ -58,6 +65,7 @@ export class ReplayBackend implements ReceiverBackend {
   private completedRecording?: IqRecording;
   private nextGap = 0;
   private elapsedGapSamples = 0;
+  private priorGapSamples = 0;
   private readonly rds: RdsMultiplexReceiver;
   private dabPlayback?: ReturnType<typeof createDabReplayPlayback>;
   private volume = 0;
@@ -74,7 +82,16 @@ export class ReplayBackend implements ReceiverBackend {
     private sessionGeneration: number,
     private readonly compiledChannel: (rate: number) => Promise<WasmChannelFilter> = createWasmChannel,
   ) {
-    validateRecordingMetadata(recording.metadata, recording.data.byteLength);
+    validateRecordingMetadata(recording.metadata, recordingDataByteLength(recording), STREAMING_RECORDING_MAX_BYTES);
+    this.reader = new ReplayReader(recording);
+    this.rangeStart = recording.replayRange?.startSample ?? 0;
+    this.rangeEnd = recording.replayRange?.endSample ?? recording.metadata.sampleCount;
+    if (!Number.isSafeInteger(this.rangeStart) || !Number.isSafeInteger(this.rangeEnd) || this.rangeStart < 0 || this.rangeEnd > recording.metadata.sampleCount || this.rangeStart >= this.rangeEnd) throw new Error("Invalid replay range.");
+    this.position = this.rangeStart;
+    while ((recording.metadata.knownGaps[this.nextGap]?.afterSample ?? Infinity) < this.position) {
+      this.priorGapSamples += recording.metadata.knownGaps[this.nextGap]!.missingSamples ?? 0;
+      this.nextGap++;
+    }
     this.audioContext = new AudioContext();
     this.audioContext.addEventListener("statechange", this.onAudioStateChange);
     this.audioResume = this.audioContext.resume();
@@ -96,7 +113,7 @@ export class ReplayBackend implements ReceiverBackend {
   }
 
   async start(options: ReceiverStartOptions): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    const sourceMetadata = validateRecordingMetadata(this.recording.metadata, this.recording.data.byteLength);
+    const sourceMetadata = validateRecordingMetadata(this.recording.metadata, recordingDataByteLength(this.recording), STREAMING_RECORDING_MAX_BYTES);
     this.recording = { ...this.recording, metadata: sourceMetadata };
     const mode = normalizeModeSettings({
       mode: sourceMetadata.mode,
@@ -253,7 +270,7 @@ export class ReplayBackend implements ReceiverBackend {
     if (!this.metadata || this.stopped) throw new Error("Replay source is not running");
     if (this.recorder || this.completedRecording) throw new Error("Finish or retrieve the existing replay recording first.");
     const original = this.recording.metadata;
-    const offset = this.position + this.elapsedGapSamples;
+    const offset = this.position + this.priorGapSamples + this.elapsedGapSamples;
     const timestamp = new Date(Date.parse(original.captureStartedAt) + offset / original.sampleRateHz * 1000).toISOString();
     const provenance = `${(original.provenance ?? "").slice(0, 3500)} Re-recorded original bytes during replay from dataset sample ${this.position}; acquisition timestamp advanced by known sample-clock time only, excluding unknown gap durations. No new hardware observation.`;
     this.recorder = new IqRecorder({ ...this.metadata, actualSampleRateHz: original.sampleRateHz }, timestamp, undefined, provenance, survey ? { ...survey, site: original.survey?.site } : original.survey, recordingSampleFormat(original), preferredRecordingStorageMode(options?.storageMode), { ...options, receiverLocation: original.receiverLocation });
@@ -304,8 +321,27 @@ export class ReplayBackend implements ReceiverBackend {
     );
   }
 
+  setReplayPaused(paused: boolean): void {
+    if (paused && this.pausedAt === undefined) { this.pausedAt = performance.now(); this.player.reset(); }
+    else if (!paused && this.pausedAt !== undefined) { this.startedAtMs += performance.now() - this.pausedAt; this.pausedAt = undefined; }
+  }
+
+  getReplayPosition(): number { return this.position; }
+
   private scheduleNext(): void {
     if (this.stopped) return;
+    if (this.pausedAt !== undefined) { this.timer = window.setTimeout(() => this.scheduleNext(), 25); return; }
+    if (this.recording.dataBlob) {
+      const bytesPerSample = this.recording.metadata.bytesPerComplexSample;
+      void this.reader.prepare(this.position * bytesPerSample, Math.min(REPLAY_CHUNK_SAMPLES * (recordingRoutingSampleRate(this.recording.metadata) === 19_200_000 ? 32 : 1), this.rangeEnd - this.position) * bytesPerSample)
+        .then(() => { if (!this.stopped) this.deliverNext(); })
+        .catch(error => { if (!this.stopped) this.events.runtimeError(error); });
+    } else this.deliverNext();
+  }
+
+  private deliverNext(): void {
+    if (this.stopped) return;
+    if (this.pausedAt !== undefined) { this.timer = window.setTimeout(() => this.scheduleNext(), 25); return; }
     try {
       const began = performance.now();
       const limit = recordingRoutingSampleRate(this.recording.metadata) === 19_200_000 ? 32 : 1;
@@ -336,12 +372,12 @@ export class ReplayBackend implements ReceiverBackend {
       this.elapsedGapSamples += gap.missingSamples ?? 0;
       this.nextGap += 1;
     }
-    const dueMs = this.startedAtMs + (this.position + this.elapsedGapSamples) / this.recording.metadata.sampleRateHz * 1000;
+    const dueMs = this.startedAtMs + (this.position - this.rangeStart + this.elapsedGapSamples) / this.recording.metadata.sampleRateHz * 1000;
     const delayMs = dueMs - performance.now();
     if (delayMs > 0) {
       return Math.max(1, delayMs);
     }
-    if (this.position >= this.recording.metadata.sampleCount) {
+    if (this.position >= this.rangeEnd) {
       this.player.flush();
       this.ended = true;
       if (this.metadata?.mode === "DAB" && this.dabPlayback) {
@@ -354,14 +390,19 @@ export class ReplayBackend implements ReceiverBackend {
       } else this.events.sourceEnded();
       return 0;
     }
+    // File replay may wait for a busy decoder: unlike live acquisition, no
+    // samples need to be dropped to keep a physical input stream moving.
+    const packetQueue = this.metadata?.mode === "APRS" ? this.aprs.diagnostics
+      : this.metadata?.mode === "RS41" ? this.rs41.diagnostics : undefined;
+    if (packetQueue && packetQueue.queueCapacityBlocks > 0 && packetQueue.queuedBlocks >= packetQueue.queueCapacityBlocks) return 4;
     const gapPosition = this.recording.metadata.knownGaps[this.nextGap]?.afterSample;
     const end = Math.min(
-      this.recording.metadata.sampleCount,
+      this.rangeEnd,
       this.position + REPLAY_CHUNK_SAMPLES,
       gapPosition ?? Number.POSITIVE_INFINITY,
     );
     if (end <= this.position) throw new Error("Replay gap metadata would move playback backward.");
-    const bytes = this.recording.data.subarray(this.position * this.recording.metadata.bytesPerComplexSample, end * this.recording.metadata.bytesPerComplexSample);
+    const bytes = this.reader.view(this.position * this.recording.metadata.bytesPerComplexSample, end * this.recording.metadata.bytesPerComplexSample);
     const decoded = decodeRecordingSamples(bytes, this.recording.metadata);
     if (this.recording.metadata.sampleEncoding === "signed-8-bit") this.recorder?.appendCi8(bytes);
     else if (this.recording.metadata.sampleEncoding === "signed-16-bit-little-endian") this.recorder?.appendCi16(bytes);
@@ -374,7 +415,7 @@ export class ReplayBackend implements ReceiverBackend {
       if (count) this.receiver?.receiveSamples({ I: decoded.I.subarray(0, count), Q: decoded.Q.subarray(0, count), frequency: this.metadata!.selectedChannelFrequencyHz });
     } else this.receiver?.receiveSamples({ ...decoded, frequency: this.recording.metadata.centerFrequencyHz });
     this.position = end;
-    const targetMs = this.startedAtMs + (this.position + this.elapsedGapSamples) / this.recording.metadata.sampleRateHz * 1000;
+    const targetMs = this.startedAtMs + (this.position - this.rangeStart + this.elapsedGapSamples) / this.recording.metadata.sampleRateHz * 1000;
     return Math.max(0, targetMs - performance.now());
   }
 

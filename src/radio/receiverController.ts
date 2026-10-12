@@ -138,6 +138,8 @@ export interface ReceiverBackend {
     reason?: "user" | "source-stop" | "metadata-change",
   ): IqRecording | undefined;
   getRecordingStatus?(): RecordingStatus | undefined;
+  setReplayPaused?(paused: boolean): void;
+  getReplayPosition?(): number;
 }
 
 export type ReceiverBackendFactory = (
@@ -177,6 +179,12 @@ const INITIAL_SNAPSHOT: ReceiverSnapshot = {
 };
 
 export class ReceiverController {
+  setReplayPaused(paused: boolean): void {
+    if (this.snapshot.lifecycle !== "running" || this.snapshot.session?.source !== "replay") return;
+    this.backend?.setReplayPaused?.(paused);
+  }
+  getReplayPosition(): number | undefined { return this.backend?.getReplayPosition?.(); }
+
   private snapshot: ReceiverSnapshot = INITIAL_SNAPSHOT;
   private readonly listeners = new Set<Listener>();
   private squelchMeter: SquelchMeterState | undefined;

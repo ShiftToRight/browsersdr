@@ -95,8 +95,7 @@ export class Rs41DigitalReceiver implements DigitalSampleReceiver {
   receiveSamples(block: SampleBlock): void {
     const configuration = this.configuration;
     if (!configuration || this.disposed) return;
-    const I = new Float32Array(block.I);
-    const Q = new Float32Array(block.Q);
+    const { I, Q } = block;
     const input = {
       I,
       Q,
@@ -104,7 +103,7 @@ export class Rs41DigitalReceiver implements DigitalSampleReceiver {
       firstSampleIndex: this.firstSampleIndex,
     };
     this.firstSampleIndex += I.length;
-    if (this.adapter) this.adapter.submitOwned(input);
+    if (this.adapter) this.adapter.submitBorrowed(input);
     else if (this.inline) {
       this.inline.receive(input);
       this.latest = boundedRs41Snapshot(this.inline.snapshot().value);

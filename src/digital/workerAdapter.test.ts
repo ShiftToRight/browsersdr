@@ -175,3 +175,54 @@ it("orders final input flush and ignores acknowledgements from another generatio
   await barrier; expect(flushed).toHaveBeenCalledOnce();
   adapter.dispose();
 });
+
+it("recycles bounded borrowed inputs, avoids overload allocation and accepts genuine old-generation returns", () => {
+  const worker = new FakeWorker();
+  const adapter = new BoundedDigitalWorkerAdapter(worker, {}, 2);
+  adapter.configure(config(1));
+  const borrowed = block(1, 0, 8192);
+  borrowed.I.fill(0.25);
+  adapter.submitBorrowed(borrowed);
+  adapter.submitBorrowed({ ...borrowed, firstSampleIndex: 8192 });
+  const inputs = worker.messages.filter(m => m.type === "samples");
+  expect(inputs[0]!.I).not.toBe(borrowed.I);
+  expect(inputs[0]!.I[0]).toBe(0.25);
+  const allocated = adapter.bufferDiagnostics.allocatedInputBytes;
+  for (let i = 0; i < 1000; i++) adapter.submitBorrowed(borrowed);
+  expect(adapter.bufferDiagnostics.allocatedInputBytes).toBe(allocated);
+  expect(adapter.diagnostics.droppedInputSamples).toBe(8192 * 1000);
+  const first = inputs[0]!;
+  worker.reply({ ...first, type: "consumed" });
+  adapter.submitBorrowed(borrowed);
+  const next = worker.messages.at(-1)!;
+  expect(next.type === "samples" && next.discontinuityBefore?.missingInputSamples).toBe(8192 * 1000);
+  expect(adapter.bufferDiagnostics.reusedInputBlocks).toBe(1);
+  adapter.configure(config(2));
+  const second = inputs[1]!;
+  worker.reply({ ...second, type: "consumed" });
+  worker.reply({ ...second, type: "consumed" }); // duplicate never grants a second credit/pool slot
+  expect(adapter.bufferDiagnostics.pooledBlocks).toBe(1);
+  adapter.submitBorrowed(block(2, 0, 8192));
+  expect(adapter.bufferDiagnostics.allocatedInputBytes).toBe(allocated);
+  expect(borrowed.I[0]).toBe(0.25);
+  adapter.dispose();
+  expect(adapter.bufferDiagnostics.pooledBytes).toBe(0);
+});
+
+it("replaces old-sized idle buffers and reuses new sizes within the same bounds", () => {
+  const worker = new FakeWorker();
+  const adapter = new BoundedDigitalWorkerAdapter(worker, {}, 2);
+  adapter.configure(config(1));
+  const batch = (length: number) => {
+    for (let i = 0; i < 2; i++) adapter.submitBorrowed(block(1, i * length, length));
+    for (const message of worker.messages.slice(-2)) {
+      if (message.type === "samples") worker.reply({ ...message, type: "consumed" });
+    }
+  };
+  batch(4); batch(16);
+  const allocated = adapter.bufferDiagnostics.allocatedInputBytes;
+  batch(16);
+  expect(adapter.bufferDiagnostics.allocatedInputBytes).toBe(allocated);
+  expect(adapter.bufferDiagnostics.pooledBlocks).toBe(2);
+  expect(adapter.bufferDiagnostics.pooledBytes).toBe(2 * 16 * 8);
+});

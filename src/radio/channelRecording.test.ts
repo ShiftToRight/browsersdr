@@ -1,3 +1,5 @@
+import { fakeRecordingStorage } from "../testing/fakeRecordingStorage";
+import { deleteRecording, listRecordings } from "./recordingLibrary";
 import { describe, expect, it, vi } from "vitest";
 import {
   CHANNEL_RECORDING_FORMAT,
@@ -380,24 +382,7 @@ it.each([false, true])(
     const inputSession = fixture
       ? { ...fixture.session, mode: "AM" as const, channelBandwidthHz: 15_000 }
       : session;
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    const removed = vi.fn(async () => undefined);
-    const file = {
-      createWritable: async () => ({
-        write: async (bytes: Uint8Array) => {
-          chunks.push(bytes.slice());
-        },
-        close: async () => undefined,
-      }),
-      getFile: async () => new Blob(chunks),
-    };
-    const getDirectory = vi.fn(async () => ({
-      getDirectoryHandle: async () => ({
-        getFileHandle: async () => file,
-        removeEntry: removed,
-      }),
-    }));
-    vi.stubGlobal("navigator", { storage: { getDirectory } });
+    const { getDirectory } = fakeRecordingStorage();
     try {
       const capture = () =>
         new IqRecorder(
@@ -448,7 +433,10 @@ it.each([false, true])(
         (await createSigmfExport(result)).metadata.global["core:sample_rate"],
       ).toBe(result.metadata.sampleRateHz);
       await result.releaseData!();
-      expect(removed).toHaveBeenCalledOnce();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect((await listRecordings())[0]?.state).toBe("ready");
+      await deleteRecording(result.libraryId!);
+      expect(await listRecordings()).toEqual([]);
       getDirectory.mockClear();
       expect(
         () =>

@@ -15,9 +15,13 @@ import {
   type RecordingGap,
 } from "./iqRecording";
 import { normalizeModeSettings, validateModeSampleRate, type ReceiverModeSettings } from "./receiverConfig";
+import { hashChunks } from "./hashing";
+import { STREAMING_RECORDING_MAX_BYTES } from "./recordingSpool";
 import { sha512Hex, SIGMF_VERSION } from "./sigmf";
 
 export interface SigmfImportOptions {
+  signal?: AbortSignal;
+  onProgress?: (bytes: number) => void;
   modeSettings: ReceiverModeSettings;
   selectedChannelFrequencyHz?: number;
   dataFilename?: string;
@@ -167,11 +171,13 @@ function importGapAnnotations(annotations: unknown[], captures: RecordingGap[], 
 
 export async function importSigmfRecording(
   metadataText: string,
-  binary: ArrayBuffer | Uint8Array,
+  binary: ArrayBuffer | Uint8Array | Blob,
   options: SigmfImportOptions,
 ): Promise<IqRecording> {
-  if (binary.byteLength > RECORDING_MAX_BYTES) throw new Error("SigMF dataset exceeds the 32 MiB replay limit.");
-  if (!Number.isSafeInteger(binary.byteLength) || binary.byteLength <= 0 || binary.byteLength % BYTES_PER_COMPLEX_SAMPLE !== 0) {
+  const byteLength = binary instanceof Blob ? binary.size : binary.byteLength;
+  const maximum = binary instanceof Blob ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES;
+  if (byteLength > maximum) throw new Error(binary instanceof Blob ? "SigMF dataset exceeds the 2 GiB replay limit." : "SigMF dataset exceeds the 32 MiB replay limit.");
+  if (!Number.isSafeInteger(byteLength) || byteLength <= 0 || byteLength % BYTES_PER_COMPLEX_SAMPLE !== 0) {
     throw new Error("SigMF dataset is empty or truncated: cu8 requires complete I/Q byte pairs.");
   }
   const root = parseMetadata(metadataText);
@@ -179,12 +185,12 @@ export async function importSigmfRecording(
   if (!Array.isArray(root.annotations)) throw new Error("SigMF annotations must be an array.");
   const { sampleRateHz, encoding, expectedHash } = validateGlobal(global);
   const bytesPerComplexSample = encoding === "ci16_le" ? 4 : BYTES_PER_COMPLEX_SAMPLE;
-  if (binary.byteLength % bytesPerComplexSample) throw new Error("SigMF dataset is truncated: CI16 requires complete I/Q word pairs.");
+  if (byteLength % bytesPerComplexSample) throw new Error("SigMF dataset is truncated: CI16 requires complete I/Q word pairs.");
   const extension = global["browsersdr:sample_format"];
   const nativeFormat = encoding === "ci16_le" || (extension && typeof extension === "object" && (extension as JsonObject).format === CHANNEL_RECORDING_FORMAT) ? object(extension, "sample format/scaling") : undefined;
   if (nativeFormat && nativeFormat.format !== BLADERF_SC16_RECORDING_FORMAT && nativeFormat.format !== CI16_RECORDING_FORMAT && nativeFormat.format !== CHANNEL_RECORDING_FORMAT)
     throw new Error("SigMF CI16 needs a supported explicit sample format/scaling; Q11 is never inferred.");
-  const sampleCount = binary.byteLength / bytesPerComplexSample;
+  const sampleCount = byteLength / bytesPerComplexSample;
   const { centerFrequencyHz, captureStartedAt, knownGaps } = captureDetails(root.captures, sampleCount);
   const mode = normalizeModeSettings(options.modeSettings);
   validateModeSampleRate(mode.mode, encoding === "ci16_le" || encoding === "ci8" ? channelSampleRate(nativeFormat?.format === CHANNEL_RECORDING_FORMAT ? finite(object(nativeFormat.channelCapture, "channel capture").dspSampleRateHz, "channel DSP sample rate") : nativeFormat?.format === BLADERF_SC16_RECORDING_FORMAT ? finite(nativeFormat.nativeSampleRateHz, "nominal bladeRF sample rate") : sampleRateHz) : sampleRateHz);
@@ -192,7 +198,7 @@ export async function importSigmfRecording(
 
   const sourceBytes = binary instanceof Uint8Array
     ? new Uint8Array(binary.buffer, binary.byteOffset, binary.byteLength)
-    : new Uint8Array(binary);
+    : binary instanceof Blob ? undefined : new Uint8Array(binary);
 
   const receiverLocation = importReceiverLocation(root.captures, global["core:geolocation"]);
   const metadata = validateRecordingMetadata({
@@ -216,12 +222,19 @@ export async function importSigmfRecording(
     knownGaps: importGapAnnotations(root.annotations, knownGaps, sampleCount),
     stopReason: "import",
     provenance: "Imported from a local SigMF pair; original metadata text is retained without treating annotations as receiver settings.",
-  }, binary.byteLength);
+  }, byteLength, maximum);
 
-  if (expectedHash && await sha512Hex(sourceBytes) !== expectedHash) throw new Error("SigMF SHA-512 does not match the selected dataset.");
+  if (expectedHash) {
+    const digest = binary instanceof Blob
+      ? (await hashChunks(byteLength, async (start, end) => new Uint8Array(await binary.slice(start, end).arrayBuffer()), "sha512", byteLength, options.signal, options.onProgress)).digest
+      : await sha512Hex(sourceBytes!);
+    if (digest !== expectedHash) throw new Error("SigMF SHA-512 does not match the selected dataset.");
+  }
+  options.signal?.throwIfAborted();
   return {
     metadata,
-    data: new Uint8Array(sourceBytes),
+    data: sourceBytes ? new Uint8Array(sourceBytes) : new Uint8Array(),
+    ...(binary instanceof Blob ? { dataBlob: binary } : {}),
     importedSigmf: {
       metadataText,
       ...(optionalFilename(options.dataFilename, "dataset filename") ? { dataFilename: options.dataFilename } : {}),

@@ -487,6 +487,7 @@ export function SpectrumExplorer({
   const resumeRef = useRef<SurveyResumeState | undefined>(undefined);
   const [resumeAvailable, setResumeAvailable] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
+  const [storageMessage, setStorageMessage] = useState("Checking saved survey…");
   const [highlightedRecordKey, setHighlightedRecordKey] = useState<string>();
   const recordElements = useRef(new Map<string, HTMLElement>());
   const profileInputRef = useRef<HTMLInputElement>(null);
@@ -495,7 +496,9 @@ export function SpectrumExplorer({
     let active = true;
     void loadLatestSurveyRun()
       .then((saved) => {
-        if (!active || !saved) return;
+        if (!active) return;
+        setStorageMessage(saved ? "Saved on this device." : "No saved survey yet.");
+        if (!saved) return;
         const restoredStatus =
           saved.status === "running" ? "cancelled" : saved.status;
         setScope(saved.scope);
@@ -517,7 +520,7 @@ export function SpectrumExplorer({
             : `Restored ${saved.records.length} candidate${saved.records.length === 1 ? "" : "s"} from the last survey.`,
         );
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => { if (active) setStorageMessage(`Not saved: ${error instanceof Error ? error.message : "Storage unavailable."} Export results to keep a copy.`); })
       .finally(() => {
         if (active) setStorageReady(true);
       });
@@ -528,6 +531,8 @@ export function SpectrumExplorer({
 
   useEffect(() => {
     if (!storageReady || !runSnapshot || runStatus === "idle") return;
+    let active = true;
+    setStorageMessage("Saving survey…");
     void saveLatestSurveyRun({
       scope,
       status: runStatus,
@@ -536,7 +541,9 @@ export function SpectrumExplorer({
       windows,
       records,
       progress,
-    }).catch(() => undefined);
+    }).then(() => { if (active) setStorageMessage("Saved on this device."); })
+      .catch((error: unknown) => { if (active) setStorageMessage(`Not saved: ${error instanceof Error ? error.message : "Storage unavailable."} Export results to keep a copy.`); });
+    return () => { active = false; };
   }, [
     storageReady,
     scope,
@@ -1276,6 +1283,8 @@ export function SpectrumExplorer({
               Dwell per window <output>{dwellMs} ms</output>
               <input
                 type="range"
+                aria-label="Dwell per window"
+                aria-valuetext={`${dwellMs} milliseconds`}
                 min={MIN_DWELL_MS}
                 max={MAX_DWELL_MS}
                 step="50"
@@ -1288,6 +1297,8 @@ export function SpectrumExplorer({
               Detection threshold <output>{thresholdDb} dB</output>
               <input
                 type="range"
+                aria-label="Detection threshold"
+                aria-valuetext={`${thresholdDb} decibels`}
                 min="1"
                 max="40"
                 step="1"
@@ -1579,6 +1590,10 @@ export function SpectrumExplorer({
           <p className="diagnostic-message" role="status">
             {message}
           </p>
+          <p className="survey-storage-status" role="status">{storageMessage}</p>
+          <button type="button" className="secondary" disabled={!runSnapshot} onClick={() => {
+            if (runSnapshot) downloadText(`${sessionId}.recovery.json`, JSON.stringify({ version: 1, key: "latest", savedAt: new Date().toISOString(), scope, status: runStatus, snapshot: runSnapshot, manifest: runManifest, windows, records, progress }), "application/json");
+          }}>Export recovery JSON</button>
           <div className="candidate-list-wrap">
             <div className="candidate-list-heading">
               <h3>Candidate review</h3>{" "}

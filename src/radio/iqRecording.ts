@@ -1,3 +1,4 @@
+import { DurableRecordingSpool } from "./recordingLibrary";
 import { snapshotReceiverLocation, validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { ChannelRecordingWorker } from "./channelRecordingWorker";
 import { CHANNEL_RECORDING_FORMAT, ChannelCaptureFilter, planChannelCapture, validateChannelRecording, type ChannelRecordingFormat, type RecordingOptions } from "./channelRecording";
@@ -20,7 +21,6 @@ import { normalizeGain, normalizeModeSettings, planChannelTune, RECEIVER_MODES, 
 import { validateSurveyCaptureContext, type SurveyCaptureContext } from "./fieldSurvey";
 import type { SrdModeSettings } from "../srd/settings";
 import {
-  OpfsRecordingSpool,
   STREAMING_RECORDING_MAX_BYTES,
   recordingStorageUsable,
 } from "./recordingSpool";
@@ -113,6 +113,8 @@ export interface IqRecording {
   dataBlob?: Blob | Promise<Blob>;
   /** Releases file-backed capture storage after all export readers finish. */
   releaseData?: () => Promise<void>;
+  libraryId?: string;
+  replayRange?: { startSample: number; endSample: number };
   importedSigmf?: {
     metadataText: string;
     dataFilename?: string;
@@ -213,7 +215,7 @@ export class IqRecorder {
   private captureWarning?: string;
   private gaps: RecordingGap[] = [];
   private readonly maxBytes: number;
-  private readonly spool?: OpfsRecordingSpool;
+  private readonly spool?: DurableRecordingSpool;
   private readonly receiverLocation?: ReceiverLocation;
   private readonly inputEncoding: RecordingSampleFormat;
   private readonly channelFilter?: ChannelCaptureFilter;
@@ -273,7 +275,7 @@ export class IqRecorder {
         });
       }
     }
-    this.spool = storageMode === "opfs" ? new OpfsRecordingSpool() : undefined;
+    this.spool = storageMode === "opfs" ? new DurableRecordingSpool(() => this.finished?.metadata ?? this.metadataSnapshot(this.bytes / this.encoding.bytesPerComplexSample, "source-stop")) : undefined;
   }
 
   setCaptureStartedAt(timestamp: string): void {
@@ -468,8 +470,14 @@ export class IqRecorder {
     this.finished = {
       data,
       ...(dataBlob ? { dataBlob } : {}),
+      ...(this.spool ? { libraryId: this.spool.id } : {}),
       ...(this.spool ? { releaseData: async () => { await this.channelWorker?.finish().catch(() => undefined); await this.spool!.release(); } } : {}),
-      metadata: {
+      metadata: this.metadataSnapshot(sampleCount, reason),
+    };
+    return this.finished;
+  }
+  private metadataSnapshot(sampleCount: number, reason: IqRecordingMetadata["stopReason"]): IqRecordingMetadata {
+    return {
         ...structuredClone(this.encoding),
         sampleRateHz: this.session.actualSampleRateHz,
         centerFrequencyHz: this.session.hardwareCenterFrequencyHz,
@@ -490,17 +498,16 @@ export class IqRecorder {
         ...(this.provenance ? { provenance: this.channelFilter ? `Processed channel capture. Input source context: ${this.provenance}` : this.provenance } : {}),
         ...(this.receiverLocation ? { receiverLocation: structuredClone(this.receiverLocation) } : {}),
         ...(this.survey ? { survey: structuredClone(this.survey) } : {}),
-      } as IqRecordingMetadata,
-    };
-    return this.finished;
+      } as IqRecordingMetadata;
   }
 }
 
-export function parseRecording(metadataText: string, binary: ArrayBuffer | Uint8Array): IqRecording {
+export function parseRecording(metadataText: string, binary: ArrayBuffer | Uint8Array | Blob): IqRecording {
   if (new TextEncoder().encode(metadataText).byteLength > RECORDING_METADATA_MAX_BYTES) throw new Error("Recording metadata exceeds the 1 MiB limit.");
   let value: unknown;
   try { value = JSON.parse(metadataText); } catch { throw new Error("Recording metadata is not valid JSON."); }
-  const metadata = validateRecordingMetadata(value, binary.byteLength);
+  const metadata = validateRecordingMetadata(value, binary instanceof Blob ? binary.size : binary.byteLength, binary instanceof Blob ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES);
+  if (binary instanceof Blob) return { data: new Uint8Array(), dataBlob: binary, metadata };
   // Validate before duplicating the bounded payload into replay-owned storage.
   const data = binary instanceof Uint8Array ? new Uint8Array(binary) : new Uint8Array(binary.slice(0));
   return { data, metadata };

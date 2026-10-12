@@ -1,4 +1,10 @@
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useVisibleReceiver } from "./useVisibleReceiver";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   ReceiverController,
   ReceiverSnapshot,
@@ -52,21 +58,22 @@ export interface DecoderWorkspaceProps {
 
 /** Another view of the existing controller; no acquisition or decoder is started here. */
 export function DecoderWorkspace(props: DecoderWorkspaceProps) {
-  const receiver = useSyncExternalStore(
-    props.controller.subscribe,
-    props.controller.getSnapshot,
-  );
+  const { receiver, presenting } = useVisibleReceiver(props.controller, props.active);
   const [browsedFormat, setBrowsedFormat] = useState<DecoderFormat>();
   const [frozen, setFrozen] = useState<ReviewSnapshot>();
-  const [selectedKey, setSelectedKey] = useState("");
+  const [selection, setSelection] = useState<{
+    identity: string;
+    key: string;
+  }>();
+  const selectionTrigger = useRef<HTMLElement | SVGElement | null>(null);
+  const exportMenu = useRef<HTMLDetailsElement>(null);
+  const [trayCollapsed, setTrayCollapsed] = useState(false);
+  const [fitRequest, setFitRequest] = useState(0);
   const [filter, setFilter] = useState("");
   const [view, setView] = useState<{
     format: DecoderFormat;
     value: "results" | "messages" | "map";
   }>();
-  const [exportScope, setExportScope] = useState<"retained" | "selected">(
-    "retained",
-  );
   const [issue, setIssue] = useState("");
   const [audibleVolume, setAudibleVolume] = useState(props.volume || 0.7);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -105,22 +112,20 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
         sessionGeneration: receiver.sessionGeneration,
         session: receiver.session,
       },
-      results: applied ? decoderRecords(receiver, reviewMode) : [],
-      messages: applied ? decoderRecords(receiver, reviewMode, true) : [],
-      accepted: applied ? decoderAcceptedCount(receiver, reviewMode) : 0,
+      results: presenting && applied ? decoderRecords(receiver, reviewMode) : [],
+      messages: presenting && applied ? decoderRecords(receiver, reviewMode, true) : [],
+      accepted: presenting && applied ? decoderAcceptedCount(receiver, reviewMode) : 0,
     }),
-    [identity, receiver, applied, reviewMode],
+    [identity, receiver, applied, reviewMode, presenting],
   );
   const held = frozen?.identity === identity ? frozen : undefined;
   const display = held ?? live;
+  const hasReviewData =
+    display.results.length > 0 || display.messages.length > 0;
   const hasMessages = ["APRS", "RS41", "SRD"].includes(reviewMode);
   const supportsMap = ["ADS-B", "AIS", "APRS", "RS41"].includes(reviewMode);
   const preferredView =
-    view?.format === format
-      ? view.value
-      : ["ADS-B", "AIS"].includes(reviewMode)
-        ? "map"
-        : "results";
+    view?.format === format ? view.value : supportsMap ? "map" : "results";
   const effectiveView =
     (preferredView === "messages" && !hasMessages) ||
     (preferredView === "map" && !supportsMap)
@@ -128,12 +133,26 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       : preferredView;
   const records =
     effectiveView === "messages" ? display.messages : display.results;
-  const filtered = records.filter((r) =>
+  const filtered = presenting ? records.filter((r) =>
     `${r.label} ${r.summary} ${r.fields.flat().join(" ")}`
       .toLowerCase()
       .includes(filter.toLowerCase()),
-  );
-  const selected = filtered.find((r) => r.key === selectedKey) ?? filtered[0];
+  ) : [];
+  const selected =
+    selection?.identity === identity
+      ? filtered.find((r) => r.key === selection.key)
+      : undefined;
+  const positioned = filtered.filter(hasPosition);
+  const geographic = effectiveView === "map";
+  const traffic = reviewMode === "ADS-B" || reviewMode === "AIS";
+  const sourceLabel = props.remote
+    ? "Remote audio / FFT"
+    : props.source === "synthetic"
+      ? "Generated demo"
+      : props.source;
+  const channelHz =
+    receiver.session?.selectedChannelFrequencyHz ?? props.frequencyHz;
+  const inputRate = receiver.session?.actualSampleRateHz ?? props.sampleRateHz;
   const unavailable = props.remote
     ? "Remote audio/FFT does not provide the raw I/Q input required by these decoders. Select a local source in Receiver."
     : props.source === "synthetic"
@@ -180,7 +199,15 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       );
     }
   }
-  function exportResults() {
+  function selectRecord(key: string, trigger?: HTMLElement | SVGElement) {
+    selectionTrigger.current = trigger ?? null;
+    setSelection({ identity, key });
+  }
+  function closeInspector() {
+    setSelection(undefined);
+    selectionTrigger.current?.focus();
+  }
+  function exportResults(exportScope: "retained" | "selected") {
     setIssue("");
     try {
       const json = decoderViewExport(
@@ -197,6 +224,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       anchor.href = url;
       anchor.download = `browsersdr-${reviewMode.toLowerCase()}-${exportScope}.json`;
       anchor.click();
+      if (exportMenu.current) exportMenu.current.open = false;
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       setIssue(
@@ -204,6 +232,147 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       );
     }
   }
+
+  const stateLabel = held
+    ? "Display frozen"
+    : modeChangePending
+      ? "Applying configuration"
+      : applied
+        ? receiver.lifecycle === "running"
+          ? "Live input"
+          : "Retained / idle"
+        : !needsApply
+          ? "Configured / idle"
+          : "Preview";
+  const unit =
+    reviewMode === "WBFM"
+      ? "groups"
+      : reviewMode === "DAB"
+        ? "FIC blocks"
+        : reviewMode === "SRD"
+          ? "readings"
+          : "frames";
+  const reviewStatus = held
+    ? `Frozen at ${held.frozenAt}. Reception continues; ${Math.max(0, live.accepted - held.accepted).toLocaleString()} additional accepted ${unit}.`
+    : `${records.length} retained ${geographic ? "targets" : effectiveView === "messages" ? "records" : "results"}${geographic ? ` · ${positioned.length} positioned` : ""} · ${live.accepted.toLocaleString()} accepted ${unit}`;
+  const columns = geographic ? geographicColumns(reviewMode) : [];
+
+  const inspector = selected && !satellite && (
+    <aside className="decoder-inspector" aria-label="Selected decoded record">
+      <div className="decoder-inspector-heading">
+        <h2>{selected.label}</h2>
+        <button
+          type="button"
+          className="secondary"
+          aria-label="Close record details"
+          onClick={closeInspector}
+        >
+          <AppIcon name="close" />
+        </button>
+      </div>
+      <p>{selected.summary}</p>
+      <p className="decoder-integrity">{selected.integrity}</p>
+      <dl className="decoder-context">
+        {selected.fields.map(([name, val]) => (
+          <div key={name}>
+            <dt>{name}</dt>
+            <dd>{val}</dd>
+          </div>
+        ))}
+        {supportsMap && (
+          <div>
+            <dt>Map position</dt>
+            <dd>{positionText(selected)}</dd>
+          </div>
+        )}
+        <div>
+          <dt>Receive clock</dt>
+          <dd>{selected.clock}</dd>
+        </div>
+        <div>
+          <dt>Acquisition</dt>
+          <dd>
+            {metadata
+              ? `${metadata.source} · generation ${metadata.sessionGeneration}`
+              : `generation ${display.receiver.sessionGeneration}`}
+          </dd>
+        </div>
+      </dl>
+      <details>
+        <summary>Raw published record</summary>
+        <pre>{decoderJson(selected.raw)}</pre>
+      </details>
+    </aside>
+  );
+  const results = geographic ? (
+    <div
+      className="decoder-record-list decoder-table-wrap"
+      id="decoder-retained-results"
+      hidden={trayCollapsed}
+      tabIndex={0}
+      aria-label="Retained decoded records"
+    >
+      <table className="decoder-target-table">
+        <caption className="visually-hidden">
+          {title} · retained decoded records
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Target</th>
+            {columns.map((name) => (
+              <th scope="col" key={name}>
+                {name}
+              </th>
+            ))}
+            <th scope="col">Position</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((r) => (
+            <tr
+              key={r.key}
+              className={
+                selected?.key === r.key ? "decoder-row-selected" : undefined
+              }
+            >
+              <td>
+                <button
+                  type="button"
+                  className="decoder-record"
+                  aria-pressed={selected?.key === r.key}
+                  onClick={(event) => selectRecord(r.key, event.currentTarget)}
+                >
+                  <strong>{r.label}</strong>
+                </button>
+              </td>
+              {columns.map((name) => (
+                <td key={name}>
+                  {r.fields.find(([field]) => field === name)?.[1] ?? "Unknown"}
+                </td>
+              ))}
+              <td>{positionText(r)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <div className="decoder-record-list" aria-label="Retained decoded records">
+      {filtered.map((r) => (
+        <button
+          type="button"
+          key={r.key}
+          className="decoder-record"
+          aria-pressed={selected?.key === r.key}
+          onClick={(event) => selectRecord(r.key, event.currentTarget)}
+        >
+          <strong>{r.label}</strong>
+          <span>{r.summary}</span>
+          <small>{r.clock}</small>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <section
@@ -213,119 +382,188 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       hidden={!props.active}
       className="decoder-workbench"
     >
-      {props.active && (
+      {presenting && (
         <>
-          <aside
-            className="control-panel decoder-rail"
-            aria-label="Decoder setup"
-          >
-            <div className="decoder-eyebrow">DECODER WORKBENCH</div>
-            <h2>Known signal, useful data.</h2>
-            <label htmlFor="decoder-format">Format</label>
-            <select
-              id="decoder-format"
-              value={format}
-              onChange={(event) => {
-                setBrowsedFormat(event.currentTarget.value as DecoderFormat);
-                setFrozen(undefined);
-                setSelectedKey("");
-                setFilter("");
-                setIssue("");
-                setView(undefined);
-              }}
-            >
-              {DECODER_FORMATS.map((f) => (
-                <option key={f.mode} value={f.mode}>
-                  {f.label}
+          <div className="decoder-toolbar">
+            <div className="decoder-format">
+              <label htmlFor="decoder-format" className="visually-hidden">
+                Format
+              </label>
+              <select
+                id="decoder-format"
+                value={format}
+                onChange={(event) => {
+                  setBrowsedFormat(event.currentTarget.value as DecoderFormat);
+                  setFrozen(undefined);
+                  setSelection(undefined);
+                  setFilter("");
+                  setIssue("");
+                  setView(undefined);
+                  setTrayCollapsed(false);
+                }}
+              >
+                {DECODER_FORMATS.map((f) => (
+                  <option key={f.mode} value={f.mode}>
+                    {f.label}
+                  </option>
+                ))}
+                <option value="satellite">
+                  Satellite · Recording workflow
                 </option>
-              ))}
-              <option value="satellite">Satellite · Recording workflow</option>
-            </select>
-            <dl className="decoder-context">
-              <div>
-                <dt>Input</dt>
-                <dd>
-                  {props.remote
-                    ? "Remote audio / FFT"
-                    : props.source === "synthetic"
-                      ? "Generated demo"
-                      : props.source}
-                </dd>
-              </div>
-              <div>
-                <dt>Channel</dt>
-                <dd>
-                  {props.remote
-                    ? "See remote Receiver"
-                    : `${((receiver.session?.selectedChannelFrequencyHz ?? props.frequencyHz) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 })} MHz`}
-                </dd>
-              </div>
-              <div>
-                <dt>Input rate</dt>
-                <dd>
-                  {props.remote
-                    ? "No raw I/Q rate"
-                    : `${(receiver.session?.actualSampleRateHz ?? props.sampleRateHz).toLocaleString()} samples/s`}
-                </dd>
-              </div>
-              <div>
-                <dt>Applied mode</dt>
-                <dd>
-                  {props.remote ? "Local decoders unavailable" : props.mode}
-                </dd>
-              </div>
-              {!props.remote && props.mode !== props.configuredMode && (
-                <div>
-                  <dt>Configured for next start</dt>
-                  <dd>{props.configuredMode}</dd>
-                </div>
+              </select>
+            </div>
+            <div className="decoder-input-summary">
+              <span>{sourceLabel}</span>
+              {!props.remote && (
+                <small>
+                  {(channelHz / 1e6).toLocaleString(undefined, {
+                    maximumFractionDigits: 6,
+                  })}{" "}
+                  MHz ·{" "}
+                  {(inputRate / 1e6).toLocaleString(undefined, {
+                    maximumFractionDigits: 3,
+                  })}{" "}
+                  MS/s
+                </small>
               )}
-            </dl>
-            {!satellite && (
+            </div>
+            <span className="decoder-state">{stateLabel}</span>
+            {!satellite && hasReviewData && (
               <>
-                <p className="decoder-hint">
-                  {!needsApply
-                    ? "Using the shared receiver. Changing views preserves its current state."
-                    : `Apply ${reviewMode} to replace ${props.configuredMode}. ${props.configurationPreview(reviewMode)}`}
-                </p>
-                {needsApply && (
-                  <button
-                    type="button"
-                    disabled={Boolean(applyBlocked)}
-                    onClick={() => {
-                      props.onApply(reviewMode);
-                      setIssue("");
-                    }}
-                  >
-                    Apply {reviewMode}
-                  </button>
-                )}
-                {applyBlocked && <p className="decoder-hint">{applyBlocked}</p>}
+                <label className="decoder-filter">
+                  <span className="visually-hidden">Filter results</span>
+                  <AppIcon name="search" />
+                  <input
+                    type="search"
+                    placeholder="Filter decoded results"
+                    value={filter}
+                    onChange={(event) => setFilter(event.currentTarget.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={freezeDisplay}
+                  disabled={!applied}
+                >
+                  <AppIcon name={held ? "play" : "pause"} />
+                  {held ? "Resume live display" : "Freeze display"}
+                </button>
+                <details
+                  className="decoder-export-menu"
+                  ref={exportMenu}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.currentTarget.open = false;
+                      event.currentTarget.querySelector("summary")?.focus();
+                    }
+                  }}
+                >
+                  <summary>
+                    <AppIcon name="download" />
+                    Export JSON
+                  </summary>
+                  <div className="decoder-popover" aria-label="Export options">
+                    <p>Retained export includes unfiltered records.</p>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={!records.length}
+                      onClick={() => exportResults("retained")}
+                    >
+                      Export retained{" "}
+                      {effectiveView === "messages" ? "messages" : "results"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={!selected}
+                      onClick={() => exportResults("selected")}
+                    >
+                      Export selected record
+                    </button>
+                  </div>
+                </details>
               </>
             )}
-            <button
-              type="button"
-              className="secondary"
-              onClick={props.onOpenReceiver}
-            >
-              <AppIcon name="radio" />
-              Open Receiver
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={props.remote}
-              onClick={props.onOpenRecording}
-            >
-              <AppIcon name="folder" />
-              Open I/Q recording
-            </button>
-            {applied && ["WBFM", "DAB"].includes(reviewMode) && (
-              <div className="decoder-audio">
-                <h3>Shared audio</h3>
-                <label htmlFor="decoder-volume">
-                  Volume · {Math.round(props.volume * 100)}%
-                </label>
+            <details className="decoder-input-details">
+              <summary>
+                <AppIcon name="sliders" />
+                Input details
+              </summary>
+              <div className="decoder-popover">
+                <dl className="decoder-context">
+                  <div>
+                    <dt>Input</dt>
+                    <dd>{sourceLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Channel</dt>
+                    <dd>
+                      {props.remote
+                        ? "See remote Receiver"
+                        : `${channelHz.toLocaleString()} Hz`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Input rate</dt>
+                    <dd>
+                      {props.remote
+                        ? "No raw I/Q rate"
+                        : `${inputRate.toLocaleString()} samples/s`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Applied mode</dt>
+                    <dd>
+                      {props.remote ? "Local decoders unavailable" : props.mode}
+                    </dd>
+                  </div>
+                  {!props.remote && props.mode !== props.configuredMode && (
+                    <div>
+                      <dt>Configured for next start</dt>
+                      <dd>{props.configuredMode}</dd>
+                    </div>
+                  )}
+                </dl>
+                <p className="decoder-hint">
+                  Using the shared receiver. Changing views preserves its
+                  current state.
+                </p>
+                <p className="decoder-hint">
+                  Up to {retention.maximumResults} retained results
+                  {retention.maximumMessages
+                    ? ` and ${retention.maximumMessages} recent records`
+                    : ""}
+                  . Fields may come from earlier accepted records. Export to
+                  save a reviewed result.
+                </p>
+              </div>
+            </details>
+          </div>
+          {!satellite && needsApply && (
+            <div className="decoder-configuration">
+              <p>
+                Apply {reviewMode} to replace {props.configuredMode}.{" "}
+                {props.configurationPreview(reviewMode)}
+              </p>
+              <button
+                type="button"
+                disabled={Boolean(applyBlocked)}
+                onClick={() => {
+                  props.onApply(reviewMode);
+                  setIssue("");
+                }}
+              >
+                Apply {reviewMode}
+              </button>
+              {applyBlocked && <p>{applyBlocked}</p>}
+            </div>
+          )}
+          {applied && ["WBFM", "DAB"].includes(reviewMode) && (
+            <div className="decoder-audio" aria-label="Shared audio">
+              <label htmlFor="decoder-volume">
+                Volume · {Math.round(props.volume * 100)}%
                 <input
                   id="decoder-volume"
                   type="range"
@@ -337,57 +575,34 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     props.onVolumeChange(event.currentTarget.valueAsNumber)
                   }
                 />
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    if (props.volume > 0) {
-                      setAudibleVolume(props.volume);
-                      props.onVolumeChange(0);
-                    } else props.onVolumeChange(audibleVolume);
-                  }}
-                >
-                  {props.volume > 0 ? "Mute audio" : "Unmute audio"}
-                </button>
-                {reviewMode === "DAB" && props.serviceControl}
-              </div>
-            )}
-            <p className="decoder-hint">
-              Results are kept in this page: up to {retention.maximumResults}{" "}
-              {retention.maximumResults === 1 ? "result" : "results"}
-              {retention.maximumMessages
-                ? ` and ${retention.maximumMessages} recent records`
-                : ""}
-              . Protocol fields may be retained from earlier accepted records.
-              Export to save a reviewed result.
-            </p>
-          </aside>
-
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  if (props.volume > 0) {
+                    setAudibleVolume(props.volume);
+                    props.onVolumeChange(0);
+                  } else props.onVolumeChange(audibleVolume);
+                }}
+              >
+                {props.volume > 0 ? "Mute audio" : "Unmute audio"}
+              </button>
+              {reviewMode === "DAB" && props.serviceControl}
+            </div>
+          )}
           <section
-            className="control-panel decoder-stage"
+            className={`decoder-stage${geographic ? " decoder-geographic" : ""}`}
             aria-label="Decoded results"
           >
-            <div className="decoder-stage-heading">
-              <div>
-                <div className="decoder-eyebrow">
-                  {satellite ? "RECORDING WORKFLOW" : reviewMode}
-                </div>
-                <h2>{title}</h2>
-              </div>
-              <span className="decoder-state">
-                {held
-                  ? "Display frozen"
-                  : modeChangePending
-                    ? "Applying configuration"
-                    : applied
-                      ? receiver.lifecycle === "running"
-                        ? "Live input"
-                        : "Retained / idle"
-                      : !needsApply
-                        ? "Configured / idle"
-                        : "Preview"}
-              </span>
-            </div>
+            <h2 className="visually-hidden">{title}</h2>
+            {issue && <p role="alert">{issue}</p>}
+            {frozen && !held && (
+              <p className="decoder-hint">
+                The source, format or acquisition generation changed. The
+                previous frozen display has been cleared.
+              </p>
+            )}
             {satellite ? (
               <div className="decoder-empty">
                 <AppIcon name="folder" />
@@ -409,176 +624,181 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               </div>
             ) : (
               <>
-                <div className="decoder-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={freezeDisplay}
-                    disabled={!applied || !records.length}
-                  >
-                    <AppIcon name={held ? "play" : "pause"} />
-                    {held ? "Resume live display" : "Freeze display"}
-                  </button>
-                  <label className="decoder-filter">
-                    Filter results
-                    <input
-                      type="search"
-                      placeholder="Identity or decoded field"
-                      value={filter}
-                      onChange={(event) => setFilter(event.currentTarget.value)}
-                    />
-                  </label>
-                  <label>
-                    Export scope
-                    <select
-                      value={exportScope}
-                      onChange={(event) =>
-                        setExportScope(
-                          event.currentTarget.value as "retained" | "selected",
-                        )
-                      }
-                    >
-                      <option value="retained">
-                        Retained{" "}
-                        {effectiveView === "messages" ? "messages" : "results"}
-                      </option>
-                      <option value="selected">Selected record</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={
-                      !records.length ||
-                      (exportScope === "selected" && !selected)
-                    }
-                    onClick={exportResults}
-                  >
-                    <AppIcon name="download" />
-                    Export JSON
-                  </button>
-                </div>
-                <p className="decoder-review-status">
-                  {held
-                    ? `Frozen at ${held.frozenAt}. Reception continues; ${Math.max(0, live.accepted - held.accepted).toLocaleString()} additional accepted ${reviewMode === "WBFM" ? "groups" : reviewMode === "DAB" ? "FIC blocks" : reviewMode === "SRD" ? "readings" : "frames"}.`
-                    : `${records.length} retained ${effectiveView === "messages" ? "records" : "results"} · ${live.accepted.toLocaleString()} accepted ${reviewMode === "WBFM" ? "groups" : reviewMode === "DAB" ? "FIC blocks" : reviewMode === "SRD" ? "readings" : "frames"}`}
-                  {filter &&
-                    ` · ${filtered.length} match the filter; retained export includes unfiltered records.`}
-                </p>
-                {frozen && !held && (
-                  <p className="decoder-hint">
-                    The source, format or acquisition generation changed. The
-                    previous frozen display has been cleared.
-                  </p>
-                )}
-                {issue && <p role="alert">{issue}</p>}
-                {(hasMessages || supportsMap) && (
-                  <div
-                    className="decoder-view-options"
-                    role="group"
-                    aria-label="Result presentation"
-                  >
-                    <button
-                      type="button"
-                      className="secondary"
-                      aria-pressed={effectiveView === "results"}
-                      onClick={() => setView({ format, value: "results" })}
-                    >
-                      Results
-                    </button>
-                    {hasMessages && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        aria-pressed={effectiveView === "messages"}
-                        onClick={() => setView({ format, value: "messages" })}
-                      >
-                        {reviewMode === "RS41"
-                          ? "Frames"
-                          : reviewMode === "SRD"
-                            ? "Bursts"
-                            : "Messages"}
-                      </button>
-                    )}
-                    {effectiveView === "map" &&
-                      (reviewMode === "ADS-B" || reviewMode === "AIS") && (
-                      <label className="checkbox-control target-track-toggle">
-                          <input
-                            type="checkbox"
-                            checked={showTracks}
-                            onChange={(event) =>
-                              setShowTracks(event.target.checked)
-                            }
-                          />
-                          Show tracks
-                        </label>
-                      )}
-                    {supportsMap && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        aria-pressed={effectiveView === "map"}
-                        onClick={() => setView({ format, value: "map" })}
-                      >
-                        Map & results
-                      </button>
-                    )}
-                  </div>
-                )}
                 {!filtered.length ? (
                   <div className="decoder-empty">
                     <AppIcon name="radio" />
                     <h3>
                       {filter
                         ? "No matching results"
-                        : "Waiting for decoded data"}
+                        : unavailable
+                          ? "Input unavailable"
+                          : modeChangePending
+                            ? "Applying configuration"
+                            : needsApply
+                              ? "Preview decoder format"
+                              : receiver.lifecycle === "running"
+                                ? "Waiting for decoded data"
+                                : supportsMap
+                                  ? "Ready for decoded positions"
+                                  : "Ready for decoded data"}
                     </h3>
                     <p>
                       {filter
                         ? "Change or clear the filter to see retained results."
                         : unavailable || empty}
                     </p>
+                    <div className="decoder-empty-actions">
+                      {filter ? (
+                        <button type="button" onClick={() => setFilter("")}>
+                          Clear filter
+                        </button>
+                      ) : (
+                        <>
+                          <button type="button" onClick={props.onOpenReceiver}>
+                            <AppIcon name="radio" />
+                            Open Receiver
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={props.remote}
+                            onClick={props.onOpenRecording}
+                          >
+                            <AppIcon name="folder" />
+                            Open I/Q recording
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : geographic ? (
+                  <div
+                    className={`decoder-canvas${selected ? " decoder-canvas-inspecting" : ""}`}
+                  >
+                    <div className="decoder-map">
+                      {positioned.length > 0 ? (
+                        <>
+                          <div className="decoder-map-actions">
+                            {traffic && (
+                              <label className="checkbox-control target-track-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={showTracks}
+                                  onChange={(event) =>
+                                    setShowTracks(event.target.checked)
+                                  }
+                                />
+                                Show tracks
+                              </label>
+                            )}
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                setFitRequest((value) => value + 1)
+                              }
+                            >
+                              <AppIcon name="crosshair" />
+                              Fit targets
+                            </button>
+                          </div>
+                          <PositionMap
+                            pannable
+                            label={`${reviewMode} decoded positions`}
+                            showTracks={traffic && showTracks}
+                            framingKey={`${identity}:${fitRequest}`}
+                            points={filtered.map((r) => ({
+                              latitude: r.latitude ?? null,
+                              longitude: r.longitude ?? null,
+                              label: r.label,
+                              key: r.key,
+                              map: r.map,
+                            }))}
+                            selectedKey={selected?.key}
+                            onPointSelect={selectRecord}
+                          />
+                        </>
+                      ) : (
+                        <div className="decoder-no-position">
+                          <AppIcon name="pin" />
+                          <h3>No reported map positions</h3>
+                          <p>
+                            Retained records remain available below. Unknown or
+                            ambiguous coordinates are not plotted.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {inspector}
                   </div>
                 ) : (
-                  <>
-                    {effectiveView === "map" && (
-                      <PositionMap
-                        label={`${reviewMode} decoded positions`}
-                        showTracks={
-                          (reviewMode === "ADS-B" || reviewMode === "AIS") &&
-                          showTracks
-                        }
-                        points={filtered.map((r) => ({
-                          latitude: r.latitude ?? null,
-                          longitude: r.longitude ?? null,
-                          label: r.label,
-                          key: r.key,
-                          map: r.map,
-                        }))}
-                        selectedKey={selected?.key}
-                        onPointSelect={setSelectedKey}
-                      />
-                    )}
+                  <div
+                    className={`decoder-results-body${selected ? " decoder-results-inspecting" : ""}`}
+                  >
+                    {results}
+                    {inspector}
+                  </div>
+                )}
+                <div className="decoder-tray-heading">
+                  <p className="decoder-review-status">
+                    {reviewStatus}
+                    {filter &&
+                      ` · ${filtered.length} match the filter; retained export includes unfiltered records.`}
+                  </p>
+                  {hasReviewData && (hasMessages || supportsMap) && (
                     <div
-                      className="decoder-record-list"
-                      aria-label="Retained decoded records"
+                      className="decoder-view-options"
+                      role="group"
+                      aria-label="Result presentation"
                     >
-                      {filtered.map((r) => (
+                      <button
+                        type="button"
+                        className="secondary"
+                        aria-pressed={effectiveView === "results"}
+                        onClick={() => setView({ format, value: "results" })}
+                      >
+                        Results
+                      </button>
+                      {hasMessages && (
                         <button
                           type="button"
-                          key={r.key}
-                          className="decoder-record"
-                          aria-pressed={selected?.key === r.key}
-                          onClick={() => setSelectedKey(r.key)}
+                          className="secondary"
+                          aria-pressed={effectiveView === "messages"}
+                          onClick={() => setView({ format, value: "messages" })}
                         >
-                          <strong>{r.label}</strong>
-                          <span>{r.summary}</span>
-                          <small>{r.clock}</small>
+                          {reviewMode === "RS41"
+                            ? "Frames"
+                            : reviewMode === "SRD"
+                              ? "Bursts"
+                              : "Messages"}
                         </button>
-                      ))}
+                      )}
+                      {supportsMap && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          aria-pressed={geographic}
+                          onClick={() => setView({ format, value: "map" })}
+                        >
+                          Map & results
+                        </button>
+                      )}
                     </div>
-                  </>
-                )}
+                  )}
+                  {geographic && filtered.length > 0 && (
+                    <button
+                      type="button"
+                      className="secondary decoder-tray-toggle"
+                      aria-expanded={!trayCollapsed}
+                      aria-controls="decoder-retained-results"
+                      onClick={() => setTrayCollapsed((value) => !value)}
+                    >
+                      <AppIcon name={trayCollapsed ? "expand" : "collapse"} />
+                      {trayCollapsed ? "Show results" : "Hide results"}
+                    </button>
+                  )}
+                </div>
+                {geographic && filtered.length > 0 && results}
                 {applied && reviewMode === "DAB" && (
                   <section
                     aria-label="Selected DAB service metadata"
@@ -594,18 +814,24 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     <DabMetadata metadata={receiver.dab?.programmeMetadata} />
                   </section>
                 )}
-                <details
-                  className="decoder-reception-details"
-                  open={toolsOpen}
-                  onToggle={(event) => setToolsOpen(event.currentTarget.open)}
-                >
-                  <summary>Reception details & protocol tools · live</summary>
-                  <p className="decoder-hint">
-                    These existing audio, metadata, integrity and protocol
-                    export tools follow the live receiver even when the review
-                    display is frozen.
-                  </p>
-                  {toolsOpen && (
+              </>
+            )}
+          </section>
+          <footer className="decoder-footer">
+            {!satellite && (
+              <details
+                className="decoder-reception-details"
+                open={toolsOpen}
+                onToggle={(event) => setToolsOpen(event.currentTarget.open)}
+              >
+                <summary>Reception details & protocol tools · live</summary>
+                {toolsOpen && (
+                  <>
+                    <p className="decoder-hint">
+                      These existing audio, metadata, integrity and protocol
+                      export tools follow the live receiver even when the review
+                      display is frozen.
+                    </p>
                     <DecodedResults
                       receiver={receiver}
                       source={props.source}
@@ -614,56 +840,74 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                       active
                       panelId="decoder-protocol-tools"
                     />
-                  )}
-                </details>
-              </>
+                  </>
+                )}
+              </details>
             )}
-          </section>
-
-          <aside
-            className="control-panel decoder-inspector"
-            aria-label="Selected decoded record"
-          >
-            <div className="decoder-eyebrow">SELECTED RECORD</div>
-            <h2>{selected?.label ?? "Inspect a result"}</h2>
-            {selected && !satellite ? (
-              <>
-                <p>{selected.summary}</p>
-                <p className="decoder-integrity">{selected.integrity}</p>
-                <dl className="decoder-context">
-                  {selected.fields.map(([name, val]) => (
-                    <div key={name}>
-                      <dt>{name}</dt>
-                      <dd>{val}</dd>
-                    </div>
-                  ))}
-                  <div>
-                    <dt>Receive clock</dt>
-                    <dd>{selected.clock}</dd>
-                  </div>
-                  <div>
-                    <dt>Acquisition</dt>
-                    <dd>
-                      {metadata
-                        ? `${metadata.source} · generation ${metadata.sessionGeneration}`
-                        : `generation ${display.receiver.sessionGeneration}`}
-                    </dd>
-                  </div>
-                </dl>
-                <details>
-                  <summary>Raw published record</summary>
-                  <pre>{decoderJson(selected.raw)}</pre>
-                </details>
-              </>
-            ) : (
-              <p className="decoder-hint">
-                Select a received result to inspect its fields, integrity and
-                original decoder clock. Unknown fields stay unknown.
-              </p>
+            {(hasReviewData || satellite) && (
+              <nav aria-label="Decoder handoffs">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={props.onOpenReceiver}
+                >
+                  <AppIcon name="radio" />
+                  Open Receiver
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={props.remote}
+                  onClick={props.onOpenRecording}
+                >
+                  <AppIcon name="folder" />
+                  Open I/Q recording
+                </button>
+              </nav>
             )}
-          </aside>
+          </footer>
         </>
       )}
     </section>
   );
+}
+
+function hasPosition(record: DecoderRecord): boolean {
+  return (
+    record.latitude != null &&
+    record.longitude != null &&
+    Number.isFinite(record.latitude) &&
+    Number.isFinite(record.longitude) &&
+    Math.abs(record.latitude) <= 90 &&
+    Math.abs(record.longitude) <= 180
+  );
+}
+function positionText(record: DecoderRecord): string {
+  return hasPosition(record)
+    ? `${record.latitude!.toFixed(4)}°, ${record.longitude!.toFixed(4)}°`
+    : "Unknown";
+}
+function geographicColumns(mode: ReceiverMode): string[] {
+  switch (mode) {
+    case "ADS-B":
+      return [
+        "Reported aircraft category",
+        "Barometric altitude",
+        "Ground speed",
+        "Track",
+      ];
+    case "AIS":
+      return ["MMSI", "Speed over ground", "Course", "Received channel"];
+    case "APRS":
+      return ["Destination", "Path", "Position ambiguity", "Status"];
+    case "RS41":
+      return [
+        "Ellipsoidal altitude",
+        "Horizontal speed",
+        "Vertical velocity",
+        "Frame counter",
+      ];
+    default:
+      return [];
+  }
 }

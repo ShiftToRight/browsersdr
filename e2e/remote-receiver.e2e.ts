@@ -599,7 +599,9 @@ test("unified remote filters reject invalid passbands and narrow controls remain
     await expect(
       page.getByRole("button", { name: "Tune", exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel("Volume", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("slider", { name: "Volume", exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: /^Remote favorites/ }).click();
     const dialog = page.getByRole("dialog", {
       name: "Remote favorites",
