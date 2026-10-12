@@ -347,37 +347,40 @@ export const COMPATIBILITY_DETAILS: Record<
 /** Maintained public summary of dated evidence, not a certification of every configuration.
  * Exact private run identities and commands remain in BrowserSDR/planning/acceptance.md.
  */
+export const DESKTOP_SUPPORT_SCOPE =
+  "Stable desktop receivers: RTL-SDR and HackRF Pro. Chrome is the validated browser baseline. Other receivers, browsers and unverified mode combinations remain available for further testing and community feedback. Experimental rate and hardware labels still apply.";
+
 export const SUPPORT_EVIDENCE = [
   {
     source: "Synthetic demo / file replay",
-    configuration: "Generated data · desktop Chromium",
+    configuration: "Generated data · desktop Chrome",
     status: "available",
     kind: "Software-tested",
     date: "2026-10-12",
     scope:
       "Spectrum, decoder fixtures, recording recovery and bounded file replay.",
     limits:
-      "No RF or audible hardware proof; largest browser import tested was 33 MiB, not the 2 GiB ceiling.",
+      "Synthetic 2 GiB import, cancellation and bounded range replay verified on 2026-10-12; this establishes software behavior, not physical RF. Peak total browser memory and full-duration playback were not measured.",
   },
   {
     source: "RTL-SDR",
     configuration: "NESDR SMArt v5 · Chrome 154 / Linux · 1.024 and 2.4 MS/s",
     status: "validated",
-    kind: "Dated physical evidence",
-    date: "2026-10-08",
+    kind: "Stable desktop · physical evidence",
+    date: "2026-10-12",
     scope:
-      "Live tuning, FM audio (owner confirmed), native CU8 export and independent SigMF reader. Separate 2026-09-29 RadarBox 2.4 MS/s ADS-B observation.",
+      "Live tuning, rate switching, restart and owner-confirmed FM/RDS. Native CU8 export, independent SigMF reader, reimport, interrupted-capture recovery and cross-tab ownership. Separate 2026-09-29 RTL ADS-B observation.",
     limits:
-      "Other tuners, hosts and real-air modes remain separate. RDS recovery on 2026-10-11 used recorded Fritz data with manual gain; it is not a new live hardware pass.",
+      "Other tuner/host/mode combinations retain their own evidence. Timed capture uses wall time; stored duration counts received samples. Browser clearing or eviction can remove recordings; interrupted recovery retains committed samples only.",
   },
   {
     source: "HackRF Pro",
-    configuration: "Released Pro firmware profile · desktop Chrome",
+    configuration: "HackRF Pro v2026.01.3 · Chrome 154 / Linux · 4.8 MS/s",
     status: "validated",
-    kind: "Dated physical evidence",
-    date: "2026-10-08",
+    kind: "Stable desktop · physical evidence",
+    date: "2026-10-12",
     scope:
-      "4.8 / 9.6 / experimental 19.2 MS/s bounded reception and restart; native CI8 export and independent reader. Earlier 2026-09-25 19.2 MS/s 30-minute run retained.",
+      "Owner-audible FM and live/replayed RDS; physical 2 GiB native CI8 capture, download, independent reader, reload retention and range replay. Earlier 9.6 / experimental 19.2 MS/s evidence remains separately dated.",
     limits:
       "19.2 MS/s remains experimental. Loaded hosts, per-mode audio and HackRF One are not covered.",
   },

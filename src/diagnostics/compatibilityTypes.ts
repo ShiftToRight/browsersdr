@@ -17,6 +17,8 @@ export interface CompatibilityObservation {
 }
 
 export interface CompatibilityReportContext {
+  sessionGeneration?: number;
+  srdProtocol?: "none" | "acurite-592txr" | "fineoffset-wh51" | null;
   lifecycle: string;
   source: string;
   deviceProfile: string;

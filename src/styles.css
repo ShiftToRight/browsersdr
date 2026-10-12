@@ -22,10 +22,25 @@
   --selected-background: rgba(31, 79, 114, 0.5);
   --disabled-background: #142135;
   --disabled-color: #91a2b9;
+  --scrollbar-thumb: #527394;
+  --scrollbar-track: #071426;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: var(--scrollbar-track); }
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 2px solid var(--scrollbar-track);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
 }
 html {
   min-width: 320px;
@@ -4658,6 +4673,8 @@ button:has(> .app-icon) {
 .decode-panel[data-mode="WBFM"] .decoder-details[open] { grid-column: 1 / -1; }
 .receiver-dock-panel .display-note { margin: 6px 0; }
 
+.recording-library button { min-height: 32px; padding: 5px 10px; font-size: 0.78rem; margin: 0 6px 6px 0; }
+.recording-library-entry { padding-top: 4px; }
 .capture-topline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
 .capture-topline .workspace-subtabs { margin: 0; gap: 4px; }
 .capture-topline .workspace-subtabs button { min-height: 32px; padding: 4px 9px; font-size: 0.75rem; }
@@ -4702,7 +4719,7 @@ button:has(> .app-icon) {
 }
 @media (pointer: coarse) {
   .workspace-controls > button,
-  .dock-actions button, .capture-topline button, .capture-options input, .capture-options select,
+  .dock-actions button, .capture-topline button, .recording-library button, .capture-options input, .capture-options select,
   .capture-options .channel-capture-toggle, .capture-panel .replay-inputs button,
   .capture-panel .replay-inputs select, .capture-panel .file-picker-control,
   .receiver-dock-panel .decoder-details > summary, .capture-panel .recording-details > summary,

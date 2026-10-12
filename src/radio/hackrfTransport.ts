@@ -17,6 +17,7 @@ export const HACKRF_READ_SLOTS = 4;
 export const HACKRF_WIDEBAND_READ_SLOTS = 64;
 export const HACKRF_READ_BYTES = 65_536;
 export const HACKRF_MAX_COMPLEX_SAMPLES = HACKRF_READ_BYTES / 2;
+const RECLAIM_DELAYS_MS = [100, 250] as const;
 export interface NativeIqBlock {
   bytes: Uint8Array;
   encoding: "ci8";
@@ -262,6 +263,7 @@ export class HackrfTransport {
   private async openOwned(
     device: USBDevice,
     token: number,
+    reclaim = false,
   ): Promise<HackrfIdentity> {
     this.guard(token);
     if (
@@ -276,7 +278,28 @@ export class HackrfTransport {
     if (device.configuration?.configurationValue !== 1)
       await this.deadline(this.track(device.selectConfiguration(1)));
     this.guard(token);
-    await this.deadline(this.track(device.claimInterface(0)));
+    for (let attempt = 0; ; attempt++) {
+      this.guard(token);
+      try {
+        await this.deadline(this.track(device.claimInterface(0)));
+        break;
+      } catch (error) {
+        // A self-owned close/reopen can briefly fail to reclaim on Linux/Chrome.
+        // Only our own reconfiguration handoff gets a bounded retry; initial access,
+        // permission failures and persistent contention still fail normally.
+        if (
+          !reclaim ||
+          !(error instanceof DOMException) ||
+          error.name !== "NetworkError" ||
+          attempt >= RECLAIM_DELAYS_MS.length
+        )
+          throw error;
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, RECLAIM_DELAYS_MS[attempt]),
+        );
+        this.guard(token);
+      }
+    }
     this.guard(token);
     const identity = await this.protocol(token).identify(device);
     this.guard(token);
@@ -307,7 +330,7 @@ export class HackrfTransport {
         // shutdown invalidated old callbacks. This command is the sole reopen owner.
         if (this.terminal || stopVersion !== this.stopVersion) throw aborted();
         token = ++this.token;
-        await this.openOwned(this.device!, token);
+        await this.openOwned(this.device!, token, true);
       }
       this.guard(token);
       const session = await this.protocol(token).configure(

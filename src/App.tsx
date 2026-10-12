@@ -1,5 +1,5 @@
 import { useCaptureRetention } from "./ui/useCaptureRetention";
-import { COMPATIBILITY_DETAILS, COMPATIBILITY_STATUS_LABELS, SUPPORT_EVIDENCE, type CompatibilityDetailView } from "./radio/supportEvidence";
+import { COMPATIBILITY_DETAILS, COMPATIBILITY_STATUS_LABELS, DESKTOP_SUPPORT_SCOPE, SUPPORT_EVIDENCE, type CompatibilityDetailView } from "./radio/supportEvidence";
 import { DeferredWorkspace } from "./ui/DeferredWorkspace";
 import { selectAuthorizedUsbDevice, usbDeviceMatchesSource } from "./radio/sourceSetup";
 export { selectAuthorizedUsbDevice, usbDeviceMatchesSource } from "./radio/sourceSetup";
@@ -9,6 +9,7 @@ import { ReplayActivation, readReplayMetadata } from "./radio/replayActivation";
 import { RecordingLibrary } from "./ui/RecordingLibrary";
 import { ReceiverDecodePanel } from "./ui/DecodedResults";
 const DecoderWorkspace = lazy(() => import("./ui/DecoderWorkspace").then(module => ({ default: module.DecoderWorkspace })));
+const CommunityCompatibility = lazy(() => import("./ui/CommunityCompatibility").then(module => ({ default: module.CommunityCompatibility })));
 import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 const RemoteReceiver = lazy(() => import("./ui/RemoteReceiver").then(module => ({ default: module.RemoteReceiver })));
@@ -2291,6 +2292,8 @@ export function ReceiverApp({
   const activeSession = receiver.session;
   const activeHackrfSettings = activeSession?.hackrf?.captureSettings;
   const compatibilityReportContext: CompatibilityReportContext = {
+    sessionGeneration: activeSession?.sessionGeneration ?? receiver.sessionGeneration,
+    srdProtocol: activeSession?.srd?.protocol ?? currentModeSettings.srd?.protocol ?? null,
     lifecycle: receiver.lifecycle,
     source: activeSession?.source ?? source,
     deviceProfile: caps.label,
@@ -2886,15 +2889,13 @@ export function ReceiverApp({
                                 Change pending · applies when reception starts
                               </small>
                             )}
-                          <small>
-                            {source === "hackrf"
-                              ? "4.8, 9.6 and experimental 19.2 MS/s widen the spectrum and native recording; the selected channel is filtered to 2.4 MS/s. Stop reception to change rate without disconnecting."
-                              : source === "bladerf"
+                          {source !== "hackrf" && <small>
+                            {source === "bladerf"
                                 ? "All supported bladeRF 2.0 Micro variants use native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
                                 : source === "usrp-b205"
                                   ? "Stop reception to change rate. The new rate is applied when reception starts; the USRP is reinitialized automatically. Demodulation uses a 2.4 MS/s selected-channel path."
                                   : "Change rate while receiving; reception resumes automatically after a brief gap. An active recording finishes before switching. 2.4 MS/s captures full DAB bandwidth and resolves ADS-B pulses."}
-                          </small>
+                          </small>}
                         </label>
                       )}
                       {caps.gain.kind === "rtl-auto-manual" && (
@@ -3915,7 +3916,7 @@ export function ReceiverApp({
                   onChange={event => setCaptureCurrentChannel(event.currentTarget.checked)} />
                 Capture current channel only
               </label>
-              <label className="capture-duration">Duration (s; 0 = manual)
+              <label className="capture-duration" title="Timer uses elapsed wall time; saved duration is calculated from received samples.">Capture timer (s; 0 = manual)
                 <input aria-label="Timed capture seconds" type="number" min={0} max={300} step={1} value={captureDuration}
                   disabled={!!recordingStatus || exportingRecording || atlasTransferActive}
                   onChange={event => { const value=Number(event.currentTarget.value); if (Number.isFinite(value)) setCaptureDuration(Math.max(0,Math.min(300,value))); }} />
@@ -4540,6 +4541,8 @@ export function ReceiverApp({
 
             <div className="help-layout">
               <main className="help-main">
+                <DeferredWorkspace active><CommunityCompatibility context={compatibilityReportContext} renderer={spectrumStatus.kind === "ready" ? spectrumStatus.renderer : undefined}
+                  blockedReason={remoteSelected ? "Return to a local receiver or I/Q replay before reporting this setup." : undefined} /></DeferredWorkspace>
                 <section
                   className="help-panel compatibility-panel"
                   aria-labelledby="compatibility-heading"
@@ -4560,6 +4563,7 @@ export function ReceiverApp({
                       </span>
                     </div>
                   </div>
+                  <p className="matrix-intro">{DESKTOP_SUPPORT_SCOPE}</p>
                   <p className="matrix-intro">
                     Evidence applies only to the listed scope.{" "}
                     <strong>Physical tests</strong> exercise a real receiver and
@@ -4726,6 +4730,7 @@ export function ReceiverApp({
                   <CompatibilityReportCard
                     context={compatibilityReportContext}
                   />
+                  <p className="compatibility-detail-note">Legacy compatibility reports are private. Use “Report this test” above to contribute to the community matrix.</p>
                 </section>
 
                 <section

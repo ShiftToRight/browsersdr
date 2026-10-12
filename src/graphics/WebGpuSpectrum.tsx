@@ -21,6 +21,7 @@ export interface SpectrumDisplayStatus {
   hasFrame: boolean;
   paused: boolean;
   stalled?: boolean;
+  renderer?: "webgpu" | "canvas2d";
 }
 
 type GpuState = {
@@ -116,8 +117,8 @@ export function WebGpuSpectrum({
     message: "Requesting a GPU adapter and device…",
   });
   useEffect(() => {
-    onStatusChange?.({ kind: state.kind, hasFrame, paused, stalled });
-  }, [state.kind, hasFrame, paused, stalled, onStatusChange]);
+    onStatusChange?.({ kind: state.kind, hasFrame, paused, stalled, renderer });
+  }, [state.kind, hasFrame, paused, stalled, renderer, onStatusChange]);
   useEffect(() => {
     const timer = setInterval(() => setStalled(Boolean(session && hasFrame && !paused && performance.now() - lastFrameAt.current > 3_000)), 1_000);
     return () => clearInterval(timer);

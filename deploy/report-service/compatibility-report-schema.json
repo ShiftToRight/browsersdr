@@ -1,55 +1,318 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://browsersdr.com/schemas/compatibility-report-v1.json",
-  "title": "BrowserSDR compatibility report v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "reportType",
-    "reportId",
-    "createdAt",
-    "build",
-    "environment",
-    "receiver",
-    "observations",
-    "redaction"
-  ],
-  "properties": {
-    "schemaVersion": { "const": 1 },
-    "reportType": { "const": "compatibility" },
-    "reportId": { "type": "string", "pattern": "^BC-", "maxLength": 64 },
-    "createdAt": { "type": "string", "format": "date-time", "maxLength": 40 },
-    "build": { "type": "object" },
-    "environment": { "type": "object" },
-    "receiver": { "type": "object" },
-    "observations": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 12,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["service", "result"],
-        "properties": {
-          "service": {
-            "enum": [
-              "connection",
-              "spectrum",
-              "tuning",
-              "audio",
-              "rds",
-              "dab",
-              "digital-decode",
-              "recording-export",
-              "replay"
-            ]
-          },
-          "result": { "enum": ["working", "degraded", "not-working"] }
+  "title": "BrowserSDR compatibility reports: legacy v1 and reviewed community v2",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "reportType",
+        "reportId",
+        "createdAt",
+        "build",
+        "environment",
+        "receiver",
+        "observations",
+        "redaction"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "reportType": {
+          "const": "compatibility"
+        },
+        "reportId": {
+          "type": "string",
+          "pattern": "^BC-",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "build": {
+          "type": "object"
+        },
+        "environment": {
+          "type": "object"
+        },
+        "receiver": {
+          "type": "object"
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["service", "result"],
+            "properties": {
+              "service": {
+                "enum": [
+                  "connection",
+                  "spectrum",
+                  "tuning",
+                  "audio",
+                  "rds",
+                  "dab",
+                  "digital-decode",
+                  "recording-export",
+                  "replay"
+                ]
+              },
+              "result": {
+                "enum": ["working", "degraded", "not-working"]
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "redaction": {
+          "type": "object"
         }
       }
     },
-    "notes": { "type": "string", "maxLength": 1000 },
-    "redaction": { "type": "object" }
-  }
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "reportType",
+        "reportId",
+        "createdAt",
+        "build",
+        "participantToken",
+        "setup",
+        "environment",
+        "durationMinutes",
+        "testScope",
+        "observations"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "reportType": {
+          "const": "compatibility"
+        },
+        "reportId": {
+          "type": "string",
+          "pattern": "^BC-[a-fA-F0-9-]{10,50}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version", "builtAt"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "not": {
+                "enum": ["development", "unknown"]
+              }
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$",
+              "maxLength": 40
+            },
+            "builtAt": {
+              "type": "string",
+              "format": "date-time",
+              "maxLength": 40
+            }
+          }
+        },
+        "participantToken": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "hardwareId",
+            "mode",
+            "rateHz",
+            "nativeRateHz",
+            "protocolProfile",
+            "firmwareVersion",
+            "origin",
+            "srdProtocol"
+          ],
+          "properties": {
+            "source": {
+              "enum": [
+                "rtl-sdr",
+                "hackrf",
+                "bladerf",
+                "usrp-b205",
+                "replay",
+                "synthetic"
+              ]
+            },
+            "hardwareId": {
+              "enum": [
+                "rtl-nesdr-smart-v5",
+                "rtl-blog-v3",
+                "rtl-blog-v4",
+                "rtl-unknown",
+                "hackrf-pro",
+                "bladerf-xa4",
+                "bladerf-xa5",
+                "bladerf-xa9",
+                "bladerf-unknown",
+                "usrp-b205-mini",
+                "usrp-b205mini-i",
+                "usrp-unknown",
+                "replay",
+                "synthetic"
+              ]
+            },
+            "mode": {
+              "enum": [
+                "OFF",
+                "WBFM",
+                "NBFM",
+                "AM",
+                "USB",
+                "LSB",
+                "CW",
+                "DAB",
+                "ADS-B",
+                "AIS",
+                "APRS",
+                "RS41",
+                "SRD"
+              ]
+            },
+            "rateHz": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100000000
+            },
+            "nativeRateHz": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0,
+              "maximum": 200000000
+            },
+            "protocolProfile": {
+              "enum": [
+                null,
+                "hackrf-pro-standard-7f96cc8-v1",
+                "hackrf-pro-stable-2026-v1",
+                "bladerf2-xa4-fpga-rfic-35174c3-v1",
+                "bladerf2-xa5-fpga-rfic-35174c3-v1",
+                "bladerf2-xa9-fpga-rfic-35174c3-v1",
+                "usrp-b205-mini-uhd-4.9.0.0-rx-v2"
+              ]
+            },
+            "firmwareVersion": {
+              "type": ["string", "null"],
+              "pattern": "^v?\\d{1,4}(?:\\.\\d{1,4}){0,3}(?:-[a-zA-Z0-9.-]{1,20})?$"
+            },
+            "origin": {
+              "enum": ["live", "replay", "synthetic"]
+            },
+            "srdProtocol": {
+              "enum": [null, "none", "acurite-592txr", "fineoffset-wh51"]
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["browser", "operatingSystem", "renderer"],
+          "properties": {
+            "browser": {
+              "type": "string",
+              "pattern": "^(?:Chrome|Edge|Firefox|Safari) \\d{1,4}$|^Unknown browser$"
+            },
+            "operatingSystem": {
+              "enum": [
+                "Linux",
+                "Windows",
+                "macOS",
+                "ChromeOS",
+                "Android",
+                "iOS",
+                "Unknown"
+              ]
+            },
+            "renderer": {
+              "enum": ["webgpu", "canvas2d", "unknown"]
+            }
+          }
+        },
+        "durationMinutes": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10080
+        },
+        "testScope": {
+          "enum": ["smoke", "sustained"]
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["feature", "result"],
+            "properties": {
+              "feature": {
+                "enum": [
+                  "wbfm",
+                  "nbfm",
+                  "am",
+                  "usb",
+                  "lsb",
+                  "cw",
+                  "rds",
+                  "dab-discovery",
+                  "dab-audio",
+                  "dab-plus-audio",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "rs41",
+                  "srd-acurite",
+                  "srd-wh51",
+                  "access",
+                  "processing",
+                  "audio-output",
+                  "display",
+                  "storage",
+                  "export",
+                  "replay"
+                ]
+              },
+              "result": {
+                "enum": ["working", "degraded", "not-working"]
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    }
+  ]
 }

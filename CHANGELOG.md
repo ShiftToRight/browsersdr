@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.2 — 2026-10-12
+
+- Align local recording library buttons with compact controls, remove the HackRF sample-rate explainer and theme GUI scrollbars.
+
+- Community compatibility reporting in Help: version tabs, shared hardware/decoder evidence, separate platform/runtime checks and exact-build engine records.
+- Structured per-feature reports with duration, reviewed two-positive confirmation, persistent problem visibility and downloadable withdrawal receipts. Legacy reports remain separate.
+- Recover transient HackRF USB interface reclaim failures during gain/rate reconfiguration with bounded, cancellable retries; initial permission and persistent contention failures remain actionable.
+- Declare RTL-SDR and HackRF Pro the stable desktop receiver scope, with Chrome as the validated browser baseline and per-mode/configuration evidence retained.
+- Update support evidence with native 2 GiB capture, bounded replay and interrupted-capture recovery acceptance; clarify wall-clock capture timing versus received sample duration.
+
 ## 1.0.0-rc.1 — 2026-10-12
 
 Source checkpoint for the next website release. Committing this version does not deploy it.

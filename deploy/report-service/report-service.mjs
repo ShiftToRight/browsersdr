@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
+import { readFileSync, statSync } from "node:fs";
 
 export const MAX_COMPRESSED_BYTES = 128 * 1024;
 export const MAX_EXPANDED_BYTES = 512 * 1024;
@@ -147,6 +148,7 @@ export function validateReport(value) {
 }
 
 export function validateCompatibilityReport(value) {
+  if (value?.schemaVersion === 2) return validateCommunityReport(value);
   if (!value || typeof value !== "object" || Array.isArray(value))
     return "Report must be an object.";
   const unknown = Object.keys(value).find(
@@ -254,6 +256,7 @@ export function sanitizeReport(value) {
 }
 
 export function sanitizeCompatibilityReport(value) {
+  if (value.schemaVersion === 2) return sanitizeCommunityReport(value);
   const receiver = Object.fromEntries(
     Object.entries(safeScalarRecord(value.receiver)).filter(([key]) =>
       COMPATIBILITY_RECEIVER_FIELDS.has(key),
@@ -291,6 +294,15 @@ export function sanitizeCompatibilityReport(value) {
 }
 
 export function fingerprint(report) {
+  if (report.schemaVersion === 2 && report.reportType === "compatibility")
+    return digest(
+      JSON.stringify([
+        report.build.id,
+        report.setup,
+        report.environment,
+        report.observations,
+      ]),
+    );
   if (report.reportType === "compatibility")
     return createHash("sha256")
       .update(
@@ -323,6 +335,596 @@ export function fingerprint(report) {
       ]),
     )
     .digest("hex");
+}
+
+export const COMMUNITY_HARDWARE = {
+  "rtl-nesdr-smart-v5": "rtl-sdr",
+  "rtl-blog-v3": "rtl-sdr",
+  "rtl-blog-v4": "rtl-sdr",
+  "rtl-unknown": "rtl-sdr",
+  "hackrf-pro": "hackrf",
+  "bladerf-xa4": "bladerf",
+  "bladerf-xa5": "bladerf",
+  "bladerf-xa9": "bladerf",
+  "bladerf-unknown": "bladerf",
+  "usrp-b205-mini": "usrp-b205",
+  "usrp-b205mini-i": "usrp-b205",
+  "usrp-unknown": "usrp-b205",
+  replay: "replay",
+  synthetic: "synthetic",
+};
+export const COMMUNITY_FEATURE_MODES = {
+  wbfm: "WBFM",
+  nbfm: "NBFM",
+  am: "AM",
+  usb: "USB",
+  lsb: "LSB",
+  cw: "CW",
+  rds: "WBFM",
+  "dab-discovery": "DAB",
+  "dab-audio": "DAB",
+  "dab-plus-audio": "DAB",
+  adsb: "ADS-B",
+  ais: "AIS",
+  aprs: "APRS",
+  rs41: "RS41",
+  "srd-acurite": "SRD",
+  "srd-wh51": "SRD",
+  access: null,
+  processing: null,
+  "audio-output": null,
+  display: null,
+  storage: null,
+  export: null,
+  replay: null,
+};
+const RUNTIME_FEATURES = new Set([
+  "processing",
+  "audio-output",
+  "display",
+  "storage",
+]);
+const COMMUNITY_PROFILES = new Set([
+  null,
+  "hackrf-pro-standard-7f96cc8-v1",
+  "hackrf-pro-stable-2026-v1",
+  "bladerf2-xa4-fpga-rfic-35174c3-v1",
+  "bladerf2-xa5-fpga-rfic-35174c3-v1",
+  "bladerf2-xa9-fpga-rfic-35174c3-v1",
+  "usrp-b205-mini-uhd-4.9.0.0-rx-v2",
+]);
+const COMMUNITY_OS = new Set([
+  "Linux",
+  "Windows",
+  "macOS",
+  "ChromeOS",
+  "Android",
+  "iOS",
+  "Unknown",
+]);
+const digest = (value) => createHash("sha256").update(value).digest("hex");
+const objectWithKeys = (value, keys) =>
+  value &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  Object.keys(value).every((key) => keys.includes(key));
+const dateString = (value) =>
+  typeof value === "string" &&
+  value.length <= 40 &&
+  Number.isFinite(Date.parse(value));
+const buildIdValid = (value) =>
+  typeof value === "string" &&
+  /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value) &&
+  !["development", "unknown"].includes(value);
+
+export function validateCommunityReport(value) {
+  if (
+    !objectWithKeys(value, [
+      "schemaVersion",
+      "reportType",
+      "reportId",
+      "createdAt",
+      "build",
+      "participantToken",
+      "setup",
+      "environment",
+      "durationMinutes",
+      "testScope",
+      "observations",
+      "notes",
+    ]) ||
+    value.schemaVersion !== 2 ||
+    value.reportType !== "compatibility"
+  )
+    return "Invalid community report.";
+  if (
+    typeof value.reportId !== "string" ||
+    !/^BC-[a-f0-9-]{10,50}$/i.test(value.reportId) ||
+    !dateString(value.createdAt) ||
+    typeof value.participantToken !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.participantToken)
+  )
+    return "Invalid report identity.";
+  if (
+    !objectWithKeys(value.build, ["id", "version", "builtAt"]) ||
+    !buildIdValid(value.build.id) ||
+    typeof value.build.version !== "string" ||
+    !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(value.build.version) ||
+    value.build.version.length > 40 ||
+    !dateString(value.build.builtAt)
+  )
+    return "This build is not eligible for community reporting.";
+  const s = value.setup;
+  if (
+    !objectWithKeys(s, [
+      "source",
+      "hardwareId",
+      "mode",
+      "srdProtocol",
+      "rateHz",
+      "nativeRateHz",
+      "protocolProfile",
+      "firmwareVersion",
+      "origin",
+    ]) ||
+    !Object.hasOwn(COMMUNITY_HARDWARE, s.hardwareId) ||
+    COMMUNITY_HARDWARE[s.hardwareId] !== s.source ||
+    ![
+      "OFF",
+      ...Object.values(COMMUNITY_FEATURE_MODES).filter(Boolean),
+    ].includes(s.mode) ||
+    !(s.mode === "SRD"
+      ? ["none", "acurite-592txr", "fineoffset-wh51"].includes(s.srdProtocol)
+      : s.srdProtocol === null) ||
+    !Number.isFinite(s.rateHz) ||
+    s.rateHz <= 0 ||
+    s.rateHz > 100_000_000 ||
+    !(
+      s.nativeRateHz === null ||
+      (Number.isFinite(s.nativeRateHz) &&
+        s.nativeRateHz > 0 &&
+        s.nativeRateHz <= 200_000_000)
+    ) ||
+    !COMMUNITY_PROFILES.has(s.protocolProfile) ||
+    !(
+      s.firmwareVersion === null ||
+      (typeof s.firmwareVersion === "string" &&
+        /^v?\d{1,4}(?:\.\d{1,4}){0,3}(?:-[a-zA-Z0-9.-]{1,20})?$/.test(
+          s.firmwareVersion,
+        ))
+    ) ||
+    s.origin !==
+      (s.source === "replay"
+        ? "replay"
+        : s.source === "synthetic"
+          ? "synthetic"
+          : "live")
+  )
+    return "Invalid receiver setup.";
+  const e = value.environment;
+  if (
+    !objectWithKeys(e, ["browser", "operatingSystem", "renderer"]) ||
+    !/^(?:Chrome|Edge|Firefox|Safari) \d{1,4}$|^Unknown browser$/.test(
+      e.browser ?? "",
+    ) ||
+    !COMMUNITY_OS.has(e.operatingSystem) ||
+    !["webgpu", "canvas2d", "unknown"].includes(e.renderer)
+  )
+    return "Invalid platform.";
+  if (
+    !Number.isFinite(value.durationMinutes) ||
+    value.durationMinutes < 0 ||
+    value.durationMinutes > 10080 ||
+    !["smoke", "sustained"].includes(value.testScope)
+  )
+    return "Invalid test duration or scope.";
+  if (
+    value.notes !== undefined &&
+    (typeof value.notes !== "string" || value.notes.length > 1000)
+  )
+    return "Invalid private notes.";
+  if (
+    !Array.isArray(value.observations) ||
+    !value.observations.length ||
+    value.observations.length > 24
+  )
+    return "Select tested features.";
+  const seen = new Set();
+  for (const o of value.observations) {
+    if (
+      !objectWithKeys(o, ["feature", "result"]) ||
+      !Object.hasOwn(COMMUNITY_FEATURE_MODES, o.feature) ||
+      !COMPATIBILITY_RESULTS.has(o.result) ||
+      seen.has(o.feature) ||
+      (COMMUNITY_FEATURE_MODES[o.feature] &&
+        COMMUNITY_FEATURE_MODES[o.feature] !== s.mode) ||
+      (o.feature === "access" && s.origin !== "live")
+    )
+      return "Invalid feature observation for this setup.";
+    if (
+      (o.feature === "srd-acurite" && s.srdProtocol !== "acurite-592txr") ||
+      (o.feature === "srd-wh51" && s.srdProtocol !== "fineoffset-wh51")
+    )
+      return "SRD protocol does not match the exercised decoder.";
+    seen.add(o.feature);
+  }
+  return null;
+}
+
+export function sanitizeCommunityReport(value) {
+  // v2 uses explicit nested fields; no generic scalar record reaches public aggregation.
+  return {
+    schemaVersion: 2,
+    reportType: "compatibility",
+    reportId: value.reportId,
+    createdAt: value.createdAt,
+    build: {
+      id: value.build.id,
+      version: value.build.version,
+      builtAt: value.build.builtAt,
+    },
+    setup: {
+      source: value.setup.source,
+      hardwareId: value.setup.hardwareId,
+      mode: value.setup.mode,
+      srdProtocol: value.setup.srdProtocol,
+      rateHz: value.setup.rateHz,
+      nativeRateHz: value.setup.nativeRateHz,
+      protocolProfile: value.setup.protocolProfile,
+      firmwareVersion: value.setup.firmwareVersion,
+      origin: value.setup.origin,
+    },
+    environment: {
+      browser: value.environment.browser,
+      operatingSystem: value.environment.operatingSystem,
+      renderer: value.environment.renderer,
+    },
+    durationMinutes: value.durationMinutes,
+    testScope: value.testScope,
+    observations: value.observations.map((o) => ({
+      feature: o.feature,
+      result: o.result,
+    })),
+    ...(value.notes ? { notes: value.notes } : {}),
+  };
+}
+
+export function createCommunityStore(database, options = {}) {
+  database.exec(`CREATE TABLE IF NOT EXISTS community_builds(id TEXT PRIMARY KEY, version TEXT NOT NULL, built_at TEXT NOT NULL, engine_checks TEXT NOT NULL DEFAULT '[]');
+    CREATE TABLE IF NOT EXISTS community_submissions(reference TEXT PRIMARY KEY, report_id TEXT NOT NULL, participant TEXT NOT NULL, receipt TEXT NOT NULL, body_hash TEXT NOT NULL, expires_at TEXT NOT NULL, UNIQUE(report_id, participant));
+    CREATE TABLE IF NOT EXISTS community_votes(cell_key TEXT NOT NULL, participant TEXT NOT NULL, reference TEXT NOT NULL, build_id TEXT NOT NULL, feature TEXT NOT NULL, setup TEXT NOT NULL, platform TEXT, environment TEXT NOT NULL, scope TEXT NOT NULL, duration REAL NOT NULL, result TEXT NOT NULL, has_issue INTEGER NOT NULL, review TEXT NOT NULL DEFAULT 'pending', received_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(cell_key, participant));
+    CREATE INDEX IF NOT EXISTS community_votes_build ON community_votes(build_id);
+    CREATE TABLE IF NOT EXISTS community_revisions(reference TEXT NOT NULL, cell_key TEXT NOT NULL, result TEXT NOT NULL, received_at TEXT NOT NULL, expires_at TEXT NOT NULL);`);
+  const registerBuild = (build) => {
+    if (!build || typeof build !== "object" || Array.isArray(build))
+      return false;
+    const id = build.id ?? build.release;
+    if (
+      !buildIdValid(id) ||
+      !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(build.version ?? "") ||
+      (build.version ?? "").length > 40 ||
+      !dateString(build.builtAt)
+    )
+      return false;
+    const checks = (Array.isArray(build.engineChecks) ? build.engineChecks : [])
+      .filter(
+        (c) =>
+          c &&
+          typeof c === "object" &&
+          Object.hasOwn(COMMUNITY_FEATURE_MODES, c.feature) &&
+          COMMUNITY_FEATURE_MODES[c.feature] &&
+          ["passed", "failed"].includes(c.result) &&
+          dateString(c.checkedAt) &&
+          typeof c.evidence === "string" &&
+          /^https:\/\/(?:github\.com|browsersdr\.com)\//.test(c.evidence) &&
+          c.evidence.length <= 300,
+      )
+      .slice(0, 24)
+      .map((c) => ({
+        feature: c.feature,
+        result: c.result,
+        checkedAt: c.checkedAt,
+        evidence: c.evidence,
+      }));
+    const existing = database
+      .prepare("SELECT version, built_at FROM community_builds WHERE id=?")
+      .get(id);
+    if (
+      existing &&
+      (existing.version !== build.version ||
+        existing.built_at !== build.builtAt)
+    )
+      return false;
+    if (existing && Array.isArray(build.engineChecks))
+      database
+        .prepare("UPDATE community_builds SET engine_checks=? WHERE id=?")
+        .run(JSON.stringify(checks), id);
+    database
+      .prepare(
+        "INSERT INTO community_builds(id,version,built_at,engine_checks) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",
+      )
+      .run(id, build.version, build.builtAt, JSON.stringify(checks));
+    return true;
+  };
+  for (const build of options.communityBuilds ?? []) registerBuild(build);
+  const discoverBuild = () => {
+    const path =
+      options.communityReleasePath === null
+        ? null
+        : (options.communityReleasePath ??
+          process.env.BROWSERSDR_REPORT_RELEASE_JSON ??
+          "/var/www/browsersdr.com/current/release.json");
+    if (!path) return;
+    try {
+      if (statSync(path).size <= 64 * 1024)
+        registerBuild(JSON.parse(readFileSync(path, "utf8")));
+    } catch {
+      /* A local/dev service can have no registered release. */
+    }
+  };
+  const purge = (now) => {
+    for (const table of [
+      "community_votes",
+      "community_revisions",
+      "community_submissions",
+    ])
+      database.prepare(`DELETE FROM ${table} WHERE expires_at <= ?`).run(now);
+  };
+  const accept = (input) => {
+    discoverBuild();
+    const build = database
+      .prepare("SELECT version, built_at FROM community_builds WHERE id=?")
+      .get(input.build.id);
+    if (
+      !build ||
+      build.version !== input.build.version ||
+      build.built_at !== input.build.builtAt
+    )
+      return {
+        status: 400,
+        body: { error: "Build is not registered by the report service." },
+      };
+    const body = sanitizeCommunityReport(input),
+      participant = digest(input.build.id + "|" + input.participantToken);
+    const bodyHash = digest(JSON.stringify({ ...body, createdAt: undefined }));
+    const previous = database
+      .prepare(
+        "SELECT * FROM community_submissions WHERE report_id=? AND participant=?",
+      )
+      .get(input.reportId, participant);
+    if (previous)
+      return previous.body_hash === bodyHash
+        ? {
+            status: 202,
+            body: { reference: previous.reference, receipt: previous.receipt },
+          }
+        : {
+            status: 409,
+            body: {
+              error:
+                "Report already submitted; open a new report for a correction.",
+            },
+          };
+    const now = new Date().toISOString(),
+      expiry = new Date(Date.now() + 90 * 86400000).toISOString();
+    const reference = `BC-${randomBytes(12).toString("hex")}`,
+      receipt = randomBytes(32).toString("hex");
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database
+        .prepare(
+          "INSERT INTO reports(reference,received_at,expires_at,fingerprint,build_id,trigger,report_type,body) VALUES(?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          reference,
+          now,
+          new Date(Date.now() + 30 * 86400000).toISOString(),
+          fingerprint(body),
+          body.build.id,
+          "compatibility",
+          "compatibility",
+          JSON.stringify(body),
+        );
+      database
+        .prepare("INSERT INTO community_submissions VALUES(?,?,?,?,?,?)")
+        .run(reference, input.reportId, participant, receipt, bodyHash, expiry);
+      for (const o of body.observations) {
+        const runtime = RUNTIME_FEATURES.has(o.feature),
+          platform =
+            runtime || o.feature === "access"
+              ? `${body.environment.browser} / ${body.environment.operatingSystem}`
+              : null;
+        const scope = body.testScope;
+        const context = runtime
+          ? {
+              feature: o.feature,
+              platform,
+              renderer:
+                o.feature === "display" ? body.environment.renderer : null,
+              origin: body.setup.origin,
+              rateHz: body.setup.rateHz,
+              nativeRateHz: body.setup.nativeRateHz,
+              scope,
+            }
+          : {
+              feature: o.feature,
+              platform,
+              setup:
+                o.feature === "access"
+                  ? { ...body.setup, mode: "OFF", srdProtocol: null }
+                  : body.setup,
+              scope,
+            };
+        const key = digest(JSON.stringify([body.build.id, context]));
+        database
+          .prepare(
+            `INSERT INTO community_votes(cell_key,participant,reference,build_id,feature,setup,platform,environment,scope,duration,result,has_issue,received_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(cell_key,participant) DO UPDATE SET reference=excluded.reference, environment=excluded.environment, setup=excluded.setup, duration=excluded.duration, result=excluded.result, has_issue=MAX(community_votes.has_issue,excluded.has_issue), review='pending', received_at=excluded.received_at, expires_at=excluded.expires_at`,
+          )
+          .run(
+            key,
+            participant,
+            reference,
+            body.build.id,
+            o.feature,
+            JSON.stringify(body.setup),
+            platform,
+            JSON.stringify(body.environment),
+            scope,
+            body.durationMinutes,
+            o.result,
+            o.result === "working" ? 0 : 1,
+            now,
+            expiry,
+          );
+        database
+          .prepare("INSERT INTO community_revisions VALUES(?,?,?,?,?)")
+          .run(reference, key, o.result, now, expiry);
+      }
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return { status: 202, body: { reference, receipt } };
+  };
+  const matrix = (requested) => {
+    discoverBuild();
+    purge(new Date().toISOString());
+    const builds = database
+      .prepare(
+        "SELECT id,version,built_at AS builtAt FROM community_builds ORDER BY built_at DESC LIMIT 24",
+      )
+      .all();
+    const buildId = requested || builds[0]?.id || null;
+    const build = buildId
+      ? database
+          .prepare("SELECT * FROM community_builds WHERE id=?")
+          .get(buildId)
+      : null;
+    if (requested && !build) return null;
+    if (build && !builds.some((b) => b.id === buildId)) {
+      if (builds.length === 24) builds.pop();
+      builds.push({
+        id: build.id,
+        version: build.version,
+        builtAt: build.built_at,
+      });
+    }
+    const votes = buildId
+      ? database
+          .prepare(
+            "SELECT * FROM community_votes WHERE build_id=? AND review != 'excluded' ORDER BY received_at DESC LIMIT 10000",
+          )
+          .all(buildId)
+      : [];
+    const cells = new Map();
+    for (const vote of votes) {
+      const setup = JSON.parse(vote.setup),
+        environment = JSON.parse(vote.environment);
+      let cell = cells.get(vote.cell_key);
+      if (!cell) {
+        if (cells.size >= 1000) continue;
+        cell = {
+          key: vote.cell_key,
+          hardwareId: setup.hardwareId,
+          feature: vote.feature,
+          setup,
+          testScope: vote.scope,
+          platform: vote.platform,
+          working: 0,
+          eligibleWorking: 0,
+          problems: 0,
+          status: "untested",
+          lastAt: vote.received_at,
+          reports: [],
+        };
+        cells.set(vote.cell_key, cell);
+      }
+      if (vote.result === "working") cell.working++;
+      if (
+        vote.result === "working" &&
+        vote.review === "accepted" &&
+        vote.duration >= (vote.scope === "sustained" ? 30 : 5)
+      )
+        cell.eligibleWorking++;
+      if (vote.has_issue) cell.problems++;
+      if (cell.reports.length < 6)
+        cell.reports.push({
+          result: vote.result,
+          durationMinutes: vote.duration,
+          receivedAt: vote.received_at,
+          environment,
+          setup,
+          review: vote.review,
+        });
+    }
+    for (const cell of cells.values())
+      cell.status = cell.problems
+        ? "issue"
+        : cell.eligibleWorking >= 2
+          ? "confirmed"
+          : cell.working
+            ? "working"
+            : "untested";
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      builds,
+      buildId,
+      cells: [...cells.values()],
+      engineChecks: build ? JSON.parse(build.engine_checks) : [],
+    };
+  };
+  const review = (reference, state) => {
+    if (!["accepted", "excluded", "resolved"].includes(state)) return false;
+    if (state === "resolved")
+      return (
+        database
+          .prepare(
+            "UPDATE community_votes SET has_issue=0 WHERE reference=? AND result='working'",
+          )
+          .run(reference).changes > 0
+      );
+    return (
+      database
+        .prepare("UPDATE community_votes SET review=? WHERE reference=?")
+        .run(state, reference).changes > 0
+    );
+  };
+  const withdraw = (value) => {
+    if (
+      !objectWithKeys(value, ["reference", "receipt"]) ||
+      !/^BC-[a-f0-9]{24}$/.test(value.reference ?? "") ||
+      !/^[a-f0-9]{64}$/.test(value.receipt ?? "")
+    )
+      return false;
+    const record = database
+      .prepare("SELECT receipt FROM community_submissions WHERE reference=?")
+      .get(value.reference);
+    if (!record || record.receipt !== value.receipt) return false;
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database
+        .prepare("DELETE FROM community_votes WHERE reference=?")
+        .run(value.reference);
+      database
+        .prepare("DELETE FROM reports WHERE reference=?")
+        .run(value.reference);
+      database
+        .prepare("DELETE FROM community_revisions WHERE reference=?")
+        .run(value.reference);
+      database
+        .prepare("DELETE FROM community_submissions WHERE reference=?")
+        .run(value.reference);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return true;
+  };
+  return { accept, matrix, registerBuild, review, withdraw, purge };
 }
 
 export function createReportServer(options = {}) {
@@ -387,7 +989,10 @@ export function createReportServer(options = {}) {
     "INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,?,?) ON CONFLICT(bucket) DO UPDATE SET count=excluded.count, expires_at=excluded.expires_at",
   );
 
+  const community = createCommunityStore(database, options);
+
   const purgeExpired = (now = new Date()) => {
+    community.purge(now.toISOString());
     database
       .prepare("DELETE FROM reports WHERE expires_at <= ?")
       .run(now.toISOString());
@@ -401,14 +1006,51 @@ export function createReportServer(options = {}) {
   purgeExpired();
   // Run even when no reports arrive. Start only while the server owns the DB.
   let retentionTimer;
+  const allowWrite = (response) => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const minute = Math.floor(nowSeconds / 60);
+    const bucket = `global:${minute}`;
+    const current = rateRead.get(bucket);
+    const count =
+      current && current.expires_at > nowSeconds ? current.count + 1 : 1;
+    if (count > maxReportsPerMinute) {
+      response.writeHead(429);
+      response.end();
+      return false;
+    }
+    rateWrite.run(bucket, count, (minute + 2) * 60);
+    return true;
+  };
   const server = createServer((request, response) => {
     if (request.url === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end('{"status":"ok"}');
       return;
     }
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (
+      url.pathname === "/api/v1/compatibility-matrix" &&
+      request.method === "GET"
+    ) {
+      if (
+        [...url.searchParams.keys()].some((key) => key !== "build") ||
+        url.searchParams.getAll("build").length > 1
+      ) {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
+      const matrix = community.matrix(url.searchParams.get("build"));
+      response.writeHead(matrix ? 200 : 404, {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      });
+      response.end(JSON.stringify(matrix ?? { error: "Unknown build." }));
+      return;
+    }
+    const withdrawal = request.url === "/api/v1/compatibility-reports/withdraw";
     const reportType =
-      request.url === "/api/v1/compatibility-reports"
+      request.url === "/api/v1/compatibility-reports" || withdrawal
         ? "compatibility"
         : request.url === "/api/v1/diagnostic-reports"
           ? "diagnostic"
@@ -456,6 +1098,20 @@ export function createReportServer(options = {}) {
           return;
         }
         const parsed = JSON.parse(expanded.toString("utf8"));
+        if (withdrawal) {
+          if (!allowWrite(response)) return;
+          const result = community.withdraw(parsed);
+          response.writeHead(result ? 200 : 404, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          response.end(
+            JSON.stringify(
+              result ? { withdrawn: true } : { error: "Invalid receipt." },
+            ),
+          );
+          return;
+        }
         if (
           (reportType === "compatibility") !==
           (parsed.reportType === "compatibility")
@@ -474,18 +1130,16 @@ export function createReportServer(options = {}) {
           response.end(JSON.stringify({ error: validation }));
           return;
         }
-        const nowSeconds = Math.floor(Date.now() / 1000);
-        const minute = Math.floor(nowSeconds / 60);
-        const bucket = `global:${minute}`;
-        const current = rateRead.get(bucket);
-        const count =
-          current && current.expires_at > nowSeconds ? current.count + 1 : 1;
-        if (count > maxReportsPerMinute) {
-          response.writeHead(429);
-          response.end();
+        if (!allowWrite(response)) return;
+        if (parsed.schemaVersion === 2 && reportType === "compatibility") {
+          const result = community.accept(parsed);
+          response.writeHead(result.status, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          response.end(JSON.stringify(result.body));
           return;
         }
-        rateWrite.run(bucket, count, (minute + 2) * 60);
         const sanitized = sanitizeReport(parsed);
         const reference = `${reportType === "compatibility" ? "BC" : "BR"}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${randomBytes(3).toString("hex").toUpperCase()}`;
         const receivedAt = new Date();
@@ -565,7 +1219,7 @@ export function createReportServer(options = {}) {
     retentionTimer.unref();
   });
   server.on("close", () => clearInterval(retentionTimer));
-  return { server, database, purgeExpired };
+  return { server, database, purgeExpired, community };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

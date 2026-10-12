@@ -60,10 +60,11 @@ export function RecordingLibrary({
         tab-local.
       </p>
       <p>{quota}</p>
-      <button type="button" disabled={working} onClick={() => void refresh()}>
+      <button className="secondary" type="button" disabled={working} onClick={() => void refresh()}>
         Refresh library
       </button>
       <button
+        className="secondary"
         type="button"
         disabled={working}
         onClick={() =>
@@ -96,6 +97,7 @@ export function RecordingLibrary({
           {(["ready", "interrupted"] as string[]).includes(entry.state) && (
             <>
               <button
+                className="secondary"
                 type="button"
                 disabled={blocked || working}
                 onClick={() =>
@@ -107,6 +109,7 @@ export function RecordingLibrary({
                 Replay retained recording
               </button>
               <button
+                className="secondary"
                 type="button"
                 disabled={blocked || working}
                 onClick={() =>
@@ -120,6 +123,7 @@ export function RecordingLibrary({
             </>
           )}
           <button
+            className="secondary"
             type="button"
             disabled={blocked || working || entry.state === "in-use"}
             onClick={() => void run(async () => deleteRecording(entry.id))}

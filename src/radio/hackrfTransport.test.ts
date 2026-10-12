@@ -357,6 +357,69 @@ describe("ordered, bounded HackRF samples", () => {
 });
 
 describe("HackRF ownership and cancellation", () => {
+  it("retries a transient interface reclaim after its own close", async () => {
+    vi.useFakeTimers();
+    const f = await setup();
+    const claim = vi
+      .spyOn(f.usb, "claimInterface")
+      .mockRejectedValueOnce(
+        new DOMException("Unable to claim interface", "NetworkError"),
+      );
+    const configured = f.transport.configure(config(2));
+    await flush();
+    expect(claim).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(claim).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(configured).resolves.toMatchObject({ generation: 2 });
+    expect(claim).toHaveBeenCalledTimes(2);
+    await f.transport.close();
+    expect(f.transport.diagnostics.pendingOperations).toBe(0);
+  });
+  it("bounds persistent reclaim failure and does not retry initial access", async () => {
+    vi.useFakeTimers();
+    const f = await setup();
+    const error = new DOMException("Unable to claim interface", "NetworkError");
+    const claim = vi.spyOn(f.usb, "claimInterface").mockRejectedValue(error);
+    const rejected = expect(f.transport.configure(config(2))).rejects.toBe(
+      error,
+    );
+    await vi.advanceTimersByTimeAsync(350);
+    await rejected;
+    expect(claim).toHaveBeenCalledTimes(3);
+    expect(f.usb.opened).toBe(false);
+    const initialUsb = new FakeHackrfUsb();
+    const initialClaim = vi
+      .spyOn(initialUsb, "claimInterface")
+      .mockRejectedValue(error);
+    await expect(new HackrfTransport().open(initialUsb)).rejects.toBe(error);
+    expect(initialClaim).toHaveBeenCalledTimes(1);
+  });
+  it("does not reclaim after cancellation or retry permission errors", async () => {
+    vi.useFakeTimers();
+    const f = await setup();
+    const claim = vi
+      .spyOn(f.usb, "claimInterface")
+      .mockRejectedValueOnce(
+        new DOMException("Unable to claim interface", "NetworkError"),
+      );
+    const rejected = expect(
+      f.transport.configure(config(2)),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    await flush();
+    await f.transport.close();
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(f.usb.opened).toBe(false);
+    const denied = await setup();
+    const denial = new DOMException("permission denied", "SecurityError");
+    const deniedClaim = vi
+      .spyOn(denied.usb, "claimInterface")
+      .mockRejectedValue(denial);
+    await expect(denied.transport.configure(config(2))).rejects.toBe(denial);
+    expect(deniedClaim).toHaveBeenCalledTimes(1);
+  });
   it("calls the permission chooser synchronously and closes a late grant", async () => {
     const grant = deferredUsb<USBDevice>();
     const usb = new FakeHackrfUsb();
