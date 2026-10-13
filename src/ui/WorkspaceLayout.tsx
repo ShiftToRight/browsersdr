@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppIcon, type AppIconName } from "./AppIcon";
+import { ThemePicker } from "./ThemePicker";
 export const WORKSPACE_KEY = "browsersdr.workspace.v1";
 export interface WorkspaceLayout {
   compact: boolean;
@@ -124,6 +125,7 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onComp
       >Compact</button>
       {!layout.compact && <span id="compact-layout-hint" className="compact-layout-hint">Short screen? Try Compact.</span>}
       <HeaderMenu label="Settings" icon="settings" active={activeView === "settings"}>
+        <ThemePicker />
         <button type="button" className="secondary" aria-controls="settings-view" onClick={onSettings}>
           <AppIcon name="plug" />Integration settings
         </button>

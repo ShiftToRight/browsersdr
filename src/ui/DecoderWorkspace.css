@@ -34,7 +34,7 @@
 .decoder-stage > [role="alert"], .decoder-stage > .decoder-hint { margin: 10px 14px; }
 .decoder-canvas { display: grid; grid-template-columns: minmax(0, 1fr); }
 .decoder-canvas-inspecting { grid-template-columns: minmax(0, 1fr) 285px; }
-.decoder-map { position: relative; min-width: 0; height: clamp(320px, calc(100dvh - 330px), 760px); background: #07141b; }
+.decoder-map { position: relative; min-width: 0; height: clamp(320px, calc(100dvh - 330px), 760px); background: var(--theme-surface, #07141b); }
 .decoder-map .target-plot { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; height: 100%; margin: 0; }
 .decoder-map .map-surface { height: 100%; min-height: 0; aspect-ratio: auto; border: 0; border-radius: 0; }
 .decoder-map .target-plot svg { height: 100%; min-height: 0; aspect-ratio: auto; border: 0; border-radius: 0; }

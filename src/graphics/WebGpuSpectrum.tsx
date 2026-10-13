@@ -1,5 +1,7 @@
 import { ActionButton } from "../ui/ActionButton";
 import { CanvasSpectrum } from "./canvasSpectrum";
+import { SPECTRUM_PALETTES } from "./spectrumPalette";
+import { useTheme } from "../ui/themes";
 import { SpectrumInfo } from "./SpectrumInfo";
 import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
@@ -71,6 +73,9 @@ export function WebGpuSpectrum({
   session?: SourceSessionMetadata;
   onTune?: (frequencyHz: number) => void;
 }) {
+  const theme = useTheme();
+  const paletteRef = useRef(SPECTRUM_PALETTES[theme]);
+  paletteRef.current = SPECTRUM_PALETTES[theme];
   const visible = usePageVisible(active);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -88,6 +93,7 @@ export function WebGpuSpectrum({
   useEffect(() => {
     if (visible) renderRef.current();
   }, [visible]);
+  useEffect(() => { renderRef.current(); }, [theme]);
   const pausedRef = useRef(false);
   const floorRef = useRef(-105);
   const rangeRef = useRef(90);
@@ -237,7 +243,8 @@ export function WebGpuSpectrum({
     const history = new WaterfallHistory(HISTORY_ROWS, size);
     history.reset(sessionRef.current?.sessionGeneration ?? 0);
     const gapRow = new Float32Array(size).fill(GAP_LEVEL_DB);
-    const data = new ArrayBuffer(32);
+    const data = new ArrayBuffer(128);
+    const colors = new Float32Array(data, 32);
     const view = new DataView(data);
     let cssWidth = 0;
     let cssHeight = 0;
@@ -271,6 +278,7 @@ export function WebGpuSpectrum({
       view.setFloat32(8, rangeRef.current, true);
       view.setUint32(16, history.state.nextWriteRow, true);
       view.setUint32(20, history.state.count, true);
+      colors.set(paletteRef.current.uniforms);
       device.queue.writeBuffer(displayBuffer, 0, data);
     };
     const render = () => {
@@ -281,7 +289,7 @@ export function WebGpuSpectrum({
           try {
             canvasDisplay?.render(
               cssWidth, cssHeight, Math.max(1, window.devicePixelRatio || 1),
-              floorRef.current, rangeRef.current,
+              floorRef.current, rangeRef.current, paletteRef.current,
             );
           } catch (error) {
             setState({ kind: "error", message: `Canvas2D rendering failed: ${error instanceof Error ? error.message : String(error)}` });
@@ -333,7 +341,7 @@ export function WebGpuSpectrum({
         colorAttachments: [
           {
             view: context.getCurrentTexture().createView(),
-            clearValue: { r: 0.008, g: 0.02, b: 0.065, a: 1 },
+            clearValue: { r: paletteRef.current.background[0], g: paletteRef.current.background[1], b: paletteRef.current.background[2], a: 1 },
             loadOp: "clear",
             storeOp: "store",
           },
@@ -546,7 +554,7 @@ export function WebGpuSpectrum({
         });
         displayBuffer = device.createBuffer({
           label: "display controls",
-          size: 32,
+          size: 128,
           usage: GPU_BUFFER_UNIFORM | GPU_BUFFER_COPY_DST,
         });
         device.queue.writeBuffer(

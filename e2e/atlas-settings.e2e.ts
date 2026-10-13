@@ -119,6 +119,10 @@ test("SigIntAtlas memory-only credentials, viewer state and keyboard Settings fi
   await page.keyboard.press("Enter");
   await page.keyboard.press("Tab");
   await expect(
+    page.getByRole("combobox", { name: "Theme", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
     page.getByRole("button", { name: "Integration settings", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Enter");

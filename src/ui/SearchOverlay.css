@@ -56,7 +56,7 @@
   padding: 14px;
   border: 1px solid var(--line, #294359);
   border-radius: 10px;
-  background: rgba(12, 29, 45, 0.6);
+  background: var(--theme-surface, rgba(12, 29, 45, 0.6));
 }
 .discovery-actions {
   display: flex;
@@ -83,7 +83,7 @@
   padding: 14px;
   border: 1px solid var(--cyan);
   border-radius: 10px;
-  background: #10293b;
+  background: var(--theme-surface, #10293b);
 }
 .discovery-panel .favorites-footer {
   display: flex;

@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+const devPort = Number(process.env.BSD_E2E_DEV_PORT ?? 43173);
+const productionPort = Number(process.env.BSD_E2E_PRODUCTION_PORT ?? 43174);
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
@@ -21,26 +24,28 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-dev",
-      use: { browserName: "chromium", baseURL: "http://127.0.0.1:43173" },
+      use: { browserName: "chromium", baseURL: `http://127.0.0.1:${devPort}` },
     },
     {
       name: "chromium-production",
-      use: { browserName: "chromium", baseURL: "http://127.0.0.1:43174" },
+      use: {
+        browserName: "chromium",
+        baseURL: `http://127.0.0.1:${productionPort}`,
+      },
     },
   ],
   webServer: [
     {
       name: "vite-development",
-      command: "npm run dev -- --host 127.0.0.1 --port 43173 --strictPort",
-      url: "http://127.0.0.1:43173",
+      command: `npm run dev -- --host 127.0.0.1 --port ${devPort} --strictPort`,
+      url: `http://127.0.0.1:${devPort}`,
       reuseExistingServer: false,
       timeout: 120_000,
     },
     {
       name: "vite-production-preview",
-      command:
-        "npm run build && npm run preview -- --host 127.0.0.1 --port 43174 --strictPort",
-      url: "http://127.0.0.1:43174",
+      command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${productionPort} --strictPort`,
+      url: `http://127.0.0.1:${productionPort}`,
       reuseExistingServer: false,
       timeout: 120_000,
     },

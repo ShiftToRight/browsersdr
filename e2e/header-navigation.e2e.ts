@@ -169,6 +169,10 @@ test("touch utility targets stay at least 44 pixels and keyboard Tab dismisses a
   const settings = page.getByLabel("Settings", { exact: true });
   await settings.click();
   await settings.press("Tab");
+  const theme = page.getByRole("combobox", { name: "Theme", exact: true });
+  await expect(theme).toBeFocused();
+  expect((await theme.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await theme.press("Tab");
   const integration = page.getByRole("button", {
     name: "Integration settings",
     exact: true,

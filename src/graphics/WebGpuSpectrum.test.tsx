@@ -2,12 +2,14 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { setTheme } from "../ui/themes";
 import { WebGpuSpectrum } from "./WebGpuSpectrum";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { hackrfRecordingFixture } from "../testing/hackrfRecordingFixture";
 import type { SpectrumFrame } from "../radio/types";
 
 afterEach(() => {
+  setTheme("classic");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
@@ -125,6 +127,17 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
     (call) => call[0]?.label === "display controls",
   );
   expect(new Set(uniforms.map((call) => call[2])).size).toBe(1);
+  const canvasNode = host.querySelector("canvas");
+  writeBuffer.mockClear();
+  await act(async () => setTheme("field-deck"));
+  expect(host.querySelector("canvas")).toBe(canvasNode);
+  expect(unsubscribe).not.toHaveBeenCalled();
+  expect(writeBuffer.mock.calls.filter((call) => call[0]?.label === "circular waterfall power history")).toHaveLength(0);
+  const themedUniform = writeBuffer.mock.calls.find((call) => call[0]?.label === "display controls")!;
+  const themedData = new Float32Array(themedUniform[2]);
+  expect(themedData.length).toBe(32);
+  expect([...themedData.slice(24, 27)]).toEqual([1, expect.closeTo(.78), expect.closeTo(.54)]);
+  await act(async () => setTheme("classic"));
   await act(async () =>
     root.render(
       <WebGpuSpectrum pipeline={pipeline} session={session} active={false} />,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 — 2026-10-13
+
+- Add Amber Field Deck and Vice Afterglow, selected from Settings → Theme alongside Midnight Observatory.
+- Save the theme per browser and recolor local/remote spectra and retained waterfall history without restarting reception or replay.
+- Include Vice sunset, palm, wordmark and Good Signals Only artwork, with full-header coverage and a poster fitted to its panel.
+- Preserve the framed utility overlays introduced in 1.0.2 and support narrow screens, keyboard navigation and forced colors.
+
 ## 1.0.2 — 2026-10-13
 
 - Open Settings, Help & setup, Compatibility & tests and About in a framed overlay above the current workspace.

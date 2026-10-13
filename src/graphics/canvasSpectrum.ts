@@ -2,6 +2,7 @@ import { FFT_SIZE } from "../dsp/spectrumMath";
 import type { SpectrumFrame } from "../radio/types";
 import { HISTORY_ROWS } from "./spectrumShader";
 import { WaterfallHistory } from "./waterfallHistory";
+import { SPECTRUM_PALETTES, rgbCss, type SpectrumPalette } from "./spectrumPalette";
 
 export const CANVAS_HISTORY_WIDTH = 1024;
 export const CANVAS_MAX_DIMENSION = 2048;
@@ -29,13 +30,11 @@ export function waterfallColor(
   level: number,
   floor: number,
   range: number,
+  palette: SpectrumPalette = SPECTRUM_PALETTES.classic,
 ): number[] {
   if (level < -1000 || !Number.isFinite(level)) return [43, 48, 48];
   const t = Math.max(0, Math.min(1, (level - floor) / range));
-  const cold = [0.012, 0.025, 0.09],
-    violet = [0.18, 0.08, 0.58];
-  const electric = [0.08, 0.72, 0.98],
-    stellar = [0.95, 0.82, 1];
+  const [cold, violet, electric, stellar] = palette.waterfall;
   const [a, b, mix] =
     t <= 0.5
       ? ([cold, violet, t * 2] as const)
@@ -56,6 +55,7 @@ export class CanvasSpectrum {
   private readonly bitmap = document.createElement("canvas");
   private readonly bitmapContext: CanvasRenderingContext2D;
   private readonly rowImage: ImageData;
+  private palette = SPECTRUM_PALETTES.classic;
   private floor = -105;
   private range = 90;
   private latest?: SpectrumFrame;
@@ -99,6 +99,7 @@ export class CanvasSpectrum {
         this.levels[row * CANVAS_HISTORY_WIDTH + x]!,
         this.floor,
         this.range,
+        this.palette,
       );
       this.rowImage.data.set([...rgb, 255], x * 4);
     }
@@ -112,6 +113,7 @@ export class CanvasSpectrum {
     ratio: number,
     floor: number,
     range: number,
+    palette: SpectrumPalette = SPECTRUM_PALETTES.classic,
   ): void {
     const canvas = this.context.canvas;
     const width = Math.min(
@@ -124,13 +126,14 @@ export class CanvasSpectrum {
     );
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
-    if (floor !== this.floor || range !== this.range) {
+    if (floor !== this.floor || range !== this.range || palette !== this.palette) {
+      this.palette = palette;
       this.floor = floor;
       this.range = range;
       for (const row of this.history.newestFirst()) this.paintRow(row);
     }
     const ctx = this.context;
-    ctx.fillStyle = "#020511";
+    ctx.fillStyle = palette === SPECTRUM_PALETTES.classic ? "#020511" : rgbCss(palette.background);
     ctx.fillRect(0, 0, width, height);
     const { count, nextWriteRow } = this.history.state;
     if (count) {
@@ -166,7 +169,7 @@ export class CanvasSpectrum {
     }
     if (!this.latest) return;
     const bins = peakColumns(this.latest.bins, Math.min(width, FFT_SIZE));
-    ctx.strokeStyle = "#4adbff";
+    ctx.strokeStyle = palette === SPECTRUM_PALETTES.classic ? "#4adbff" : rgbCss(palette.trace);
     ctx.lineWidth = Math.max(1, ratio);
     ctx.beginPath();
     for (let x = 0; x < bins.length; x++) {

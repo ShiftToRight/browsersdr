@@ -28,6 +28,7 @@ import { previewDiscovery } from "./radio/discoverySelection";
 import { applyReceptionCandidate } from "./radio/atlasStationSelection";
 import { ReceiverTuningControl } from "./ui/ReceiverTuningControl";
 import { editableFrequencyMHz, formatFrequencyMHz, formatSampleRate } from "./ui/frequencyFormat";
+import { ThemeDecoration } from "./ui/ThemeDecoration";
 import { ActionButton } from "./ui/ActionButton";
 import { flushSync } from "react-dom";
 import { CenterSignalControl } from "./ui/CenterSignalControl";
@@ -3114,6 +3115,7 @@ export function ReceiverApp({
                 )}
               </div>
               </div>
+              <ThemeDecoration />
             </section>
 
             <section

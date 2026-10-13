@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import { SPECTRUM_PALETTES } from "./spectrumPalette";
 import { CanvasSpectrum, peakColumns, waterfallColor } from "./canvasSpectrum";
 import type { SpectrumFrame } from "../radio/types";
 
@@ -71,6 +72,14 @@ it("owns frames, rejects stale/repeated rows, retains clock gaps and wraps newes
   expect(canvas.width).toBe(2048);
   expect(canvas.height).toBe(2048);
   expect(uploads.at(-1)!.data.slice(0, 4)).not.toEqual(originalColor);
+  // Recolor a paused, retained history without accepting new frames or moving rows.
+  const rowsBefore = uploads.length;
+  drawImage.mockClear();
+  display.render(800, 400, 1, -90, 20, SPECTRUM_PALETTES["field-deck"]);
+  expect(uploads.length - rowsBefore).toBe(4);
+  expect([...uploads[rowsBefore + 1]!.data.slice(0, 4)]).toEqual([43, 48, 48, 255]);
+  expect(drawImage.mock.calls[0]!.slice(1, 5)).toEqual([0, 236, 1024, 4]);
+  expect(ctx.strokeStyle).toBe("rgb(255 199 138)");
   for (let i = 4; i < 242; i++) display.accept([frame(i)]);
   drawImage.mockClear();
   display.render(800, 400, 1, -90, 20);

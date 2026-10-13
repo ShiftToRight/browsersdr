@@ -6,6 +6,7 @@ export const spectrumShader = (size: number) => /* wgsl */ `
   struct Display {
     markerX: f32, floorDb: f32, rangeDb: f32, _padding: f32,
     nextRow: u32, rowCount: u32, _padding2: vec2u,
+    cold: vec4f, mid: vec4f, hot: vec4f, peak: vec4f, trace: vec4f, marker: vec4f,
   }
   @group(0) @binding(2) var<uniform> display: Display;
   struct FullscreenOutput { @builtin(position) position: vec4f, @location(0) uv: vec2f }
@@ -19,10 +20,10 @@ export const spectrumShader = (size: number) => /* wgsl */ `
   }
   fn colorMap(value: f32) -> vec3f {
     let t = clamp(value, 0.0, 1.0);
-    let cold = vec3f(0.012, 0.025, 0.09);
-    let violet = vec3f(0.18, 0.08, 0.58);
-    let electric = vec3f(0.08, 0.72, 0.98);
-    let stellar = vec3f(0.95, 0.82, 1.0);
+    let cold = display.cold.rgb;
+    let violet = display.mid.rgb;
+    let electric = display.hot.rgb;
+    let stellar = display.peak.rgb;
     return select(mix(cold, violet, t * 2.0), select(mix(violet, electric, (t - 0.5) * 3.0), mix(electric, stellar, (t - 0.83) * 5.88), t > 0.83), t > 0.5);
   }
   @fragment fn waterfallFragment(input: FullscreenOutput) -> @location(0) vec4f {
@@ -43,6 +44,6 @@ export const spectrumShader = (size: number) => /* wgsl */ `
   @vertex fn markerVertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
     return vec4f(display.markerX, select(-0.92, 0.92, index == 1u), 0.0, 1.0);
   }
-  @fragment fn spectrumFragment() -> @location(0) vec4f { return vec4f(0.29, 0.86, 1.0, 1.0); }
-  @fragment fn markerFragment() -> @location(0) vec4f { return vec4f(0.34, 0.86, 1.0, 0.96); }
+  @fragment fn spectrumFragment() -> @location(0) vec4f { return display.trace; }
+  @fragment fn markerFragment() -> @location(0) vec4f { return vec4f(display.marker.rgb, 0.96); }
 `;
