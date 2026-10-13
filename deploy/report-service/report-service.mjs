@@ -492,7 +492,10 @@ export function validateCommunityReport(value) {
     ) ||
     !COMMUNITY_PROFILES.has(s.protocolProfile) ||
     (s.protocolProfile === "hackrf-one-stable-2026-v1" &&
-      (s.source !== "hackrf" || s.hardwareId !== "hackrf-one")) ||
+      !(
+        (s.source === "hackrf" && s.hardwareId === "hackrf-one") ||
+        (s.source === "replay" && s.hardwareId === "replay")
+      )) ||
     (s.hardwareId === "hackrf-one" &&
       s.protocolProfile !== null &&
       s.protocolProfile !== "hackrf-one-stable-2026-v1") ||

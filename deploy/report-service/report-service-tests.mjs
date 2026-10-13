@@ -1191,6 +1191,44 @@ test("One reports retain their variant/profile separately from Pro", () => {
         .sort(),
       ["hackrf-one", "hackrf-pro"],
     );
+    const replay = {
+      ...one,
+      reportId: "BC-33333333-3333-4333-a333-333333333333",
+      participantToken: "c".repeat(64),
+      setup: {
+        ...one.setup,
+        source: "replay",
+        hardwareId: "replay",
+        origin: "replay",
+      },
+    };
+    assert.equal(validateCommunityReport(replay), null);
+    assert.equal(service.community.accept(replay).status, 202);
+    const replayCell = service.community
+      .matrix()
+      .cells.find((cell) => cell.hardwareId === "replay");
+    assert.ok(replayCell);
+    assert.equal(replayCell.setup.protocolProfile, "hackrf-one-stable-2026-v1");
+    assert.equal(replayCell.setup.origin, "replay");
+    assert.notEqual(
+      validateCommunityReport({
+        ...replay,
+        setup: { ...replay.setup, hardwareId: "hackrf-one" },
+      }),
+      null,
+    );
+    assert.notEqual(
+      validateCommunityReport({
+        ...replay,
+        setup: {
+          ...replay.setup,
+          source: "synthetic",
+          hardwareId: "synthetic",
+          origin: "synthetic",
+        },
+      }),
+      null,
+    );
   } finally {
     service.database.close();
   }
