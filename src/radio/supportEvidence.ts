@@ -182,7 +182,7 @@ export const COMPATIBILITY_DETAILS: Record<
         ],
       },
     ],
-    note: "Mode availability also depends on frequency range, sample rate and a signal suitable for the selected decoder.",
+    note: "HackRF One is experimental at 9.6 MS/s with USB API 0x0110; physical reception is unverified. Pro evidence does not apply to One. Mode availability also depends on frequency range, sample rate and a signal suitable for the selected decoder.",
   },
   recording: {
     label: "Recording & export",
@@ -383,6 +383,15 @@ export const SUPPORT_EVIDENCE = [
       "Owner-audible FM and live/replayed RDS; physical 2 GiB native CI8 capture, download, independent reader, reload retention and range replay. Earlier 9.6 / experimental 19.2 MS/s evidence remains separately dated.",
     limits:
       "19.2 MS/s remains experimental. Loaded hosts, per-mode audio and HackRF One are not covered.",
+  },
+  {
+    source: "HackRF One",
+    configuration: "USB API 0x0110 · official v2026.01.3 baseline · native 9.6 MS/s",
+    status: "experimental",
+    kind: "Source-based software evidence",
+    date: "2026-10-13",
+    scope: "One-specific receive commands, six IF gain settings, 2.4 MS/s host-filtered channel, native CI8 capture and replay. Shared selector detects One versus Pro.",
+    limits: "No real One hardware was available. Physical USB/RF, clock accuracy, analog response and field decoder results remain unverified. Older APIs and clone/PortaPack firmware are outside the initial profile.",
   },
   {
     source: "bladeRF 2.0 Micro",

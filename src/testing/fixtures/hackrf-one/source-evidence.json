@@ -1,0 +1,89 @@
+{
+  "label": "Source-based assistant findings; no physical One validation",
+  "inspectedOn": "2026-10-13",
+  "tag": "v2026.01.3",
+  "tagObject": "01f7c8b3509e308c5e17b77a8ed2dbb594a98860",
+  "referenceCommit": "1cfe7dfe98d333450217d50e3f3a1ad0702e000f",
+  "tagVerification": "git ls-remote official repository annotated tag peel",
+  "archiveSha256": "758fcd67ef49bee66e743540ab91fa454568450eff408cf4146b94d19e98d854",
+  "files": [
+    {
+      "path": "host/libhackrf/src/hackrf.c",
+      "sha256": "1072e0cfdb84f0b3676e0948d07a820d3c5299ac50525b92ad64308e75e09a4b"
+    },
+    {
+      "path": "host/libhackrf/src/hackrf.h",
+      "sha256": "b096a5163ee74900c819c10295805149a9502e26392b22dac665ac9b03176814"
+    },
+    {
+      "path": "firmware/hackrf_usb/usb_descriptor.c",
+      "sha256": "c2575eaad839cf31826ae30ba3710b9309b9403124f2525f254e3bf6bc148aaf"
+    },
+    {
+      "path": "firmware/hackrf_usb/usb_api_board_info.c",
+      "sha256": "e5094d8d73585397b42bf7d46cb92c191d49c2b04c26fd4fd721be1ac81faa24"
+    },
+    {
+      "path": "firmware/hackrf_usb/usb_api_transceiver.c",
+      "sha256": "4495fe7c623e3f275e4e106efc6274dec9cdd508a6341c34d93edcfe2019833d"
+    },
+    {
+      "path": "firmware/hackrf_usb/usb_api_m0_state.c",
+      "sha256": "208252a26f6ed97e2dd7fe7b3c17ce7ea3afe996c5456853084b65c5581235a0"
+    },
+    {
+      "path": "firmware/common/radio.c",
+      "sha256": "e8704c7c31c3187a619d000006faa88c3eec029f66aafa46ff0f07325501b1d4"
+    },
+    {
+      "path": "firmware/common/m0_state.h",
+      "sha256": "4804ea278bc2da14656cc2ee2ef83395a6dcc1c55a7b972862586b1317f452a0"
+    },
+    {
+      "path": "firmware/common/max283x.c",
+      "sha256": "3d31a73c75af050530974a970075e69a70c94b8fba47dcb38329bcda6c92083c"
+    },
+    {
+      "path": "firmware/common/max2837.c",
+      "sha256": "c7aef51674951f2b6193dd712b4e36e35e0ff86d0468c1764ea456904df4d71f"
+    },
+    {
+      "path": "firmware/common/max2839.c",
+      "sha256": "ecd081868735874d12c6fac31d85428d12d2e7b31719039e038cd217fab75267"
+    },
+    {
+      "path": "firmware/common/user_config.c",
+      "sha256": "6027f429fe8dbb969bd80b047378e160b2d6325fa8867d3e3aa33f602a8eefcd"
+    },
+    {
+      "path": "firmware/common/sgpio.c",
+      "sha256": "a7e8d294acbd1fe135e11692700e037712ab148652bd0da134ba4de3ad89fcc2"
+    },
+    {
+      "path": "firmware/common/hackrf_core.c",
+      "sha256": "8d554f6c2dc596d7acfb6e4348691396ed14b605feae62e1a3e5196480f27c7d"
+    },
+    {
+      "path": "firmware/common/platform_detect.c",
+      "sha256": "3abce5a633f45fd9bbd2f4a55d6d9f3d13e5ce46610e46108cc6302bee568080"
+    }
+  ],
+  "profile": {
+    "usbApi": "0x0110",
+    "boardIds": [
+      2,
+      4
+    ],
+    "nativeSampleRateHz": 9600000,
+    "effectiveSampleRateHz": 2400000,
+    "analogFilterRequestHz": 7000000,
+    "format": "interleaved signed I8/Q8",
+    "imageSelection": null
+  },
+  "limitations": [
+    "USB and RF hardware are untested",
+    "Nominal rates and filter selection are acknowledged requests",
+    "Source pin does not authenticate connected firmware",
+    "Older APIs and clone/PortaPack firmware are not included"
+  ]
+}

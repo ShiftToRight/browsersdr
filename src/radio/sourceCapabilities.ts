@@ -18,7 +18,12 @@ export const HACKRF_PROTOCOL_PROFILE = "hackrf-pro-standard-7f96cc8-v1" as const
 export const HACKRF_REFERENCE_COMMIT = "7f96cc8e3fa625c4263a71ba8dd44d1f6110e4fa" as const;
 export const HACKRF_STABLE_PROFILE = "hackrf-pro-stable-2026-v1" as const;
 export const HACKRF_STABLE_REFERENCE_COMMIT = "1cfe7dfe98d333450217d50e3f3a1ad0702e000f" as const;
-export type HackrfProtocolProfile = typeof HACKRF_PROTOCOL_PROFILE | typeof HACKRF_STABLE_PROFILE;
+export const HACKRF_ONE_PROFILE = "hackrf-one-stable-2026-v1" as const;
+export type HackrfKind = "hackrf-pro" | "hackrf-one";
+export const HACKRF_ONE_SAMPLE_RATES_HZ = [9_600_000] as const;
+export const HACKRF_ONE_LNA_CODES = [0, 8, 16, 24, 32, 40] as const;
+export const hackrfLabel = (kind?: HackrfKind): string => kind === "hackrf-one" ? "HackRF One" : kind === "hackrf-pro" ? "HackRF Pro" : "HackRF One / Pro";
+export type HackrfProtocolProfile = typeof HACKRF_PROTOCOL_PROFILE | typeof HACKRF_STABLE_PROFILE | typeof HACKRF_ONE_PROFILE;
 export type HackrfReferenceCommit = typeof HACKRF_REFERENCE_COMMIT | typeof HACKRF_STABLE_REFERENCE_COMMIT;
 export const isStableHackrfApi = (api: number): boolean => api === 0x0109 || api === 0x0110;
 export const isSupportedHackrfApi = (api: number): boolean => isStableHackrfApi(api) || api === 0x0113;
@@ -42,7 +47,7 @@ export const hostResamplingForRate = (rate: number): HostResampling => rate === 
   : rate === 4_800_000
   ? { kind: "channel-fir-decimate-2-v1", numerator: 1, denominator: 2 }
   : { kind: "none", numerator: 1, denominator: 1 };
-export type HackrfLnaGainCode = 0 | 16 | 33;
+export type HackrfLnaGainCode = 0 | 8 | 16 | 24 | 32 | 33 | 40;
 
 export interface HackrfRxSettings {
   kind: "hackrf";
@@ -57,7 +62,7 @@ export const DEFAULT_HACKRF_RX_SETTINGS: Readonly<HackrfRxSettings> = Object.fre
 });
 
 export interface HackrfIdentity {
-  kind: "hackrf-pro";
+  kind: HackrfKind;
   vendorId: number;
   productId: number;
   boardId: number;
@@ -74,7 +79,7 @@ export interface HackrfRuntimeEvidence {
   identity: HackrfIdentity;
   descriptorLayoutVerified: boolean;
   mandatoryQueriesVerified: boolean;
-  standardImageIndex: number;
+  standardImageIndex: number | null;
   standardImageSelectionAcknowledged: boolean;
 }
 export interface HackrfDiscoveredCapabilities {
@@ -84,8 +89,8 @@ export interface HackrfDiscoveredCapabilities {
   referenceCommit: HackrfReferenceCommit;
   identity: HackrfIdentity;
   nativeEncoding: "ci8";
-  standardImageIndex: 0;
-  formatEvidence: "standard-image-selection-acknowledged";
+  standardImageIndex: 0 | null;
+  formatEvidence: "standard-image-selection-acknowledged" | "firmware-standard-ci8";
   /** Probes are not firmware authentication or physical validation. */
   firmwareBuildValidation: "unvalidated";
   hardwareValidation: "pending";
@@ -102,6 +107,8 @@ export interface HackrfCaptureSettings extends HackrfRxSettings {
   settingsEvidence: "accepted-and-firmware-reported" | "usb-acknowledged";
   /** SPI readback of the stable gateware control byte; not an RF/rate readback. */
   stableFpgaControl?: number;
+  /** Nominal One analog filter request; not a measured/read-back bandwidth. */
+  requestedBasebandBandwidthHz?: number;
 }
 
 /** Optional on legacy sessions; mandatory for the forthcoming HackRF backend. */
@@ -111,7 +118,7 @@ export interface HackrfSessionDetails {
   nativeSampleRateHz: number;
   effectiveSampleRateHz: number;
   adcSampleRateHz: number;
-  fpgaDecimationFactor: 2 | 4 | 8 | 16 | 32;
+  fpgaDecimationFactor: 1 | 2 | 4 | 8 | 16 | 32;
   hostResampling: HostResampling;
   rateEvidence: "firmware-reported" | "requested-and-acknowledged";
   captureSettings: HackrfCaptureSettings;
@@ -142,9 +149,9 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
     gain: { kind: "rtl-auto-manual", minimumDb: 0, maximumDb: 49.6 },
   },
   hackrf: {
-    source: "hackrf", label: "HackRF Pro", requiresUsb: true, persistentConnection: true,
+    source: "hackrf", label: "HackRF One / Pro", requiresUsb: true, persistentConnection: true,
     frequency: { minimumHz: 100_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
-    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 1_024_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
+    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 9_600_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
     gain: { kind: "hackrf-stages", lnaCodes: [0, 16, 33], vgaMinimumDb: 0, vgaMaximumDb: 62, vgaStepDb: 2, antennaPowerEnabled: false },
   },
   bladerf: {
@@ -173,43 +180,61 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
   },
 };
 
-export function sourceCapabilities(source: SourceKind): SourceCapabilities {
+export function sourceCapabilities(source: SourceKind, identity?: HackrfIdentity): SourceCapabilities {
   if (!Object.hasOwn(sourceDefaults, source)) throw new Error(`Unsupported signal source: ${String(source)}`);
-  return sourceDefaults[source];
+  const caps = sourceDefaults[source];
+  if (source === "hackrf" && identity?.kind === "hackrf-one") return {
+    ...caps, label: "HackRF One", frequency: { ...caps.frequency, minimumHz: 1_000_000 },
+    rates: { kind: "choices", valuesHz: HACKRF_ONE_SAMPLE_RATES_HZ, defaultHz: 9_600_000, experimentalHz: HACKRF_ONE_SAMPLE_RATES_HZ },
+    gain: { kind: "hackrf-stages", lnaCodes: HACKRF_ONE_LNA_CODES, vgaMinimumDb: 0, vgaMaximumDb: 62, vgaStepDb: 2, antennaPowerEnabled: false },
+  };
+  if (source === "hackrf" && !identity && caps.gain.kind === "hackrf-stages") return { ...caps, gain: { ...caps.gain, lnaCodes: [0, 8, 16, 24, 32, 33, 40] } };
+  return identity?.kind === "hackrf-pro" && source === "hackrf" ? { ...caps, label: "HackRF Pro" } : caps;
 }
 
-export function validateHackrfRxSettings(settings: HackrfRxSettings): HackrfRxSettings {
-  if (settings.kind !== "hackrf" || ![0, 16, 33].includes(settings.rxLnaGainCode)) throw new Error("HackRF Pro RX LNA gain code must be 0, 16 or 33.");
-  if (!Number.isInteger(settings.rxVgaGainDb) || settings.rxVgaGainDb < 0 || settings.rxVgaGainDb > 62 || settings.rxVgaGainDb % 2 !== 0) throw new Error("HackRF Pro RX VGA gain must be an even integer from 0 to 62 dB.");
+export function validateHackrfRxSettings(settings: HackrfRxSettings, kind: HackrfKind | "unknown" = "hackrf-pro"): HackrfRxSettings {
+  const codes: readonly number[] = kind === "hackrf-one" ? HACKRF_ONE_LNA_CODES : kind === "unknown" ? [0, 8, 16, 24, 32, 33, 40] : [0, 16, 33];
+  if (settings.kind !== "hackrf" || !codes.includes(settings.rxLnaGainCode)) throw new Error(`${hackrfLabel(kind === "unknown" ? undefined : kind)} RX LNA gain code must be ${codes.join(", ")}.`);
+  if (!Number.isInteger(settings.rxVgaGainDb) || settings.rxVgaGainDb < 0 || settings.rxVgaGainDb > 62 || settings.rxVgaGainDb % 2 !== 0) throw new Error("HackRF RX VGA gain must be an even integer from 0 to 62 dB.");
   if (typeof settings.rfAmplifierEnabled !== "boolean" || settings.antennaPowerEnabled !== false) throw new Error("HackRF RF amplifier must be boolean and antenna power must remain off.");
   return { ...settings };
 }
 
+export function validateHackrfIdentity(id: HackrfIdentity): void {
+  const word = (value: number) => Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
+  const revision = id.boardRevisionRaw & 0x7f;
+  const one = id.kind === "hackrf-one";
+  const variantValid = one
+    ? id.usbApiVersion === 0x0110 && ((id.boardId === 2 && [0, 1, 2, 3].includes(revision) && (id.platformSupport & 2) !== 0)
+      || (id.boardId === 4 && [4, 5].includes(revision) && (id.platformSupport & 8) !== 0))
+    : id.kind === "hackrf-pro" && id.boardId === 5 && [9, 10, 11].includes(revision)
+      && isSupportedHackrfApi(id.usbApiVersion) && (id.platformSupport & 0x10) !== 0;
+  if (!variantValid || id.vendorId !== 0x1d50 || id.productId !== 0x6089
+    || !Number.isInteger(id.boardRevisionRaw) || id.boardRevisionRaw < 0 || id.boardRevisionRaw > 255
+    || !word(id.platformSupport) || !/^[\x20-\x7e]{1,31}$/.test(id.firmwareVersion)
+    || id.partIdWords.length !== 2 || !id.partIdWords.every(word) || id.serialWords.length !== 4 || !id.serialWords.every(word)) {
+    throw new Error(`Incompatible ${hackrfLabel(id.kind)} identity requires a supported profile: board ${id.boardId}, revision ${id.boardRevisionRaw}, API 0x${id.usbApiVersion.toString(16)}, firmware ${id.firmwareVersion}. One requires USB API 0x0110 (official v2026.01.3 baseline), recognized pre-r9/r9+ hardware; Pro requires production revision 9–11 and API 0x0109/0x0110 or 0x0113.`);
+  }
+}
 export function discoverHackrfCapabilities(evidence: HackrfRuntimeEvidence): HackrfDiscoveredCapabilities {
   const id = evidence.identity;
-  const revision = id.boardRevisionRaw;
-  const productionRevision = [9, 10, 11, 137, 138, 139].includes(revision);
-  const word = (value: number) => Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
-  if (id.kind !== "hackrf-pro" || id.vendorId !== 0x1d50 || id.productId !== 0x6089 || id.boardId !== 5
-    || !productionRevision || !isSupportedHackrfApi(id.usbApiVersion)
-    || !word(id.platformSupport) || (id.platformSupport & 0x10) === 0
-    || !/^[\x20-\x7e]{1,31}$/.test(id.firmwareVersion)
-    || id.partIdWords.length !== 2 || !id.partIdWords.every(word)
-    || id.serialWords.length !== 4 || !id.serialWords.every(word)
-    || evidence.descriptorLayoutVerified !== true || evidence.mandatoryQueriesVerified !== true
-    || evidence.standardImageIndex !== 0 || evidence.standardImageSelectionAcknowledged !== true) {
-    throw new Error(`HackRF Pro requires a supported profile (USB API 0x0109/0x0110 stable or 0x0113, production revision 9–11, verified standard image 0). Detected board ${id.boardId}, revision ${revision}, API ${id.usbApiVersion}, firmware ${id.firmwareVersion}.`);
-  }
+  validateHackrfIdentity(id);
+  const one = id.kind === "hackrf-one";
+  if (evidence.descriptorLayoutVerified !== true || evidence.mandatoryQueriesVerified !== true
+    || (one ? evidence.standardImageIndex !== null || evidence.standardImageSelectionAcknowledged !== false
+      : evidence.standardImageIndex !== 0 || evidence.standardImageSelectionAcknowledged !== true)) throw new Error("Invalid HackRF format/profile evidence.");
   return {
-    source: "hackrf", phase: "discovered", protocolProfile: isStableHackrfApi(id.usbApiVersion) ? HACKRF_STABLE_PROFILE : HACKRF_PROTOCOL_PROFILE, referenceCommit: isStableHackrfApi(id.usbApiVersion) ? HACKRF_STABLE_REFERENCE_COMMIT : HACKRF_REFERENCE_COMMIT,
-    identity: { ...id, partIdWords: [...id.partIdWords], serialWords: [...id.serialWords] },
-    nativeEncoding: "ci8", standardImageIndex: 0, formatEvidence: "standard-image-selection-acknowledged",
+    source: "hackrf", phase: "discovered",
+    protocolProfile: one ? HACKRF_ONE_PROFILE : isStableHackrfApi(id.usbApiVersion) ? HACKRF_STABLE_PROFILE : HACKRF_PROTOCOL_PROFILE,
+    referenceCommit: one || isStableHackrfApi(id.usbApiVersion) ? HACKRF_STABLE_REFERENCE_COMMIT : HACKRF_REFERENCE_COMMIT,
+    identity: structuredClone(id), nativeEncoding: "ci8", standardImageIndex: one ? null : 0,
+    formatEvidence: one ? "firmware-standard-ci8" : "standard-image-selection-acknowledged",
     firmwareBuildValidation: "unvalidated", hardwareValidation: "pending",
   };
 }
 
-export function validateSourceFrequency(source: SourceKind, frequencyHz: number, bandwidthHz = 0): void {
-  const { frequency, label } = sourceCapabilities(source);
+export function validateSourceFrequency(source: SourceKind, frequencyHz: number, bandwidthHz = 0, identity?: HackrfIdentity): void {
+  const { frequency, label } = sourceCapabilities(source, identity);
   if (!Number.isFinite(frequencyHz)) throw new Error("Enter a valid channel frequency.");
   if (frequencyHz <= 0) throw new Error("Choose a channel frequency above 0 Hz; the connected tuner's limits are detected when tuning.");
   if (!Number.isSafeInteger(Math.round(frequencyHz))) throw new Error("Choose a channel frequency that can be represented safely in integer Hz.");
@@ -219,24 +244,26 @@ export function validateSourceFrequency(source: SourceKind, frequencyHz: number,
 }
 
 /** Validate effective rates (including fractional firmware readback), before routing samples. */
-export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSettings, sampleRateHz: number, channelFrequencyHz: number): void {
-  const caps = sourceCapabilities(source);
+export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSettings, sampleRateHz: number, channelFrequencyHz: number, identity?: HackrfIdentity): void {
+  const caps = sourceCapabilities(source, identity);
   if (!caps.modes.includes(settings.mode)) throw new Error(`${settings.mode} is unavailable with ${caps.label}.`);
   if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) throw new Error("Enter a valid sample rate.");
   validateModeSampleRate(settings.mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
-  // Keep legacy analog behavior; Pro additionally requires the full guarded passband.
+  if (source === "hackrf" && identity?.kind === "hackrf-one" && sampleRateHz !== 9_600_000) throw new Error("HackRF One requires 9.6 MS/s native acquisition.");
+  // Keep legacy analog behavior; hardware routes require the full guarded passband.
   if (source === "hackrf" || source === "bladerf" || source === "usrp-b205") {
     if (source === "bladerf" && !BLADERF_SAMPLE_RATES_HZ.includes(sampleRateHz as BladeRfSampleRateHz)) throw new Error("bladeRF 2.0 Micro rate must be 2.4, 4.8, 9.6 or 19.2 MS/s.");
-    if (source === "hackrf" && !HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF Pro effective rate must match a supported nominal rate within 1 Hz.");
+    if (source === "hackrf" && !HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF acquisition rate must match a supported nominal rate within 1 Hz.");
     if (source === "usrp-b205" && !USRP_B205_SAMPLE_RATES_HZ.includes(sampleRateHz as 4_800_000 | 9_600_000 | 19_200_000))
       throw new Error("USRP B205-mini native rate must be 4800000, 9600000 or 19200000 samples/s.");
-    validateSourceFrequency(source, channelFrequencyHz, settings.bandwidthHz);
+    validateSourceFrequency(source, channelFrequencyHz, settings.bandwidthHz, identity);
     planChannelTune(channelFrequencyHz, channelFrequencyHz, sampleRateHz, settings.bandwidthHz);
   } else validateSourceFrequency(source, channelFrequencyHz);
 }
 
 export interface SourceConfiguration {
   source?: SourceKind;
+  hackrfIdentity?: HackrfIdentity;
   channelFrequencyHz: number;
   modeSettings?: ReceiverModeSettings;
   sampleRateHz?: number;
@@ -248,14 +275,14 @@ export interface SourceConfiguration {
 
 export function validateSourceConfiguration(options: SourceConfiguration): void {
   const source = options.source ?? "rtl-sdr";
-  const caps = sourceCapabilities(source);
+  const caps = sourceCapabilities(source, options.hackrfIdentity);
   if (source !== "bladerf" && options.bladerfSettings !== undefined) throw new Error("bladeRF settings require the bladeRF source.");
   const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
-  validateSourceFrequency(source, options.channelFrequencyHz);
+  validateSourceFrequency(source, options.channelFrequencyHz, options.hackrfIdentity ? mode.bandwidthHz : 0, options.hackrfIdentity);
     if (source === "hackrf") {
     if (options.gainDb !== undefined) throw new Error("HackRF uses RX stage settings, not RTL auto/manual gainDb.");
     if (options.usrpSettings !== undefined) throw new Error("USRP RX settings require the USRP B205-mini source.");
-    validateHackrfRxSettings(options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS);
+    validateHackrfRxSettings(options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS, options.hackrfIdentity?.kind ?? "unknown");
     } else if (source === "usrp-b205") {
     if (options.gainDb !== undefined) throw new Error("USRP B205-mini uses fixed slow-attack AGC, not RTL gainDb.");
     if (options.hardwareSettings !== undefined) throw new Error("HackRF RX settings require the HackRF source.");
@@ -285,8 +312,21 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
 /** Check metadata consistency, not the hardware probes performed by the adapter. */
 export function validateHackrfSessionDetails(details: HackrfSessionDetails): void {
   const { capabilities: caps, captureSettings: settings } = details;
-  validateHackrfRxSettings(settings);
-  validateSourceFrequency("hackrf", settings.requestedCenterFrequencyHz);
+  validateHackrfRxSettings(settings, caps.identity.kind);
+  validateSourceFrequency("hackrf", settings.requestedCenterFrequencyHz, 0, caps.identity);
+  if (caps.identity.kind === "hackrf-one") {
+    const expected = discoverHackrfCapabilities({ identity: caps.identity, descriptorLayoutVerified: true, mandatoryQueriesVerified: true, standardImageIndex: null, standardImageSelectionAcknowledged: false });
+    if (caps.source !== expected.source || caps.phase !== expected.phase || caps.protocolProfile !== expected.protocolProfile || caps.referenceCommit !== expected.referenceCommit
+      || caps.nativeEncoding !== "ci8" || caps.standardImageIndex !== null || caps.formatEvidence !== "firmware-standard-ci8"
+      || settings.requestedSampleRateHz !== 9_600_000 || details.nativeSampleRateHz !== 9_600_000 || details.adcSampleRateHz !== 9_600_000
+      || details.effectiveSampleRateHz !== 2_400_000 || details.fpgaDecimationFactor !== 1 || details.nativeEncoding !== "ci8"
+      || details.hostResampling.kind !== "channel-fir-decimate-4-v1" || details.hostResampling.numerator !== 1 || details.hostResampling.denominator !== 4
+      || details.rateEvidence !== "requested-and-acknowledged" || settings.settingsEvidence !== "usb-acknowledged"
+      || settings.appliedRateFixed36 !== null || settings.appliedRfFixed24 !== null || settings.appliedRotation !== null
+      || settings.reportedBasebandBandwidthHz !== null || settings.reportedAnalogLpfTargetHz !== null || settings.stableFpgaControl !== undefined
+      || settings.requestedBasebandBandwidthHz !== 7_000_000) throw new Error("Invalid HackRF One nominal rate/settings/format evidence.");
+    return;
+  }
   const factor = hackrfDecimationFactor(settings.requestedSampleRateHz);
   const u64 = (value: string) => {
     if (!/^(0|[1-9][0-9]{0,19})$/.test(value) || BigInt(value) > 0xffff_ffff_ffff_ffffn) throw new Error("Invalid HackRF applied unsigned 64-bit value.");
@@ -312,6 +352,7 @@ export function validateHackrfSessionDetails(details: HackrfSessionDetails): voi
     || details.nativeEncoding !== "ci8" || details.rateEvidence !== (stable ? "requested-and-acknowledged" : "firmware-reported")
     || details.hostResampling.kind !== hostResamplingForRate(details.nativeSampleRateHz).kind || details.hostResampling.numerator !== 1 || details.hostResampling.denominator !== hostResamplingForRate(details.nativeSampleRateHz).denominator
     ) throw new Error("HackRF reported settings/rates do not match the standard profile.");
+  if (settings.requestedBasebandBandwidthHz !== undefined) throw new Error("One filter evidence is unavailable on the Pro profile.");
   if (stable) {
     if (settings.settingsEvidence !== "usb-acknowledged" || details.nativeSampleRateHz !== settings.requestedSampleRateHz
       || settings.appliedRateFixed36 !== null || settings.appliedRfFixed24 !== null || settings.appliedRotation !== null

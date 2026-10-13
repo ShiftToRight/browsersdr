@@ -1154,3 +1154,44 @@ test("private receiver context is strictly validated, stored and excluded from p
     service.database.close();
   }
 });
+
+test("One reports retain their variant/profile separately from Pro", () => {
+  const one = communityFixture({
+    setup: {
+      ...communityFixture().setup,
+      source: "hackrf",
+      hardwareId: "hackrf-one",
+      protocolProfile: "hackrf-one-stable-2026-v1",
+      rateHz: 9600000,
+      nativeRateHz: 9600000,
+      firmwareVersion: "v2026.01.3",
+    },
+  });
+  assert.equal(validateCommunityReport(one), null);
+  const mixed = { ...one, setup: { ...one.setup, hardwareId: "hackrf-pro" } };
+  assert.notEqual(validateCommunityReport(mixed), null);
+  const service = communityService();
+  try {
+    assert.equal(service.community.accept(one).status, 202);
+    const pro = {
+      ...one,
+      reportId: "BC-22222222-2222-4222-a222-222222222222",
+      participantToken: "b".repeat(64),
+      setup: {
+        ...one.setup,
+        hardwareId: "hackrf-pro",
+        protocolProfile: "hackrf-pro-stable-2026-v1",
+      },
+    };
+    assert.equal(service.community.accept(pro).status, 202);
+    assert.deepEqual(
+      service.community
+        .matrix()
+        .cells.map((c) => c.hardwareId)
+        .sort(),
+      ["hackrf-one", "hackrf-pro"],
+    );
+  } finally {
+    service.database.close();
+  }
+});

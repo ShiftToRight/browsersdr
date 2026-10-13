@@ -42,7 +42,7 @@ export function CommunityTestReport({
     renderer: "webgpu" | "canvas2d" | "unknown";
   }>();
   const [hardwareId, setHardwareId] = useState<CommunityHardwareId>(
-    defaultCommunityHardware(context.source),
+    defaultCommunityHardware(context.source, context.protocolProfile),
   );
   const [results, setResults] = useState<
     Partial<Record<CommunityFeatureId, CompatibilityResult>>
@@ -108,7 +108,7 @@ export function CommunityTestReport({
     setWithdrawalOpen(false);
     const snapshot = { ...context };
     const token = communityParticipant(COMMUNITY_BUILD.id);
-    setHardwareId(defaultCommunityHardware(snapshot.source));
+    setHardwareId(defaultCommunityHardware(snapshot.source, snapshot.protocolProfile));
     setResults({});
     setDuration("");
     setNotes("");

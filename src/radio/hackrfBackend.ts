@@ -31,6 +31,7 @@ import {
   validateSourceFrequency,
   validateSourceRoute,
   type HackrfRxSettings,
+  type HackrfIdentity,
   type HackrfSampleRateHz,
 } from "./sourceCapabilities";
 import {
@@ -91,6 +92,7 @@ export class HackrfBackend implements ReceiverBackend {
   private readonly transport: HackrfTransportPort;
   private readonly adapter: HackrfSampleAdapter;
   private acquired = false;
+  private identity?: HackrfIdentity;
   private configuredOff = false;
   private transportGeneration = 0;
   private transportSession?: HackrfConfiguredSession;
@@ -206,7 +208,7 @@ export class HackrfBackend implements ReceiverBackend {
     });
   }
   private request(options: ReceiverStartOptions): Selection {
-    validateSourceConfiguration({ ...options, source: "hackrf" });
+    validateSourceConfiguration({ ...options, source: "hackrf", hackrfIdentity: this.identity });
     const mode = normalizeModeSettings(
       options.modeSettings ?? defaultModeSettings("WBFM"),
     );
@@ -214,9 +216,9 @@ export class HackrfBackend implements ReceiverBackend {
     return {
       channel: options.channelFrequencyHz,
       mode,
-      rate: (options.sampleRateHz ?? 1_024_000) as HackrfSampleRateHz,
+      rate: (options.sampleRateHz ?? 9_600_000) as HackrfSampleRateHz,
       settings: validateHackrfRxSettings(
-        options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS,
+        options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS, this.identity?.kind ?? "unknown",
       ),
     };
   }
@@ -232,13 +234,15 @@ export class HackrfBackend implements ReceiverBackend {
           throw new Error(
             "This HackRF transport cannot open an authorized device directly.",
           );
-        await this.transport.open(grantedDevice);
-      } else await this.transport.requestAndOpen(this.dependencies.usb);
+        this.identity = await this.transport.open(grantedDevice);
+      } else this.identity = await this.transport.requestAndOpen(this.dependencies.usb);
       this.check(token);
       this.acquired = true;
       this.events.permissionGranted();
     }
     this.check(token);
+    validateSourceConfiguration({ source: "hackrf", hackrfIdentity: this.identity, channelFrequencyHz: selection.channel, modeSettings: selection.mode, sampleRateHz: selection.rate, hardwareSettings: selection.settings });
+    validateSourceFrequency("hackrf", center, 0, this.identity);
     const previous = this.transportSession?.details.captureSettings;
     const same =
       this.configuredOff &&
@@ -440,6 +444,7 @@ export class HackrfBackend implements ReceiverBackend {
         mode,
         this.metadata.actualSampleRateHz,
         channel,
+        this.identity,
       );
       if (scan)
         validateSourceFrequency(
@@ -466,7 +471,7 @@ export class HackrfBackend implements ReceiverBackend {
     if (mustCenter && center !== channel)
       return Promise.reject(new Error(`${mode.mode} requires the receiver center to match the channel at this sample rate.`));
     if (plan.hardwareRetuneRequired)
-      validateSourceFrequency(this.metadata.source, center, this.metadata.actualSampleRateHz);
+      validateSourceFrequency(this.metadata.source, center, this.metadata.actualSampleRateHz, this.identity);
     const hardware =
       scan ||
       plan.hardwareRetuneRequired ||
@@ -505,7 +510,7 @@ export class HackrfBackend implements ReceiverBackend {
       );
     let validated: HackrfRxSettings;
     try {
-      validated = validateHackrfRxSettings(settings);
+      validated = validateHackrfRxSettings(settings, this.identity?.kind);
     } catch (error) {
       return Promise.reject(error);
     }

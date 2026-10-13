@@ -914,7 +914,8 @@ export function ReceiverApp({
   const [sampleRateHz, setSampleRateHz] = useState(
     initialPreferences.sampleRateHz,
   );
-  const caps = sourceCapabilities(source);
+  const hackrfIdentity = receiver.session?.source === "hackrf" ? receiver.session.hackrf?.capabilities.identity : undefined;
+  const caps = sourceCapabilities(source, hackrfIdentity);
   const hardwareOptions =
     source === "hackrf"
       ? { hardwareSettings }
@@ -1295,6 +1296,7 @@ export function ReceiverApp({
         source === "hackrf" || source === "bladerf" || source === "usrp-b205"
           ? bandwidthHz
           : 0,
+        hackrfIdentity,
       );
       return true;
     } catch {
@@ -2863,6 +2865,10 @@ export function ReceiverApp({
                       </small>
                     </summary>
                     <div className="advanced-settings-body">
+                      {source === "hackrf" && <small>{hackrfIdentity?.kind === "hackrf-one"
+                        ? "HackRF One · experimental, physical reception unverified. USB API 0x0110; native 9.6 MS/s filtered to a 2.4 MS/s channel. RX gain changes briefly restart reception."
+                        : hackrfIdentity?.kind === "hackrf-pro" ? "HackRF Pro detected. Native rates and RX LNA states follow the Pro profile."
+                        : "One / Pro is detected on connection. HackRF One is experimental and requires USB API 0x0110 with 9.6 MS/s; Pro retains its rate choices."}</small>}
                       {caps.requiresUsb && caps.rates.kind === "choices" && (
                         <label>
                           Sample rate
@@ -2954,7 +2960,7 @@ export function ReceiverApp({
                       {caps.gain.kind === "hackrf-stages" && (
                         <div className="gain-control hackrf-gain-control">
                           <label>
-                            RX LNA state
+                            {hackrfIdentity?.kind === "hackrf-one" ? "RX IF gain (dB)" : "RX LNA state"}
                             <select
                               value={hardwareSettings.rxLnaGainCode}
                               disabled={transitioning}
@@ -2969,7 +2975,7 @@ export function ReceiverApp({
                             >
                               {caps.gain.lnaCodes.map((code) => (
                                 <option key={code} value={code}>
-                                  {code === 0
+                                  {!hackrfIdentity ? code === 0 ? "One 0 dB / Pro low" : code === 16 ? "One 16 dB / Pro middle" : code === 33 ? "Pro high (maximum)" : `${code} dB (One)` : hackrfIdentity.kind === "hackrf-one" ? `${code} dB` : code === 0
                                     ? "Low (−33 dB relative)"
                                     : code === 16
                                       ? "Middle (−16 dB relative)"
@@ -4810,7 +4816,7 @@ export function ReceiverApp({
                       <p>
                         Capture streams to private browser storage up to 2 GiB
                         when OPFS is available, with a 32 MiB memory fallback.
-                        RTL-SDR uses CU8 and HackRF Pro uses CI8; both can be
+                        RTL-SDR uses CU8 and HackRF One / Pro uses CI8; both can be
                         exported in BrowserSDR or SigMF pairs where supported.
                         USRP B205-mini: {SOURCE_RECORDING_DESCRIPTIONS["usrp-b205"]}.
                         bladeRF: {SOURCE_RECORDING_DESCRIPTIONS.bladerf}.
@@ -4861,7 +4867,7 @@ export function ReceiverApp({
                   <p>
                     Connect one supported receiver directly and close other SDR software first.
                     For RTL-SDR, use an RTL2832U device with an R820/R828/R860 tuner.
-                    HackRF Pro, bladeRF and USRP use their own supported profiles;
+                    HackRF One / Pro, bladeRF and USRP use their own supported profiles;
                     the RTL driver steps below apply only to RTL-SDR.
                     Check Compatibility &amp; tests for the tested scope before changing drivers.
                   </p>

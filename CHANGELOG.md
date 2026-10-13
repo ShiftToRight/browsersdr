@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 — 2026-10-14
+
+- Add experimental HackRF One reception alongside Pro in one automatically detected HackRF One / Pro source option. The initial One profile requires USB API 0x0110 (official v2026.01.3 baseline), uses native 9.6 MS/s CI8 and filters a 2.4 MS/s channel in the host.
+- Apply One-specific gain and frequency limits, preserve native bytes and One identity through recording/export/replay, and keep One community evidence separate from Pro.
+- Validate receive requests against actual compiled upstream libhackrf vectors and strict simulated USB/browser workflows. Physical HackRF One reception remains unverified; older/custom firmware is outside the initial profile.
+
 ## 1.1.3 — 2026-10-14
 
 - Migrate anonymous Atlas station search to v2 station headers and lazy reference pages with exact counts.

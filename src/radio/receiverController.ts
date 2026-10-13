@@ -507,7 +507,7 @@ export class ReceiverController {
       squelch: session.squelch, beatToneHz: session.beatToneHz, srd: session.srd,
     };
     const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
-    validateSourceRoute(session.source, modeSettings, session.actualSampleRateHz, channelFrequencyHz);
+    validateSourceRoute(session.source, modeSettings, session.actualSampleRateHz, channelFrequencyHz, session.hackrf?.capabilities.identity);
     const requiresCenter = ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
       && !isWidebandRate(session.actualSampleRateHz) && ["DAB", "ADS-B"].includes(modeSettings.mode);
     if (requiresCenter && tuneOptions.centerFrequencyHz === undefined && tuneOptions.autoRecenter)
@@ -520,7 +520,7 @@ export class ReceiverController {
       throw new Error(`${modeSettings.mode} requires the receiver center to match the channel at this sample rate.`);
     if (plan.hardwareRetuneRequired)
       validateSourceFrequency(session.source, plan.hardwareCenterFrequencyHz,
-        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0);
+        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0, session.hackrf?.capabilities.identity);
     return tuneOptions;
   }
 
@@ -642,6 +642,7 @@ export class ReceiverController {
           this.snapshot.session.source === "usrp-b205"
           ? this.snapshot.session.actualSampleRateHz
           : 0,
+        this.snapshot.session.hackrf?.capabilities.identity,
       );
     } catch (error) {
       this.publish({
@@ -701,6 +702,7 @@ export class ReceiverController {
         normalized,
         this.snapshot.session.actualSampleRateHz,
         this.snapshot.session.selectedChannelFrequencyHz,
+        this.snapshot.session.hackrf?.capabilities.identity,
       );
     } catch (error) {
       this.publish({
@@ -764,6 +766,7 @@ export class ReceiverController {
         normalized,
         this.snapshot.session.actualSampleRateHz,
         this.snapshot.session.selectedChannelFrequencyHz,
+        this.snapshot.session.hackrf?.capabilities.identity,
       );
       if (!this.backend.updateAnalogMode)
         throw new Error("This source cannot update analog settings live.");
@@ -847,7 +850,7 @@ export class ReceiverController {
     try {
       if (session.source !== "hackrf" || !backend.configureHardware)
         throw new Error("This source does not support HackRF RX settings.");
-      validated = validateHackrfRxSettings(settings);
+      validated = validateHackrfRxSettings(settings, session.hackrf?.capabilities.identity.kind);
     } catch (error) {
       this.publishCommandFailure(error);
       return;

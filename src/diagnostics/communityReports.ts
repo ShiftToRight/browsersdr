@@ -87,6 +87,8 @@ export function buildCommunityReport(
     renderer?: "webgpu" | "canvas2d" | "unknown";
   },
 ): CommunityReport {
+  if (context.source === "hackrf" && context.protocolProfile && context.protocolProfile.startsWith("hackrf-")
+    && options.hardwareId !== (context.protocolProfile === "hackrf-one-stable-2026-v1" ? "hackrf-one" : "hackrf-pro")) throw new Error("Tested receiver must match the detected HackRF variant.");
   return {
     schemaVersion: 2,
     reportType: "compatibility",

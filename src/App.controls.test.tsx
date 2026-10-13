@@ -322,7 +322,7 @@ it("renders the receive-only B205 rates and offers ci16_le SigMF recording", asy
 it("selects a source-compatible digital rate before connect and keeps stopped configuration editable", async () => {
   await change(control("Source"), "hackrf");
   await change(control("Mode"), "DAB");
-  expect(control("Sample rate").value).toBe("2400000");
+  expect(control("Sample rate").value).toBe("9600000");
   expect(control("Volume").disabled).toBe(false);
   expect(document.body.textContent).toContain("DAB+ audio");
   await change(control("Mode"), "AM");

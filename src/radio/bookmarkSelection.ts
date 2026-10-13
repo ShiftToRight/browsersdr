@@ -63,6 +63,7 @@ export async function applyBookmark(
   } else
     validateSourceConfiguration({
       ...configuration,
+      hackrfIdentity: before.session?.hackrf?.capabilities.identity,
       sampleRateHz,
       channelFrequencyHz: bookmark.frequencyHz,
       modeSettings: bookmark.settings,

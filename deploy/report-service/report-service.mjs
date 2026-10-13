@@ -343,6 +343,7 @@ export const COMMUNITY_HARDWARE = {
   "rtl-blog-v4": "rtl-sdr",
   "rtl-unknown": "rtl-sdr",
   "hackrf-pro": "hackrf",
+  "hackrf-one": "hackrf",
   "bladerf-xa4": "bladerf",
   "bladerf-xa5": "bladerf",
   "bladerf-xa9": "bladerf",
@@ -389,6 +390,7 @@ const COMMUNITY_PROFILES = new Set([
   null,
   "hackrf-pro-standard-7f96cc8-v1",
   "hackrf-pro-stable-2026-v1",
+  "hackrf-one-stable-2026-v1",
   "bladerf2-xa4-fpga-rfic-35174c3-v1",
   "bladerf2-xa5-fpga-rfic-35174c3-v1",
   "bladerf2-xa9-fpga-rfic-35174c3-v1",
@@ -489,6 +491,11 @@ export function validateCommunityReport(value) {
         s.nativeRateHz <= 200_000_000)
     ) ||
     !COMMUNITY_PROFILES.has(s.protocolProfile) ||
+    (s.protocolProfile === "hackrf-one-stable-2026-v1" &&
+      (s.source !== "hackrf" || s.hardwareId !== "hackrf-one")) ||
+    (s.hardwareId === "hackrf-one" &&
+      s.protocolProfile !== null &&
+      s.protocolProfile !== "hackrf-one-stable-2026-v1") ||
     !(
       s.firmwareVersion === null ||
       (typeof s.firmwareVersion === "string" &&

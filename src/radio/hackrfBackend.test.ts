@@ -1,3 +1,4 @@
+import { FakeHackrfOneUsb } from "../testing/hackrfOneUsbFixture";
 import { ChannelWorkerFixture } from "../testing/channelWorkerFixture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
@@ -105,6 +106,9 @@ function fixture(
     await flush();
   }
   async function ready(task: Promise<unknown>, rate = 1_024_000) {
+    // Cold receive setup is now loaded asynchronously. Wait for the actual bulk
+    // owner rather than assuming module I/O finishes in a microtask-only loop.
+    await vi.waitFor(() => expect(device.pendingReads.length).toBeGreaterThan(0), { timeout: 1_000, interval: 5 });
     await flush();
     now += 200;
     const count = Math.ceil((Math.ceil(rate * 0.12) + 32_768) / 32_768);
@@ -783,4 +787,32 @@ it("moves HackRF receiver center while preserving channel selection and DSP offs
   const controls = f.device.calls.length;
   await expect(f.backend.tune(101e6, 4, { autoRecenter: false })).rejects.toThrow(/complete channel/);
   expect(f.device.calls).toHaveLength(controls);
+});
+
+
+describe("One through the shared backend and DSP", () => {
+  it("uses the common 9.6 MS/s default for a first One connection", async () => {
+    const f = fixture(new FakeHackrfOneUsb());
+    const metadata = await f.backend.connect({ ...OPTIONS, sampleRateHz: undefined });
+    expect(metadata).toMatchObject({ requestedSampleRateHz: 9_600_000, hackrf: { capabilities: { identity: { kind: "hackrf-one" } } } });
+  });
+
+  it("routes native CI8 at 9.6 MS/s into 2.4 MS/s audio, preserves capture and applies One gain", async () => {
+    const f = fixture(new FakeHackrfOneUsb());
+    const options = { ...OPTIONS, sampleRateHz: 9_600_000 };
+    await f.ready(f.backend.start(options), 9_600_000);
+    const status = f.backend.startRecording();
+    expect(status.sampleRateHz).toBe(9_600_000);
+    const input = tone(131_072, 9_600_000, 25_000);
+    await f.feed(input); await flush();
+    expect(f.played.length).toBeGreaterThan(0);
+    const capture = f.backend.stopRecording()!;
+    expect(capture.data).toEqual(input);
+    expect(capture.metadata).toMatchObject({ hardware: { kind: "hackrf-one" }, effectiveSampleRateHz: 2_400_000 });
+    const task = f.backend.configureHardware({ kind: "hackrf", rxLnaGainCode: 40, rxVgaGainDb: 20, rfAmplifierEnabled: false, antennaPowerEnabled: false }, 2);
+    await f.ready(task, 9_600_000);
+    expect((await task).hackrf.captureSettings.rxLnaGainCode).toBe(40);
+    await expect(f.backend.tune(500_000, 3)).rejects.toThrow(/frequency/);
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+  });
 });

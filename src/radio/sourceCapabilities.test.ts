@@ -36,7 +36,8 @@ function hackrfDetails(): HackrfSessionDetails {
 
 describe("source capabilities and requests", () => {
   it("keeps pre-connect defaults separate from verified identity", () => {
-    expect(sourceCapabilities("hackrf")).toMatchObject({ requiresUsb: true, persistentConnection: true, gain: { kind: "hackrf-stages", lnaCodes: [0, 16, 33] } });
+    expect(sourceCapabilities("hackrf")).toMatchObject({ requiresUsb: true, persistentConnection: true, gain: { kind: "hackrf-stages", lnaCodes: [0, 8, 16, 24, 32, 33, 40] }, rates: { defaultHz: 9_600_000 } });
+    expect(sourceCapabilities("hackrf", evidence().identity).gain).toMatchObject({ lnaCodes: [0, 16, 33] });
     expect(sourceCapabilities("rtl-sdr").gain.kind).toBe("rtl-auto-manual");
     for (const source of ["synthetic", "replay"] as const) expect(sourceCapabilities(source)).toMatchObject({ requiresUsb: false, persistentConnection: false, gain: { kind: "none" } });
     expect(discoverHackrfCapabilities(evidence())).toMatchObject({ firmwareBuildValidation: "unvalidated", hardwareValidation: "pending", nativeEncoding: "ci8" });

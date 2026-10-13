@@ -78,6 +78,7 @@ export function previewDiscovery(
   } else
     validateSourceConfiguration({
       ...config,
+      hackrfIdentity: before.session?.hackrf?.capabilities.identity,
       sampleRateHz: rate,
       channelFrequencyHz: bookmark.frequencyHz,
       modeSettings: settings,

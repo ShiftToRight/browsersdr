@@ -1,8 +1,8 @@
+import type { HackrfProtocol } from "./hackrfProtocolDriver";
 import { IngressTimings, type IngressDiagnostics } from "./ingressTimings";
 import {
   HACKRF_DEADLINE_MS,
   HACKRF_USB_FILTER,
-  HackrfProtocol,
   validateHackrfConfiguration,
   type HackrfConfiguration,
   type HackrfConfiguredSession,
@@ -81,6 +81,7 @@ function deferred<T>() {
 export class HackrfTransport {
   private device?: USBDevice;
   private identity?: HackrfIdentity;
+  private protocolDriver?: typeof HackrfProtocol;
   private config?: HackrfConfiguration;
   private session?: HackrfConfiguredSession;
   private token = 0;
@@ -301,6 +302,10 @@ export class HackrfTransport {
       }
     }
     this.guard(token);
+    if (!this.protocolDriver) {
+      this.protocolDriver = (await this.deadline(import("./hackrfProtocolDriver"))).HackrfProtocol;
+      this.guard(token);
+    }
     const identity = await this.protocol(token).identify(device);
     this.guard(token);
     this.identity = identity;
@@ -312,7 +317,7 @@ export class HackrfTransport {
     // Validation must not disturb a running valid generation.
     let config: HackrfConfiguration;
     try {
-      config = validateHackrfConfiguration(request);
+      config = validateHackrfConfiguration(request, this.identity);
       if (config.generation <= this.lastGeneration)
         throw new Error(
           "HackRF configuration requires a fresh acquisition generation.",
@@ -397,7 +402,9 @@ export class HackrfTransport {
   }
 
   private protocol(token: number): HackrfProtocol {
-    return new HackrfProtocol({
+    const Driver = this.protocolDriver;
+    if (!Driver) throw stateError("HackRF receive setup has not loaded.");
+    return new Driver({
       now: this.now,
       pause: async (ms) => {
         await new Promise<void>((resolve) => setTimeout(resolve, ms));

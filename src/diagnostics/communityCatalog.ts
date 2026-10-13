@@ -7,6 +7,7 @@ export const COMMUNITY_HARDWARE = [
     label: "RTL-SDR",
     source: "rtl-sdr",
   },
+  { id: "hackrf-one", label: "HackRF One · experimental", source: "hackrf" },
   { id: "hackrf-pro", label: "HackRF Pro", source: "hackrf" },
   { id: "bladerf-xa4", label: "bladeRF xA4", source: "bladerf" },
   { id: "bladerf-xa5", label: "bladeRF xA5 · experimental", source: "bladerf" },
@@ -113,7 +114,8 @@ export const COMMUNITY_GROUPS = [
   { id: "workflow", label: "Recording & replay" },
 ] as const;
 
-export function defaultCommunityHardware(source: string): CommunityHardwareId {
+export function defaultCommunityHardware(source: string, protocolProfile?: string | null): CommunityHardwareId {
+  if (source === "hackrf") return protocolProfile === "hackrf-one-stable-2026-v1" ? "hackrf-one" : "hackrf-pro";
   return (
     COMMUNITY_HARDWARE.find(
       (h) => h.source === source && h.id.endsWith("unknown"),

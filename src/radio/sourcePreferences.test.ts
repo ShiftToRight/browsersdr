@@ -62,7 +62,7 @@ describe("source preferences", () => {
     expect(compatibleSourceRate("hackrf", "ADS-B", 1_024_000)).toBe(2_400_000);
     expect(compatibleSourceRate("synthetic", "AIS", 1_024_000)).toBeUndefined();
     expect(compatibleSourceRate("replay", "DAB", 1_024_000)).toBeUndefined();
-    const saved = storage({ "browsersdr.source.v1.hackrf": JSON.stringify({ ...sourcePreferenceDefaults("hackrf"), modeSettings: defaultModeSettings("DAB") }) });
+    const saved = storage({ "browsersdr.source.v1.hackrf": JSON.stringify({ ...sourcePreferenceDefaults("hackrf"), sampleRateHz: 1_024_000, modeSettings: defaultModeSettings("DAB") }) });
     expect(loadSourcePreferences(saved, "hackrf").modeSettings.mode).toBe("WBFM");
   });
   it("tolerates unavailable storage", () => {

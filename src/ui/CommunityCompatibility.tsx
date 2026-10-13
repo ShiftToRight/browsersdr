@@ -26,6 +26,7 @@ type View = "modes" | "platform" | "engine";
 const DEFAULT_ROWS = new Set([
   "rtl-unknown",
   "hackrf-pro",
+  "hackrf-one",
   "bladerf-xa4",
   "bladerf-xa5",
   "bladerf-xa9",

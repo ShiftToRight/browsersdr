@@ -64,6 +64,7 @@ export function ReceiverTuningControl({
         ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
           ? session.actualSampleRateHz
           : 0,
+        session.hackrf?.capabilities.identity,
       );
       planChannelTune(
         centerHz,

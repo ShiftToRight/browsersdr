@@ -16,13 +16,13 @@ interface Ci8Format {
 export interface HackrfRecordingFormat extends Ci8Format {
   rateEvidence: HackrfSessionDetails["rateEvidence"];
   adcSampleRateHz: number;
-  fpgaDecimationFactor: 2 | 4 | 8 | 16 | 32;
+  fpgaDecimationFactor: 1 | 2 | 4 | 8 | 16 | 32;
   hardware: Omit<HackrfIdentity, "platformSupport"> & {
     platformSupport?: number;
     protocolProfile: HackrfProtocolProfile;
     referenceCommit: HackrfReferenceCommit;
-    standardImageIndex: 0;
-    formatEvidence: "standard-image-selection-acknowledged";
+    standardImageIndex: 0 | null;
+    formatEvidence: "standard-image-selection-acknowledged" | "firmware-standard-ci8";
   };
   captureSettings: Omit<HackrfCaptureSettings, "kind"> & { kind?: "hackrf" };
   provenanceDetails: {
@@ -67,7 +67,7 @@ export function ci8SessionDetails(format: HackrfRecordingFormat): HackrfSessionD
   return structuredClone({ nativeEncoding: "ci8", nativeSampleRateHz: format.nativeSampleRateHz, effectiveSampleRateHz: format.effectiveSampleRateHz,
     adcSampleRateHz: format.adcSampleRateHz, fpgaDecimationFactor: format.fpgaDecimationFactor, hostResampling: format.hostResampling,
     rateEvidence: format.rateEvidence, captureSettings: { ...format.captureSettings, kind: format.captureSettings.kind ?? "hackrf" },
-    capabilities: { source: "hackrf", phase: "discovered", identity: { ...format.hardware, platformSupport: format.hardware.platformSupport ?? 0x10 }, protocolProfile: format.hardware.protocolProfile,
+    capabilities: { source: "hackrf", phase: "discovered", identity: { ...format.hardware, platformSupport: format.hardware.platformSupport ?? (format.hardware.kind === "hackrf-one" ? 0 : 0x10) }, protocolProfile: format.hardware.protocolProfile,
       referenceCommit: format.hardware.referenceCommit, nativeEncoding: "ci8", standardImageIndex: format.hardware.standardImageIndex,
       formatEvidence: format.hardware.formatEvidence, firmwareBuildValidation: "unvalidated", hardwareValidation: "pending" },
   });
