@@ -778,7 +778,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
                         </p>
                         <Sources sources={station.sources} />
                         <StationReferences
-                          key={`${state.page!.catalog_revision}:${station.id}:${station.publication_version}`}
+                          key={`${state.page!.catalog_revision}:${station.id}:${station.publication_version}:${search.getRequestId()}`}
                           client={client}
                           station={station}
                           catalogRevision={state.page!.catalog_revision}

@@ -4,7 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { publicStationFixture as fixture } from "../testing/publicStationFixture";
 import { SearchOverlay, type SearchOverlayProps } from "./SearchOverlay";
-import { PublicStationClient } from "../radio/publicStationClient";
+import {
+  PublicCatalogError,
+  PublicStationClient,
+} from "../radio/publicStationClient";
 let root: Root, host: HTMLDivElement, props: SearchOverlayProps;
 const id = "00000000-0000-4000-8000-000000000001";
 let detail = structuredClone(fixture.details[id]!);
@@ -152,4 +155,20 @@ it("rejects a source change while detail is pending, even if callbacks from the 
   await render();
   await act(async () => release());
   expect(props.onUseStation).not.toHaveBeenCalled();
+});
+
+it("refreshes the same header after an expired reference cursor without reusing the failed reference pager", async () => {
+  vi.spyOn(props.client!, "transmissions").mockRejectedValueOnce(
+    new PublicCatalogError(409, "cursor_expired"),
+  );
+  await render();
+  await click("Search");
+  await search();
+  await click("Show references for ENERGY Berlin (illustrative)");
+  expect(document.body.textContent).toContain("Search Atlas again to refresh");
+  await search();
+  await click("Show references for ENERGY Berlin (illustrative)");
+  expect(document.body.textContent).toContain("Reference page 1");
+  await click("Preview 103.4 MHz");
+  expect(button("Apply to receiver").disabled).toBe(false);
 });
