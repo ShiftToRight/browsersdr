@@ -46,10 +46,20 @@ test("utility destinations return to the last workspace and preserve view prefer
       name: "Back to Explorer",
       exact: true,
     });
-    await expect(back).toBeFocused();
-    await expect(
-      page.getByRole("button", { name: "Compact", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
+    if (view === "Diagnostics") await expect(back).toBeFocused();
+    else {
+      await expect(
+        page.getByRole("button", {
+          name: "Close utility overlay",
+          exact: true,
+        }),
+      ).toBeFocused();
+      await expect(page.locator("#explorer-tab")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    }
+    await expect(page.locator(".app-shell")).toHaveClass(/density-compact/);
     await back.click();
     await expect(
       page.getByRole("tab", { name: "Explorer", exact: true }),

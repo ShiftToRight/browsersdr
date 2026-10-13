@@ -12,6 +12,30 @@ export async function openApplicationView(
     | "Help"
     | "About",
 ) {
+  const overlay = page.locator(".utility-overlay[open]");
+  if (
+    view === "Settings" ||
+    view === "Help" ||
+    view === "Compatibility" ||
+    view === "About"
+  ) {
+    if (await overlay.isVisible()) {
+      const label =
+        view === "Settings"
+          ? "Settings"
+          : view === "Help"
+            ? "Help & setup"
+            : view === "Compatibility"
+              ? "Compatibility & tests"
+              : "About BrowserSDR";
+      await overlay.getByRole("button", { name: label, exact: true }).click();
+      return;
+    }
+  } else if (await overlay.isVisible()) {
+    await overlay
+      .getByRole("button", { name: "Close utility overlay", exact: true })
+      .click();
+  }
   if (view === "Receiver" || view === "Decoder" || view === "Explorer") {
     await page.getByRole("tab", { name: view, exact: true }).click();
     return;
@@ -35,4 +59,5 @@ export async function openApplicationView(
           ? "Compatibility & tests"
           : "About BrowserSDR";
   await page.getByRole("button", { name: entry, exact: true }).click();
+  await overlay.waitFor({ state: "visible" });
 }

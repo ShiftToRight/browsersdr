@@ -529,7 +529,7 @@ test("unified remote workspace shares compact layout, panel hiding and source se
   ).toBeVisible();
 });
 
-test("leaving unified Receiver closes the stream and returning preserves settings without reconnecting", async ({
+test("utility overlays preserve the remote stream and explicit disconnect preserves settings", async ({
   page,
 }) => {
   const { connections, closed } = await fixture(page);
@@ -544,11 +544,22 @@ test("leaving unified Receiver closes the stream and returning preserves setting
   await page
     .getByRole("button", { name: "Integration settings", exact: true })
     .click();
-  await expect.poll(() => closed.length).toBe(1);
-  await expect(page.locator("#remote-view")).toBeHidden();
+  await expect(
+    page.getByRole("dialog", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#remote-view")).toBeVisible();
+  expect(closed).toHaveLength(0);
   await page
     .getByRole("button", { name: "Back to Receiver", exact: true })
     .click();
+  await expect(
+    page.getByRole("button", { name: "Stop listening", exact: true }),
+  ).toBeVisible();
+  expect(connections).toHaveLength(1);
+  await page
+    .getByRole("button", { name: "Stop listening", exact: true })
+    .click();
+  await expect.poll(() => closed.length).toBe(1);
   await expect(page.locator("#remote-view")).toBeVisible();
   await expect(
     page.getByLabel("Receiver website", { exact: true }),

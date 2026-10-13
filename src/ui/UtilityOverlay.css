@@ -1,0 +1,52 @@
+.utility-overlay {
+  position: fixed;
+  top: var(--utility-top, 100px);
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  width: calc(100% - 48px);
+  max-width: 1680px;
+  height: calc(100dvh - var(--utility-top, 100px) - 24px);
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--line-bright);
+  border-radius: 16px;
+  background: var(--theme-surface, #0b1729);
+  color: var(--ink);
+  box-shadow: 0 24px 80px #000814b8;
+  overflow: hidden;
+}
+.utility-overlay[open] { display: flex; flex-direction: column; }
+.utility-overlay[hidden] { display: none; }
+.utility-overlay::backdrop { background: #02071166; backdrop-filter: blur(5px); }
+.utility-overlay-header { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); flex: none; }
+.utility-overlay-header > div { min-width: 0; }
+.utility-overlay-header .eyebrow { margin: 0 0 3px; }
+.utility-overlay-header h2 { margin: 0; font-size: 1.15rem; }
+.utility-overlay-emblem { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line); color: var(--cyan); background: var(--secondary-background); flex: none; }
+.utility-overlay-close { margin-left: auto; width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 8px; flex: none; }
+.utility-overlay-navigation { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 22px; border-bottom: 1px solid var(--line); flex: none; }
+.utility-overlay-navigation button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; font-size: 0.8rem; }
+.utility-overlay-content { min-height: 0; min-width: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 22px; }
+.utility-overlay-content > * { min-width: 0; }
+.utility-overlay-content .help-layout { padding: 0; }
+.utility-overlay-content .atlas-settings-panel { max-width: none; margin: 0; }
+.utility-overlay-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px; border-top: 1px solid var(--line); flex: none; color: var(--muted); font-size: 0.75rem; }
+.utility-overlay-footer button { min-height: 36px; font-size: 0.8rem; }
+@media (max-width: 640px) {
+  .utility-overlay { width: calc(100% - 20px); height: calc(100dvh - var(--utility-top, 100px) - 10px); border-radius: 12px; }
+  .utility-overlay-header { padding: 12px; gap: 10px; }
+  .utility-overlay-header h2 { font-size: 1rem; overflow-wrap: anywhere; }
+  .utility-overlay-emblem { width: 34px; height: 34px; }
+  .utility-overlay-navigation { padding: 8px 10px; gap: 5px; }
+  .utility-overlay-navigation button { flex: 1 1 calc(50% - 5px); min-width: 0; padding: 8px; white-space: normal; }
+  .utility-overlay-content { padding: 12px; }
+  .utility-overlay-footer { padding: 10px 12px; }
+  .utility-overlay-footer button { flex: none; }
+}
+@media (pointer: coarse) {
+  .utility-overlay-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .utility-overlay-navigation button, .utility-overlay-footer button { min-height: 44px; }
+}
+@supports not (backdrop-filter: blur(5px)) { .utility-overlay::backdrop { background: #020711bb; } }
+@media (forced-colors: active) { .utility-overlay::backdrop { backdrop-filter: none; background: Canvas; opacity: 0.7; } }

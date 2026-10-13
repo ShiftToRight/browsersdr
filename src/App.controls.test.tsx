@@ -391,6 +391,7 @@ it("holds source ownership on cleanup failure and restores source-specific choic
 });
 
 it("routes passive setup and scoped compatibility evidence to separate help-menu views", async () => {
+  await act(async () => { await import("./ui/UtilityOverlay"); });
   await change(control("Source"), "hackrf");
   await change(control("RX LNA state"), "33");
   await change(control("RX VGA gain"), "20");
@@ -464,7 +465,7 @@ it("routes passive setup and scoped compatibility evidence to separate help-menu
   ).toBeGreaterThan(0);
   expect(document.querySelector("#compatibility-view")?.textContent).not.toContain("Share test result");
   await act(async () =>
-    (document.querySelector("#receiver-tab") as HTMLButtonElement).click(),
+    (document.querySelector(".utility-overlay-close") as HTMLButtonElement).click(),
   );
   expect(document.querySelector("#receiver-tab")?.getAttribute("aria-selected")).toBe("true");
   expect(control("Source").value).toBe("hackrf");

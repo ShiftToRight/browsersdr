@@ -1163,7 +1163,7 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   await expect(
     page.getByText("Connected as Browser test", { exact: false }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Receiver", exact: true }).click();
+  await openApplicationView(page, "Receiver");
   await prepareSyntheticSigmf(page);
 
   await expect(
@@ -1174,9 +1174,9 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   await page
     .getByLabel("SigIntAtlas recording title")
     .fill("Deterministic browser acceptance");
-  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue(
-    "t".repeat(32),
-  );
+  await expect(
+    page.getByLabel("SigIntAtlas user token", { exact: true }),
+  ).toHaveValue("t".repeat(32));
   await page.getByLabel(/Analyze after save when the live capability/).check();
   const save = page.getByRole("button", { name: "Save to SigIntAtlas" });
   await save.dblclick();
@@ -1224,15 +1224,19 @@ test("explicit SigIntAtlas save retries a lost part and exposes verified recordi
   ).toBeEnabled();
   await page.reload();
   await prepareSyntheticSigmf(page);
-  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue(
-    "t".repeat(32),
-  );
+  await expect(
+    page.getByLabel("SigIntAtlas user token", { exact: true }),
+  ).toHaveValue("t".repeat(32));
   expect(atlas.recordingCreates()).toBe(1);
   await page.getByRole("button", { name: "Forget token" }).click();
-  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue("");
+  await expect(
+    page.getByLabel("SigIntAtlas user token", { exact: true }),
+  ).toHaveValue("");
   await page.reload();
   await prepareSyntheticSigmf(page);
-  await expect(page.getByLabel("SigIntAtlas user token")).toHaveValue("");
+  await expect(
+    page.getByLabel("SigIntAtlas user token", { exact: true }),
+  ).toHaveValue("");
 });
 
 test("SigIntAtlas cancellation rejects late work, auth expiry retries, and receiver stays usable", async ({
@@ -1248,7 +1252,9 @@ test("SigIntAtlas cancellation rejects late work, auth expiry retries, and recei
   });
   await gotoApp(page);
   await prepareSyntheticSigmf(page);
-  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
+  await page
+    .getByLabel("SigIntAtlas user token", { exact: true })
+    .fill("t".repeat(32));
   await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
   await expect(page.getByText(/Checking the same-origin/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel transfer" }).click();
@@ -1279,7 +1285,9 @@ test("SigIntAtlas offline failure leaves local download fallback available", asy
   await installAtlasMock(page, { offline: true });
   await gotoApp(page);
   await prepareSyntheticSigmf(page);
-  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
+  await page
+    .getByLabel("SigIntAtlas user token", { exact: true })
+    .fill("t".repeat(32));
   await page.getByRole("button", { name: "Save to SigIntAtlas" }).click();
   await expect(page.getByText(/Transfer failed/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry save" })).toBeEnabled();
@@ -1786,7 +1794,9 @@ test("SigIntAtlas closed transfers recover after reload without a prepared captu
   const atlas = await installAtlasMock(page, options);
   await gotoApp(page);
   await prepareSyntheticSigmf(page);
-  await page.getByLabel("SigIntAtlas user token").fill("t".repeat(32));
+  await page
+    .getByLabel("SigIntAtlas user token", { exact: true })
+    .fill("t".repeat(32));
   await page
     .getByRole("button", { name: "Save to SigIntAtlas", exact: true })
     .click();

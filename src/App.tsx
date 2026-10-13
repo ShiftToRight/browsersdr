@@ -19,6 +19,8 @@ import { SettingsSharePanel } from "./ui/SettingsSharePanel";
 import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
 import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
 import { useWorkspaceLayout, WorkspaceControls } from "./ui/WorkspaceLayout";
+import type { UtilityView } from "./ui/UtilityOverlay";
+const UtilityOverlay = lazy(() => import("./ui/UtilityOverlay").then(module => ({ default: module.UtilityOverlay })));
 import { bookmarkFromCandidate, validateBookmark, type Bookmark } from "./radio/bookmarks";
 import { applyBookmark } from "./radio/bookmarkSelection";
 import { SearchOverlay } from "./ui/SearchOverlay";
@@ -171,6 +173,7 @@ const preferenceStorage = {
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
 type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "compatibility" | "about";
+const isUtilityView = (view: AppView): view is UtilityView => view === "settings" || view === "help" || view === "compatibility" || view === "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type ReplayImportFormat = "browsersdr" | "sigmf";
 
@@ -1203,6 +1206,7 @@ export function ReceiverApp({
   const autoConnectAttempted = useRef(false);
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveViewState] = useState<AppView>("receiver");
+  const [utilityView, setUtilityView] = useState<UtilityView | null>(null);
   const [remoteSelected, setRemoteSelected] = useState(false);
   const [remoteStatus, setRemoteStatus] = useState("disconnected");
   const [remotePreset, setRemotePreset] = useState<RemotePreset>();
@@ -1210,13 +1214,15 @@ export function ReceiverApp({
   const [remoteEntryIssue, setRemoteEntryIssue] = useState("");
   const [lastWorkspace, setLastWorkspace] = useState<"receiver" | "decoder" | "explorer">("receiver");
   const setActiveView = useCallback((view: AppView) => {
+    if (isUtilityView(view)) { setUtilityView(view); return; }
+    setUtilityView(null);
     setActiveViewState(view === "receiver" && remoteSelected ? "remote" : view);
     if (view === "receiver" || view === "remote") setLastWorkspace("receiver");
     else if (view === "explorer" || view === "decoder") setLastWorkspace(view);
   }, [remoteSelected]);
   const openAuxiliaryView = (view: AppView) => {
     setActiveView(view);
-    requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
+    if (!isUtilityView(view)) requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
   };
   const [compatibilityDetailView, setCompatibilityDetailView] =
     useState<CompatibilityDetailView>("modes");
@@ -2444,7 +2450,7 @@ export function ReceiverApp({
                     : "Licences, privacy and provenance"}
           </p>
         </nav>
-        <WorkspaceControls layout={layout} onChange={setLayout} activeView={activeView}
+        <WorkspaceControls layout={layout} onChange={setLayout} activeView={utilityView ?? activeView}
           onSettings={() => openAuxiliaryView("settings")}
           onHelp={() => openAuxiliaryView("help")}
           onCompatibility={() => openAuxiliaryView("compatibility")}
@@ -3579,7 +3585,7 @@ export function ReceiverApp({
         </section>
 
         <WebGpuSpectrum
-          active={activeView === "receiver"}
+          active={activeView === "receiver" && utilityView === null}
           pipeline={analysis}
           displaySettings={spectrumDisplay}
           onDisplaySettingsChange={setSpectrumDisplay}
@@ -4355,15 +4361,6 @@ export function ReceiverApp({
         }} /></DeferredWorkspace>}
 
       <div
-        id="settings-view"
-        role="region"
-        aria-label="Integration settings"
-        hidden={activeView !== "settings"}
-      >
-        {activeView === "settings" && <AtlasSettingsPanel connection={atlasConnection} />}
-      </div>
-
-      <div
         id="explorer-view"
         role="tabpanel"
         aria-labelledby="explorer-tab"
@@ -4503,8 +4500,21 @@ export function ReceiverApp({
         </section>
       </div>
 
-      <div id="compatibility-view" role="region" aria-label="Compatibility & tests" hidden={activeView !== "compatibility"}>
-        {activeView === "compatibility" && <div className="compatibility-layout">
+      <DeferredWorkspace active={utilityView !== null}><UtilityOverlay view={utilityView}
+        workspaceLabel={activeView === "diagnostics" ? "Diagnostics" : lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}
+        returnFocusId={activeView === "diagnostics" ? "auxiliary-return" : `${lastWorkspace}-tab`}
+        onViewChange={setUtilityView} onDismiss={() => setUtilityView(null)}>
+      <div
+        id="settings-view"
+        role="region"
+        aria-label="Integration settings"
+        hidden={utilityView !== "settings"}
+      >
+        <DeferredWorkspace active={utilityView === "settings"}><AtlasSettingsPanel connection={atlasConnection} /></DeferredWorkspace>
+      </div>
+
+      <div id="compatibility-view" role="region" aria-label="Compatibility & tests" hidden={utilityView !== "compatibility"}>
+        {utilityView === "compatibility" && <div className="compatibility-layout">
                 <DeferredWorkspace active><CommunityCompatibility context={compatibilityReportContext} renderer={spectrumStatus.kind === "ready" ? spectrumStatus.renderer : undefined}
                   blockedReason={remoteSelected ? "Return to a local receiver or I/Q replay before reporting this setup." : undefined} /></DeferredWorkspace>
                 <section
@@ -4695,8 +4705,8 @@ export function ReceiverApp({
         </div>}
       </div>
 
-      <div id="help-view" role="region" aria-label="Help & setup" hidden={activeView !== "help"}>
-        {activeView === "help" && <div className="help-layout">
+      <div id="help-view" role="region" aria-label="Help & setup" hidden={utilityView !== "help"}>
+        {utilityView === "help" && <div className="help-layout">
               <main className="help-main">
                 <section
                   className="help-panel faq-panel"
@@ -4918,10 +4928,11 @@ export function ReceiverApp({
         id="about-view"
         role="region"
         aria-label="About BrowserSDR"
-        hidden={activeView !== "about"}
+        hidden={utilityView !== "about"}
       >
-        {activeView === "about" && <AboutPage />}
+        {utilityView === "about" && <AboutPage />}
       </div>
+      </UtilityOverlay></DeferredWorkspace>
       <RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {
         if (!await openRemoteReceiver(preset)) throw new Error(remoteBlockedReason ?? "The receiver could not be released. Finish the current operation and try again.");
       }} />

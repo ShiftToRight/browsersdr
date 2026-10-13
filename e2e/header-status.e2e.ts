@@ -130,6 +130,9 @@ test("header recovery wraps on small screens and remains usable outside the rece
   await expect(status).toContainText("system driver may be using it");
   await expect(status.locator(".receiver-notice")).toBeHidden();
   await openApplicationView(page, "Help");
+  await page
+    .getByRole("button", { name: "Close utility overlay", exact: true })
+    .click();
   await status.locator(".receiver-status-menu > summary").click();
   await expect(status.locator(".receiver-notice")).toBeVisible();
   await expect(status.getByRole("button", { name: /^Receiver:/ })).toHaveClass(

@@ -76,7 +76,7 @@ test("desktop receiver fills the window with all primary panels in view", async 
   expect((await plot.boundingBox())!.height).toBeGreaterThan(smaller.height);
 });
 
-test("desktop keeps expanded tools reachable and other views in document flow", async ({
+test("desktop keeps expanded tools reachable and utilities in their own scroll layer", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -98,13 +98,11 @@ test("desktop keeps expanded tools reachable and other views in document flow", 
     900,
   );
   await openApplicationView(page, "Help");
-  await expect(page.locator(".app-shell")).not.toHaveClass(
-    /receiver-workspace/,
+  await expect(page.locator(".app-shell")).toHaveClass(/receiver-workspace/);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
+    900,
   );
-  expect(
-    await page.evaluate(() => document.documentElement.scrollHeight),
-  ).toBeGreaterThan(900);
-  await page.getByRole("tab", { name: "Receiver", exact: true }).click();
+  await openApplicationView(page, "Receiver");
   await expect(page.locator(".app-shell")).toHaveClass(/receiver-workspace/);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
     900,

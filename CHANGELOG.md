@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-10-13
+
+- Open Settings, Help & setup, Compatibility & tests and About in a framed overlay above the current workspace.
+- Keep acquisition, capture, remote listening and unsaved Settings drafts while visiting utility pages.
+- Add fixed utility navigation and close/return controls, internal scrolling, a blurred backdrop and keyboard focus handling.
+
 ## 1.0.1 — 2026-10-13
 
 - Count duration-qualified community test reports immediately, including existing pending reports, without maintainer approval.
