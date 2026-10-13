@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   COMMUNITY_FEATURES,
-  COMMUNITY_HARDWARE,
+  COMMUNITY_REPORT_HARDWARE,
   defaultCommunityHardware,
   type CommunityFeatureId,
   type CommunityHardwareId,
@@ -335,10 +335,8 @@ export function CommunityTestReport({
                   )
                 }
               >
-                {COMMUNITY_HARDWARE.filter(
-                  (h) =>
-                    h.source === frozen.context.source &&
-                    (h.source !== "rtl-sdr" || h.id === "rtl-unknown"),
+                {COMMUNITY_REPORT_HARDWARE.filter(
+                  (h) => h.source === frozen.context.source,
                 ).map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.label}

@@ -91,6 +91,19 @@ export const COMMUNITY_FEATURES = [
 ] as const;
 
 export type CommunityHardwareId = (typeof COMMUNITY_HARDWARE)[number]["id"];
+
+/** Presentation aliases only; historical wire IDs and evidence scopes stay intact. */
+export function communityHardwareRowId(
+  id: CommunityHardwareId,
+): CommunityHardwareId {
+  if (id.startsWith("rtl-")) return "rtl-unknown";
+  return id === "usrp-b205-mini" ? "usrp-b205mini-i" : id;
+}
+
+export const COMMUNITY_REPORT_HARDWARE = COMMUNITY_HARDWARE.filter(
+  (hardware) => communityHardwareRowId(hardware.id) === hardware.id,
+);
+
 export type CommunityFeatureId = (typeof COMMUNITY_FEATURES)[number]["id"];
 export type CommunityGroup = (typeof COMMUNITY_FEATURES)[number]["group"];
 export const COMMUNITY_GROUPS = [

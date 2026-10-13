@@ -46,6 +46,22 @@ afterEach(async () => {
   document.body.innerHTML = "";
   vi.clearAllMocks();
 });
+
+it("offers one named B205mini-i option while keeping unknown USRP hardware explicit", async () => {
+  await render({
+    ...context,
+    source: "usrp-b205",
+    deviceProfile: "USRP B205mini-i",
+  });
+  await act(async () => button("Report this test").click());
+  const options = Array.from(
+    document.querySelectorAll<HTMLOptionElement>("select option"),
+  ).filter((option) => option.value.startsWith("usrp-"));
+  expect(options.map((option) => [option.value, option.textContent])).toEqual([
+    ["usrp-b205mini-i", "USRP B205mini-i"],
+    ["usrp-unknown", "USRP · unknown variant"],
+  ]);
+});
 function button(text: string) {
   const found = Array.from(
     document.querySelectorAll<HTMLButtonElement>("button"),
@@ -114,7 +130,11 @@ it("keeps defaults untested, sends the frozen renderer, and prevents double send
   expect(sendCommunityReport).toHaveBeenCalledTimes(1);
   expect(vi.mocked(sendCommunityReport).mock.calls[0]?.[0]).toMatchObject({
     environment: { renderer: "canvas2d" },
-    receiverDetails: { lifecycle: "running", gainMode: "staged", vgaGainDb: 20 },
+    receiverDetails: {
+      lifecycle: "running",
+      gainMode: "staged",
+      vgaGainDb: 20,
+    },
     observations: [{ feature: "rds", result: "working" }],
     durationMinutes: 10,
   });

@@ -3,7 +3,10 @@ import {
   COMMUNITY_FEATURES,
   COMMUNITY_GROUPS,
   COMMUNITY_HARDWARE,
+  COMMUNITY_REPORT_HARDWARE,
+  communityHardwareRowId,
   type CommunityFeatureId,
+  type CommunityHardwareId,
 } from "../diagnostics/communityCatalog";
 import {
   COMMUNITY_BUILD,
@@ -25,7 +28,6 @@ const DEFAULT_ROWS = new Set([
   "bladerf-xa4",
   "bladerf-xa5",
   "bladerf-xa9",
-  "usrp-b205-mini",
   "usrp-b205mini-i",
 ]);
 const viewNames = {
@@ -138,10 +140,10 @@ export function CommunityCompatibility({
   const cells = sameBuild ? (matrix?.cells ?? []) : [];
   const builds = matrix?.builds ?? [];
   const features = COMMUNITY_FEATURES.filter((f) => f.group === group);
-  const hardware = COMMUNITY_HARDWARE.filter(
+  const hardware = COMMUNITY_REPORT_HARDWARE.filter(
     (h) =>
-      (h.source !== "rtl-sdr" || h.id === "rtl-unknown") &&
-      (DEFAULT_ROWS.has(h.id) || cells.some((c) => c.hardwareId === h.id)),
+      DEFAULT_ROWS.has(h.id) ||
+      cells.some((c) => communityHardwareRowId(c.hardwareId) === h.id),
   );
   const allPlatforms = [
     ...new Set(cells.flatMap((c) => (c.platform ? [c.platform] : []))),
@@ -161,15 +163,13 @@ export function CommunityCompatibility({
     setSelection({ title, keys: cases.map((c) => c.key) });
   const matching = (
     feature: CommunityFeatureId,
-    hardwareId?: string,
+    hardwareId?: CommunityHardwareId,
     platform?: string,
   ) =>
     cells.filter(
       (c) =>
         c.feature === feature &&
-        (!hardwareId ||
-          c.hardwareId === hardwareId ||
-          (hardwareId === "rtl-unknown" && c.setup.source === "rtl-sdr")) &&
+        (!hardwareId || communityHardwareRowId(c.hardwareId) === hardwareId) &&
         (platform === undefined || c.platform === platform),
     );
   const cell = (title: string, cases: CommunityCell[], key: string) => {
