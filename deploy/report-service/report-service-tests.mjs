@@ -288,7 +288,7 @@ test("expires reports and aggregates while idle and clears its retention timer o
   );
 });
 
-test("two reviewed independent shared-decoder positives combine across platforms, while access stays separate", async () => {
+test("HTTP reports count immediately and shared-decoder positives combine across platforms, while access stays separate", async () => {
   const service = communityService();
   await new Promise((resolve) =>
     service.server.listen(0, "127.0.0.1", resolve),
@@ -315,7 +315,18 @@ test("two reviewed independent shared-decoder positives combine across platforms
         ],
       }),
     );
-    const two = await post(
+    const firstMatrix = await (
+      await fetch(`${base}/api/v1/compatibility-matrix`)
+    ).json();
+    assert.equal(
+      firstMatrix.cells.find((c) => c.feature === "rds").eligibleWorking,
+      1,
+    );
+    assert.equal(
+      firstMatrix.cells.find((c) => c.feature === "rds").reports[0].review,
+      "pending",
+    );
+    await post(
       communityFixture({
         participantToken: "b".repeat(64),
         environment: {
@@ -329,17 +340,10 @@ test("two reviewed independent shared-decoder positives combine across platforms
         ],
       }),
     );
-    let matrix = await (
+    const matrix = await (
       await fetch(`${base}/api/v1/compatibility-matrix`)
     ).json();
     assert.equal(matrix.cells.find((c) => c.feature === "rds").working, 2);
-    assert.equal(
-      matrix.cells.find((c) => c.feature === "rds").status,
-      "working",
-    );
-    assert.equal(service.community.review(one.reference, "accepted"), true);
-    assert.equal(service.community.review(two.reference, "accepted"), true);
-    matrix = await (await fetch(`${base}/api/v1/compatibility-matrix`)).json();
     const decoder = matrix.cells.find((c) => c.feature === "rds");
     assert.equal(decoder.status, "confirmed");
     assert.equal(decoder.eligibleWorking, 2);
@@ -378,6 +382,52 @@ test("two reviewed independent shared-decoder positives combine across platforms
     service.database.close();
   }
 });
+
+for (const [testScope, threshold] of [
+  ["smoke", 5],
+  ["sustained", 30],
+]) {
+  test(`${testScope} pending reports count at the duration boundary, corrections count immediately, and exclusion still removes misuse`, () => {
+    const s = communityService();
+    try {
+      const short = s.community.accept(
+        communityFixture({ testScope, durationMinutes: threshold - 0.5 }),
+      );
+      // Historical acceptance cannot make an under-duration report qualify.
+      s.community.review(short.body.reference, "accepted");
+      const second = s.community.accept(
+        communityFixture({
+          testScope,
+          durationMinutes: threshold,
+          participantToken: "b".repeat(64),
+        }),
+      );
+      let cell = s.community.matrix().cells[0];
+      assert.equal(cell.working, 2);
+      assert.equal(cell.eligibleWorking, 1);
+      const correction = s.community.accept(
+        communityFixture({
+          testScope,
+          durationMinutes: threshold + 5,
+          reportId: "BC-22222222-2222-4222-a222-222222222222",
+        }),
+      );
+      cell = s.community.matrix().cells[0];
+      assert.equal(cell.working, 2);
+      assert.equal(cell.eligibleWorking, 2);
+      assert.equal(cell.status, "confirmed");
+      assert.ok(cell.reports.every((report) => report.review === "pending"));
+      assert.equal(s.community.review(second.body.reference, "excluded"), true);
+      cell = s.community.matrix().cells[0];
+      assert.equal(cell.eligibleWorking, 1);
+      assert.equal(cell.status, "working");
+      assert.equal(s.community.withdraw(correction.body), true);
+      assert.deepEqual(s.community.matrix().cells, []);
+    } finally {
+      s.database.close();
+    }
+  });
+}
 
 test("idempotent retries and another platform do not inflate one participant; rates, scopes, modes and builds do not merge", () => {
   const s = communityService();

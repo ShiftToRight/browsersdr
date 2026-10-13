@@ -71,6 +71,7 @@ export interface CommunityPublicReport {
   receivedAt: string;
   environment: CommunityEnvironment;
   setup: CommunitySetup;
+  /** Legacy moderation metadata for wire compatibility; never gates contribution. */
   review: "pending" | "accepted";
 }
 export interface CommunityCell {

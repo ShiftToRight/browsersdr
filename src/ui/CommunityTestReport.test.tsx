@@ -128,6 +128,8 @@ it("keeps defaults untested, sends the frozen renderer, and prevents double send
     button("Send community report").click();
   });
   expect(sendCommunityReport).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain("Your results now contribute");
+  expect(document.body.textContent).not.toContain("review is pending");
   expect(vi.mocked(sendCommunityReport).mock.calls[0]?.[0]).toMatchObject({
     environment: { renderer: "canvas2d" },
     receiverDetails: {
@@ -148,4 +150,21 @@ it("offers only the selected SRD protocol rather than claiming every SRD decoder
   expect(
     document.querySelector('[aria-label="SRD Acurite test result"]'),
   ).toBeNull();
+});
+
+it("records a short sustained test and explains duration eligibility without pending approval", async () => {
+  await render();
+  await fill();
+  const scope = document.querySelector<HTMLSelectElement>(
+    '[aria-label="Test scope"]',
+  )!;
+  await act(async () => {
+    scope.value = "sustained";
+    scope.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => button("Send community report").click());
+  expect(sendCommunityReport).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain("added to the community matrix");
+  expect(document.body.textContent).toContain("A longer test is needed");
+  expect(document.body.textContent).not.toContain("review is pending");
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-13
+
+- Count duration-qualified community test reports immediately, including existing pending reports, without maintainer approval.
+- Replace pending-review messages with direct contribution and duration guidance; keep duplicate handling, issue visibility, withdrawal and tools for later misuse investigation.
+- Consolidate USRP B205mini-i community rows while keeping historical setup evidence separate.
+
 ## 1.0.0 — 2026-10-13
 
 First stable desktop release for RTL-SDR and HackRF Pro on Chrome, including the Decoder workspace, account-free Search, recording recovery and bounded file replay introduced in the candidates. Other hardware, browser and mode combinations retain their scoped available/experimental status.

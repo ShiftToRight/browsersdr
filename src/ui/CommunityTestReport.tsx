@@ -135,13 +135,18 @@ export function CommunityTestReport({
       return;
     pending.current = true;
     setSending(true);
-    setStatus("Sending reviewed test…");
+    setStatus("Sending community test…");
     try {
       const result = await sendCommunityReport(report);
       setAck(result);
       setFrozen(undefined);
       setStatus(
-        "Test received. Independence review is pending. Keep the receipt to withdraw this report.",
+        report.observations.some(
+          (observation) => observation.result === "working",
+        ) &&
+          report.durationMinutes < (report.testScope === "sustained" ? 30 : 5)
+          ? "Test received and added to the community matrix. A longer test is needed for your positive results to count toward confirmation. Keep the receipt to withdraw this report."
+          : "Test received. Your results now contribute to the community matrix. Keep the receipt to withdraw this report.",
       );
       onSent();
     } catch (error) {
@@ -402,8 +407,9 @@ export function CommunityTestReport({
               </label>
             </div>
             <p>
-              Short tests and problems are still recorded. Confirmation needs
-              two reviewed independent positives meeting the selected duration.
+              Your results appear immediately. Positive reports meeting the
+              selected duration count toward confirmation; two participants
+              confirm a setup. Short tests and problems are still recorded.
             </p>
             <label>
               Private test notes
@@ -416,8 +422,9 @@ export function CommunityTestReport({
             </label>
             <p>
               A random participation token is kept locally for this build to
-              avoid duplicate votes. Another browser or cleared storage does not
-              prove a separate device; review remains necessary.
+              avoid duplicate votes. Please update your existing report from
+              this browser rather than submitting the same test from multiple
+              browsers.
             </p>
             {changed && (
               <p role="alert">

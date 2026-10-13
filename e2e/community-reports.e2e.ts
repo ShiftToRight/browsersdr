@@ -82,9 +82,6 @@ async function isolated(page: Page, seed = true) {
       expect(validateCommunityReport(report)).toBeNull();
       const ack = service.community.accept(report);
       expect(ack.status).toBe(202);
-      expect(service.community.review(ack.body.reference!, "accepted")).toBe(
-        true,
-      );
     }
   // Test-only reverse proxy to the real HTTP/SQLite collector, never to production.
   await page.route("**/api/v1/compatibility-**", async (route) => {
@@ -118,7 +115,7 @@ async function help(page: Page) {
   return page.locator(".community-compatibility");
 }
 
-test("community matrix combines reviewed decoder reports across platforms and isolates version history", async ({
+test("community matrix immediately combines decoder reports across platforms and isolates version history", async ({
   page,
 }, testInfo) => {
   const service = await isolated(page);
@@ -136,7 +133,8 @@ test("community matrix combines reviewed decoder reports across platforms and is
     const details = panel.getByRole("region", {
       name: "Selected community test details",
     });
-    await expect(details).toContainText("2 qualifying reviewed positives");
+    await expect(details).toContainText("2 qualifying positives");
+    await expect(details).not.toContainText("review pending");
     await expect(details).toContainText("Chrome 140 · Linux");
     await expect(details).toContainText("Edge 140 · Windows");
     await expect(panel).not.toContainText("PRIVATE FIXTURE NOTE");
@@ -230,8 +228,16 @@ test("community reporter downloads reviewed fields, submits only stamped builds 
         .getByRole("button", { name: "Send community report" })
         .click();
       await expect(dialog).not.toBeVisible();
-      await expect(panel).toContainText("Independence review is pending");
-      expect(service.community.matrix(build.id)?.cells).toHaveLength(1);
+      await expect(panel).toContainText("Your results now contribute");
+      expect(service.community.matrix(build.id)?.cells).toMatchObject([
+        { working: 1, eligibleWorking: 1, status: "working" },
+      ]);
+      await panel
+        .getByRole("button", { name: "Platform compatibility", exact: true })
+        .click();
+      await expect(
+        panel.getByRole("button", { name: /Reported working/ }),
+      ).toHaveText(/1\/2/);
       const receiptDownload = page.waitForEvent("download");
       await panel
         .getByRole("button", { name: "Download withdrawal receipt" })

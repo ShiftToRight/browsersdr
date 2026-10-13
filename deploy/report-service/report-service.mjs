@@ -955,7 +955,6 @@ export function createCommunityStore(database, options = {}) {
       if (vote.result === "working") cell.working++;
       if (
         vote.result === "working" &&
-        vote.review === "accepted" &&
         vote.duration >= (vote.scope === "sustained" ? 30 : 5)
       )
         cell.eligibleWorking++;

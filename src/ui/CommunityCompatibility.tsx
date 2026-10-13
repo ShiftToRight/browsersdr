@@ -72,7 +72,7 @@ export function communityCellSummary(cells: CommunityCell[]): {
         : cell.working
           ? cell.eligibleWorking
             ? "Reported working"
-            : "Review / duration needed"
+            : "Longer test needed"
           : "Untested",
   };
 }
@@ -554,8 +554,9 @@ export function CommunityCompatibility({
         {view !== "engine" && (
           <p className="community-legend">
             Untested 0/2 · Reported working 1/2 · Confirmed 2/2+ · Issues remain
-            visible. Confirmation needs reviewed independent reports; counts
-            never combine different rates or test scopes.
+            visible. Reports meeting the test duration count immediately.
+            Confirmation needs two participants; counts never combine different
+            rates or test scopes.
           </p>
         )}
         {selection && (
@@ -580,22 +581,21 @@ export function CommunityCompatibility({
                   </p>
                   <p>
                     {c.working} positive report(s), {c.eligibleWorking}{" "}
-                    qualifying reviewed positives, {c.problems} issue report(s).{" "}
+                    qualifying positives, {c.problems} issue report(s).{" "}
                     {c.status === "confirmed"
                       ? "Community confirmed on reported setups."
                       : c.status === "issue"
-                        ? "Review unresolved issues before confirmation."
-                        : "Independent reports and review are still needed."}
+                        ? "Unresolved issues remain visible."
+                        : c.eligibleWorking
+                          ? "Another participant’s qualifying report is needed."
+                          : "Positive reports need a longer test to count toward confirmation."}
                   </p>
                   <ul>
                     {c.reports.map((r, i) => (
                       <li key={`${r.receivedAt}-${i}`}>
                         {r.environment.browser} ·{" "}
                         {r.environment.operatingSystem} · {r.durationMinutes}{" "}
-                        minutes · {r.result.replaceAll("-", " ")} ·{" "}
-                        {r.review === "accepted"
-                          ? "independence reviewed"
-                          : "review pending"}
+                        minutes · {r.result.replaceAll("-", " ")}
                         {r.environment.renderer !== "unknown" &&
                           ` · ${r.environment.renderer}`}{" "}
                         ·{" "}
