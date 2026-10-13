@@ -390,7 +390,7 @@ it("holds source ownership on cleanup failure and restores source-specific choic
   expect(control("RX VGA gain").value).toBe("26");
 });
 
-it("exposes a menu-routed help view with scoped compatibility evidence and a demo shortcut", async () => {
+it("routes passive setup and scoped compatibility evidence to separate help-menu views", async () => {
   await change(control("Source"), "hackrf");
   await change(control("RX LNA state"), "33");
   await change(control("RX VGA gain"), "20");
@@ -399,6 +399,14 @@ it("exposes a menu-routed help view with scoped compatibility evidence and a dem
   expect(document.querySelector<HTMLDivElement>("#help-view")?.hidden).toBe(
     false,
   );
+  const help = document.querySelector("#help-view")!;
+  expect(help.textContent).toContain("Does BrowserSDR upload my radio data?");
+  expect(help.querySelector(".compatibility-overview")).toBeNull();
+  expect(help.textContent).not.toContain("Report this test");
+  expect(help.textContent).not.toContain("Try the no-hardware demo");
+  await click("Compatibility & tests");
+  expect(document.querySelector<HTMLDivElement>("#compatibility-view")?.hidden).toBe(false);
+  expect(document.querySelector<HTMLDivElement>("#help-view")?.hidden).toBe(true);
   expect(document.body.textContent).toContain("Tested receiver setups");
   const overview = document.querySelector(".compatibility-overview")!;
   expect(overview.querySelectorAll(".compat-status.is-validated")).toHaveLength(
@@ -454,39 +462,15 @@ it("exposes a menu-routed help view with scoped compatibility evidence and a dem
     compatibilityDetails.querySelectorAll(".compat-status.is-unsupported")
       .length,
   ).toBeGreaterThan(0);
-  expect(document.body.textContent).toContain(
-    "Does BrowserSDR upload my radio data?",
+  expect(document.querySelector("#compatibility-view")?.textContent).not.toContain("Share test result");
+  await act(async () =>
+    (document.querySelector("#receiver-tab") as HTMLButtonElement).click(),
   );
-  expect(document.body.textContent).toContain("Share a compatibility test");
-  await click("Share test result");
-  const compatibilityDialog = document.querySelector(
-    ".compatibility-report-dialog",
-  )!;
-  expect(compatibilityDialog.textContent).toContain("Compatibility report BC-");
-  const send = Array.from(compatibilityDialog.querySelectorAll("button")).find(
-    (button) => button.textContent === "Send report",
-  ) as HTMLButtonElement;
-  expect(send.disabled).toBe(true);
-  await change(control("Device connection result"), "working");
-  expect(send.disabled).toBe(false);
-  expect(compatibilityDialog.textContent).toContain('"source": "hackrf"');
-  expect(compatibilityDialog.textContent).toContain('"lnaGainCode": 33');
-  expect(compatibilityDialog.textContent).toContain('"vgaGainDb": 20');
-  expect(compatibilityDialog.textContent).toContain(
-    '"rfAmplifierEnabled": true',
-  );
-  const preview = () =>
-    JSON.parse(compatibilityDialog.querySelector("pre")!.textContent!);
-  expect(preview().receiver).not.toHaveProperty("exactFrequencyHz");
-  await toggle(control("Include exact tuned frequency") as HTMLInputElement);
-  expect(preview().receiver).toHaveProperty("exactFrequencyHz", 100_000_000);
-  await click("Cancel");
-
-  await click("Try the no-hardware demo");
-  expect(
-    document.querySelector("#receiver-tab")?.getAttribute("aria-selected"),
-  ).toBe("true");
-  expect(control("Source").value).toBe("synthetic");
+  expect(document.querySelector("#receiver-tab")?.getAttribute("aria-selected")).toBe("true");
+  expect(control("Source").value).toBe("hackrf");
+  expect(control("RX LNA state").value).toBe("33");
+  expect(control("RX VGA gain").value).toBe("20");
+  expect((control("RF amplifier") as HTMLInputElement).checked).toBe(true);
 });
 
 it("exposes licence, driver provenance, and privacy information in About", async () => {
