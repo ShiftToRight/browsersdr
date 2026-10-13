@@ -2,7 +2,7 @@
 
 Software-defined radio in your browser: live spectrum and waterfall, audio and digital decoding, I/Q recording, replay, and field surveys.
 
-**Source version: 1.0.0.** This is a release candidate; the live website can run an earlier build. About shows the installed version and build. See [changes and version policy](CHANGELOG.md).
+**Source version: 1.0.0.** Stable desktop support covers RTL-SDR and HackRF Pro on Chrome. About shows the installed version and exact build; website deployment is tracked separately. See [changes and version policy](CHANGELOG.md).
 
 **Stable desktop receivers:** RTL-SDR and HackRF Pro, using WebUSB over HTTPS or localhost. Chrome is the validated desktop browser baseline. Other Chromium browsers, bladeRF/USRP, remote receivers and unverified mode combinations remain available for further testing and community feedback; experimental hardware/rate labels still apply. A hardware-free demo and replay are available. WebGPU rendering has a Canvas2D fallback. Help and the wiki distinguish tested configurations from feature availability.
 
