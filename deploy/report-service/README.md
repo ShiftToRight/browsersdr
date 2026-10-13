@@ -6,7 +6,7 @@ The existing Node/SQLite collector accepts diagnostic and legacy compatibility r
 | --- | --- |
 | POST `/api/v1/diagnostic-reports` | Existing private diagnostic intake |
 | POST `/api/v1/compatibility-reports` | Existing v1 or structured v2 intake, 32 KiB limit |
-| GET `/api/v1/compatibility-matrix?build=ID` | Public allowlisted evidence for a registered exact build; defaults to newest registered build |
+| GET `/api/v1/compatibility-matrix?build=ID` | Public schemaVersion 2 projection with separate fresh and explicitly carried evidence; defaults to newest registered build |
 | POST `/api/v1/compatibility-reports/withdraw` | Remove a report using its private `{reference, receipt}` |
 
 Proxy these routes to the loopback collector, including the withdrawal subpath. Strip cookies, Authorization and forwarded client identity; disable access/body logging for report and withdrawal routes. Return `Cache-Control: no-store` for the projection and write acknowledgements. The browser omits credentials. Existing deployed proxy configuration must be updated separately from frontend/collector activation.
@@ -27,6 +27,58 @@ BROWSERSDR_REPORT_DB=/private/reports.sqlite node deploy/report-service/report-a
 Reports contribute automatically; there is no maintainer approval step. A random browser token deduplicates ordinary retries; it cannot prove physical independence. Investigate suspected misuse using `community-list` and `show`, then use `excluded` to remove that report's current votes from the public projection. The legacy `accepted` command can restore an excluded report; it is not required for ordinary contributions. `resolved` clears an earlier issue only for a corrected current positive. Record moderation reasoning/evidence in private operator records. Corrections replace current votes and preserve unresolved issues. Legacy v1 reports never contribute to community counts.
 
 Optional trusted `engineChecks` entries contain `{feature, result: "passed"|"failed", checkedAt, evidence}`. Evidence URLs must be HTTPS on github.com or browsersdr.com. Record results only for the registered exact build and inspected check. Nothing is automatically marked passed from a registry entry or a local test run.
+
+## Carrying unchanged feature evidence between releases
+
+Reports remain attached to their exact tested build. The collector can display those original votes on a later release through an explicitly registered feature equivalence. It never copies votes, changes their dates or renews their 90-day lifetime. Fresh and carried progress stay separate: one fresh positive plus one carried positive cannot confirm a cell. Two qualifying positives on the original build can appear as **Confirmed · carried**, with that build, original observation dates/expiry and the target integration-check reference in details. Relevant issues from either build override confirmation. Withdrawal, exclusion, corrections, issue resolution and expiry on the source immediately affect carried results on the next matrix read.
+
+Carry-forward is trusted operator metadata, not a client report field or public HTTP write. Register immutable `evidenceFingerprints` on both builds, keyed by feature IDs from the report catalog. These are SHA-256 hashes of the reviewed feature dependency inputs. A fingerprint may be added to an existing build identity after inspecting its exact frozen source; an existing feature fingerprint cannot be changed. Do not fabricate a matching value because a change is described as cosmetic.
+
+The helper generates fingerprints and per-file hashes from a reviewed manifest:
+
+```json
+{
+  "schemaVersion": 1,
+  "features": {
+    "rds": { "buildContext": { "flags": {}, "toolchain": "record exact compiler/runtime and external artifact identities" } },
+    "display": { "buildContext": { "flags": {}, "toolchain": "record exact compiler/runtime and external artifact identities" } }
+  }
+}
+```
+
+```sh
+node scripts/community-evidence-fingerprint.mjs /private/frozen-source /private/reviewed-dependencies.json /private/fingerprint-evidence.json
+```
+
+Output must be outside the frozen source and must not already exist. The conservative default includes runtime source under `src/`, `wasm/` and `third_party/`, including integration/UI code and compiled WASM, plus package/lock data, pinned Node, Vite/TypeScript configuration, HTML and native build scripts. Tests/test fixtures and build cache directories are omitted. CSS and `src/assets/` are omitted for features other than display; their runtime impact still requires a target integration smoke check. Application version fields alone do not change the fingerprint; dependency, compiler/configuration, input-file additions and applicable runtime changes do. Record applicable build flags and external/toolchain artifacts in `buildContext`; the helper does not infer them from environment variables. Dependency coverage must be reviewed, including any runtime inputs outside the default roots.
+
+An optional feature `exclude` array contains reviewed exact paths or directory prefixes under the three runtime roots. Exclusions must match existing dependency paths, are themselves hashed into the fingerprint, and must be identical for both builds. Use them only after proving a path cannot affect that feature. Unknown/shared scheduling, lifecycle, sample handling or worker dependencies stay included. Display changes may therefore require a fresh display check even if reception evidence can carry. A mismatch or missing fingerprint means no carry. Hash equality detects unchanged reviewed inputs; it does not prove integrated runtime behavior.
+
+Merge only the helper's `evidenceFingerprints` object into each build's private registration file and retain its dependency evidence with the release records. Then run a current target integration check for the intended feature/setup coverage, inspect intervening releases and unresolved issues, and register one source build per target feature:
+
+```json
+{
+  "sourceBuildId": "ORIGINAL_BUILD_ID",
+  "targetBuildId": "NEW_BUILD_ID",
+  "feature": "rds",
+  "fingerprint": "REPLACE_WITH_THE_MATCHING_64_CHARACTER_SHA256",
+  "checkedAt": "REPLACE_WITH_ACTUAL_TARGET_CHECK_TIME",
+  "evidence": "https://github.com/OWNER/REPOSITORY/actions/runs/ACTUAL_CHECK"
+}
+```
+
+```sh
+BROWSERSDR_REPORT_DB=/private/reports.sqlite node deploy/report-service/report-admin.mjs community-build /private/original-build.json
+BROWSERSDR_REPORT_DB=/private/reports.sqlite node deploy/report-service/report-admin.mjs community-build /private/target-build.json
+BROWSERSDR_REPORT_DB=/private/reports.sqlite node deploy/report-service/report-admin.mjs community-equivalence /private/equivalence.json
+BROWSERSDR_REPORT_DB=/private/reports.sqlite node deploy/report-service/report-admin.mjs community-revoke-equivalence NEW_BUILD_ID rds
+```
+
+Both builds must already be registered with the same feature fingerprint, the source timestamp must precede the target, and the integration check must fall between target build time and now. Evidence URLs use the same HTTPS github.com/browsersdr.com allowlist as engine checks. The equivalence covers the feature's existing setup scopes; it cannot merge rates, variants, firmware, origins, protocols, platforms or renderers. If unchanged inputs cannot be established for the whole feature coverage, do not register it. Record the scope review and reasoning in private operator evidence. One immutable source/check record is allowed per target feature; revoke it if its dependency or integration assumptions are disproved. The identical record can be explicitly re-enabled. Different source choices require a new target build. There is no automatic selection, transitive inheritance or stacking of different source builds, and reverted code does not automatically revive evidence.
+
+Exact-build `engineChecks` remain fresh reference results. Eligible source engine checks appear only in `carriedEngineChecks`, preserving their original build, result/date/link and the separate equivalence reference; a carried pass is never a new exact-build pass. All existing release/CI and physical acceptance gates remain in force.
+
+The projection now uses schemaVersion 2 so older clients cannot misrepresent inherited confirmation as fresh votes; they report an unavailable matrix until refreshed. The updated client still accepts ordinary schemaVersion 1 projections without carried fields. Ship frontend and collector together. SQLite initialization adds only `community_fingerprints` and `community_equivalences`; existing report/vote/receipt records are not rewritten. No production equivalence is registered by installing the software alone.
 
 ## Counts and retention
 

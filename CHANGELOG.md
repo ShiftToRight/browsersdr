@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 — 2026-10-14
+
+- Carry compatibility evidence across unchanged feature paths through reviewed dependency fingerprints and explicit build equivalence checks. Show original build/date/expiry and separate fresh counts; issues, corrections, exclusions and withdrawals continue to apply.
+- Keep carried engine checks separate from exact-build results and provide collector administration/fingerprint tooling. Existing themes and utility overlays are retained.
+
 ## 1.1.0 — 2026-10-13
 
 - Add Amber Field Deck and Vice Afterglow, selected from Settings → Theme alongside Midnight Observatory.

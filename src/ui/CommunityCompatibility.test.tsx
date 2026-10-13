@@ -178,3 +178,141 @@ it("shows one B205mini-i row in both views while retaining alias evidence withou
     vi.restoreAllMocks();
   }
 });
+
+it("shows carried confirmation, original source and expiry alongside fresh counts and exact-build engine results", async () => {
+  const source = {
+    id: "original-report-build",
+    version: "1.0.0",
+    builtAt: "2026-10-11T00:00:00Z",
+  };
+  const target = {
+    id: "theme-build",
+    version: "1.1.0",
+    builtAt: "2026-10-12T00:00:00Z",
+  };
+  const setup = {
+    source: "hackrf",
+    hardwareId: "hackrf-pro" as const,
+    mode: "WBFM",
+    srdProtocol: null,
+    rateHz: 2400000,
+    nativeRateHz: 9600000,
+    protocolProfile: null,
+    firmwareVersion: null,
+    origin: "live" as const,
+  };
+  const equivalence = {
+    fingerprint: "c".repeat(64),
+    checkedAt: target.builtAt,
+    evidence: "https://browsersdr.com/equivalence",
+  };
+  vi.mocked(readCommunityMatrix).mockResolvedValue({
+    schemaVersion: 2,
+    generatedAt: target.builtAt,
+    builds: [target, source],
+    buildId: target.id,
+    cells: [
+      {
+        key: "carried-rds",
+        hardwareId: "hackrf-pro",
+        feature: "rds",
+        setup,
+        testScope: "smoke",
+        platform: null,
+        working: 1,
+        eligibleWorking: 1,
+        problems: 0,
+        status: "confirmed",
+        lastAt: target.builtAt,
+        reports: [],
+        carried: {
+          build: source,
+          equivalence,
+          working: 2,
+          eligibleWorking: 2,
+          problems: 0,
+          lastAt: source.builtAt,
+          reports: [
+            {
+              result: "working",
+              durationMinutes: 35,
+              receivedAt: source.builtAt,
+              expiresAt: "2027-01-09T00:00:00Z",
+              environment: {
+                browser: "Chrome 154",
+                operatingSystem: "Linux",
+                renderer: "canvas2d",
+              },
+              setup,
+              review: "pending",
+            },
+          ],
+        },
+      },
+    ],
+    engineChecks: [
+      {
+        feature: "rds",
+        result: "failed",
+        checkedAt: target.builtAt,
+        evidence: "https://browsersdr.com/current-reference",
+      },
+    ],
+    carriedEngineChecks: [
+      {
+        feature: "rds",
+        result: "passed",
+        checkedAt: source.builtAt,
+        evidence: "https://browsersdr.com/old-reference",
+        build: source,
+        equivalence,
+      },
+    ],
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const buttons = () =>
+    Array.from(host.querySelectorAll<HTMLButtonElement>("button"));
+  try {
+    await act(async () =>
+      root.render(<CommunityCompatibility context={context} />),
+    );
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "Digital broadcast")!
+        .click(),
+    );
+    const cell = buttons().find(
+      (b) =>
+        b.getAttribute("aria-label") ===
+        "HackRF Pro · RDS: Confirmed · carried",
+    )!;
+    expect(cell.textContent).toContain("fresh 1/2");
+    await act(async () => cell.click());
+    const details = host.querySelector(".community-details")!;
+    expect(details.textContent).toContain(
+      "Fresh on this build: 1 positive report(s), 1 qualifying positives",
+    );
+    expect(details.textContent).toContain("Carried from 1.0.0");
+    expect(details.textContent).toContain(source.id);
+    expect(details.textContent).toContain("expires");
+    expect(details.querySelector<HTMLAnchorElement>("a")?.href).toBe(
+      equivalence.evidence,
+    );
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "Engine checks")!
+        .click(),
+    );
+    const row = Array.from(host.querySelectorAll("tr")).find(
+      (r) => r.querySelector("th")?.textContent === "RDS",
+    )!;
+    expect(row.textContent).toContain("Failed");
+    expect(row.textContent).toContain("Carried passed from 1.0.0");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.restoreAllMocks();
+  }
+});

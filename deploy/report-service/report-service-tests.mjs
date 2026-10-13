@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import {
   createReportServer,
   fingerprint,
@@ -55,6 +56,322 @@ function communityService() {
   });
   return { database, ...service };
 }
+
+const carryFingerprint = "c".repeat(64);
+const carryTarget = {
+  id: "community-carry-target",
+  version: "1.1.0",
+  builtAt: "2026-10-12T01:00:00.000Z",
+};
+function carryRegistry(service, features = ["rds"]) {
+  const evidenceFingerprints = Object.fromEntries(
+    features.map((feature) => [feature, carryFingerprint]),
+  );
+  assert.equal(
+    service.community.registerBuild({
+      ...communityBuild,
+      evidenceFingerprints,
+    }),
+    true,
+  );
+  assert.equal(
+    service.community.registerBuild({ ...carryTarget, evidenceFingerprints }),
+    true,
+  );
+  return (feature = "rds", overrides = {}) =>
+    service.community.registerEquivalence({
+      sourceBuildId: communityBuild.id,
+      targetBuildId: carryTarget.id,
+      feature,
+      fingerprint: carryFingerprint,
+      checkedAt: "2026-10-12T02:00:00.000Z",
+      evidence: "https://github.com/cybearde/browsersdr/actions/runs/123",
+      ...overrides,
+    });
+}
+const carryReport = (overrides = {}) =>
+  communityFixture({ reportId: `BC-${randomUUID()}`, ...overrides });
+
+test("carry requires trusted matching immutable feature fingerprints and a dated integration check", () => {
+  const s = communityService();
+  try {
+    const link = carryRegistry(s, ["rds", "display"]);
+    assert.equal(link("rds", { fingerprint: "d".repeat(64) }), false);
+    assert.equal(link("rds", { sourceBuildId: "missing" }), false);
+    assert.equal(link("rds", { sourceBuildId: carryTarget.id }), false);
+    assert.equal(link("unknown"), false);
+    assert.equal(link("rds", { evidence: "javascript:alert(1)" }), false);
+    assert.equal(link("rds", { checkedAt: communityBuild.builtAt }), false);
+    assert.equal(link("rds", { checkedAt: "2099-01-01T00:00:00Z" }), false);
+    assert.equal(
+      s.community.registerBuild({
+        ...carryTarget,
+        evidenceFingerprints: { rds: "e".repeat(64) },
+      }),
+      false,
+    );
+    assert.equal(link(), true);
+    assert.equal(link(), true);
+    assert.equal(
+      link("rds", { evidence: "https://browsersdr.com/different-check" }),
+      false,
+    );
+    const different = {
+      ...carryTarget,
+      id: "changed-decoder-build",
+      builtAt: "2026-10-12T03:00:00.000Z",
+    };
+    assert.equal(
+      s.community.registerBuild({
+        ...different,
+        evidenceFingerprints: { rds: "d".repeat(64) },
+      }),
+      true,
+    );
+    assert.equal(
+      link("rds", {
+        targetBuildId: different.id,
+        checkedAt: "2026-10-12T04:00:00Z",
+      }),
+      false,
+    );
+    assert.equal(link("processing"), false); // missing signature, even on known features
+  } finally {
+    s.database.close();
+  }
+});
+
+test("carried confirmation keeps source provenance/expiry and never adds fresh or other-build votes", () => {
+  const s = communityService();
+  try {
+    const link = carryRegistry(s, ["rds", "display"]);
+    const one = s.community.accept(
+      carryReport({
+        observations: [
+          { feature: "rds", result: "working" },
+          { feature: "display", result: "working" },
+        ],
+      }),
+    );
+    s.community.accept(carryReport({ build: carryTarget }));
+    assert.equal(link(), true);
+    let cell = s.community.matrix(carryTarget.id).cells[0];
+    assert.equal(cell.eligibleWorking, 1);
+    assert.equal(cell.carried.eligibleWorking, 1);
+    assert.equal(cell.status, "working"); // 1 fresh + 1 carried is not 2 participants.
+    s.community.accept(carryReport({ participantToken: "b".repeat(64) }));
+    cell = s.community.matrix(carryTarget.id).cells[0];
+    assert.equal(cell.status, "confirmed");
+    assert.equal(cell.eligibleWorking, 1);
+    assert.equal(cell.carried.eligibleWorking, 2);
+    assert.deepEqual(cell.carried.build, communityBuild);
+    const original = s.community
+      .matrix(communityBuild.id)
+      .cells.find((c) => c.feature === "rds");
+    assert.deepEqual(cell.carried.reports, original.reports);
+    assert.equal(
+      s.community
+        .matrix(carryTarget.id)
+        .cells.some((c) => c.feature === "display"),
+      false,
+    );
+    const json = JSON.stringify(s.community.matrix(carryTarget.id));
+    for (const privateValue of [
+      "PRIVATE-MARKER",
+      "participantToken",
+      "receipt",
+      one.body.reference,
+      "reportId",
+    ])
+      assert.equal(json.includes(privateValue), false);
+    assert.equal(
+      s.database
+        .prepare("SELECT count(*) AS n FROM community_votes WHERE build_id=?")
+        .get(carryTarget.id).n,
+      1,
+    );
+    assert.equal(s.community.revokeEquivalence(carryTarget.id, "rds"), true);
+    cell = s.community.matrix(carryTarget.id).cells[0];
+    assert.equal(cell.carried, undefined);
+    assert.equal(cell.status, "working");
+  } finally {
+    s.database.close();
+  }
+});
+
+test("carried and fresh issues override confirmation; correction, exclusion, withdrawal and expiry propagate", () => {
+  const s = communityService();
+  try {
+    const link = carryRegistry(s);
+    assert.equal(link(), true);
+    s.community.accept(carryReport());
+    const second = s.community.accept(
+      carryReport({ participantToken: "b".repeat(64) }),
+    );
+    const problem = s.community.accept(
+      carryReport({
+        participantToken: "c".repeat(64),
+        observations: [{ feature: "rds", result: "degraded" }],
+      }),
+    );
+    assert.equal(s.community.matrix(carryTarget.id).cells[0].status, "issue");
+    const correction = s.community.accept(
+      carryReport({ participantToken: "c".repeat(64) }),
+    );
+    assert.equal(s.community.withdraw(problem.body), true);
+    assert.equal(
+      s.community.matrix(carryTarget.id).cells[0].carried.problems,
+      1,
+    );
+    assert.equal(
+      s.community.review(correction.body.reference, "resolved"),
+      true,
+    );
+    assert.equal(
+      s.community.matrix(carryTarget.id).cells[0].status,
+      "confirmed",
+    );
+    const freshIssue = s.community.accept(
+      carryReport({
+        build: carryTarget,
+        observations: [{ feature: "rds", result: "not-working" }],
+      }),
+    );
+    assert.equal(s.community.matrix(carryTarget.id).cells[0].status, "issue");
+    assert.equal(s.community.withdraw(freshIssue.body), true);
+    assert.equal(
+      s.community.review(correction.body.reference, "excluded"),
+      true,
+    );
+    assert.equal(
+      s.community.matrix(carryTarget.id).cells[0].carried.eligibleWorking,
+      2,
+    );
+    assert.equal(s.community.withdraw(second.body), true);
+    assert.equal(s.community.matrix(carryTarget.id).cells[0].status, "working");
+    s.database
+      .prepare(
+        "UPDATE community_votes SET expires_at='2000-01-01' WHERE build_id=?",
+      )
+      .run(communityBuild.id);
+    assert.deepEqual(s.community.matrix(carryTarget.id).cells, []);
+  } finally {
+    s.database.close();
+  }
+});
+
+test("carry preserves rates, scope, firmware, origins, browser/OS access and display renderers", () => {
+  const s = communityService();
+  try {
+    const link = carryRegistry(s, ["rds", "access", "display"]);
+    for (const feature of ["rds", "access", "display"])
+      assert.equal(link(feature), true);
+    const base = carryReport();
+    for (const overrides of [
+      {},
+      { setup: { ...base.setup, rateHz: 1024000, nativeRateHz: 1024000 } },
+      { testScope: "sustained", durationMinutes: 35 },
+      { setup: { ...base.setup, firmwareVersion: "different" } },
+      {
+        environment: {
+          ...base.environment,
+          browser: "Edge 154",
+          operatingSystem: "Windows",
+          renderer: "webgpu",
+        },
+      },
+    ])
+      s.community.accept(
+        carryReport({
+          ...overrides,
+          observations: [
+            { feature: "rds", result: "working" },
+            { feature: "access", result: "working" },
+            { feature: "display", result: "working" },
+          ],
+        }),
+      );
+    const matrix = s.community.matrix(carryTarget.id);
+    assert.equal(matrix.cells.filter((c) => c.feature === "rds").length, 4);
+    assert.equal(matrix.cells.filter((c) => c.feature === "access").length, 5);
+    assert.equal(matrix.cells.filter((c) => c.feature === "display").length, 4);
+    const native = matrix.cells.find(
+      (c) =>
+        c.feature === "rds" &&
+        c.setup.rateHz === 2400000 &&
+        c.testScope === "smoke" &&
+        c.setup.firmwareVersion === null,
+    );
+    assert.equal(native.carried.eligibleWorking, 1); // same source participant across browsers
+    s.community.accept(
+      carryReport({
+        build: carryTarget,
+        setup: {
+          ...base.setup,
+          source: "replay",
+          hardwareId: "replay",
+          origin: "replay",
+        },
+      }),
+    );
+    assert.equal(
+      s.community
+        .matrix(carryTarget.id)
+        .cells.find((c) => c.setup.origin === "replay").carried,
+      undefined,
+    );
+  } finally {
+    s.database.close();
+  }
+});
+
+test("engine carry remains original evidence and source links do not transitively inherit", () => {
+  const s = communityService();
+  try {
+    const link = carryRegistry(s);
+    assert.equal(link(), true);
+    s.community.accept(carryReport());
+    s.community.registerBuild({
+      ...communityBuild,
+      engineChecks: [
+        {
+          feature: "rds",
+          result: "passed",
+          checkedAt: communityBuild.builtAt,
+          evidence: "https://browsersdr.com/reference",
+        },
+      ],
+    });
+    const result = s.community.matrix(carryTarget.id);
+    assert.deepEqual(result.engineChecks, []);
+    assert.equal(
+      result.carriedEngineChecks[0].checkedAt,
+      communityBuild.builtAt,
+    );
+    assert.deepEqual(result.carriedEngineChecks[0].build, communityBuild);
+    const third = {
+      id: "third-build",
+      version: "1.2.0",
+      builtAt: "2026-10-12T03:00:00Z",
+    };
+    s.community.registerBuild({
+      ...third,
+      evidenceFingerprints: { rds: carryFingerprint },
+    });
+    assert.equal(
+      link("rds", {
+        sourceBuildId: carryTarget.id,
+        targetBuildId: third.id,
+        checkedAt: "2026-10-12T04:00:00Z",
+      }),
+      true,
+    );
+    assert.deepEqual(s.community.matrix(third.id).cells, []);
+    assert.deepEqual(s.community.matrix(third.id).carriedEngineChecks, []);
+  } finally {
+    s.database.close();
+  }
+});
 
 function fixture() {
   return {

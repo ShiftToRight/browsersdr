@@ -1,6 +1,6 @@
 {
   "name": "browsersdr",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -23,7 +23,7 @@
     "test:e2e": "playwright test",
     "test:e2e:dev": "playwright test --project=chromium-dev",
     "test:e2e:production": "playwright test --project=chromium-production",
-    "test:report-service": "node --test deploy/report-service/report-service-tests.mjs",
+    "test:report-service": "node --test deploy/report-service/report-service-tests.mjs scripts/community-evidence-fingerprint-tests.mjs",
     "typecheck": "tsc -b --pretty false",
     "check": "npm run public:check && npm run lint && npm run format:check && npm run test:wasm && npm run test:report-service && npm test && npm run build && npm run performance:check && npm run test:e2e",
     "public:check": "node scripts/check-public-source.mjs",

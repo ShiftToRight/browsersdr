@@ -11,7 +11,7 @@ const [command = "list", argument, extra] = process.argv.slice(2);
 
 function usage() {
   process.stderr.write(
-    "Usage: report-admin.mjs list | show REFERENCE | export REFERENCE FILE | status FINGERPRINT acknowledged|fixed|ignored|needs-information | delete REFERENCE | delete-fingerprint FINGERPRINT | community-list | community-review REFERENCE accepted|excluded|resolved | community-build FILE\n",
+    "Usage: report-admin.mjs list | show REFERENCE | export REFERENCE FILE | status FINGERPRINT acknowledged|fixed|ignored|needs-information | delete REFERENCE | delete-fingerprint FINGERPRINT | community-list | community-review REFERENCE accepted|excluded|resolved | community-build FILE | community-equivalence FILE | community-revoke-equivalence TARGET_BUILD FEATURE\n",
   );
   process.exitCode = 2;
 }
@@ -33,6 +33,21 @@ if (command === "community-list") {
   const community = createCommunityStore(database);
   if (!community.review(argument, extra)) {
     process.stderr.write("No current observations found for this reference.\n");
+    process.exitCode = 1;
+  }
+} else if (command === "community-equivalence" && argument) {
+  const community = createCommunityStore(database);
+  if (
+    !community.registerEquivalence(JSON.parse(readFileSync(argument, "utf8")))
+  ) {
+    process.stderr.write(
+      "Invalid equivalence: requires matching registered feature fingerprints and a current integration-check reference.\n",
+    );
+    process.exitCode = 1;
+  }
+} else if (command === "community-revoke-equivalence" && argument && extra) {
+  if (!createCommunityStore(database).revokeEquivalence(argument, extra)) {
+    process.stderr.write("No active equivalence found.\n");
     process.exitCode = 1;
   }
 } else if (command === "community-build" && argument) {

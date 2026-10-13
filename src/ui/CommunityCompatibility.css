@@ -91,6 +91,11 @@
 .community-details ul {
   padding-left: 1.2rem;
 }
+.community-carried {
+  border-left: 2px solid var(--line-bright);
+  padding-left: 0.8rem;
+  overflow-wrap: anywhere;
+}
 .community-case + .community-case {
   border-top: 1px solid var(--line);
   padding-top: 0.5rem;

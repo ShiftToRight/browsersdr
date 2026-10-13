@@ -15,6 +15,7 @@ import {
 import type {
   CommunityCell,
   CommunityMatrix,
+  CommunityPublicReport,
 } from "../diagnostics/communityTypes";
 import type { CompatibilityReportContext } from "../diagnostics/compatibilityTypes";
 import { CommunityTestReport } from "./CommunityTestReport";
@@ -36,6 +37,26 @@ const viewNames = {
   engine: "Engine checks",
 };
 
+function reportList(reports: CommunityPublicReport[]) {
+  return (
+    <ul>
+      {reports.map((r, i) => (
+        <li key={`${r.receivedAt}-${i}`}>
+          {r.environment.browser} · {r.environment.operatingSystem} ·{" "}
+          {r.durationMinutes} minutes · {r.result.replaceAll("-", " ")}
+          {r.environment.renderer !== "unknown" &&
+            ` · ${r.environment.renderer}`}{" "}
+          · {COMMUNITY_HARDWARE.find((h) => h.id === r.setup.hardwareId)?.label}{" "}
+          · {(r.setup.rateHz / 1e6).toLocaleString()} MS/s ·{" "}
+          {new Date(r.receivedAt).toLocaleDateString()}
+          {r.expiresAt &&
+            ` · expires ${new Date(r.expiresAt).toLocaleDateString()}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function communityCellSummary(cells: CommunityCell[]): {
   status: string;
   count: string;
@@ -43,10 +64,10 @@ export function communityCellSummary(cells: CommunityCell[]): {
 } {
   if (!cells.length)
     return { status: "untested", count: "0/2", label: "Untested" };
-  if (cells.some((c) => c.problems > 0))
+  if (cells.some((c) => c.problems > 0 || (c.carried?.problems ?? 0) > 0))
     return {
       status: "issue",
-      count: `${cells.reduce((n, c) => n + c.problems, 0)} issue(s)`,
+      count: `${cells.reduce((n, c) => n + c.problems + (c.carried?.problems ?? 0), 0)} issue(s)`,
       label: "Issue reported",
     };
   if (cells.length > 1)
@@ -56,24 +77,40 @@ export function communityCellSummary(cells: CommunityCell[]): {
         : "working",
       count: `${cells.length} setups`,
       label: cells.some((c) => c.status === "confirmed")
-        ? "Some confirmed"
+        ? cells.some(
+            (c) =>
+              c.eligibleWorking < 2 && (c.carried?.eligibleWorking ?? 0) >= 2,
+          )
+          ? "Some confirmed · carried"
+          : "Some confirmed"
         : "Setup reports",
     };
   const cell = cells[0]!;
+  const carried = cell.carried;
+  const useCarried = Boolean(
+    carried &&
+    cell.eligibleWorking < 2 &&
+    (carried.eligibleWorking >= 2 ||
+      (cell.working === 0 && carried.working > 0)),
+  );
+  const eligible = useCarried ? carried!.eligibleWorking : cell.eligibleWorking;
   return {
     status: cell.status,
-    count:
-      cell.eligibleWorking >= 2
-        ? "2/2+"
-        : `${Math.min(1, cell.eligibleWorking)}/2`,
+    count: eligible >= 2 ? "2/2+" : `${Math.min(1, eligible)}/2`,
     label:
       cell.status === "confirmed"
-        ? "Confirmed"
-        : cell.working
-          ? cell.eligibleWorking
-            ? "Reported working"
-            : "Longer test needed"
-          : "Untested",
+        ? useCarried
+          ? "Confirmed · carried"
+          : "Confirmed"
+        : useCarried
+          ? carried!.eligibleWorking
+            ? "Reported working · carried"
+            : "Longer test needed · carried"
+          : cell.working
+            ? cell.eligibleWorking
+              ? "Reported working"
+              : "Longer test needed"
+            : "Untested",
   };
 }
 
@@ -195,6 +232,11 @@ export function CommunityCompatibility({
         >
           <span>{summary.count}</span>
           <small>{summary.label}</small>
+          {cases.length === 1 && cases[0]?.carried && (
+            <small>
+              Carried · fresh {Math.min(2, cases[0].eligibleWorking)}/2
+            </small>
+          )}
         </button>
       </td>
     );
@@ -503,7 +545,8 @@ export function CommunityCompatibility({
           <>
             <p>
               Maintainer-recorded reference checks for this exact build. These
-              are separate from community votes and physical reception.
+              are separate from community votes and physical reception. Carried
+              checks retain their original build and test date.
             </p>
             <div className="community-table-wrap">
               <table aria-label="Exact-build engine checks">
@@ -512,12 +555,18 @@ export function CommunityCompatibility({
                     <th>Decoder / mode</th>
                     <th>Outcome</th>
                     <th>Evidence</th>
+                    <th>Carried evidence</th>
                   </tr>
                 </thead>
                 <tbody>
                   {COMMUNITY_FEATURES.filter((f) => f.mode).map((f) => {
                     const check = sameBuild
                       ? matrix?.engineChecks.find((c) => c.feature === f.id)
+                      : undefined;
+                    const carriedCheck = sameBuild
+                      ? matrix?.carriedEngineChecks?.find(
+                          (c) => c.feature === f.id,
+                        )
                       : undefined;
                     return (
                       <tr key={f.id}>
@@ -543,6 +592,35 @@ export function CommunityCompatibility({
                             "—"
                           )}
                         </td>
+                        <td>
+                          {carriedCheck ? (
+                            <>
+                              Carried {carriedCheck.result} from{" "}
+                              {carriedCheck.build.version} · original check{" "}
+                              {new Date(
+                                carriedCheck.checkedAt,
+                              ).toLocaleDateString()}{" "}
+                              ·{" "}
+                              <a
+                                href={carriedCheck.evidence}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Reference check
+                              </a>{" "}
+                              ·{" "}
+                              <a
+                                href={carriedCheck.equivalence.evidence}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Equivalence check
+                              </a>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -556,7 +634,8 @@ export function CommunityCompatibility({
             Untested 0/2 · Reported working 1/2 · Confirmed 2/2+ · Issues remain
             visible. Reports meeting the test duration count immediately.
             Confirmation needs two participants; counts never combine different
-            rates or test scopes.
+            rates or test scopes. Carried evidence keeps its original build,
+            dates and expiry; fresh and carried votes never add together.
           </p>
         )}
         {selection && (
@@ -580,35 +659,48 @@ export function CommunityCompatibility({
                     samples/s
                   </p>
                   <p>
-                    {c.working} positive report(s), {c.eligibleWorking}{" "}
-                    qualifying positives, {c.problems} issue report(s).{" "}
-                    {c.status === "confirmed"
+                    Fresh on this build: {c.working} positive report(s),{" "}
+                    {c.eligibleWorking} qualifying positives, {c.problems} issue
+                    report(s).{" "}
+                    {c.eligibleWorking >= 2 && c.problems === 0
                       ? "Community confirmed on reported setups."
-                      : c.status === "issue"
+                      : c.problems > 0
                         ? "Unresolved issues remain visible."
                         : c.eligibleWorking
                           ? "Another participant’s qualifying report is needed."
-                          : "Positive reports need a longer test to count toward confirmation."}
+                          : c.working
+                            ? "Positive reports need a longer test to count toward confirmation."
+                            : "No fresh reports for this setup."}
                   </p>
-                  <ul>
-                    {c.reports.map((r, i) => (
-                      <li key={`${r.receivedAt}-${i}`}>
-                        {r.environment.browser} ·{" "}
-                        {r.environment.operatingSystem} · {r.durationMinutes}{" "}
-                        minutes · {r.result.replaceAll("-", " ")}
-                        {r.environment.renderer !== "unknown" &&
-                          ` · ${r.environment.renderer}`}{" "}
-                        ·{" "}
-                        {
-                          COMMUNITY_HARDWARE.find(
-                            (h) => h.id === r.setup.hardwareId,
-                          )?.label
-                        }{" "}
-                        · {(r.setup.rateHz / 1e6).toLocaleString()} MS/s ·{" "}
-                        {new Date(r.receivedAt).toLocaleDateString()}
-                      </li>
-                    ))}
-                  </ul>
+                  {reportList(c.reports)}
+                  {c.carried && (
+                    <div className="community-carried">
+                      <h4>Carried from {c.carried.build.version}</h4>
+                      <p>
+                        Original build {c.carried.build.id} ·{" "}
+                        {c.carried.working} positive report(s),{" "}
+                        {c.carried.eligibleWorking} qualifying positives,{" "}
+                        {c.carried.problems} issue report(s). Counts are
+                        separate from fresh reports.
+                      </p>
+                      <p>
+                        Matching feature dependency fingerprint{" "}
+                        {c.carried.equivalence.fingerprint.slice(0, 12)} ·{" "}
+                        <a
+                          href={c.carried.equivalence.evidence}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Integration check{" "}
+                          {new Date(
+                            c.carried.equivalence.checkedAt,
+                          ).toLocaleDateString()}
+                        </a>
+                        . Original observations and expiry remain unchanged.
+                      </p>
+                      {reportList(c.carried.reports)}
+                    </div>
+                  )}
                 </div>
               ))
             ) : (

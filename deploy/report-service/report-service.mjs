@@ -700,12 +700,172 @@ export function sanitizeCommunityReport(value) {
   };
 }
 
+// Trusted operator metadata only. Report intake cannot register equivalence.
+function createEvidenceRegistry(database, features) {
+  database.exec(`CREATE TABLE IF NOT EXISTS community_fingerprints(build_id TEXT NOT NULL, feature TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(build_id,feature));
+    CREATE TABLE IF NOT EXISTS community_equivalences(target_build TEXT NOT NULL, feature TEXT NOT NULL, source_build TEXT NOT NULL, fingerprint TEXT NOT NULL, checked_at TEXT NOT NULL, evidence TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(target_build,feature));`);
+  const known = (feature) => Object.hasOwn(features, feature);
+  const hash = (value) =>
+    typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  const getFingerprint = database.prepare(
+    "SELECT fingerprint FROM community_fingerprints WHERE build_id=? AND feature=?",
+  );
+  const validateFingerprints = (id, value) => {
+    if (value === undefined) return true;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return false;
+    return Object.entries(value).every(([feature, fingerprint]) => {
+      const previous = getFingerprint.get(id, feature);
+      return (
+        known(feature) &&
+        hash(fingerprint) &&
+        (!previous || previous.fingerprint === fingerprint)
+      );
+    });
+  };
+  const storeFingerprints = (id, value) => {
+    const insert = database.prepare(
+      "INSERT INTO community_fingerprints VALUES(?,?,?) ON CONFLICT DO NOTHING",
+    );
+    for (const [feature, fingerprint] of Object.entries(value ?? {}))
+      insert.run(id, feature, fingerprint);
+  };
+  const registerEquivalence = (value) => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      Object.keys(value).sort().join() !==
+        "checkedAt,evidence,feature,fingerprint,sourceBuildId,targetBuildId" ||
+      !known(value.feature) ||
+      !hash(value.fingerprint) ||
+      typeof value.checkedAt !== "string" ||
+      value.checkedAt.length > 40 ||
+      !Number.isFinite(Date.parse(value.checkedAt)) ||
+      typeof value.evidence !== "string" ||
+      value.evidence.length > 300 ||
+      !/^https:\/\/(?:github\.com|browsersdr\.com)\//.test(value.evidence) ||
+      typeof value.sourceBuildId !== "string" ||
+      typeof value.targetBuildId !== "string"
+    )
+      return false;
+    const source = database
+      .prepare("SELECT built_at FROM community_builds WHERE id=?")
+      .get(value.sourceBuildId);
+    const target = database
+      .prepare("SELECT built_at FROM community_builds WHERE id=?")
+      .get(value.targetBuildId);
+    if (
+      !source ||
+      !target ||
+      Date.parse(source.built_at) >= Date.parse(target.built_at) ||
+      Date.parse(value.checkedAt) < Date.parse(target.built_at) ||
+      Date.parse(value.checkedAt) > Date.now() ||
+      getFingerprint.get(value.sourceBuildId, value.feature)?.fingerprint !==
+        value.fingerprint ||
+      getFingerprint.get(value.targetBuildId, value.feature)?.fingerprint !==
+        value.fingerprint
+    )
+      return false;
+    const previous = database
+      .prepare(
+        "SELECT * FROM community_equivalences WHERE target_build=? AND feature=?",
+      )
+      .get(value.targetBuildId, value.feature);
+    // One original source per feature. Re-enabling the same audited record is explicit.
+    if (
+      previous &&
+      (previous.source_build !== value.sourceBuildId ||
+        previous.fingerprint !== value.fingerprint ||
+        previous.checked_at !== value.checkedAt ||
+        previous.evidence !== value.evidence)
+    )
+      return false;
+    database
+      .prepare(
+        `INSERT INTO community_equivalences VALUES(?,?,?,?,?,?,1)
+      ON CONFLICT(target_build,feature) DO UPDATE SET active=1`,
+      )
+      .run(
+        value.targetBuildId,
+        value.feature,
+        value.sourceBuildId,
+        value.fingerprint,
+        value.checkedAt,
+        value.evidence,
+      );
+    return true;
+  };
+  const revokeEquivalence = (target, feature) => {
+    if (typeof target !== "string" || !known(feature)) return false;
+    return (
+      database
+        .prepare(
+          "UPDATE community_equivalences SET active=0 WHERE target_build=? AND feature=? AND active=1",
+        )
+        .run(target, feature).changes > 0
+    );
+  };
+  const forTarget = (target) =>
+    database
+      .prepare(
+        `SELECT e.feature, e.source_build AS sourceBuildId, e.fingerprint, e.checked_at AS checkedAt, e.evidence,
+      b.version, b.built_at AS builtAt, b.engine_checks AS engineChecks
+    FROM community_equivalences e JOIN community_builds b ON b.id=e.source_build
+    JOIN community_fingerprints s ON s.build_id=e.source_build AND s.feature=e.feature AND s.fingerprint=e.fingerprint
+    JOIN community_fingerprints t ON t.build_id=e.target_build AND t.feature=e.feature AND t.fingerprint=e.fingerprint
+    WHERE e.target_build=? AND e.active=1 ORDER BY e.feature`,
+      )
+      .all(target);
+  return {
+    validateFingerprints,
+    storeFingerprints,
+    registerEquivalence,
+    revokeEquivalence,
+    forTarget,
+  };
+}
+
+// Exactly the existing vote scope, without its build identity. Reused for carry matching.
+function communityVoteContext(
+  feature,
+  setup,
+  platform,
+  renderer,
+  scope,
+  runtime,
+) {
+  return runtime
+    ? {
+        feature,
+        platform,
+        renderer: feature === "display" ? renderer : null,
+        origin: setup.origin,
+        rateHz: setup.rateHz,
+        nativeRateHz: setup.nativeRateHz,
+        scope,
+      }
+    : {
+        feature,
+        platform,
+        setup:
+          feature === "access"
+            ? { ...setup, mode: "OFF", srdProtocol: null }
+            : setup,
+        scope,
+      };
+}
+
 export function createCommunityStore(database, options = {}) {
   database.exec(`CREATE TABLE IF NOT EXISTS community_builds(id TEXT PRIMARY KEY, version TEXT NOT NULL, built_at TEXT NOT NULL, engine_checks TEXT NOT NULL DEFAULT '[]');
     CREATE TABLE IF NOT EXISTS community_submissions(reference TEXT PRIMARY KEY, report_id TEXT NOT NULL, participant TEXT NOT NULL, receipt TEXT NOT NULL, body_hash TEXT NOT NULL, expires_at TEXT NOT NULL, UNIQUE(report_id, participant));
     CREATE TABLE IF NOT EXISTS community_votes(cell_key TEXT NOT NULL, participant TEXT NOT NULL, reference TEXT NOT NULL, build_id TEXT NOT NULL, feature TEXT NOT NULL, setup TEXT NOT NULL, platform TEXT, environment TEXT NOT NULL, scope TEXT NOT NULL, duration REAL NOT NULL, result TEXT NOT NULL, has_issue INTEGER NOT NULL, review TEXT NOT NULL DEFAULT 'pending', received_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(cell_key, participant));
     CREATE INDEX IF NOT EXISTS community_votes_build ON community_votes(build_id);
     CREATE TABLE IF NOT EXISTS community_revisions(reference TEXT NOT NULL, cell_key TEXT NOT NULL, result TEXT NOT NULL, received_at TEXT NOT NULL, expires_at TEXT NOT NULL);`);
+  const evidenceRegistry = createEvidenceRegistry(
+    database,
+    COMMUNITY_FEATURE_MODES,
+  );
   const registerBuild = (build) => {
     if (!build || typeof build !== "object" || Array.isArray(build))
       return false;
@@ -714,7 +874,8 @@ export function createCommunityStore(database, options = {}) {
       !buildIdValid(id) ||
       !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(build.version ?? "") ||
       (build.version ?? "").length > 40 ||
-      !dateString(build.builtAt)
+      !dateString(build.builtAt) ||
+      !evidenceRegistry.validateFingerprints(id, build.evidenceFingerprints)
     )
       return false;
     const checks = (Array.isArray(build.engineChecks) ? build.engineChecks : [])
@@ -755,6 +916,7 @@ export function createCommunityStore(database, options = {}) {
         "INSERT INTO community_builds(id,version,built_at,engine_checks) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",
       )
       .run(id, build.version, build.builtAt, JSON.stringify(checks));
+    evidenceRegistry.storeFingerprints(id, build.evidenceFingerprints);
     return true;
   };
   for (const build of options.communityBuilds ?? []) registerBuild(build);
@@ -846,26 +1008,14 @@ export function createCommunityStore(database, options = {}) {
               ? `${body.environment.browser} / ${body.environment.operatingSystem}`
               : null;
         const scope = body.testScope;
-        const context = runtime
-          ? {
-              feature: o.feature,
-              platform,
-              renderer:
-                o.feature === "display" ? body.environment.renderer : null,
-              origin: body.setup.origin,
-              rateHz: body.setup.rateHz,
-              nativeRateHz: body.setup.nativeRateHz,
-              scope,
-            }
-          : {
-              feature: o.feature,
-              platform,
-              setup:
-                o.feature === "access"
-                  ? { ...body.setup, mode: "OFF", srdProtocol: null }
-                  : body.setup,
-              scope,
-            };
+        const context = communityVoteContext(
+          o.feature,
+          body.setup,
+          platform,
+          body.environment.renderer,
+          scope,
+          runtime,
+        );
         const key = digest(JSON.stringify([body.build.id, context]));
         database
           .prepare(
@@ -922,68 +1072,124 @@ export function createCommunityStore(database, options = {}) {
         builtAt: build.built_at,
       });
     }
-    const votes = buildId
-      ? database
-          .prepare(
-            "SELECT * FROM community_votes WHERE build_id=? AND review != 'excluded' ORDER BY received_at DESC LIMIT 10000",
-          )
-          .all(buildId)
-      : [];
     const cells = new Map();
-    for (const vote of votes) {
-      const setup = JSON.parse(vote.setup),
-        environment = JSON.parse(vote.environment);
-      let cell = cells.get(vote.cell_key);
-      if (!cell) {
-        if (cells.size >= 1000) continue;
-        cell = {
-          key: vote.cell_key,
-          hardwareId: setup.hardwareId,
-          feature: vote.feature,
+    const collect = (testedBuild, feature, carry) => {
+      const query = feature
+        ? database.prepare(
+            "SELECT * FROM community_votes WHERE build_id=? AND feature=? AND review != 'excluded' ORDER BY received_at DESC",
+          )
+        : database.prepare(
+            "SELECT * FROM community_votes WHERE build_id=? AND review != 'excluded' ORDER BY received_at DESC",
+          );
+      const votes = feature
+        ? query.iterate(testedBuild, feature)
+        : query.iterate(testedBuild);
+      for (const vote of votes) {
+        const setup = JSON.parse(vote.setup),
+          environment = JSON.parse(vote.environment);
+        const context = communityVoteContext(
+          vote.feature,
           setup,
-          testScope: vote.scope,
-          platform: vote.platform,
-          working: 0,
-          eligibleWorking: 0,
-          problems: 0,
-          status: "untested",
-          lastAt: vote.received_at,
-          reports: [],
-        };
-        cells.set(vote.cell_key, cell);
+          vote.platform,
+          environment.renderer,
+          vote.scope,
+          RUNTIME_FEATURES.has(vote.feature),
+        );
+        const key = digest(JSON.stringify([buildId, context]));
+        let cell = cells.get(key);
+        if (!cell) {
+          if (cells.size >= 1000) continue;
+          cell = {
+            key,
+            hardwareId: setup.hardwareId,
+            feature: vote.feature,
+            setup,
+            testScope: vote.scope,
+            platform: vote.platform,
+            working: 0,
+            eligibleWorking: 0,
+            problems: 0,
+            status: "untested",
+            lastAt: vote.received_at,
+            reports: [],
+          };
+          cells.set(key, cell);
+        }
+        let counts = cell;
+        if (carry) {
+          cell.carried ??= {
+            ...carry,
+            working: 0,
+            eligibleWorking: 0,
+            problems: 0,
+            lastAt: vote.received_at,
+            reports: [],
+          };
+          counts = cell.carried;
+        }
+        if (vote.result === "working") counts.working++;
+        if (
+          vote.result === "working" &&
+          vote.duration >= (vote.scope === "sustained" ? 30 : 5)
+        )
+          counts.eligibleWorking++;
+        if (vote.has_issue) counts.problems++;
+        if (Date.parse(vote.received_at) > Date.parse(counts.lastAt))
+          counts.lastAt = vote.received_at;
+        if (counts.reports.length < 6)
+          counts.reports.push({
+            result: vote.result,
+            durationMinutes: vote.duration,
+            receivedAt: vote.received_at,
+            expiresAt: vote.expires_at,
+            environment,
+            setup,
+            review: vote.review,
+          });
       }
-      if (vote.result === "working") cell.working++;
-      if (
-        vote.result === "working" &&
-        vote.duration >= (vote.scope === "sustained" ? 30 : 5)
-      )
-        cell.eligibleWorking++;
-      if (vote.has_issue) cell.problems++;
-      if (cell.reports.length < 6)
-        cell.reports.push({
-          result: vote.result,
-          durationMinutes: vote.duration,
-          receivedAt: vote.received_at,
-          environment,
-          setup,
-          review: vote.review,
-        });
+    };
+    if (buildId) collect(buildId);
+    const carriedEngineChecks = [];
+    for (const link of buildId ? evidenceRegistry.forTarget(buildId) : []) {
+      const carry = {
+        build: {
+          id: link.sourceBuildId,
+          version: link.version,
+          builtAt: link.builtAt,
+        },
+        equivalence: {
+          fingerprint: link.fingerprint,
+          checkedAt: link.checkedAt,
+          evidence: link.evidence,
+        },
+      };
+      // Read original current votes only: no chains, copies, refreshed dates or renewed expiry.
+      collect(link.sourceBuildId, link.feature, carry);
+      for (const check of JSON.parse(link.engineChecks)) {
+        if (check.feature === link.feature && carriedEngineChecks.length < 24)
+          carriedEngineChecks.push({ ...check, ...carry });
+      }
     }
-    for (const cell of cells.values())
-      cell.status = cell.problems
-        ? "issue"
-        : cell.eligibleWorking >= 2
-          ? "confirmed"
-          : cell.working
-            ? "working"
-            : "untested";
+    for (const cell of cells.values()) {
+      cell.status =
+        cell.problems || cell.carried?.problems
+          ? "issue"
+          : cell.eligibleWorking >= 2 ||
+              (cell.carried?.eligibleWorking ?? 0) >= 2
+            ? "confirmed"
+            : cell.working || cell.carried?.working
+              ? "working"
+              : "untested";
+    }
     return {
-      schemaVersion: 1,
+      // Older clients must not present carried confirmation as fresh exact-build votes.
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
       builds,
       buildId,
       cells: [...cells.values()],
       engineChecks: build ? JSON.parse(build.engine_checks) : [],
+      carriedEngineChecks,
     };
   };
   const review = (reference, state) => {
@@ -1034,7 +1240,16 @@ export function createCommunityStore(database, options = {}) {
     }
     return true;
   };
-  return { accept, matrix, registerBuild, review, withdraw, purge };
+  return {
+    accept,
+    matrix,
+    registerBuild,
+    review,
+    withdraw,
+    purge,
+    registerEquivalence: evidenceRegistry.registerEquivalence,
+    revokeEquivalence: evidenceRegistry.revokeEquivalence,
+  };
 }
 
 export function createReportServer(options = {}) {

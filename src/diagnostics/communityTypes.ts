@@ -69,6 +69,7 @@ export interface CommunityPublicReport {
   result: CompatibilityResult;
   durationMinutes: number;
   receivedAt: string;
+  expiresAt?: string;
   environment: CommunityEnvironment;
   setup: CommunitySetup;
   /** Legacy moderation metadata for wire compatibility; never gates contribution. */
@@ -87,6 +88,22 @@ export interface CommunityCell {
   status: "untested" | "working" | "confirmed" | "issue";
   lastAt: string;
   reports: CommunityPublicReport[];
+  /** Original-build evidence, never added to this build's counters. */
+  carried?: CommunityCarriedEvidence;
+}
+export interface CommunityEquivalenceEvidence {
+  fingerprint: string;
+  checkedAt: string;
+  evidence: string;
+}
+export interface CommunityCarriedEvidence {
+  build: CommunityBuild;
+  equivalence: CommunityEquivalenceEvidence;
+  working: number;
+  eligibleWorking: number;
+  problems: number;
+  lastAt: string;
+  reports: CommunityPublicReport[];
 }
 export interface CommunityEngineCheck {
   feature: CommunityFeatureId;
@@ -95,10 +112,14 @@ export interface CommunityEngineCheck {
   evidence: string;
 }
 export interface CommunityMatrix {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   generatedAt: string;
   builds: CommunityBuild[];
   buildId: string | null;
   cells: CommunityCell[];
   engineChecks: CommunityEngineCheck[];
+  carriedEngineChecks?: (CommunityEngineCheck & {
+    build: CommunityBuild;
+    equivalence: CommunityEquivalenceEvidence;
+  })[];
 }

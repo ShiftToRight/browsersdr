@@ -249,10 +249,50 @@ const environment = (v: unknown) =>
   shortString(v.browser, 40) &&
   shortString(v.operatingSystem, 20) &&
   ["webgpu", "canvas2d", "unknown"].includes(String(v.renderer));
+const publicBuild = (v: unknown) =>
+  record(v) &&
+  shortString(v.id) &&
+  shortString(v.version, 40) &&
+  date(v.builtAt);
+const evidenceLink = (v: unknown) =>
+  shortString(v, 300) && /^https:\/\/(?:github\.com|browsersdr\.com)\//.test(v);
+const equivalence = (v: unknown) =>
+  record(v) &&
+  typeof v.fingerprint === "string" &&
+  /^[a-f0-9]{64}$/.test(v.fingerprint) &&
+  date(v.checkedAt) &&
+  evidenceLink(v.evidence);
+const publicReport = (r: unknown) =>
+  record(r) &&
+  ["working", "degraded", "not-working"].includes(String(r.result)) &&
+  typeof r.durationMinutes === "number" &&
+  Number.isFinite(r.durationMinutes) &&
+  r.durationMinutes >= 0 &&
+  date(r.receivedAt) &&
+  (r.expiresAt === undefined || date(r.expiresAt)) &&
+  environment(r.environment) &&
+  setup(r.setup) &&
+  ["accepted", "pending"].includes(String(r.review));
+const publicCounts = (v: unknown) =>
+  record(v) &&
+  count(v.working) &&
+  count(v.eligibleWorking) &&
+  count(v.problems) &&
+  Number(v.eligibleWorking) <= Number(v.working) &&
+  date(v.lastAt) &&
+  Array.isArray(v.reports) &&
+  v.reports.length <= 6 &&
+  v.reports.every(publicReport);
+const engineCheck = (c: unknown) =>
+  record(c) &&
+  feature(c.feature) &&
+  ["passed", "failed"].includes(String(c.result)) &&
+  date(c.checkedAt) &&
+  evidenceLink(c.evidence);
 export function isCommunityMatrix(v: unknown): v is CommunityMatrix {
   if (
     !record(v) ||
-    v.schemaVersion !== 1 ||
+    !(v.schemaVersion === 1 || v.schemaVersion === 2) ||
     !date(v.generatedAt) ||
     !(v.buildId === null || shortString(v.buildId)) ||
     !Array.isArray(v.builds) ||
@@ -263,54 +303,63 @@ export function isCommunityMatrix(v: unknown): v is CommunityMatrix {
     v.engineChecks.length > 24
   )
     return false;
+  if (
+    v.schemaVersion === 1 &&
+    (v.carriedEngineChecks !== undefined ||
+      v.cells.some((c) => record(c) && c.carried !== undefined))
+  )
+    return false;
   return (
-    v.builds.every(
-      (b) =>
-        record(b) &&
-        shortString(b.id) &&
-        shortString(b.version, 40) &&
-        date(b.builtAt),
-    ) &&
-    v.cells.every(
-      (c) =>
-        record(c) &&
-        shortString(c.key, 64) &&
-        feature(c.feature) &&
-        setup(c.setup) &&
-        c.hardwareId === (c.setup as Record<string, unknown>).hardwareId &&
-        ["smoke", "sustained"].includes(String(c.testScope)) &&
-        (c.platform === null || shortString(c.platform, 80)) &&
-        count(c.working) &&
-        count(c.eligibleWorking) &&
-        count(c.problems) &&
-        ["untested", "working", "confirmed", "issue"].includes(
-          String(c.status),
-        ) &&
-        date(c.lastAt) &&
-        Array.isArray(c.reports) &&
-        c.reports.length <= 6 &&
-        c.reports.every(
-          (r) =>
-            record(r) &&
-            ["working", "degraded", "not-working"].includes(String(r.result)) &&
-            typeof r.durationMinutes === "number" &&
-            Number.isFinite(r.durationMinutes) &&
-            r.durationMinutes >= 0 &&
-            date(r.receivedAt) &&
-            environment(r.environment) &&
-            setup(r.setup) &&
-            ["accepted", "pending"].includes(String(r.review)),
-        ),
-    ) &&
-    v.engineChecks.every(
-      (c) =>
-        record(c) &&
-        feature(c.feature) &&
-        ["passed", "failed"].includes(String(c.result)) &&
-        date(c.checkedAt) &&
-        shortString(c.evidence, 300) &&
-        /^https:\/\/(?:github\.com|browsersdr\.com)\//.test(c.evidence),
-    )
+    v.builds.every(publicBuild) &&
+    v.cells.every((c) => {
+      if (
+        !record(c) ||
+        !shortString(c.key, 64) ||
+        !feature(c.feature) ||
+        !setup(c.setup) ||
+        c.hardwareId !== (c.setup as Record<string, unknown>).hardwareId ||
+        !["smoke", "sustained"].includes(String(c.testScope)) ||
+        !(c.platform === null || shortString(c.platform, 80)) ||
+        !publicCounts(c)
+      )
+        return false;
+      const carried = c.carried;
+      if (
+        carried !== undefined &&
+        (!record(carried) ||
+          !publicBuild(carried.build) ||
+          (carried.build as Record<string, unknown>).id === v.buildId ||
+          !equivalence(carried.equivalence) ||
+          !publicCounts(carried) ||
+          !(carried.reports as unknown[]).every(
+            (r) => record(r) && date(r.expiresAt),
+          ))
+      )
+        return false;
+      const inherited = record(carried) ? carried : undefined;
+      const status =
+        c.problems || inherited?.problems
+          ? "issue"
+          : Number(c.eligibleWorking) >= 2 ||
+              Number(inherited?.eligibleWorking ?? 0) >= 2
+            ? "confirmed"
+            : c.working || inherited?.working
+              ? "working"
+              : "untested";
+      return c.status === status;
+    }) &&
+    v.engineChecks.every(engineCheck) &&
+    (v.carriedEngineChecks === undefined ||
+      (Array.isArray(v.carriedEngineChecks) &&
+        v.carriedEngineChecks.length <= 24 &&
+        v.carriedEngineChecks.every(
+          (c) =>
+            engineCheck(c) &&
+            record(c) &&
+            publicBuild(c.build) &&
+            (c.build as Record<string, unknown>).id !== v.buildId &&
+            equivalence(c.equivalence),
+        )))
   );
 }
 

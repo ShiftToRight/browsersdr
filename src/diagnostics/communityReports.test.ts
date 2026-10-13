@@ -65,7 +65,11 @@ describe("community wire and public evidence boundaries", () => {
     });
     expect(input.setup).not.toHaveProperty("exactFrequencyHz");
     expect(input).not.toHaveProperty("receiver");
-    expect(input.receiverDetails).toMatchObject({ gainMode: "staged", vgaGainDb: 20, bandwidthHz: 180000 });
+    expect(input.receiverDetails).toMatchObject({
+      gainMode: "staged",
+      vgaGainDb: 20,
+      bandwidthHz: 180000,
+    });
     expect(input.receiverDetails).not.toHaveProperty("exactFrequencyHz");
     expect(input.browserCapabilities!.webAssembly).toBe(true);
     const ajv = new Ajv2020();
@@ -175,5 +179,117 @@ describe("community wire and public evidence boundaries", () => {
     await expect(readCommunityMatrix(build.id)).rejects.toThrow(
       "unavailable (503)",
     );
+  });
+  it("validates carried provenance and separates fresh/carried progress without false confirmation", () => {
+    const input = report();
+    const cell = {
+      key: "carry-cell",
+      hardwareId: input.setup.hardwareId,
+      feature: "rds" as const,
+      setup: input.setup,
+      testScope: "smoke" as const,
+      platform: null,
+      working: 1,
+      eligibleWorking: 1,
+      problems: 0,
+      status: "working" as const,
+      lastAt: build.builtAt,
+      reports: [],
+      carried: {
+        build: { ...build, id: "original", version: "0.9.0" },
+        equivalence: {
+          fingerprint: "c".repeat(64),
+          checkedAt: build.builtAt,
+          evidence: "https://browsersdr.com/equivalence",
+        },
+        working: 1,
+        eligibleWorking: 1,
+        problems: 0,
+        lastAt: build.builtAt,
+        reports: [
+          {
+            result: "working" as const,
+            durationMinutes: 10,
+            receivedAt: build.builtAt,
+            expiresAt: "2026-12-01T00:00:00Z",
+            setup: input.setup,
+            environment: input.environment,
+            review: "pending" as const,
+          },
+        ],
+      },
+    };
+    const matrix: CommunityMatrix = {
+      schemaVersion: 2,
+      generatedAt: build.builtAt,
+      builds: [build],
+      buildId: build.id,
+      cells: [cell],
+      engineChecks: [],
+    };
+    expect(isCommunityMatrix(matrix)).toBe(true);
+    expect(communityCellSummary([cell])).toMatchObject({
+      count: "1/2",
+      label: "Reported working",
+    });
+    const confirmed = {
+      ...cell,
+      working: 0,
+      eligibleWorking: 0,
+      status: "confirmed" as const,
+      carried: { ...cell.carried, working: 2, eligibleWorking: 2 },
+    };
+    expect(isCommunityMatrix({ ...matrix, cells: [confirmed] })).toBe(true);
+    expect(communityCellSummary([confirmed])).toMatchObject({
+      count: "2/2+",
+      label: "Confirmed · carried",
+    });
+    expect(
+      communityCellSummary([
+        {
+          ...confirmed,
+          carried: { ...confirmed.carried, problems: 1 },
+          status: "issue",
+        },
+      ]).label,
+    ).toBe("Issue reported");
+    for (const poisoned of [
+      { ...cell, status: "confirmed" },
+      { ...cell, carried: { ...cell.carried, build } },
+      {
+        ...cell,
+        carried: {
+          ...cell.carried,
+          equivalence: {
+            ...cell.carried.equivalence,
+            evidence: "javascript:bad",
+          },
+        },
+      },
+      {
+        ...cell,
+        carried: {
+          ...cell.carried,
+          reports: [{ ...cell.carried.reports[0], expiresAt: "invalid" }],
+        },
+      },
+    ])
+      expect(isCommunityMatrix({ ...matrix, cells: [poisoned] })).toBe(false);
+    expect(isCommunityMatrix({ ...matrix, schemaVersion: 1 })).toBe(false);
+    expect(
+      isCommunityMatrix({
+        ...matrix,
+        carriedEngineChecks: [
+          {
+            feature: "rds",
+            result: "passed",
+            checkedAt: build.builtAt,
+            evidence: "https://browsersdr.com/reference",
+            build: cell.carried.build,
+            equivalence: cell.carried.equivalence,
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 });

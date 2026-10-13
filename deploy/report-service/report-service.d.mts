@@ -19,6 +19,15 @@ export interface CommunityStore {
   };
   matrix(buildId?: string | null): CommunityMatrix | null;
   registerBuild(build: CommunityBuild | object): boolean;
+  registerEquivalence(value: {
+    sourceBuildId: string;
+    targetBuildId: string;
+    feature: string;
+    fingerprint: string;
+    checkedAt: string;
+    evidence: string;
+  }): boolean;
+  revokeEquivalence(targetBuildId: string, feature: string): boolean;
   review(
     reference: string,
     state: "accepted" | "excluded" | "resolved",

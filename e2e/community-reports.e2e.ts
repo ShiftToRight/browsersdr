@@ -310,3 +310,96 @@ test("community API outage is distinct from untested cells and can be retried", 
     await service.close();
   }
 });
+
+test("community matrix carries reviewed feature evidence with separate fresh counts, provenance and issue precedence", async ({
+  page,
+}, testInfo) => {
+  const service = await isolated(page, false);
+  try {
+    const fingerprint = "c".repeat(64);
+    const evidenceFingerprints = { rds: fingerprint };
+    expect(
+      service.community.registerBuild({
+        ...previous,
+        evidenceFingerprints,
+        engineChecks: [
+          {
+            feature: "rds",
+            result: "passed",
+            checkedAt: previous.builtAt,
+            evidence: "https://browsersdr.com/reference",
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      service.community.registerBuild({ ...build, evidenceFingerprints }),
+    ).toBe(true);
+    for (const participant of ["a", "b"])
+      service.community.accept({ ...fixture(participant), build: previous });
+    service.community.accept(fixture("a"));
+    expect(
+      service.community.registerEquivalence({
+        sourceBuildId: previous.id,
+        targetBuildId: build.id,
+        feature: "rds",
+        fingerprint,
+        checkedAt: new Date().toISOString(),
+        evidence: "https://browsersdr.com/integration-check",
+      }),
+    ).toBe(true);
+    let panel = await help(page);
+    await panel
+      .getByRole("button", { name: "Digital broadcast", exact: true })
+      .click();
+    const carriedButton = panel.getByRole("button", {
+      name: "HackRF Pro · RDS: Confirmed · carried",
+      exact: true,
+    });
+    await expect(carriedButton).toContainText("fresh 1/2");
+    await carriedButton.click();
+    const details = panel.getByRole("region", {
+      name: "Selected community test details",
+    });
+    await expect(details).toContainText(
+      "Fresh on this build: 1 positive report(s), 1 qualifying positives",
+    );
+    await expect(details).toContainText("Carried from 0.9.0");
+    await expect(details).toContainText(previous.id);
+    await expect(details).toContainText("expires");
+    await expect(panel).not.toContainText("PRIVATE FIXTURE NOTE");
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    ).toBe(true);
+    await details
+      .getByRole("heading", { name: "Carried from 0.9.0", exact: true })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("community-carried-mobile.png"),
+    });
+    await panel
+      .getByRole("button", { name: "Engine checks", exact: true })
+      .click();
+    const row = panel.getByRole("row").filter({
+      has: page.getByRole("rowheader", { name: "RDS", exact: true }),
+    });
+    await expect(row).toContainText("Not recorded");
+    await expect(row).toContainText("Carried passed from 0.9.0");
+    const problem = fixture("a");
+    problem.observations = [{ feature: "rds", result: "not-working" }];
+    expect(service.community.accept(problem).status).toBe(202);
+    panel = await help(page);
+    await panel
+      .getByRole("button", { name: "Digital broadcast", exact: true })
+      .click();
+    await expect(
+      panel.getByRole("button", {
+        name: "HackRF Pro · RDS: Issue reported",
+        exact: true,
+      }),
+    ).toContainText("issue(s)");
+  } finally {
+    await service.close();
+  }
+});
