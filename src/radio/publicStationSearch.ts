@@ -27,6 +27,7 @@ export class PublicStationSearch {
   private aborter?: AbortController;
   private readonly listeners = new Set<() => void>();
   constructor(readonly client: PublicStationClient) {}
+  getRequestId = () => this.generation;
   getQuery = () => ({ ...this.query, cursor: undefined });
   getSnapshot = () => this.snapshot;
   subscribe = (fn: () => void) => {
