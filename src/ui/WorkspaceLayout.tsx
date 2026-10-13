@@ -104,11 +104,12 @@ function HeaderMenu({ label, icon, active, children }: {
   );
 }
 
-export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onAbout, activeView }: {
+export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onCompatibility, onAbout, activeView }: {
   layout: WorkspaceLayout;
   onChange: Dispatch<SetStateAction<WorkspaceLayout>>;
   onSettings: () => void;
   onHelp: () => void;
+  onCompatibility: () => void;
   onAbout: () => void;
   activeView: string;
 }) {
@@ -131,7 +132,10 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onAbou
           compactButton.current?.focus();
         }}><AppIcon name="retry" />Reset view</button>
       </HeaderMenu>
-      <HeaderMenu label="Help" icon="help" active={activeView === "help" || activeView === "about"}>
+      <HeaderMenu label="Help" icon="help" active={activeView === "help" || activeView === "compatibility" || activeView === "about"}>
+        <button type="button" className="secondary" aria-controls="compatibility-view" onClick={onCompatibility}>
+          <AppIcon name="activity" />Compatibility &amp; tests
+        </button>
         <button type="button" className="secondary" aria-controls="help-view" onClick={onHelp}>
           <AppIcon name="help" />Help &amp; setup
         </button>

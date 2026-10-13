@@ -39,3 +39,9 @@ Keep the downloaded withdrawal receipt private. Help can load it locally after a
 ## Verification
 
 `npm run test:report-service` exercises the real isolated HTTP/SQLite collector. `e2e/community-reports.e2e.ts` uses a test-only route adapter to that collector, never production. Set `VITE_BUILD_ID` and `VITE_BUILD_TIMESTAMP` to an exact registered test build to exercise submission; an ordinary unstamped development build exercises download-only reporting. Generated reports establish reporting mechanics, not RF reception, audible output or physical compatibility.
+
+## Unified reporting UI
+
+The ? menu separates Compatibility & tests (matrices and the only report action) from Help & setup (passive setup/FAQ guidance). Legacy v1 intake remains compatible with older clients; the current app uses the structured v2 form. Optional `receiverDetails` carries bounded gain/bandwidth/squelch/power/API/session state, and optional `browserCapabilities` carries capability booleans. Both are private, expire with the report body and are excluded from vote storage/public projection. Exact frequency and locale are not collected. Tuning is individually reportable.
+
+New RTL-SDR reports use the existing generic `rtl-unknown` ID labelled RTL-SDR. The collector accepts historical model IDs and normalizes new intake to that family before deduplication. Historical ledger cells remain readable and share one displayed row; different retained setup keys do not automatically combine into confirmation. No existing ledger is rewritten.

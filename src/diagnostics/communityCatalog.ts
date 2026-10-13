@@ -4,7 +4,7 @@ export const COMMUNITY_HARDWARE = [
   { id: "rtl-blog-v4", label: "RTL-SDR Blog V4", source: "rtl-sdr" },
   {
     id: "rtl-unknown",
-    label: "RTL-SDR · other / unknown model",
+    label: "RTL-SDR",
     source: "rtl-sdr",
   },
   { id: "hackrf-pro", label: "HackRF Pro", source: "hackrf" },
@@ -87,6 +87,7 @@ export const COMMUNITY_FEATURES = [
     group: "workflow",
     mode: null,
   },
+  { id: "tuning", label: "Tuning", group: "workflow", mode: null },
 ] as const;
 
 export type CommunityHardwareId = (typeof COMMUNITY_HARDWARE)[number]["id"];

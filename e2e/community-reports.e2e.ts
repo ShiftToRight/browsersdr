@@ -114,7 +114,7 @@ async function isolated(page: Page, seed = true) {
 }
 async function help(page: Page) {
   await page.goto("/?browser-test=1");
-  await openApplicationView(page, "Help");
+  await openApplicationView(page, "Compatibility");
   return page.locator(".community-compatibility");
 }
 
@@ -238,15 +238,28 @@ test("community reporter downloads reviewed fields, submits only stamped builds 
         .click();
       const receiptPath = (await receiptDownload).path();
       await page.reload();
-      await openApplicationView(page, "Help");
+      await openApplicationView(page, "Compatibility");
       await panel
-        .getByText("Withdraw an earlier report", { exact: true })
+        .getByRole("button", { name: "Withdraw report", exact: true })
         .click();
-      await panel
+      const withdrawal = page.getByRole("dialog", {
+        name: "Withdraw a report",
+        exact: true,
+      });
+      await expect(
+        withdrawal.getByRole("button", {
+          name: "Withdraw this report",
+          exact: true,
+        }),
+      ).toBeDisabled();
+      await withdrawal
         .getByLabel("Withdrawal receipt JSON")
         .setInputFiles((await receiptPath)!);
-      await expect(panel).toContainText("Receipt loaded locally");
-      await panel.getByRole("button", { name: "Withdraw this report" }).click();
+      await expect(withdrawal).toContainText("Receipt loaded locally");
+      await withdrawal
+        .getByRole("button", { name: "Withdraw this report", exact: true })
+        .click();
+      await expect(withdrawal).not.toBeVisible();
       await expect(panel).toContainText("Report withdrawn");
       expect(service.community.matrix(build.id)?.cells).toHaveLength(0);
     } else {

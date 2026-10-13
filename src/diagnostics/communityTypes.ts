@@ -42,6 +42,28 @@ export interface CommunityReport {
   testScope: "smoke" | "sustained";
   observations: CommunityObservation[];
   notes?: string;
+  /** Private troubleshooting context; never part of the public matrix or vote key. */
+  receiverDetails?: Pick<
+    import("./compatibilityTypes").CompatibilityReportContext,
+    | "lifecycle"
+    | "bandwidthHz"
+    | "squelch"
+    | "gainMode"
+    | "gainDb"
+    | "lnaGainCode"
+    | "vgaGainDb"
+    | "rfAmplifierEnabled"
+    | "antennaPowerEnabled"
+    | "usbApiVersion"
+    | "recordingActive"
+    | "audioState"
+  >;
+  browserCapabilities?: {
+    secureContext: boolean;
+    webUsb: boolean;
+    webGpu: boolean;
+    webAssembly: boolean;
+  };
 }
 export interface CommunityPublicReport {
   result: CompatibilityResult;

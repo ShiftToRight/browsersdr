@@ -299,7 +299,8 @@
                   "display",
                   "storage",
                   "export",
-                  "replay"
+                  "replay",
+                  "tuning"
                 ]
               },
               "result": {
@@ -311,6 +312,112 @@
         "notes": {
           "type": "string",
           "maxLength": 1000
+        },
+        "receiverDetails": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lifecycle",
+            "bandwidthHz",
+            "squelch",
+            "gainMode",
+            "gainDb",
+            "lnaGainCode",
+            "vgaGainDb",
+            "rfAmplifierEnabled",
+            "antennaPowerEnabled",
+            "usbApiVersion",
+            "recordingActive",
+            "audioState"
+          ],
+          "properties": {
+            "lifecycle": {
+              "enum": [
+                "idle",
+                "connecting",
+                "connected",
+                "requesting-permission",
+                "starting",
+                "tuning",
+                "running",
+                "stopping",
+                "disconnecting",
+                "error"
+              ]
+            },
+            "bandwidthHz": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000000
+            },
+            "squelch": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "gainMode": {
+              "enum": [
+                "automatic",
+                "manual",
+                "staged",
+                "slow-attack-agc",
+                "fast-attack-agc",
+                "hybrid-agc",
+                "not-applicable"
+              ]
+            },
+            "gainDb": {
+              "type": ["number", "null"],
+              "minimum": -100,
+              "maximum": 100
+            },
+            "lnaGainCode": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 255
+            },
+            "vgaGainDb": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "rfAmplifierEnabled": {
+              "type": ["boolean", "null"]
+            },
+            "antennaPowerEnabled": {
+              "type": ["boolean", "null"]
+            },
+            "usbApiVersion": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "recordingActive": {
+              "type": "boolean"
+            },
+            "audioState": {
+              "enum": [null, "running", "suspended", "closed", "interrupted"]
+            }
+          }
+        },
+        "browserCapabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secureContext", "webUsb", "webGpu", "webAssembly"],
+          "properties": {
+            "secureContext": {
+              "type": "boolean"
+            },
+            "webUsb": {
+              "type": "boolean"
+            },
+            "webGpu": {
+              "type": "boolean"
+            },
+            "webAssembly": {
+              "type": "boolean"
+            }
+          }
         }
       }
     }

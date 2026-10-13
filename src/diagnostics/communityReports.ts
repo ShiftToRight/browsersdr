@@ -68,6 +68,8 @@ export function communityContextKey(
     context.lnaGainCode,
     context.vgaGainDb,
     context.rfAmplifierEnabled,
+    context.antennaPowerEnabled,
+    context.squelch,
     context.srdProtocol,
   ]);
 }
@@ -94,7 +96,8 @@ export function buildCommunityReport(
     participantToken: options.participantToken,
     setup: {
       source: context.source,
-      hardwareId: options.hardwareId,
+      hardwareId:
+        context.source === "rtl-sdr" ? "rtl-unknown" : options.hardwareId,
       mode: context.mode,
       srdProtocol:
         context.mode === "SRD" ? (context.srdProtocol ?? "none") : null,
@@ -119,6 +122,26 @@ export function buildCommunityReport(
       browser: browserSummary(),
       operatingSystem: operatingSystem(),
       renderer: options.renderer ?? "unknown",
+    },
+    receiverDetails: {
+      lifecycle: context.lifecycle,
+      bandwidthHz: context.bandwidthHz,
+      squelch: context.squelch,
+      gainMode: context.gainMode,
+      gainDb: context.gainDb,
+      lnaGainCode: context.lnaGainCode,
+      vgaGainDb: context.vgaGainDb,
+      rfAmplifierEnabled: context.rfAmplifierEnabled,
+      antennaPowerEnabled: context.antennaPowerEnabled,
+      usbApiVersion: context.usbApiVersion,
+      recordingActive: context.recordingActive,
+      audioState: context.audioState,
+    },
+    browserCapabilities: {
+      secureContext: window.isSecureContext === true,
+      webUsb: "usb" in navigator,
+      webGpu: "gpu" in navigator,
+      webAssembly: typeof WebAssembly === "object",
     },
     durationMinutes: options.durationMinutes,
     testScope: options.testScope ?? "smoke",
@@ -182,7 +205,14 @@ export async function readCommunityMatrix(
   const text = await response.text();
   if (new TextEncoder().encode(text).byteLength > 2 * 1024 * 1024)
     throw new Error("Community matrix exceeds the response limit.");
-  const data: unknown = JSON.parse(text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "Community reports are unavailable. The service did not return a valid matrix.",
+    );
+  }
   if (!isCommunityMatrix(data))
     throw new Error("Invalid community matrix response.");
   return data as CommunityMatrix;

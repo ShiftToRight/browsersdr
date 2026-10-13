@@ -8,6 +8,7 @@ export async function openApplicationView(
     | "Explorer"
     | "Settings"
     | "Diagnostics"
+    | "Compatibility"
     | "Help"
     | "About",
 ) {
@@ -30,6 +31,8 @@ export async function openApplicationView(
       ? "Integration settings"
       : view === "Help"
         ? "Help & setup"
-        : "About BrowserSDR";
+        : view === "Compatibility"
+          ? "Compatibility & tests"
+          : "About BrowserSDR";
   await page.getByRole("button", { name: entry, exact: true }).click();
 }

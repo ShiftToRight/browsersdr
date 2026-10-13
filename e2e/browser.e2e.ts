@@ -1558,40 +1558,42 @@ test("automatic diagnostics send by default, deduplicate errors, and respect a s
   expect(submissions).toHaveLength(1);
 });
 
-test("compatibility reports capture reviewed service evidence and receiver state", async ({
+test("community reports preserve reviewed service evidence and private receiver settings", async ({
   page,
 }) => {
   await gotoApp(page);
-  await openApplicationView(page, "Help");
-  await page.getByRole("button", { name: "Share test result" }).click();
-  const dialog = page.getByRole("dialog", { name: /Compatibility report/ });
+  await openApplicationView(page, "Compatibility");
+  await page
+    .getByRole("button", { name: "Report this test", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Report a community test" });
   await expect(
-    dialog.getByRole("button", { name: "Send report" }),
+    dialog.getByRole("button", { name: "Send community report" }),
   ).toBeDisabled();
-  await dialog.getByLabel("Device connection result").selectOption("working");
   await dialog
-    .getByLabel("Spectrum & waterfall result")
+    .getByLabel("Connection / start / stop test result")
+    .selectOption("working");
+  await dialog
+    .getByLabel("Spectrum / waterfall test result")
     .selectOption("degraded");
-  await expect(
-    dialog.getByRole("button", { name: "Send report" }),
-  ).toBeEnabled();
+  await dialog.getByLabel("Tuning test result").selectOption("working");
+  await dialog.getByLabel("Test duration (minutes)").fill("10");
   const downloadPromise = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Download JSON" }).click();
-  const download = await downloadPromise;
-  const path = await download.path();
+  await dialog.getByRole("button", { name: "Download community JSON" }).click();
+  const path = await (await downloadPromise).path();
   expect(path).not.toBeNull();
-  const report = JSON.parse(await readFile(path!, "utf8")) as Record<
-    string,
-    unknown
-  >;
+  const report = JSON.parse(await readFile(path!, "utf8"));
+  expect(report.schemaVersion).toBe(2);
   expect(report.reportType).toBe("compatibility");
-  expect(report.reportId).toMatch(/^BC-/);
   expect(report.observations).toEqual([
-    { service: "connection", result: "working" },
-    { service: "spectrum", result: "degraded" },
+    { feature: "access", result: "working" },
+    { feature: "display", result: "degraded" },
+    { feature: "tuning", result: "working" },
   ]);
-  expect(report.receiver).not.toHaveProperty("exactFrequencyHz");
-  expect(report.redaction).toMatchObject({ exactFrequencyIncluded: false });
+  expect(report.setup.hardwareId).toBe("rtl-unknown");
+  expect(report.receiverDetails.gainMode).toBe("automatic");
+  expect(report.receiverDetails).not.toHaveProperty("exactFrequencyHz");
+  expect(report.browserCapabilities.webAssembly).toBe(true);
 });
 
 test("current-channel capture downloads reduced I/Q and replays the exported pair", async ({

@@ -5031,3 +5031,6 @@ input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offs
 @media (max-width: 600px) {
   .decoder-map .map-detail-toggle { top: 64px; }
 }
+
+.compatibility-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
+.compatibility-layout > * { min-width: 0; }

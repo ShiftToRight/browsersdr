@@ -114,6 +114,7 @@ it("keeps defaults untested, sends the frozen renderer, and prevents double send
   expect(sendCommunityReport).toHaveBeenCalledTimes(1);
   expect(vi.mocked(sendCommunityReport).mock.calls[0]?.[0]).toMatchObject({
     environment: { renderer: "canvas2d" },
+    receiverDetails: { lifecycle: "running", gainMode: "staged", vgaGainDb: 20 },
     observations: [{ feature: "rds", result: "working" }],
     durationMinutes: 10,
   });

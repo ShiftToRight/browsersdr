@@ -675,3 +675,115 @@ test("runtime rates and actual display renderers stay separate; SRD cannot claim
     s.database.close();
   }
 });
+
+test("RTL model aliases share a family cell and cannot create duplicate participant votes", () => {
+  const service = communityService();
+  try {
+    const one = service.community.accept(communityFixture());
+    const two = service.community.accept(
+      communityFixture({
+        participantToken: "b".repeat(64),
+        setup: { ...communityFixture().setup, hardwareId: "rtl-blog-v4" },
+      }),
+    );
+    assert.equal(one.status, 202);
+    assert.equal(two.status, 202);
+    service.community.review(one.body.reference, "accepted");
+    service.community.review(two.body.reference, "accepted");
+    let cells = service.community.matrix().cells;
+    assert.equal(cells.length, 1);
+    assert.equal(cells[0].hardwareId, "rtl-unknown");
+    assert.equal(cells[0].eligibleWorking, 2);
+    const correction = service.community.accept(
+      communityFixture({
+        reportId: "BC-22222222-2222-4222-a222-222222222222",
+        setup: { ...communityFixture().setup, hardwareId: "rtl-unknown" },
+        observations: [{ feature: "rds", result: "degraded" }],
+      }),
+    );
+    assert.equal(correction.status, 202);
+    cells = service.community.matrix().cells;
+    assert.equal(cells.length, 1);
+    assert.equal(cells[0].working, 1);
+    assert.equal(cells[0].problems, 1);
+    assert.equal(cells[0].status, "issue");
+  } finally {
+    service.database.close();
+  }
+});
+
+test("private receiver context is strictly validated, stored and excluded from public votes", () => {
+  const service = communityService();
+  const receiverDetails = {
+    lifecycle: "running",
+    bandwidthHz: 180000,
+    squelch: 0,
+    gainMode: "manual",
+    gainDb: 49.6,
+    lnaGainCode: null,
+    vgaGainDb: null,
+    rfAmplifierEnabled: null,
+    antennaPowerEnabled: null,
+    usbApiVersion: null,
+    recordingActive: false,
+    audioState: "running",
+  };
+  const browserCapabilities = {
+    secureContext: true,
+    webUsb: true,
+    webGpu: false,
+    webAssembly: true,
+  };
+  const input = communityFixture({
+    receiverDetails,
+    browserCapabilities,
+    observations: [{ feature: "tuning", result: "working" }],
+  });
+  try {
+    assert.equal(validateCommunityReport(input), null);
+    for (const details of [
+      { ...receiverDetails, exactFrequencyHz: 102600000 },
+      { ...receiverDetails, gainDb: "SECRET" },
+      { ...receiverDetails, vgaGainDb: Infinity },
+    ]) {
+      assert.match(
+        validateCommunityReport({ ...input, receiverDetails: details }),
+        /private receiver/,
+      );
+    }
+    assert.match(
+      validateCommunityReport({
+        ...input,
+        browserCapabilities: { ...browserCapabilities, location: "SECRET" },
+      }),
+      /capabilities/,
+    );
+    assert.match(
+      validateCommunityReport({
+        ...input,
+        browserCapabilities: { ...browserCapabilities, webUsb: "yes" },
+      }),
+      /capabilities/,
+    );
+    assert.equal(service.community.accept(input).status, 202);
+    const stored = JSON.parse(
+      service.database.prepare("SELECT body FROM reports").get().body,
+    );
+    assert.deepEqual(stored.receiverDetails, receiverDetails);
+    assert.deepEqual(stored.browserCapabilities, browserCapabilities);
+    const matrix = service.community.matrix();
+    assert.equal(matrix.cells[0].feature, "tuning");
+    assert.equal(JSON.stringify(matrix).includes("receiverDetails"), false);
+    assert.equal(JSON.stringify(matrix).includes("browserCapabilities"), false);
+    assert.equal(
+      JSON.stringify(
+        service.database
+          .prepare("SELECT setup,environment FROM community_votes")
+          .get(),
+      ).includes("gainDb"),
+      false,
+    );
+  } finally {
+    service.database.close();
+  }
+});

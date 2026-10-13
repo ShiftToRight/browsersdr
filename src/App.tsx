@@ -150,7 +150,6 @@ import {
   DiagnosticReportCard,
   OPEN_DIAGNOSTIC_REPORT_EVENT,
 } from "./ui/DiagnosticReportCard";
-import { CompatibilityReportCard } from "./ui/CompatibilityReportCard";
 import { AboutPage } from "./ui/AboutPage";
 import { CaptureCandidateLatch, readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
 import { AtlasRecoveryPanel } from "./ui/AtlasRecoveryPanel";
@@ -171,7 +170,7 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "about";
+type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "compatibility" | "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type ReplayImportFormat = "browsersdr" | "sigmf";
 
@@ -2439,13 +2438,16 @@ export function ReceiverApp({
                 : activeView === "diagnostics"
                   ? "Session health and browser support"
                   : activeView === "help"
-                    ? "Answers, setup and compatibility"
+                    ? "Answers and device setup"
+                    : activeView === "compatibility"
+                      ? "Compatibility and community tests"
                     : "Licences, privacy and provenance"}
           </p>
         </nav>
         <WorkspaceControls layout={layout} onChange={setLayout} activeView={activeView}
           onSettings={() => openAuxiliaryView("settings")}
           onHelp={() => openAuxiliaryView("help")}
+          onCompatibility={() => openAuxiliaryView("compatibility")}
           onAbout={() => openAuxiliaryView("about")}
         />
         {remoteSelected ? <div className="receiver-status remote-header-status" role="status">Remote · {remoteStatus}</div> : <ReceiverStatus
@@ -2502,7 +2504,7 @@ export function ReceiverApp({
             setActiveView(lastWorkspace);
             requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
           }}>Back to {lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}</button>
-          <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
+          <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "compatibility" ? "Compatibility & tests" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
         </div>
       )}
 
@@ -4501,46 +4503,8 @@ export function ReceiverApp({
         </section>
       </div>
 
-      <div
-        id="help-view"
-        role="region"
-        aria-label="Help & setup"
-        hidden={activeView !== "help"}
-      >
-        {activeView === "help" && (
-          <>
-            <section className="help-hero" aria-labelledby="help-heading">
-              <div>
-                <p className="eyebrow">BrowserSDR field guide</p>
-                <h2 id="help-heading">How can we help you receive?</h2>
-                <p>
-                  Start without hardware, check whether your setup is known to
-                  work, or troubleshoot a connection. BrowserSDR processes
-                  signals locally in this tab.
-                </p>
-              </div>
-              <div className="help-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveView("receiver");
-                    void switchSource("synthetic");
-                  }}
-                >
-                  Try the no-hardware demo
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => openAuxiliaryView("diagnostics")}
-                >
-                  Check this browser
-                </button>
-              </div>
-            </section>
-
-            <div className="help-layout">
-              <main className="help-main">
+      <div id="compatibility-view" role="region" aria-label="Compatibility & tests" hidden={activeView !== "compatibility"}>
+        {activeView === "compatibility" && <div className="compatibility-layout">
                 <DeferredWorkspace active><CommunityCompatibility context={compatibilityReportContext} renderer={spectrumStatus.kind === "ready" ? spectrumStatus.renderer : undefined}
                   blockedReason={remoteSelected ? "Return to a local receiver or I/Q replay before reporting this setup." : undefined} /></DeferredWorkspace>
                 <section
@@ -4727,12 +4691,13 @@ export function ReceiverApp({
                       </p>
                     </div>
                   </details>
-                  <CompatibilityReportCard
-                    context={compatibilityReportContext}
-                  />
-                  <p className="compatibility-detail-note">Legacy compatibility reports are private. Use “Report this test” above to contribute to the community matrix.</p>
                 </section>
+        </div>}
+      </div>
 
+      <div id="help-view" role="region" aria-label="Help & setup" hidden={activeView !== "help"}>
+        {activeView === "help" && <div className="help-layout">
+              <main className="help-main">
                 <section
                   className="help-panel faq-panel"
                   aria-labelledby="faq-heading"
@@ -4794,7 +4759,7 @@ export function ReceiverApp({
                         Can BrowserSDR transmit or change device firmware?
                       </summary>
                       <p>
-                        All supported hardware paths are receive-only. For an
+                        All supported hardware paths are receive-only. For a
                         bladeRF 2.0 Micro with an empty FPGA, BrowserSDR can load
                         the exact verified model and firmware image
                         into volatile RAM. For a USRP B205-mini in
@@ -4843,7 +4808,6 @@ export function ReceiverApp({
                   </div>
                 </section>
               </main>
-
               <aside
                 className="help-aside"
                 aria-label="Setup and troubleshooting"
@@ -4855,8 +4819,8 @@ export function ReceiverApp({
                     <li>
                       <span>01</span>
                       <div>
-                        <strong>Check the matrix</strong>
-                        <p>Match the exact device and firmware profile.</p>
+                        <strong>Check compatibility</strong>
+                        <p>Open Compatibility &amp; tests from the ? menu and match your receiver profile.</p>
                       </div>
                     </li>
                     <li>
@@ -4883,9 +4847,11 @@ export function ReceiverApp({
                   <p className="eyebrow">Device setup</p>
                   <h2 id="device-help-heading">If it will not connect</h2>
                   <p>
-                    Use an RTL2832U device with an R820/R828/R860 tuner. Close
-                    other SDR software first. Do not change drivers unless the
-                    instructions for your hardware and OS require it.
+                    Connect one supported receiver directly and close other SDR software first.
+                    For RTL-SDR, use an RTL2832U device with an R820/R828/R860 tuner.
+                    HackRF Pro, bladeRF and USRP use their own supported profiles;
+                    the RTL driver steps below apply only to RTL-SDR.
+                    Check Compatibility &amp; tests for the tested scope before changing drivers.
                   </p>
                   <div
                     className="system-troubleshooting"
@@ -4945,9 +4911,7 @@ export function ReceiverApp({
                   </div>
                 </section>
               </aside>
-            </div>
-          </>
-        )}
+        </div>}
       </div>
 
       <div

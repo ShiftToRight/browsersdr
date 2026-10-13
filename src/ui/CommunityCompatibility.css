@@ -133,3 +133,118 @@
     min-height: 44px;
   }
 }
+
+.community-hardware-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: left;
+}
+.community-device-icon {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 20px;
+  color: var(--cyan-soft);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.community-device-icon .device-body {
+  fill: var(--secondary-background);
+}
+.community-device-icon .device-light {
+  fill: var(--cyan);
+  stroke: none;
+}
+
+.community-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.community-toolbar-title h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.community-toolbar-title > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.community-report-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.community-toolbar .community-report-action button,
+.community-control-row button {
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+.community-report-status {
+  margin: 6px 0 0;
+}
+.community-control-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  margin-top: 10px;
+}
+.community-control-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding-top: 9px;
+}
+.community-control-row .community-versions,
+.community-control-row .community-views,
+.community-control-row .community-groups {
+  margin: 0;
+  min-width: 0;
+  gap: 6px;
+}
+.community-versions button small {
+  font-size: 0.66rem;
+}
+.community-context {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.community-withdrawal-dialog {
+  max-width: min(32rem, calc(100vw - 2rem));
+}
+.community-withdrawal-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 16px 0;
+}
+.community-withdrawal-dialog input {
+  max-width: 100%;
+}
+.community-withdrawal-dialog code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .community-control-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .community-control-label {
+    padding-top: 0;
+  }
+}
+@media (pointer: coarse) {
+  .community-toolbar .community-report-action button,
+  .community-control-row button {
+    min-height: 44px;
+  }
+}

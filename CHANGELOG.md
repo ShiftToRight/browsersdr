@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0 — 2026-10-13
+
+First stable desktop release for RTL-SDR and HackRF Pro on Chrome, including the Decoder workspace, account-free Search, recording recovery and bounded file replay introduced in the candidates. Other hardware, browser and mode combinations retain their scoped available/experimental status.
+
+- Separate Compatibility & tests from passive Help & setup and remove the field-guide banner.
+- Consolidate RTL-SDR community rows and new reports into one receiver family, with legacy model identifiers still accepted.
+- Keep one community report form, add tuning and private receiver/browser troubleshooting context, and retain JSON copy/download.
+- Add small trailing device silhouettes, aligned matrix controls and a styled receipt-based withdrawal dialog.
+
 ## 1.0.0-rc.2 — 2026-10-12
 
 - Align local recording library buttons with compact controls, remove the HackRF sample-rate explainer and theme GUI scrollbars.

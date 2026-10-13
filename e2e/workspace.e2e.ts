@@ -347,6 +347,7 @@ test("all application views fit narrow screens without page-wide overflow", asyn
       "Explorer",
       "Diagnostics",
       "Help",
+      "Compatibility",
       "About",
     ] as const) {
       await openApplicationView(page, view);

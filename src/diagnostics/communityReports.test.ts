@@ -65,6 +65,9 @@ describe("community wire and public evidence boundaries", () => {
     });
     expect(input.setup).not.toHaveProperty("exactFrequencyHz");
     expect(input).not.toHaveProperty("receiver");
+    expect(input.receiverDetails).toMatchObject({ gainMode: "staged", vgaGainDb: 20, bandwidthHz: 180000 });
+    expect(input.receiverDetails).not.toHaveProperty("exactFrequencyHz");
+    expect(input.browserCapabilities!.webAssembly).toBe(true);
     const ajv = new Ajv2020();
     addFormats(ajv);
     expect(ajv.compile(schema)(input)).toBe(true);

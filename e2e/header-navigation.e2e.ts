@@ -34,6 +34,7 @@ test("utility destinations return to the last workspace and preserve view prefer
   for (const [view, label] of [
     ["Settings", "Integration settings"],
     ["Help", "Help & setup"],
+    ["Compatibility", "Compatibility & tests"],
     ["About", "About BrowserSDR"],
     ["Diagnostics", "Diagnostics"],
   ] as const) {
@@ -172,4 +173,76 @@ test("touch utility targets stay at least 44 pixels and keyboard Tab dismisses a
     page.locator(".header-utility-menu").filter({ has: settings }),
   ).not.toHaveAttribute("open");
   await context.close();
+});
+
+test("Help is passive and Compatibility owns the only test report action", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?browser-test=1");
+  let reads = 0;
+  await page.route("**/api/v1/compatibility-matrix**", (route) => {
+    reads++;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        builds: [],
+        buildId: null,
+        cells: [],
+        engineChecks: [],
+      }),
+    });
+  });
+  await openApplicationView(page, "Help");
+  const help = page.getByRole("region", { name: "Help & setup", exact: true });
+  await expect(help.getByText("BrowserSDR field guide")).toHaveCount(0);
+  await expect(
+    help.getByRole("heading", { name: "Before connecting" }),
+  ).toBeVisible();
+  await expect(
+    help.getByRole("heading", { name: "If it will not connect" }),
+  ).toBeVisible();
+  await expect(
+    help.getByText("Frequently asked questions", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    help.getByRole("button", { name: "Report this test" }),
+  ).toHaveCount(0);
+  expect(reads).toBe(0);
+  await openApplicationView(page, "Compatibility");
+  const compatibility = page.getByRole("region", {
+    name: "Compatibility & tests",
+    exact: true,
+  });
+  await expect(
+    compatibility.getByRole("button", {
+      name: "Report this test",
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await expect(
+    compatibility.getByRole("button", { name: "Share test result" }),
+  ).toHaveCount(0);
+  await expect(
+    compatibility.getByRole("heading", { name: "Tested receiver setups" }),
+  ).toBeVisible();
+  const matrix = compatibility.getByRole("table", {
+    name: "Community hardware and decoder matrix",
+  });
+  await expect(matrix.getByRole("rowheader", { name: /^RTL-SDR/ })).toHaveCount(
+    1,
+  );
+  await expect(matrix.getByRole("rowheader", { name: /NESDR/ })).toHaveCount(0);
+  await expect(
+    matrix.locator('th[scope="row"] svg[aria-hidden="true"]'),
+  ).toHaveCount(7);
+  // Development StrictMode mounts, cleans up, and mounts the matrix again.
+  expect(reads).toBe(testInfo.project.name === "chromium-dev" ? 2 : 1);
+  await openApplicationView(page, "Help");
+  await expect(help).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Report this test" }),
+  ).toHaveCount(0);
 });

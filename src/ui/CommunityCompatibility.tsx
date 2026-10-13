@@ -15,11 +15,11 @@ import type {
 } from "../diagnostics/communityTypes";
 import type { CompatibilityReportContext } from "../diagnostics/compatibilityTypes";
 import { CommunityTestReport } from "./CommunityTestReport";
+import { CommunityHardwareIcon } from "./CommunityHardwareIcon";
 import "./CommunityCompatibility.css";
 
 type View = "modes" | "platform" | "engine";
 const DEFAULT_ROWS = new Set([
-  "rtl-nesdr-smart-v5",
   "rtl-unknown",
   "hackrf-pro",
   "bladerf-xa4",
@@ -139,7 +139,9 @@ export function CommunityCompatibility({
   const builds = matrix?.builds ?? [];
   const features = COMMUNITY_FEATURES.filter((f) => f.group === group);
   const hardware = COMMUNITY_HARDWARE.filter(
-    (h) => DEFAULT_ROWS.has(h.id) || cells.some((c) => c.hardwareId === h.id),
+    (h) =>
+      (h.source !== "rtl-sdr" || h.id === "rtl-unknown") &&
+      (DEFAULT_ROWS.has(h.id) || cells.some((c) => c.hardwareId === h.id)),
   );
   const allPlatforms = [
     ...new Set(cells.flatMap((c) => (c.platform ? [c.platform] : []))),
@@ -165,7 +167,9 @@ export function CommunityCompatibility({
     cells.filter(
       (c) =>
         c.feature === feature &&
-        (!hardwareId || c.hardwareId === hardwareId) &&
+        (!hardwareId ||
+          c.hardwareId === hardwareId ||
+          (hardwareId === "rtl-unknown" && c.setup.source === "rtl-sdr")) &&
         (platform === undefined || c.platform === platform),
     );
   const cell = (title: string, cases: CommunityCell[], key: string) => {
@@ -231,7 +235,12 @@ export function CommunityCompatibility({
                 .filter((h) => !["replay", "synthetic"].includes(h.source))
                 .map((h) => (
                   <tr key={h.id}>
-                    <th scope="row">{h.label}</th>
+                    <th scope="row">
+                      <span className="community-hardware-name">
+                        {h.label}
+                        <CommunityHardwareIcon source={h.source} />
+                      </span>
+                    </th>
                     {platforms.map((p) =>
                       cell(`${h.label} · ${p}`, matching("access", h.id, p), p),
                     )}
@@ -246,10 +255,10 @@ export function CommunityCompatibility({
       className="help-panel community-compatibility"
       aria-labelledby="community-title"
     >
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Community tests</p>
-          <h2 id="community-title">What works on your receiver?</h2>
+      <div className="community-toolbar">
+        <div className="community-toolbar-title">
+          <h2 id="community-title">Community tests</h2>
+          <span>What works on your receiver?</span>
         </div>
         <CommunityTestReport
           context={context}
@@ -258,60 +267,65 @@ export function CommunityCompatibility({
           onSent={() => void load()}
         />
       </div>
-      <div
-        className="community-versions"
-        role="tablist"
-        aria-label="Community software version"
-        onKeyDown={(event) => {
-          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-            return;
-          const tabs = Array.from(
-            event.currentTarget.querySelectorAll<HTMLButtonElement>(
-              '[role="tab"]',
-            ),
-          );
-          const index = tabs.findIndex((tab) => tab === document.activeElement);
-          if (index < 0) return;
-          event.preventDefault();
-          const next =
-            event.key === "Home"
-              ? 0
-              : event.key === "End"
-                ? tabs.length - 1
-                : (index +
-                    (event.key === "ArrowRight" ? 1 : -1) +
-                    tabs.length) %
-                  tabs.length;
-          tabs[next]?.focus();
-          tabs[next]?.click();
-        }}
-      >
-        {builds.map((build, i) => (
-          <button
-            key={build.id}
-            className="secondary"
-            type="button"
-            role="tab"
-            id={`community-version-${i}`}
-            aria-controls="community-evidence-panel"
-            aria-selected={currentId === build.id}
-            tabIndex={currentId === build.id ? 0 : -1}
-            onClick={() => {
-              setBuildId(build.id);
-              setSelection(undefined);
-              setLoading(true);
-            }}
-          >
-            {build.version}
-            <small>
-              {new Date(build.builtAt).toLocaleDateString()} ·{" "}
-              {build.id.slice(-8)} ·{" "}
-              {build.id === COMMUNITY_BUILD.id
-                ? "This build"
-                : "Recorded build"}
-            </small>
-          </button>
-        ))}
+      <div className="community-control-row">
+        <span className="community-control-label">Version</span>
+        <div
+          className="community-versions"
+          role="tablist"
+          aria-label="Community software version"
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+              return;
+            const tabs = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                '[role="tab"]',
+              ),
+            );
+            const index = tabs.findIndex(
+              (tab) => tab === document.activeElement,
+            );
+            if (index < 0) return;
+            event.preventDefault();
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? tabs.length - 1
+                  : (index +
+                      (event.key === "ArrowRight" ? 1 : -1) +
+                      tabs.length) %
+                    tabs.length;
+            tabs[next]?.focus();
+            tabs[next]?.click();
+          }}
+        >
+          {builds.map((build, i) => (
+            <button
+              key={build.id}
+              className="secondary"
+              type="button"
+              role="tab"
+              id={`community-version-${i}`}
+              aria-controls="community-evidence-panel"
+              aria-selected={currentId === build.id}
+              tabIndex={currentId === build.id ? 0 : -1}
+              onClick={() => {
+                setBuildId(build.id);
+                setSelection(undefined);
+                setLoading(true);
+              }}
+            >
+              {build.version}
+              <small>
+                {new Date(build.builtAt).toLocaleDateString()} ·{" "}
+                {build.id.slice(-8)} ·{" "}
+                {build.id === COMMUNITY_BUILD.id
+                  ? "This build"
+                  : "Recorded build"}
+              </small>
+            </button>
+          ))}
+        </div>
       </div>
       {loading && <p role="status">Loading community reports…</p>}
       {error && (
@@ -345,47 +359,53 @@ export function CommunityCompatibility({
             : "community-title"
         }
       >
-        <div className="community-views" aria-label="Community evidence view">
-          {(Object.keys(viewNames) as View[]).map((v) => (
-            <button
-              type="button"
-              key={v}
-              className="secondary"
-              aria-pressed={view === v}
-              onClick={() => {
-                setView(v);
-                setSelection(undefined);
-              }}
-            >
-              {viewNames[v]}
-            </button>
-          ))}
+        <div className="community-control-row">
+          <span className="community-control-label">View</span>
+          <div className="community-views" aria-label="Community evidence view">
+            {(Object.keys(viewNames) as View[]).map((v) => (
+              <button
+                type="button"
+                key={v}
+                className="secondary"
+                aria-pressed={view === v}
+                onClick={() => {
+                  setView(v);
+                  setSelection(undefined);
+                }}
+              >
+                {viewNames[v]}
+              </button>
+            ))}
+          </div>
         </div>
         {view === "modes" && (
           <>
-            <p>
-              Shared reception results. Browser and OS details stay with each
-              report; confirmation applies to reported setups.
-            </p>
-            <div
-              className="community-groups"
-              aria-label="Community decoder category"
-            >
-              {COMMUNITY_GROUPS.map((g) => (
-                <button
-                  type="button"
-                  key={g.id}
-                  className="secondary"
-                  aria-pressed={group === g.id}
-                  onClick={() => {
-                    setGroup(g.id);
-                    setSelection(undefined);
-                  }}
-                >
-                  {g.label}
-                </button>
-              ))}
+            <div className="community-control-row">
+              <span className="community-control-label">Category</span>
+              <div
+                className="community-groups"
+                aria-label="Community decoder category"
+              >
+                {COMMUNITY_GROUPS.map((g) => (
+                  <button
+                    type="button"
+                    key={g.id}
+                    className="secondary"
+                    aria-pressed={group === g.id}
+                    onClick={() => {
+                      setGroup(g.id);
+                      setSelection(undefined);
+                    }}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
             </div>
+            <p className="community-context">
+              Confirmation applies to reported setups. Browser and OS details
+              are listed with each report.
+            </p>
             <div className="community-table-wrap">
               <table aria-label="Community hardware and decoder matrix">
                 <thead>
@@ -402,14 +422,19 @@ export function CommunityCompatibility({
                   {hardware.map((h) => (
                     <tr key={h.id}>
                       <th scope="row">
-                        {h.label}
-                        <small>
-                          {h.source === "replay"
-                            ? "Recorded I/Q"
-                            : h.source === "synthetic"
-                              ? "Generated samples"
-                              : "Live RF reports"}
-                        </small>
+                        <span className="community-hardware-name">
+                          {h.label}
+                          <CommunityHardwareIcon source={h.source} />
+                        </span>
+                        {["replay", "synthetic"].includes(h.source) && (
+                          <small>
+                            {h.source === "replay"
+                              ? "Recorded I/Q"
+                              : h.source === "synthetic"
+                                ? "Generated samples"
+                                : "Live RF reports"}
+                          </small>
+                        )}
                       </th>
                       {features.map((f) =>
                         cell(

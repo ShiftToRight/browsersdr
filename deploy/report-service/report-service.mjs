@@ -377,6 +377,7 @@ export const COMMUNITY_FEATURE_MODES = {
   storage: null,
   export: null,
   replay: null,
+  tuning: null,
 };
 const RUNTIME_FEATURES = new Set([
   "processing",
@@ -432,6 +433,8 @@ export function validateCommunityReport(value) {
       "testScope",
       "observations",
       "notes",
+      "receiverDetails",
+      "browserCapabilities",
     ]) ||
     value.schemaVersion !== 2 ||
     value.reportType !== "compatibility"
@@ -501,6 +504,81 @@ export function validateCommunityReport(value) {
           : "live")
   )
     return "Invalid receiver setup.";
+  if (value.receiverDetails !== undefined) {
+    const r = value.receiverDetails;
+    const nullableNumber = (v, min, max, integer = false) =>
+      v === null ||
+      (typeof v === "number" &&
+        Number.isFinite(v) &&
+        v >= min &&
+        v <= max &&
+        (!integer || Number.isInteger(v)));
+    if (
+      !objectWithKeys(r, [
+        "lifecycle",
+        "bandwidthHz",
+        "squelch",
+        "gainMode",
+        "gainDb",
+        "lnaGainCode",
+        "vgaGainDb",
+        "rfAmplifierEnabled",
+        "antennaPowerEnabled",
+        "usbApiVersion",
+        "recordingActive",
+        "audioState",
+      ]) ||
+      ![
+        "idle",
+        "connecting",
+        "connected",
+        "requesting-permission",
+        "starting",
+        "tuning",
+        "running",
+        "stopping",
+        "disconnecting",
+        "error",
+      ].includes(r.lifecycle) ||
+      !nullableNumber(r.bandwidthHz, 0, 100000000) ||
+      r.bandwidthHz === null ||
+      !nullableNumber(r.squelch, 0, 100) ||
+      r.squelch === null ||
+      ![
+        "automatic",
+        "manual",
+        "staged",
+        "slow-attack-agc",
+        "fast-attack-agc",
+        "hybrid-agc",
+        "not-applicable",
+      ].includes(r.gainMode) ||
+      !nullableNumber(r.gainDb, -100, 100) ||
+      !nullableNumber(r.lnaGainCode, 0, 255, true) ||
+      !nullableNumber(r.vgaGainDb, 0, 100) ||
+      ![null, true, false].includes(r.rfAmplifierEnabled) ||
+      ![null, true, false].includes(r.antennaPowerEnabled) ||
+      !nullableNumber(r.usbApiVersion, 0, 65535, true) ||
+      typeof r.recordingActive !== "boolean" ||
+      ![null, "running", "suspended", "closed", "interrupted"].includes(
+        r.audioState,
+      )
+    )
+      return "Invalid private receiver details.";
+  }
+  if (
+    value.browserCapabilities !== undefined &&
+    (!objectWithKeys(value.browserCapabilities, [
+      "secureContext",
+      "webUsb",
+      "webGpu",
+      "webAssembly",
+    ]) ||
+      ["secureContext", "webUsb", "webGpu", "webAssembly"].some(
+        (k) => typeof value.browserCapabilities[k] !== "boolean",
+      ))
+  )
+    return "Invalid private browser capabilities.";
   const e = value.environment;
   if (
     !objectWithKeys(e, ["browser", "operatingSystem", "renderer"]) ||
@@ -565,7 +643,10 @@ export function sanitizeCommunityReport(value) {
     },
     setup: {
       source: value.setup.source,
-      hardwareId: value.setup.hardwareId,
+      hardwareId:
+        value.setup.source === "rtl-sdr"
+          ? "rtl-unknown"
+          : value.setup.hardwareId,
       mode: value.setup.mode,
       srdProtocol: value.setup.srdProtocol,
       rateHz: value.setup.rateHz,
@@ -585,6 +666,36 @@ export function sanitizeCommunityReport(value) {
       feature: o.feature,
       result: o.result,
     })),
+    ...(value.receiverDetails
+      ? {
+          receiverDetails: Object.fromEntries(
+            [
+              "lifecycle",
+              "bandwidthHz",
+              "squelch",
+              "gainMode",
+              "gainDb",
+              "lnaGainCode",
+              "vgaGainDb",
+              "rfAmplifierEnabled",
+              "antennaPowerEnabled",
+              "usbApiVersion",
+              "recordingActive",
+              "audioState",
+            ].map((k) => [k, value.receiverDetails[k]]),
+          ),
+        }
+      : {}),
+    ...(value.browserCapabilities
+      ? {
+          browserCapabilities: Object.fromEntries(
+            ["secureContext", "webUsb", "webGpu", "webAssembly"].map((k) => [
+              k,
+              value.browserCapabilities[k],
+            ]),
+          ),
+        }
+      : {}),
     ...(value.notes ? { notes: value.notes } : {}),
   };
 }

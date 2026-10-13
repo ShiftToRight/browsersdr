@@ -53,6 +53,7 @@ export function CommunityTestReport({
   const [sending, setSending] = useState(false);
   const pending = useRef(false);
   const [status, setStatus] = useState("");
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [ack, setAck] = useState<{ reference: string; receipt: string }>();
   const available = COMMUNITY_FEATURES.filter((f) => {
     if (f.id === "srd-acurite")
@@ -104,6 +105,7 @@ export function CommunityTestReport({
       }
     : undefined;
   const open = () => {
+    setWithdrawalOpen(false);
     const snapshot = { ...context };
     const token = communityParticipant(COMMUNITY_BUILD.id);
     setHardwareId(defaultCommunityHardware(snapshot.source));
@@ -168,6 +170,7 @@ export function CommunityTestReport({
       if (!response.ok)
         throw new Error(`Withdrawal failed (${response.status}).`);
       setAck(undefined);
+      setWithdrawalOpen(false);
       setStatus("Report withdrawn. Community counts will refresh.");
       onSent();
     } catch (error) {
@@ -207,52 +210,99 @@ export function CommunityTestReport({
   };
   return (
     <div className="community-report-action">
-      <button
-        type="button"
-        onClick={open}
-        disabled={Boolean(blockedReason) || sending}
-      >
-        Report this test
-      </button>
-      {blockedReason && <small>{blockedReason}</small>}
-      {status && <p role="status">{status}</p>}
-      <details>
-        <summary>Withdraw an earlier report</summary>
-        <label>
-          Withdrawal receipt JSON
-          <input
-            type="file"
-            accept="application/json,.json"
-            disabled={sending}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = "";
-              if (file) void loadReceipt(file);
-            }}
-          />
-        </label>
-      </details>
-      {ack && (
-        <div className="community-actions">
+      <div className="community-report-buttons">
+        <button
+          type="button"
+          onClick={open}
+          disabled={Boolean(blockedReason) || sending}
+        >
+          Report this test
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={sending}
+          onClick={() => {
+            setFrozen(undefined);
+            setStatus("");
+            setWithdrawalOpen(true);
+          }}
+        >
+          Withdraw report
+        </button>
+        {ack && (
           <button
             type="button"
             className="secondary"
+            disabled={sending}
             onClick={() =>
               downloadCommunityReport(ack, "community-test-receipt.json")
             }
           >
             Download withdrawal receipt
           </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={sending}
-            onClick={() => void withdraw()}
-          >
-            Withdraw this report
-          </button>
-        </div>
+        )}
+      </div>
+      {blockedReason && <small>{blockedReason}</small>}
+      {status && !withdrawalOpen && !frozen && (
+        <p className="community-report-status" role="status">
+          {status}
+        </p>
       )}
+      {withdrawalOpen &&
+        createPortal(
+          <ReportDialog
+            className="community-withdrawal-dialog"
+            labelledBy="community-withdrawal-title"
+            onDismiss={() => {
+              if (!pending.current) setWithdrawalOpen(false);
+            }}
+          >
+            <h2 id="community-withdrawal-title">Withdraw a report</h2>
+            <p>
+              Load your private receipt to withdraw its report. Loading stays in
+              this browser until you press Withdraw this report. Keep the
+              receipt private: anyone holding it can authorize withdrawal.
+            </p>
+            <label>
+              Withdrawal receipt JSON
+              <input
+                type="file"
+                accept="application/json,.json"
+                disabled={sending}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void loadReceipt(file);
+                }}
+              />
+            </label>
+            {ack && (
+              <p>
+                Report reference: <code>{ack.reference}</code>
+              </p>
+            )}
+            {status && <p role="status">{status}</p>}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                disabled={!ack || sending}
+                onClick={() => void withdraw()}
+              >
+                Withdraw this report
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={sending}
+                onClick={() => setWithdrawalOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </ReportDialog>,
+          document.body,
+        )}
       {frozen &&
         createPortal(
           <ReportDialog
@@ -270,11 +320,12 @@ export function CommunityTestReport({
             </p>
             <p>
               Choose only functions you exercised. Environment details are
-              filled automatically; notes remain private. No radio data,
-              location or device serial is sent.
+              filled automatically; receiver settings, browser capabilities and
+              notes remain private. No radio data, location or device serial is
+              sent.
             </p>
             <label>
-              Tested hardware model
+              Tested receiver
               <select
                 value={hardwareId}
                 disabled={sending}
@@ -285,7 +336,9 @@ export function CommunityTestReport({
                 }
               >
                 {COMMUNITY_HARDWARE.filter(
-                  (h) => h.source === frozen.context.source,
+                  (h) =>
+                    h.source === frozen.context.source &&
+                    (h.source !== "rtl-sdr" || h.id === "rtl-unknown"),
                 ).map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.label}
@@ -404,6 +457,25 @@ export function CommunityTestReport({
                 }}
               >
                 Download community JSON
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={sending || !valid}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(
+                      JSON.stringify(report, null, 2),
+                    );
+                    setStatus("Community JSON copied.");
+                  } catch {
+                    setStatus(
+                      "Clipboard access was blocked. Download the JSON instead.",
+                    );
+                  }
+                }}
+              >
+                Copy community JSON
               </button>
               <button
                 type="button"
