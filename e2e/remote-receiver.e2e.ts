@@ -170,7 +170,7 @@ test("native remote audio and spectrum require explicit listening and leave loca
   ).toHaveValue("rtl-sdr");
   expect(errors).toEqual([]);
 });
-test("remote profile confirmation, keyboard controls, narrow layout and navigation cleanup", async ({
+test("remote profile confirmation, keyboard controls, narrow layout and retained utility listening", async ({
   page,
 }) => {
   const { closed } = await fixture(page);
@@ -202,8 +202,19 @@ test("remote profile confirmation, keyboard controls, narrow layout and navigati
   await page
     .getByRole("button", { name: "Integration settings", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  expect(closed).toHaveLength(0);
+  await expect(page.locator("#remote-view")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Back to Receiver", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Stop listening", exact: true })
+    .click();
   await expect.poll(() => closed.length).toBe(1);
-  await expect(page.locator("#remote-view")).toBeHidden();
+  await expect(page.locator("#remote-view")).toBeVisible();
 });
 test("local active reception and retained capture block remote entry without discarding data", async ({
   page,
