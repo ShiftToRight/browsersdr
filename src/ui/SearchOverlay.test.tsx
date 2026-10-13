@@ -101,7 +101,7 @@ it("station apply performs fresh public detail and refuses changed/retired refer
   detail = structuredClone(fixture.details[id]!);
   await click("Apply to receiver");
   expect(props.onUseStation).toHaveBeenCalledOnce();
-  expect(calls.filter((c) => c.includes("/stations/"))).toHaveLength(5);
+  expect(calls.filter((c) => c.includes("/stations/"))).toHaveLength(4);
 });
 it("keeps browsing available during recording and never applies a source-stale preview", async () => {
   props.blockedReason = "Recording active";

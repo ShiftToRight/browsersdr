@@ -144,6 +144,10 @@ test("v2 lazy headers and three reference pages preserve filters, later UUID lin
     .getByRole("button", { name: "Apply to receiver", exact: true })
     .click();
   await expect(p.panel).toContainText("Receiver candidate selected");
+  expect(
+    p.requests.filter((url) => url.includes("/transmissions?")),
+  ).toHaveLength(4);
+  expect(p.requests.at(-1)).toContain("cursor=50");
   await expect(
     page.getByLabel("Channel frequency", { exact: true }),
   ).toHaveValue(/^106/);
@@ -198,7 +202,7 @@ test("station changes during apply never tune and late reference responses canno
   await p.panel
     .getByRole("button", { name: "Apply to receiver", exact: true })
     .click();
-  await expect(p.panel).toContainText("changed or was retired");
+  await expect(p.panel).toContainText("catalog or page cursor changed");
   await expect(
     page.getByLabel("Channel frequency", { exact: true }),
   ).toHaveValue(before);

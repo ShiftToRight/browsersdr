@@ -175,3 +175,33 @@ it("header continuation has no old 20-page cap and retains generation on backwar
   await search.previous();
   expect(search.getSnapshot().status).toBe("error");
 });
+it("revalidates a selected later page with its original filters in two requests, without a catalog rescan", async () => {
+  const { client, pager, queries } = setup();
+  await pager.load();
+  await pager.next();
+  await pager.next();
+  const location = pager.getLocation(),
+    before = queries.length;
+  const selected = await client.reference(
+    header.id,
+    rows[60]!.id,
+    undefined,
+    location,
+  );
+  expect(selected.transmissions).toEqual([rows[60]]);
+  expect(queries.length - before).toBe(2);
+  expect(queries.at(-1)!.searchParams.get("cursor")).toBe("50");
+  expect(queries.at(-1)!.searchParams.get("q")).toBe("FM");
+  expect(queries.at(-1)!.searchParams.get("min_frequency_hz")).toBe(
+    "100000000",
+  );
+  await expect(
+    client.reference(header.id, rows[60]!.id, undefined, {
+      ...location,
+      catalog_revision: "00000000-0000-4000-8000-000000000999",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    client.reference(header.id, rows[0]!.id, undefined, location),
+  ).rejects.toMatchObject({ status: 404 });
+});
