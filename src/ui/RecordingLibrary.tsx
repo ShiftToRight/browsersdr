@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteRecording,
   listRecordings,
@@ -19,21 +19,41 @@ export function RecordingLibrary({
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [message, setMessage] = useState("");
   const [working, setWorking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [quota, setQuota] = useState("");
-  const refresh = async () => {
-    try {
-      setEntries(await listRecordings());
-      const estimate = await navigator.storage?.estimate?.();
-      if (estimate)
-        setQuota(
-          (
-            Math.max(0, (estimate.quota ?? 0) - (estimate.usage ?? 0)) /
-            1024 ** 3
-          ).toFixed(2) + " GiB estimated free for this origin",
-        );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    }
+  const refreshInFlight = useRef<Promise<void> | undefined>(undefined);
+  const refreshRequested = useRef(false);
+  const refresh = () => {
+    refreshRequested.current = true;
+    if (refreshInFlight.current) return refreshInFlight.current;
+    setRefreshing(true);
+    const operation = (async () => {
+      try {
+        do {
+          refreshRequested.current = false;
+          try {
+            // Listing probes own the same locks as open/delete. Keep stale
+            // row actions blocked until every coalesced refresh releases them.
+            setEntries(await listRecordings());
+            const estimate = await navigator.storage?.estimate?.();
+            if (estimate)
+              setQuota(
+                (
+                  Math.max(0, (estimate.quota ?? 0) - (estimate.usage ?? 0)) /
+                  1024 ** 3
+                ).toFixed(2) + " GiB estimated free for this origin",
+              );
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : String(error));
+          }
+        } while (refreshRequested.current);
+      } finally {
+        refreshInFlight.current = undefined;
+        setRefreshing(false);
+      }
+    })();
+    refreshInFlight.current = operation;
+    return operation;
   };
   useEffect(() => {
     void refresh();
@@ -42,6 +62,7 @@ export function RecordingLibrary({
     setWorking(true);
     setMessage("");
     try {
+      await refreshInFlight.current;
       await action();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -60,13 +81,18 @@ export function RecordingLibrary({
         tab-local.
       </p>
       <p>{quota}</p>
-      <button className="secondary" type="button" disabled={working} onClick={() => void refresh()}>
+      <button
+        className="secondary"
+        type="button"
+        disabled={working || refreshing}
+        onClick={() => void refresh()}
+      >
         Refresh library
       </button>
       <button
         className="secondary"
         type="button"
-        disabled={working}
+        disabled={working || refreshing}
         onClick={() =>
           void run(async () => {
             const granted = await navigator.storage?.persist?.();
@@ -99,7 +125,7 @@ export function RecordingLibrary({
               <button
                 className="secondary"
                 type="button"
-                disabled={blocked || working}
+                disabled={blocked || working || refreshing}
                 onClick={() =>
                   void run(async () =>
                     onOpen(await openRecording(entry.id), true),
@@ -111,7 +137,7 @@ export function RecordingLibrary({
               <button
                 className="secondary"
                 type="button"
-                disabled={blocked || working}
+                disabled={blocked || working || refreshing}
                 onClick={() =>
                   void run(async () =>
                     onOpen(await openRecording(entry.id), false),
@@ -125,7 +151,9 @@ export function RecordingLibrary({
           <button
             className="secondary"
             type="button"
-            disabled={blocked || working || entry.state === "in-use"}
+            disabled={
+              blocked || working || refreshing || entry.state === "in-use"
+            }
             onClick={() => void run(async () => deleteRecording(entry.id))}
           >
             Delete retained recording
