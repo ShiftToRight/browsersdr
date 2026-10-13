@@ -237,7 +237,7 @@ test("Help is passive and Compatibility owns the only test report action", async
   await expect(matrix.getByRole("rowheader", { name: /NESDR/ })).toHaveCount(0);
   await expect(
     matrix.locator('th[scope="row"] svg[aria-hidden="true"]'),
-  ).toHaveCount(7);
+  ).toHaveCount(6);
   // Development StrictMode mounts, cleans up, and mounts the matrix again.
   expect(reads).toBe(testInfo.project.name === "chromium-dev" ? 2 : 1);
   await openApplicationView(page, "Help");
