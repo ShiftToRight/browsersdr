@@ -31,6 +31,14 @@
   max-width: 180px;
   font-size: 0.75rem;
 }
+.band-guide-controls .display-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-height: 32px;
+  padding: 4px;
+}
 .spectrum-heading {
   flex-wrap: wrap;
 }
@@ -154,6 +162,10 @@
   .band-guide-controls .band-guide-toggle,
   .band-guide-controls select,
   .band-guide-dialog button {
+    min-height: 44px;
+  }
+  .band-guide-controls .display-action {
+    width: 44px;
     min-height: 44px;
   }
 }
