@@ -2,13 +2,15 @@
 
 Software-defined radio in your browser: live spectrum and waterfall, audio and digital decoding, I/Q recording, replay, and field surveys.
 
-**Source version: 1.4.0.** Stable desktop support covers RTL-SDR and HackRF Pro on Chrome. About shows the installed version and exact build; website deployment is tracked separately. See [changes and version policy](CHANGELOG.md).
+**Source version: 1.5.0.** Stable desktop support covers RTL-SDR and HackRF Pro on Chrome. About shows the installed version and exact build; website deployment is tracked separately. See [changes and version policy](CHANGELOG.md).
 
 **Stable desktop receivers:** RTL-SDR and HackRF Pro, using WebUSB over HTTPS or localhost. Chrome is the validated desktop browser baseline. Other Chromium browsers, bladeRF/USRP, remote receivers and unverified mode combinations remain available for further testing and community feedback; experimental hardware/rate labels still apply. HackRF One is available experimentally through the shared HackRF One / Pro selector: USB API 0x0110 (official v2026.01.3 baseline), native 9.6 MS/s filtered to a 2.4 MS/s channel. One has source-based protocol and simulated browser coverage; physical One reception remains unverified. A hardware-free demo and replay are available. WebGPU rendering has a Canvas2D fallback. Help and the wiki distinguish tested configurations from feature availability.
 
 HackRF gains apply live, and Pro sample rates can switch during reception. An active recording finishes before its settings change; rate transitions include a brief reception gap.
 
 The DSP filter uses a standard-SIMD compatibility kernel when the browser cannot compile relaxed SIMD, allowing the interface to load on affected Safari configurations.
+
+**Mode selection:** The short Mode dropdown keeps common listening modes close to tuning. More modes opens a searchable decoder chooser with categories and an explicit Use mode action. Pin up to seven quick choices; the current mode stays visible even when unpinned. Pins stay in this browser.
 
 **Appearance:** Choose Midnight Observatory, Amber Field Deck or Vice Afterglow from Settings → Theme. Your choice stays in this browser and applies while receiving or replaying.
 

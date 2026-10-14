@@ -1,4 +1,7 @@
-import { openApplicationView } from "./application-navigation";
+import {
+  openApplicationView,
+  chooseReceiverMode,
+} from "./application-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -762,7 +765,7 @@ test("replay routes supported analog and digital mode transitions at 2.4 MS/s", 
     "RS41",
     "AM",
   ] as const) {
-    await page.getByRole("combobox", { name: /^Mode/ }).selectOption(mode);
+    await chooseReceiverMode(page, mode);
     await expect(page.locator(".receiver-session-details")).toContainText(
       `· ${mode} ·`,
     );

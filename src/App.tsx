@@ -24,6 +24,7 @@ const UtilityOverlay = lazy(() => import("./ui/UtilityOverlay").then(module => (
 import { bookmarkFromCandidate, validateBookmark, type Bookmark } from "./radio/bookmarks";
 import { applyBookmark } from "./radio/bookmarkSelection";
 import { SearchOverlay } from "./ui/SearchOverlay";
+import { ModeSelector } from "./ui/ModeSelector";
 import { previewDiscovery } from "./radio/discoverySelection";
 import { applyReceptionCandidate } from "./radio/atlasStationSelection";
 import { ReceiverTuningControl } from "./ui/ReceiverTuningControl";
@@ -1762,6 +1763,7 @@ export function ReceiverApp({
   );
 
   const chooseMode = (nextMode: ReceiverMode) => {
+    if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
     setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(nextMode));
@@ -1872,6 +1874,11 @@ export function ReceiverApp({
     finally { setRemoteOpening(false); }
   };
 
+  const modeChangeBlockedReason = transitioning || receiver.cleanupRequired || (running && frequencyPending)
+    ? "Wait for the current receiver operation or frequency edit to finish."
+    : recordingStatus || recordingStartPending.current || exportingRecording || atlasTransferActive || retainedCapturePresent
+      ? "Finish the recording or retained capture workflow before changing decoder configuration."
+      : undefined;
   const stationUseBlockedReason = remoteSelected ? "Return to the local receiver before applying local station settings or favorites." : stationSelectionBusy ? "Applying station settings…"
     : importingReplay ? "Wait for replay import to finish before applying search settings."
     : source === "replay" ? "Choose a live receiver source or the demo to use a station."
@@ -3150,44 +3157,17 @@ export function ReceiverApp({
               </div>
               <div id="channel-stage-body" className="stage-body" hidden={layout.channelCollapsed}>
               <div className="stage-controls primary-channel-controls">
-                <label>
-                  Mode
-                  <select
-                    value={mode}
-                    disabled={transitioning}
-                    onChange={(event) =>
-                      chooseMode(event.currentTarget.value as ReceiverMode)
-                    }
-                  >
-                    {RECEIVER_MODES.map((candidate) => (
-                      <option
-                        key={candidate}
-                        value={candidate}
-                        disabled={Boolean(modeUnavailable(candidate))}
-                        title={modeUnavailable(candidate)}
-                      >
-                        {candidate === "OFF"
-                          ? "Spectrum only · no demodulation"
-                          : candidate === "DAB"
-                            ? "DAB / DAB+"
-                            : candidate}
-                        {modeUnavailable(candidate)
-                          ? ` — ${modeUnavailable(candidate)}`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {modePending ? (
-                    <small className="pending-change">
-                      Change pending ·{" "}
-                      {running || receiver.lifecycle === "tuning"
-                        ? "applying…"
-                        : "applies when reception starts"}
-                    </small>
-                  ) : (
-                    running && <small>Applies immediately</small>
-                  )}
-                </label>
+                <ModeSelector value={mode}
+                  contextKey={`${source}:${remoteSelected}:${receiver.sessionGeneration}:${sampleRateHz}:${frequencyMhz}:${mode}`}
+                  blockedReason={modeChangeBlockedReason} unavailableReason={modeUnavailable}
+                  configurationPreview={(candidate) => {
+                    const nextRate = sourceConfigurationEditable ? compatibleSourceRate(source, candidate, sampleRateHz) ?? sampleRateHz : receiver.session?.actualSampleRateHz ?? sampleRateHz;
+                    const nextFrequency = caps.requiresUsb && sourceConfigurationEditable ? candidate === "ADS-B" ? ADSB_FREQUENCY_HZ : candidate === "AIS" ? AIS_CENTER_FREQUENCY_HZ : frequencyMhz * 1_000_000 : receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000;
+                    return `Channel ${(nextFrequency / 1e6).toLocaleString()} MHz · ${formatSampleRate(nextRate)} input · ${(defaultModeSettings(candidate).bandwidthHz / 1000).toLocaleString()} kHz bandwidth. ${candidate === "DAB" ? "Choose a Band III channel after selecting DAB." : running ? "Applies to the current reception." : "Applies when reception starts."}`;
+                  }}
+                  onChange={chooseMode}
+                  status={modePending ? <small className="pending-change">Change pending · {running || receiver.lifecycle === "tuning" ? "applying…" : "applies when reception starts"}</small> : running ? <small>Applies immediately</small> : undefined}
+                />
                 {mode === "DAB" && (
                   <label>
                     Band III channel
@@ -4362,8 +4342,7 @@ export function ReceiverApp({
           const nextFrequency = caps.requiresUsb && sourceConfigurationEditable ? candidate === "ADS-B" ? ADSB_FREQUENCY_HZ : candidate === "AIS" ? AIS_CENTER_FREQUENCY_HZ : frequencyMhz * 1_000_000 : receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000;
           return `Channel ${((receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000) / 1e6).toLocaleString()} → ${(nextFrequency / 1e6).toLocaleString()} MHz; input ${(receiver.session?.actualSampleRateHz ?? sampleRateHz).toLocaleString()} → ${nextRate.toLocaleString()} samples/s; bandwidth ${defaultModeSettings(candidate).bandwidthHz.toLocaleString()} Hz. Applying does not connect or start reception.`;
         }}
-        blockedReason={transitioning || receiver.cleanupRequired || (running && frequencyPending) ? "Wait for the current receiver operation or frequency edit to finish."
-          : recordingStatus || recordingStartPending.current || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish the recording or retained capture workflow before changing decoder configuration." : undefined}
+        blockedReason={modeChangeBlockedReason}
         onApply={chooseMode} onVolumeChange={updateVolume}
         onOpenReceiver={() => setActiveView("receiver")}
         onOpenRecording={() => {

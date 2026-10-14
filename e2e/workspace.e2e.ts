@@ -1,4 +1,7 @@
-import { openApplicationView } from "./application-navigation";
+import {
+  openApplicationView,
+  chooseReceiverMode,
+} from "./application-navigation";
 import { expect, test } from "@playwright/test";
 
 test("desktop receiver fills the window with all primary panels in view", async ({
@@ -271,7 +274,7 @@ test("SRD choices are primary controls and hardware details have one home", asyn
   page,
 }) => {
   await page.goto("/");
-  await page.locator(".demodulate-stage select").first().selectOption("SRD");
+  await chooseReceiverMode(page, "SRD");
   await expect(page.locator(".mode-primary-controls")).toBeVisible();
   await expect(page.locator(".mode-primary-controls select")).toHaveCount(2);
   await expect(page.locator(".channel-advanced-settings")).not.toHaveAttribute(

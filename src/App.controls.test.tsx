@@ -39,6 +39,8 @@ let bladeRfModel: BladeRfMicroModel = "xA4";
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
   options = [];
   connectionWait = undefined;
   connectionError = undefined;
@@ -194,11 +196,10 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 function control(label: string) {
-  const element =
-    Array.from(document.querySelectorAll("label"))
-      .find((node) => node.textContent?.trim().startsWith(label))
-      ?.querySelector("input,select") ??
-    document.querySelector(`[aria-label="${label}"]`);
+  const node = Array.from(document.querySelectorAll("label")).find(
+    (candidate) => candidate.textContent?.trim().startsWith(label),
+  );
+  const element = node?.querySelector("input,select") ?? node?.control ?? document.querySelector(`[aria-label="${label}"]`);
   if (!element) throw new Error(`Missing control ${label}`);
   return element as HTMLInputElement | HTMLSelectElement;
 }
@@ -221,6 +222,14 @@ async function change(
       }),
     );
   });
+}
+async function chooseDab() {
+  await click("More modes…");
+  await act(async () => { await vi.dynamicImportSettled(); });
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Select DAB / DAB+"]')!.click());
+  const use = Array.from(document.querySelectorAll("button")).find(button => button.textContent === "Use mode")!;
+  expect(use.disabled).toBe(false);
+  await act(async () => use.click());
 }
 async function toggle(element: HTMLInputElement) {
   await act(async () => element.click());
@@ -338,16 +347,14 @@ it("renders the receive-only B205 rates and offers ci16_le SigMF recording", asy
 });
 it("selects a source-compatible digital rate before connect and keeps stopped configuration editable", async () => {
   await change(control("Source"), "hackrf");
-  await change(control("Mode"), "DAB");
+  await chooseDab();
   expect(control("Sample rate").value).toBe("9600000");
   expect(control("Volume").disabled).toBe(false);
   expect(document.body.textContent).toContain("DAB+ audio");
   await change(control("Mode"), "AM");
   await change(control("Sample rate"), "1024000");
   await click("Connect");
-  const dab = document.querySelector<HTMLOptionElement>('option[value="DAB"]')!;
-  expect(dab.disabled).toBe(false);
-  await change(control("Mode"), "DAB");
+  await chooseDab();
   expect(control("Sample rate").value).toBe("2400000");
   expect(controller.getSnapshot().session?.source).toBe("hackrf");
 });
@@ -678,7 +685,7 @@ it("polls visible diagnostics only while keeping hidden health snapshots", async
 
 it("updates DAB audio telemetry without rebuilding the receiver controls or hidden views", async () => {
   await change(control("Source"), "hackrf");
-  await change(control("Mode"), "DAB");
+  await chooseDab();
   metadata = { ...metadata, mode: "DAB", channelBandwidthHz: 1_536_000 };
   await click("Connect");
   await click("Start receiving");

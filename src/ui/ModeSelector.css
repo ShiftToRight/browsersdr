@@ -1,0 +1,52 @@
+.mode-selector {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.mode-selector > label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.mode-selector-controls {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  align-items: stretch;
+}
+.mode-selector-controls select {
+  width: 0;
+  min-width: 0;
+  flex: 1;
+  padding-right: 20px;
+}
+.mode-selector-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  white-space: nowrap;
+  padding: 8px;
+  font-size: 0.75rem;
+}
+.mode-selector-more.secondary {
+  color: var(--cyan);
+  border-color: var(--line-bright);
+}
+.mode-selector-more:hover {
+  transform: none;
+}
+.mode-selector > small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+.mode-selector .mode-selector-blocked {
+  color: var(--warning);
+}
+@media (pointer: coarse) {
+  .mode-selector-controls > :is(select, button) {
+    min-height: 44px;
+  }
+}

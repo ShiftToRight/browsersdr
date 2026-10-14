@@ -1,4 +1,29 @@
 import type { Page } from "@playwright/test";
+import { MODE_DESCRIPTIONS } from "../src/ui/modeCatalog";
+import type { ReceiverMode } from "../src/radio/receiverConfig";
+
+/** Exercise specialist selection through the same chooser as the user. */
+export async function chooseReceiverMode(page: Page, mode: ReceiverMode) {
+  const quick = page.getByRole("combobox", { name: "Mode", exact: true });
+  if (await quick.locator(`option[value="${mode}"]`).count()) {
+    await quick.selectOption(mode);
+  } else {
+    await page
+      .getByRole("button", { name: "More modes…", exact: true })
+      .click();
+    const chooser = page.getByRole("dialog", { name: "Choose a decoder" });
+    await chooser
+      .getByRole("button", {
+        name: `Select ${MODE_DESCRIPTIONS[mode].label}`,
+        exact: true,
+      })
+      .click();
+    await chooser
+      .getByRole("button", { name: "Use mode", exact: true })
+      .click();
+    await chooser.waitFor({ state: "hidden" });
+  }
+}
 
 export async function openApplicationView(
   page: Page,

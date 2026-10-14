@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-10-15
+
+- Short, customizable quick-mode dropdown and adjacent More modes decoder chooser with search and categories.
+- Saved, bounded quick-mode pins with explicit replacement and a visible unpinned current mode.
+- Passive browsing, explicit source-compatible selection, configuration preview and shared recording/transition guards; responsive dialog with keyboard focus return.
+
 ## 1.4.0 — 2026-10-14
 
 - Add account-free shared RF search for worldwide mesh presets, LoRaWAN regional plans, Bluetooth LE advertising, GNSS carriers, personal radio, NOAA weather and HF amateur dial conventions.
