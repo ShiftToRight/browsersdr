@@ -17,6 +17,7 @@ import type {
   PublicStation,
   PublicStationReferences,
   PublicStationQuery,
+  PublicReferenceLocation,
 } from "../radio/publicStations";
 import {
   discoveryQuery,
@@ -37,6 +38,7 @@ interface Preview {
   bookmark: Bookmark;
   station?: PublicStationReferences;
   referenceId?: string;
+  location?: PublicReferenceLocation;
   context: string;
 }
 export interface SearchOverlayProps {
@@ -90,6 +92,7 @@ function StationReferences({
     bookmark: Bookmark,
     station?: PublicStationReferences,
     referenceId?: string,
+    location?: PublicReferenceLocation,
   ) => void;
   onFavorite: SearchOverlayProps["onFavorite"];
   onMessage: (message: string) => void;
@@ -148,6 +151,7 @@ function StationReferences({
           )}
           {state.page!.items.map((reference) => {
             const selected = { ...station, transmissions: [reference] };
+            const location = pager.getLocation();
             let candidate: ReceptionCandidate | undefined;
             try {
               candidate = publicReceptionCandidate(selected, reference.id);
@@ -193,6 +197,7 @@ function StationReferences({
                           bookmarkFromCandidate(candidate!),
                           selected,
                           reference.id,
+                          location,
                         )
                       }
                     >
@@ -326,9 +331,16 @@ export function SearchOverlay(props: SearchOverlayProps) {
     bookmark: Bookmark,
     station?: PublicStationReferences,
     referenceId?: string,
+    location?: PublicReferenceLocation,
   ) {
     invalidate();
-    setPreview({ bookmark, station, referenceId, context: props.contextKey });
+    setPreview({
+      bookmark,
+      station,
+      referenceId,
+      location,
+      context: props.contextKey,
+    });
     // Preview remains in the scroll body, with an explicit focus target on narrow screens.
     requestAnimationFrame(() =>
       dialog.current?.querySelector<HTMLElement>(".discovery-preview")?.focus(),
@@ -349,6 +361,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
           selected.station.id,
           selected.referenceId,
           owner.signal,
+          selected.location,
         );
         owner.signal.throwIfAborted();
         unchangedPublicReference(

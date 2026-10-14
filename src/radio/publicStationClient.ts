@@ -5,6 +5,7 @@ import {
   parsePublicPage,
   parsePublicTransmissions,
   type PublicStationReferences,
+  type PublicReferenceLocation,
   publicQueryParams,
   type PublicStationQuery,
 } from "./publicStations";
@@ -77,10 +78,30 @@ export class PublicStationClient {
     id: string,
     referenceId: string,
     signal?: AbortSignal,
+    location?: PublicReferenceLocation,
   ): Promise<PublicStationReferences> {
     if (!PUBLIC_UUID.test(referenceId))
       throw new Error("Invalid public reference ID.");
     const detail = await this.detail(id, signal);
+    if (location) {
+      if (
+        detail.catalog_revision !== location.catalog_revision ||
+        detail.station.publication_version !== location.publication_version
+      )
+        throw new PublicCatalogError(409, "catalog_changed");
+      const page = await this.transmissions(id, location.query, signal);
+      if (
+        page.catalog_revision !== detail.catalog_revision ||
+        page.publication_version !== detail.station.publication_version ||
+        page.total !== location.total ||
+        page.total > detail.station.transmission_count
+      )
+        throw new PublicCatalogError(409, "catalog_changed");
+      const ref = page.items.find((ref) => ref.id === referenceId);
+      if (!ref) throw new PublicCatalogError(404, "not_found");
+      return { ...detail.station, transmissions: [ref] };
+    }
+
     const seen = new Set<string>(),
       cursors = new Set<string>();
     let cursor: string | undefined;

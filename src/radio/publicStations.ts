@@ -69,6 +69,13 @@ export interface PublicStationQuery {
   max_frequency_hz?: number;
   cursor?: string;
 }
+/** A validated page locator owned by one header generation and filter scope. */
+export interface PublicReferenceLocation {
+  catalog_revision: string;
+  publication_version: number;
+  total: number;
+  query: PublicStationQuery;
+}
 const fields = [
   "name",
   "aliases",

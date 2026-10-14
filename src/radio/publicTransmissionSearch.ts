@@ -1,6 +1,7 @@
 import { PublicCatalogError, PublicStationClient } from "./publicStationClient";
 import {
   malformedPublicResponse,
+  type PublicReferenceLocation,
   type PublicStation,
   type PublicStationQuery,
   type PublicTransmissionPage,
@@ -36,6 +37,16 @@ export class PublicTransmissionSearch {
     private readonly query: PublicStationQuery,
   ) {}
   getSnapshot = () => this.snapshot;
+  getLocation = (): PublicReferenceLocation => {
+    if (this.snapshot.status !== "ready")
+      throw new Error("Load the reference page before selecting it.");
+    return {
+      catalog_revision: this.catalogRevision,
+      publication_version: this.station.publication_version,
+      total: this.total,
+      query: { ...this.query, cursor: this.cursors[this.snapshot.pageIndex] },
+    };
+  };
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => {
