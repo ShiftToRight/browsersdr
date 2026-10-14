@@ -191,7 +191,7 @@ test("touch utility targets stay at least 44 pixels and keyboard Tab dismisses a
 
 test("Help is passive and Compatibility owns the only test report action", async ({
   page,
-}, testInfo) => {
+}) => {
   await page.goto("/?browser-test=1");
   let reads = 0;
   await page.route("**/api/v1/compatibility-matrix**", (route) => {
@@ -258,11 +258,18 @@ test("Help is passive and Compatibility owns the only test report action", async
   await expect(
     matrix.locator('th[scope="row"] svg[aria-hidden="true"]'),
   ).toHaveCount(7);
-  // Development StrictMode mounts, cleans up, and mounts the matrix again.
-  expect(reads).toBe(testInfo.project.name === "chromium-dev" ? 2 : 1);
+  // StrictMode may abort its first fetch before it reaches the browser route.
+  // Wait for the active load and verify the product boundary, rather than an
+  // implementation-dependent number of development effect invocations.
+  await expect(
+    compatibility.getByText(/No registered release builds yet/),
+  ).toBeVisible();
+  expect(reads).toBeGreaterThan(0);
+  const compatibilityReads = reads;
   await openApplicationView(page, "Help");
   await expect(help).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Report this test" }),
   ).toHaveCount(0);
+  expect(reads).toBe(compatibilityReads);
 });
