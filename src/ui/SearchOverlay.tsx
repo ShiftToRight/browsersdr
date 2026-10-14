@@ -33,6 +33,7 @@ import {
 import { bookmarkFromCandidate, type Bookmark } from "../radio/bookmarks";
 import type { ReceptionCandidate } from "../radio/receptionEvidence";
 import type { ReceiverMode } from "../radio/receiverConfig";
+import type { SharedFrequencyGuide } from "../radio/sharedFrequencyGuides";
 import "./SearchOverlay.css";
 interface Preview {
   bookmark: Bookmark;
@@ -40,6 +41,79 @@ interface Preview {
   referenceId?: string;
   location?: PublicReferenceLocation;
   context: string;
+}
+function FrequencyRows({
+  rows,
+  mode,
+  choose,
+}: {
+  rows: SharedFrequencyGuide[];
+  mode: ReceiverMode;
+  choose: (bookmark: Bookmark) => void;
+}) {
+  return rows.map((row) => {
+    const previewMode = row.recommendedMode ?? mode;
+    return (
+      <article key={row.id} aria-label={row.name}>
+        <h4>{row.name}</h4>
+        <p>
+          <strong>{row.context}</strong>
+          {row.frequencyMeaning === "receiver_dial" && " · USB dial frequency"}
+        </p>
+        {row.direction && <p>Direction / use: {row.direction}</p>}
+        {row.bandwidthHz !== null && (
+          <p>
+            Signal bandwidth: {(row.bandwidthHz / 1000).toLocaleString()} kHz
+            {row.spreadingFactor !== null && <> · SF{row.spreadingFactor}</>}
+            {row.codingRate !== null && <> · CR {row.codingRate}</>}
+          </p>
+        )}
+        {row.channelSpacingHz !== null && (
+          <p>Channel spacing: {row.channelSpacingHz / 1000} kHz</p>
+        )}
+        <p>{row.notes}</p>
+        <p className="display-note">
+          <a href={row.url} target="_blank" rel="noopener noreferrer">
+            {row.publisher}
+          </a>{" "}
+          · Reviewed {row.reviewedOn}
+        </p>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() =>
+            choose(guideBookmark(row.name, previewMode, row.frequencyHz))
+          }
+        >
+          Preview {row.frequencyHz / 1e6} MHz with {previewMode}
+        </button>
+      </article>
+    );
+  });
+}
+function FrequencyPlan({
+  name,
+  rows,
+  mode,
+  choose,
+}: {
+  name: string;
+  rows: SharedFrequencyGuide[];
+  mode: ReceiverMode;
+  choose: (bookmark: Bookmark) => void;
+}) {
+  const [expanded, setExpanded] = useState(rows.length <= 8);
+  return (
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        {name} · {rows.length} frequency profiles
+      </summary>
+      {expanded && <FrequencyRows rows={rows} mode={mode} choose={choose} />}
+    </details>
+  );
 }
 export interface SearchOverlayProps {
   favorites: Bookmark[];
@@ -272,6 +346,27 @@ export function SearchOverlay(props: SearchOverlayProps) {
     [preview, setPreview] = useState<Preview>(),
     [message, setMessage] = useState("");
   const [applying, setApplying] = useState(false);
+  const [shared, setShared] =
+    useState<typeof import("../radio/sharedFrequencyGuides")>();
+  const [guideLoadError, setGuideLoadError] = useState(false);
+  const [guideLoadAttempt, setGuideLoadAttempt] = useState(0);
+  useEffect(() => {
+    if (!open || shared) return;
+    let active = true;
+    import("../radio/sharedFrequencyGuides")
+      .then((module) => {
+        if (active) {
+          setShared(module);
+          setGuideLoadError(false);
+        }
+      })
+      .catch(() => {
+        if (active) setGuideLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, shared, guideLoadAttempt]);
   const trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLDialogElement>(null),
     aborter = useRef<AbortController | undefined>(undefined);
@@ -306,6 +401,8 @@ export function SearchOverlay(props: SearchOverlayProps) {
   const parsed =
     interpretation === "auto" ? parseDiscoveryFrequency(query) : { notice: "" };
   const guides = matchingGuides(query);
+  const sharedFrequencies =
+    shared?.matchingSharedFrequencies(query, interpretation) ?? [];
   const localQuery = normalizeDiscoveryText(query);
   const favorites = props.favorites.filter((item) =>
     normalizeDiscoveryText(
@@ -493,7 +590,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
                   type="search"
                   maxLength={200}
                   value={query}
-                  placeholder="ads, energy, 103,4 MHz, 11C…"
+                  placeholder="meshcore, meshtastic europe, zigbee, energy…"
                   onChange={(event) => {
                     edit();
                     setQuery(event.currentTarget.value);
@@ -524,6 +621,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
                   >
                     <option value="all">All sources</option>
                     <option value="guides">Local guides</option>
+                    <option value="frequencies">Shared RF frequencies</option>
                     <option value="atlas">Atlas stations</option>
                     <option value="favorites">My favorites</option>
                   </select>
@@ -643,6 +741,80 @@ export function SearchOverlay(props: SearchOverlayProps) {
                     Cancel preview
                   </button>
                 </div>
+              </section>
+            )}
+            {(group === "all" || group === "frequencies") && (
+              <section aria-label="Shared RF frequencies">
+                <h3>Shared RF frequencies</h3>
+                <p className="display-note">
+                  Public carriers, regional channel plans and USB dial
+                  conventions, available without an account. Expand a plan to
+                  browse its channels. Frequency alone does not identify
+                  traffic. Preview uses the listed audio mode or your current
+                  mode; a frequency guide does not add a protocol decoder. Check
+                  receiver range and capture bandwidth before recording.
+                </p>
+                {!shared && !guideLoadError && (
+                  <p role="status">Loading shared frequency guides…</p>
+                )}
+                {guideLoadError && (
+                  <p role="alert">
+                    Shared guides could not load.{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGuideLoadError(false);
+                        setGuideLoadAttempt((value) => value + 1);
+                      }}
+                    >
+                      Retry frequency guides
+                    </button>
+                  </p>
+                )}
+                {shared && !sharedFrequencies.length && (
+                  <p>
+                    No matching shared frequency. Try meshtastic Europe, LoRaWAN
+                    US, Bluetooth advertising, GPS L1, PMR446, NOAA weather or
+                    FT8 20m.
+                  </p>
+                )}
+                {shared?.SHARED_FREQUENCY_FAMILIES.map(([family, label]) => {
+                  const rows = sharedFrequencies.filter(
+                    (row) => row.family === family,
+                  );
+                  return (
+                    rows.length > 0 && (
+                      <details key={family} open={!!query.trim()}>
+                        <summary>
+                          {label} · {rows.length} frequency profiles
+                        </summary>
+                        {[...new Set(rows.map((row) => row.plan))].map(
+                          (plan) => {
+                            const planRows = rows.filter(
+                              (row) => row.plan === plan,
+                            );
+                            return plan === null ? (
+                              <FrequencyRows
+                                key="presets"
+                                rows={planRows}
+                                mode={props.mode}
+                                choose={choose}
+                              />
+                            ) : (
+                              <FrequencyPlan
+                                key={`${plan}:${query}:${interpretation}`}
+                                name={plan}
+                                rows={planRows}
+                                mode={props.mode}
+                                choose={choose}
+                              />
+                            );
+                          },
+                        )}
+                      </details>
+                    )
+                  );
+                })}
               </section>
             )}
             {(group === "all" || group === "guides") && (

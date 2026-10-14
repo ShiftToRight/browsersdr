@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — Pending release
+
+- Add account-free shared RF search for worldwide mesh presets, LoRaWAN regional plans, Bluetooth LE advertising, GNSS carriers, personal radio, NOAA weather and HF amateur dial conventions.
+- Group large channel plans and load the frequency catalog when Search opens.
+- Preserve channel directions, regional differences and explicit USB dial semantics; preview and Apply remain deliberate.
+
 ## 1.3.0 — 2026-10-14
 
 - Add a compact, stationary Band guide between spectrum and waterfall, with a saved visible switch and grouped country/profile selection.

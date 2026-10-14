@@ -65,6 +65,9 @@ async function render() {
 }
 async function click(text: string) {
   await act(async () => button(text).click());
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
 }
 async function search() {
   await act(async () => {
@@ -171,4 +174,63 @@ it("refreshes the same header after an expired reference cursor without reusing 
   expect(document.body.textContent).toContain("Reference page 1");
   await click("Preview 103.4 MHz");
   expect(button("Apply to receiver").disabled).toBe(false);
+});
+
+it("shared-frequency preview is passive and applies a frequency without station identity or network calls", async () => {
+  await render();
+  await click("Search");
+  await click("Preview 869.618 MHz with WBFM");
+  expect(props.onRecall).not.toHaveBeenCalled();
+  expect(calls).toEqual([]);
+  await click("Apply to receiver");
+  expect(props.onUseStation).not.toHaveBeenCalled();
+  const bookmark = vi.mocked(props.onRecall).mock.calls[0]![0];
+  expect(bookmark.frequencyHz).toBe(869618000);
+  expect(bookmark.settings.mode).toBe("WBFM");
+  expect(bookmark.atlasReference).toBeUndefined();
+  expect(calls).toEqual([]);
+});
+
+it("applies an HF USB dial from shared search without inventing station identity", async () => {
+  await render();
+  await click("Search");
+  await act(async () => {
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="search"]',
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "ft8 20m");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Preview 14.074 MHz with USB");
+  expect(props.onRecall).not.toHaveBeenCalled();
+  await click("Apply to receiver");
+  const bookmark = vi.mocked(props.onRecall).mock.calls[0]![0];
+  expect(bookmark.frequencyHz).toBe(14074000);
+  expect(bookmark.settings.mode).toBe("USB");
+  expect(bookmark.atlasReference).toBeUndefined();
+  expect(props.onUseStation).not.toHaveBeenCalled();
+  expect(calls).toEqual([]);
+});
+
+it("keeps long plans collapsed until expanded and separates spacing from modem parameters", async () => {
+  await render();
+  await click("Search");
+  const plan = [...document.querySelectorAll("summary")].find((item) =>
+    item.textContent?.startsWith("US915 · Uplink 125 kHz"),
+  )!;
+  expect(plan.parentElement!.querySelectorAll("article")).toHaveLength(0);
+  await act(async () => {
+    (plan.parentElement as HTMLDetailsElement).open = true;
+    plan.parentElement!.dispatchEvent(new Event("toggle"));
+  });
+  expect(plan.parentElement!.querySelectorAll("article")).toHaveLength(64);
+  const ble = document.querySelector(
+    '[aria-label="Bluetooth LE primary advertising channel 37"]',
+  )!;
+  expect(ble.textContent).toContain("Channel spacing: 2000 kHz");
+  expect(ble.textContent).not.toContain("SF");
+  expect(ble.textContent).not.toContain("CR ");
 });
