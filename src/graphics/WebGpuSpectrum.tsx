@@ -833,6 +833,9 @@ export function WebGpuSpectrum({
           </div>
         </div>
         <span className={`status-pill status-${state.kind}`}>{state.kind}</span>
+        <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
+          coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
+          onHeightChange={setGuideGap} /></Suspense>
       </div>
       <div className="spectrum-display">
         <div
@@ -865,9 +868,6 @@ export function WebGpuSpectrum({
                 {paused ? "Resume display" : "Pause display"}
               </ActionButton>
             </div>
-          <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
-            coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
-            onHeightChange={setGuideGap} /></Suspense>
           </div>
           {tuningControls}
         </div>
