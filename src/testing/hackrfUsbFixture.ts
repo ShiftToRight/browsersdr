@@ -106,7 +106,7 @@ export class FakeHackrfUsb implements USBDevice {
         this.radio.set(11, setup.value === 1 ? this.amp : 0n); if (this.stable) { if (setup.value === 1) this.applyStableRate(); } else this.fpga.set(3, Number(this.radio.get(5)! / 2n ** 24n)); break;
       case 6: this.radio.set(6, BigInt(view.getUint32(0, true)) * 2n ** 36n); if (this.stable && this.radio.get(0) === 1n) this.applyStableRate(); break;
       case 16: this.radio.set(1, (BigInt(view.getUint32(0, true)) * 1_000_000n + BigInt(view.getUint32(4, true))) * 2n ** 24n); if (this.stable && this.radio.get(0) === 1n) this.applyStableFrequency(); break;
-      case 17: this.amp = BigInt(setup.value); break;
+      case 17: this.amp = BigInt(setup.value); if (this.radio.get(0) === 1n) this.radio.set(11, this.amp); break;
       case 23: this.radio.set(20, BigInt(setup.value)); break;
       case 29: this.radio.set(21, BigInt(setup.value)); break;
       case 48: if (!this.stable || setup.value !== 0x36) throw new Error("Invalid bias-tee override"); break;

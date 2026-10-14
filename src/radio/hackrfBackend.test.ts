@@ -105,13 +105,13 @@ function fixture(
     device.deliver(bytes);
     await flush();
   }
-  async function ready(task: Promise<unknown>, rate = 1_024_000) {
+  async function ready(task: Promise<unknown>, rate = 1_024_000, bufferedBlocks = 0) {
     // Cold receive setup is now loaded asynchronously. Wait for the actual bulk
     // owner rather than assuming module I/O finishes in a microtask-only loop.
     await vi.waitFor(() => expect(device.pendingReads.length).toBeGreaterThan(0), { timeout: 1_000, interval: 5 });
     await flush();
     now += 200;
-    const count = Math.ceil((Math.ceil(rate * 0.12) + 32_768) / 32_768);
+    const count = Math.ceil((Math.ceil(rate * 0.12) + 32_768) / 32_768) + bufferedBlocks;
     for (let n = 0; n < count; n++) await deliver(new Uint8Array(65_536));
     await deliver(new Uint8Array(24));
     await task;
@@ -310,7 +310,7 @@ describe("HackRF live pipeline", () => {
     }
     expect(f.played).toHaveLength(5);
   });
-  it("restarts hardware for explicit scan and stage gains, drops old reads, and preserves high frequencies", async () => {
+  it("restarts hardware for scan but applies stage gains without reopening or dropping the stream", async () => {
     const f = fixture();
     await f.ready(f.backend.start(OPTIONS));
     const old = f.device.pendingReads[0]!;
@@ -334,7 +334,7 @@ describe("HackRF live pipeline", () => {
       },
       5,
     );
-    await f.ready(gain);
+    await gain;
     expect(await gain).toMatchObject({
       hardwareCenterFrequencyHz: 4_300_000_001,
       gainDb: null,
@@ -605,8 +605,7 @@ it.each(["tune", "mode", "gain", "stop", "disconnect"] as const)(
     else if (operation === "mode")
       await f.backend.configureMode(defaultModeSettings("USB"), 2);
     else if (operation === "gain")
-      await f.ready(
-        f.backend.configureHardware(
+      await f.backend.configureHardware(
           {
             kind: "hackrf",
             rxLnaGainCode: 33,
@@ -615,8 +614,7 @@ it.each(["tune", "mode", "gain", "stop", "disconnect"] as const)(
             antennaPowerEnabled: false,
           },
           2,
-        ),
-      );
+        );
     else await f.backend[operation]();
     const result = f.backend.stopRecording()!;
     expect(result.data).toEqual(bytes);
@@ -810,9 +808,34 @@ describe("One through the shared backend and DSP", () => {
     expect(capture.data).toEqual(input);
     expect(capture.metadata).toMatchObject({ hardware: { kind: "hackrf-one" }, effectiveSampleRateHz: 2_400_000 });
     const task = f.backend.configureHardware({ kind: "hackrf", rxLnaGainCode: 40, rxVgaGainDb: 20, rfAmplifierEnabled: false, antennaPowerEnabled: false }, 2);
-    await f.ready(task, 9_600_000);
+    await task;
     expect((await task).hackrf.captureSettings.rxLnaGainCode).toBe(40);
     await expect(f.backend.tune(500_000, 3)).rejects.toThrow(/frequency/);
     expect(f.events.runtimeError).not.toHaveBeenCalled();
   });
+});
+
+it.each([0x0110, 0x0113])("preserves channel, gains, USB/audio and byte-exact old capture across live rate changes (API %i)", async (api) => {
+  const f = fixture(new FakeHackrfUsb(api));
+  await f.ready(f.backend.start(OPTIONS));
+  await f.backend.configureHardware({ kind: "hackrf", rxLnaGainCode: 33, rxVgaGainDb: 32, rfAmplifierEnabled: true, antennaPowerEnabled: false }, 1);
+  f.backend.startRecording();
+  const bytes = Uint8Array.of(1, 2, 128, 127);
+  await f.feed(bytes);
+  const lifecycle = [...f.device.lifecycle], resumes = f.audio.resume.mock.calls.length;
+  const switching = f.backend.configureSampleRate(4_800_000, 2);
+  await f.ready(switching, 4_800_000, 4);
+  expect(await switching).toMatchObject({ actualSampleRateHz: 4_800_000, selectedChannelFrequencyHz: 100_000_000, hardwareCenterFrequencyHz: 100_000_000, hackrf: { effectiveSampleRateHz: 2_400_000, captureSettings: { rxLnaGainCode: 33, rxVgaGainDb: 32, rfAmplifierEnabled: true } } });
+  expect(f.backend.stopRecording()!).toMatchObject({ data: bytes, metadata: { sampleRateHz: 1_024_000, stopReason: "metadata-change" } });
+  await f.backend.tune(101_500_000, 3);
+  await expect(f.backend.configureSampleRate(1_024_000, 4, { autoRecenter: false })).rejects.toThrow(/Follow channel/);
+  const shrinking = f.backend.configureSampleRate(1_024_000, 4, { autoRecenter: true });
+  await f.ready(shrinking, 1_024_000, 64);
+  expect(await shrinking).toMatchObject({ actualSampleRateHz: 1_024_000, selectedChannelFrequencyHz: 101_500_000, hardwareCenterFrequencyHz: 101_500_000 });
+  expect(f.device.lifecycle).toEqual(lifecycle);
+  expect(f.audio.resume).toHaveBeenCalledTimes(resumes);
+  expect(f.audio.suspend).not.toHaveBeenCalled();
+  f.captured.length = 0;
+  await f.feed(bytes);
+  expect(f.captured[0]).toMatchObject({ generation: 4, nativeSampleRateHz: 1_024_000, bytes });
 });

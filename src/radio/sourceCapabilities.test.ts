@@ -124,8 +124,8 @@ describe("source capabilities and requests", () => {
   });
 });
 
-it("marks 19.2 MS/s experimental and restricts it to HackRF", () => {
- expect(sourceCapabilities("hackrf").rates).toMatchObject({ experimentalHz: [19_200_000] });
+it("offers owner-accepted 19.2 MS/s without an experimental label and restricts it to HackRF", () => {
+ expect(sourceCapabilities("hackrf").rates).not.toHaveProperty("experimentalHz");
  for (const mode of RECEIVER_MODES) expect(() => validateOptions({ ...options, source: "hackrf", sampleRateHz: 19_200_000, modeSettings: defaultModeSettings(mode) })).not.toThrow();
  for (const source of ["rtl-sdr", "synthetic"] as const) expect(() => validateOptions({ ...options, source, sampleRateHz: 19_200_000 })).toThrow();
 });

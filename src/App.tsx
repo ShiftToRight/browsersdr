@@ -914,6 +914,8 @@ export function ReceiverApp({
   const [sampleRateHz, setSampleRateHz] = useState(
     initialPreferences.sampleRateHz,
   );
+  const hackrfVgaTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(hackrfVgaTimer.current), [source, controller]);
   const hackrfIdentity = receiver.session?.source === "hackrf" ? receiver.session.hackrf?.capabilities.identity : undefined;
   const caps = sourceCapabilities(source, hackrfIdentity);
   const hardwareOptions =
@@ -1277,7 +1279,7 @@ export function ReceiverApp({
       receiver.lifecycle,
     );
   const transitioning =
-    stationSelectionBusy || scanActive ||
+    stationSelectionBusy || scanActive || receiver.hardwareSettingsPending ||
     [
       "requesting-permission",
       "connecting",
@@ -1788,6 +1790,7 @@ export function ReceiverApp({
 
   const applySampleRate = async (nextRate: number) => {
     if (transitioning || exportingRecording || atlasTransferActive || recordingStartPending.current) return;
+    clearTimeout(hackrfVgaTimer.current);
     if (controller.getSnapshot().lifecycle !== "running") {
       setSampleRateHz(nextRate);
       return;
@@ -1809,8 +1812,13 @@ export function ReceiverApp({
     if (completed) retainCompletedRecording(completed);
   };
 
-  const applyHardware = async () => {
-    await controller.configureHardware(hardwareSettings);
+  const applyHardware = async (nextSettings = hardwareSettings) => {
+    clearTimeout(hackrfVgaTimer.current);
+    hackrfVgaTimer.current = undefined;
+    if (transitioning || exportingRecording || atlasTransferActive || recordingStartPending.current) return;
+    setHardwareSettings(nextSettings);
+    if (!hardwareConnected) return;
+    await controller.configureHardware(nextSettings);
     const accepted = controller.getSnapshot().session?.hackrf?.captureSettings;
     if (accepted)
       setHardwareSettings({
@@ -1822,9 +1830,11 @@ export function ReceiverApp({
       });
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
+    setRecordingStatus(controller.getRecordingStatus());
   };
 
   const stopReceiver = async () => {
+    clearTimeout(hackrfVgaTimer.current);
     await controller.stop();
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
@@ -1832,6 +1842,7 @@ export function ReceiverApp({
   };
 
   const disconnectReceiver = async () => {
+    clearTimeout(hackrfVgaTimer.current);
     await controller.disconnect();
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
@@ -1843,6 +1854,7 @@ export function ReceiverApp({
     : transitioning || receiver.cleanupRequired || remoteOpening || stationSelectionBusy ? "Wait for the current receiver operation to finish."
     : recordingStatus || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish and discard the retained capture before opening a remote receiver."
     : undefined;
+  const remoteAcquireHint = source === "hackrf" && (running || scanActive) ? undefined : remoteBlockedReason;
   const openRemoteReceiver = async (preset?: RemotePreset): Promise<boolean> => {
     if (remoteBlockedReason || recordingStartPending.current || controller.getRecordingStatus() ||
       !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) || atlasConnection.getSnapshot().transferActive) {
@@ -2565,7 +2577,7 @@ export function ReceiverApp({
                     <ReceiverSourceOptions remoteDisabled={Boolean(remoteBlockedReason)} />
                   </select>
                 </label>
-                {(remoteBlockedReason || remoteEntryIssue) && <p className="remote-entry-hint">{remoteEntryIssue || remoteBlockedReason}</p>}
+                {(remoteAcquireHint || remoteEntryIssue) && <p className="remote-entry-hint">{remoteEntryIssue || remoteAcquireHint}</p>}
                 {(source === "usrp-b205" || source === "bladerf") && (
                   <div className="setup-checklist" aria-label="Setup files">
                     <p className="setup-caption">
@@ -2866,7 +2878,7 @@ export function ReceiverApp({
                     </summary>
                     <div className="advanced-settings-body">
                       {source === "hackrf" && <small>{hackrfIdentity?.kind === "hackrf-one"
-                        ? "HackRF One · experimental, physical reception unverified. USB API 0x0110; native 9.6 MS/s filtered to a 2.4 MS/s channel. RX gain changes briefly restart reception."
+                        ? "HackRF One · experimental, physical reception unverified. USB API 0x0110; native 9.6 MS/s filtered to a 2.4 MS/s channel. RX gains apply live."
                         : hackrfIdentity?.kind === "hackrf-pro" ? "HackRF Pro detected. Native rates and RX LNA states follow the Pro profile."
                         : "One / Pro is detected on connection. HackRF One is experimental and requires USB API 0x0110 with 9.6 MS/s; Pro retains its rate choices."}</small>}
                       {caps.requiresUsb && caps.rates.kind === "choices" && (
@@ -2875,7 +2887,7 @@ export function ReceiverApp({
                           <select
                             aria-label="Sample rate"
                             value={sampleRateHz}
-                            disabled={transitioning || (running && source !== "rtl-sdr") || exportingRecording || atlasTransferActive}
+                            disabled={transitioning || (running && source !== "rtl-sdr" && source !== "hackrf") || exportingRecording || atlasTransferActive}
                             onChange={(event) =>
                               void applySampleRate(Number(event.currentTarget.value))
                             }
@@ -2904,6 +2916,7 @@ export function ReceiverApp({
                                 Change pending · applies when reception starts
                               </small>
                             )}
+                          {source === "hackrf" && <small>Change rate while receiving; reception resumes automatically after a brief gap. An active recording finishes before switching.</small>}
                           {source !== "hackrf" && <small>
                             {source === "bladerf"
                                 ? "All supported bladeRF 2.0 Micro variants use native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
@@ -2963,9 +2976,9 @@ export function ReceiverApp({
                             {hackrfIdentity?.kind === "hackrf-one" ? "RX IF gain (dB)" : "RX LNA state"}
                             <select
                               value={hardwareSettings.rxLnaGainCode}
-                              disabled={transitioning}
+                              disabled={transitioning || exportingRecording || atlasTransferActive}
                               onChange={(event) =>
-                                setHardwareSettings({
+                                void applyHardware({
                                   ...hardwareSettings,
                                   rxLnaGainCode: Number(
                                     event.currentTarget.value,
@@ -2992,14 +3005,20 @@ export function ReceiverApp({
                               max={caps.gain.vgaMaximumDb}
                               step={caps.gain.vgaStepDb}
                               value={hardwareSettings.rxVgaGainDb}
-                              disabled={transitioning}
-                              onChange={(event) =>
-                                setHardwareSettings({
-                                  ...hardwareSettings,
-                                  rxVgaGainDb:
-                                    event.currentTarget.valueAsNumber,
-                                })
-                              }
+                              disabled={transitioning || exportingRecording || atlasTransferActive}
+                              onChange={(event) => {
+                                const next = { ...hardwareSettings, rxVgaGainDb: event.currentTarget.valueAsNumber };
+                                setHardwareSettings(next);
+                                clearTimeout(hackrfVgaTimer.current);
+                                // Allow a complete multi-digit edit before a USB
+                                // acknowledgement briefly disables the controls.
+                                if (event.currentTarget.validity.valid) hackrfVgaTimer.current = setTimeout(() => {
+                                  hackrfVgaTimer.current = undefined;
+                                  void applyHardware(next);
+                                }, 150);
+                              }}
+                              onBlur={(event) => { if (!event.currentTarget.validity.valid) void applyHardware(); }}
+                              onKeyDown={(event) => { if (event.key === "Enter") void applyHardware(); }}
                             />
                           </label>
                           <label className="checkbox-control hackrf-amplifier-control">
@@ -3008,9 +3027,9 @@ export function ReceiverApp({
                               type="checkbox"
                               aria-label="RF amplifier"
                               checked={hardwareSettings.rfAmplifierEnabled}
-                              disabled={transitioning}
+                              disabled={transitioning || exportingRecording || atlasTransferActive}
                               onChange={(event) =>
-                                setHardwareSettings({
+                                void applyHardware({
                                   ...hardwareSettings,
                                   rfAmplifierEnabled:
                                     event.currentTarget.checked,
@@ -3023,15 +3042,8 @@ export function ReceiverApp({
                                 : "Off"}
                             </span>
                           </label>
-                          <button
-                            type="button"
-                            disabled={!hardwareConnected || transitioning}
-                            onClick={() => void applyHardware()}
-                          >
-                            Apply RX settings
-                          </button>
                           <small>
-                            Stage values are requested settings, not calibrated
+                            Changes apply immediately while connected. Stage values are requested settings, not calibrated
                             total gain. Antenna power stays off.
                           </small>
                           {mode === "DAB" && (

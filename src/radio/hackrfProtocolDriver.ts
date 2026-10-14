@@ -78,6 +78,40 @@ export class HackrfProtocol {
     await this.verifyFpga(session, false);
     return session;
   }
+  /** Gain-only RX commands leave clocks, tuning, FPGA layout and streaming intact. */
+  async updateRxSettings(identity: HackrfIdentity, config: HackrfConfiguration, previous: HackrfConfiguredSession): Promise<HackrfConfiguredSession> {
+    validateHackrfConfiguration(config, identity);
+    const accepted = previous.details.captureSettings;
+    for (const [request, gain, old] of [
+      [19, config.settings.rxLnaGainCode, accepted.rxLnaGainCode],
+      [20, config.settings.rxVgaGainDb, accepted.rxVgaGainDb],
+    ] as const) {
+      if (gain !== old && (await this.io.input(request, 0, gain, 1)).getUint8(0) !== 1)
+        throw new Error("HackRF RX gain setter rejected its value.");
+    }
+    if (config.settings.rfAmplifierEnabled !== accepted.rfAmplifierEnabled)
+      await this.io.output(17, config.settings.rfAmplifierEnabled ? 1 : 0, 0);
+    if (identity.kind === "hackrf-pro" && !isStableHackrfApi(identity.usbApiVersion))
+      return this.reported(identity, config, true);
+    const session = structuredClone(previous);
+    Object.assign(session.details.captureSettings, config.settings);
+    validateHackrfSessionDetails(session.details);
+    return session;
+  }
+  /** Reprogram rate under RX while the transport discards transition samples. */
+  async updateSampleRate(identity: HackrfIdentity, config: HackrfConfiguration): Promise<HackrfConfiguredSession> {
+    validateHackrfConfiguration(config, identity);
+    if (identity.kind === "hackrf-one" || isStableHackrfApi(identity.usbApiVersion))
+      return this.verifyRx(identity, config);
+    await this.write(1, 8, BigInt(hackrfDecimationExponent(config.sampleRateHz)));
+    await this.io.output(6, 0, 0, hackrfRatePayload(config.sampleRateHz));
+    await this.io.output(16, 0, 0, hackrfFrequencyPayload(config.centerFrequencyHz));
+    const session = await this.reported(identity, config, true);
+    // The enhanced profile's radio configuration and image register cache have
+    // distinct acknowledgement paths. Adopt the reported decimation/rotation.
+    await this.verifyFpga(session, true);
+    return session;
+  }
   private async setOneRateAndFilter(config: HackrfConfiguration): Promise<void> {
     await this.io.output(6, 0, 0, hackrfRatePayload(config.sampleRateHz));
     // libhackrf: widest hardware filter <= 75% of native rate, 7 MHz at 9.6 MS/s.

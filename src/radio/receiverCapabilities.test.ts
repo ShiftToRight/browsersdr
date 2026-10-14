@@ -57,19 +57,19 @@ describe("source-aware controller configuration", () => {
     expect(backend.stopRecording).not.toHaveBeenCalled();
     expect(controller.getSnapshot().sessionGeneration).toBe(1);
   });
-  it("ends recording and invalidates the generation before a hardware command, publishing only after acknowledgement", async () => {
+  it("ends recording and preserves the live generation, publishing gains only after acknowledgement", async () => {
     const pending = deferred<ReturnType<typeof metadata>>();
     const configure = vi.fn(() => pending.promise);
     const { controller, backend, start } = setup("hackrf", { configureHardware: configure }); await start();
     const changing = controller.configureHardware({ ...DEFAULT_HACKRF_RX_SETTINGS, rxVgaGainDb: 62 });
     expect(backend.stopRecording).toHaveBeenCalledWith("metadata-change");
     expect(vi.mocked(backend.stopRecording).mock.invocationCallOrder[0]).toBeLessThan(configure.mock.invocationCallOrder[0]!);
-    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "tuning", sessionGeneration: 2 });
-    expect(configure).toHaveBeenCalledWith(expect.objectContaining({ rxVgaGainDb: 62 }), 2);
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: 1, hardwareSettingsPending: true });
+    expect(configure).toHaveBeenCalledWith(expect.objectContaining({ rxVgaGainDb: 62 }), 1);
     await controller.configureHardware(DEFAULT_HACKRF_RX_SETTINGS);
     expect(configure).toHaveBeenCalledTimes(1);
     pending.resolve(metadata()); await changing;
-    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: 2, session: { sessionGeneration: 2 } });
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: 1, hardwareSettingsPending: false, session: { sessionGeneration: 1 } });
   });
   it("does not resurrect a session when settings acknowledge after disconnect", async () => {
     const pending = deferred<ReturnType<typeof metadata>>();
@@ -93,5 +93,25 @@ describe("source-aware controller configuration", () => {
     await controller.connect({ source: "hackrf", channelFrequencyHz: 100_000_000, volume: 0 });
     await controller.configureHardware(DEFAULT_HACKRF_RX_SETTINGS);
     expect(controller.getSnapshot()).toMatchObject({ lifecycle: "connected", sessionGeneration: 2 });
+  });
+  it("supports HackRF rate changes, preflights invalid rates and blocks commands during pending gains", async () => {
+    const gain = deferred<ReturnType<typeof metadata>>();
+    const configureSampleRate = vi.fn(async () => ({ ...metadata(), requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_000 }));
+    const { controller, backend, start } = setup("hackrf", { configureSampleRate, configureHardware: () => gain.promise });
+    await start();
+    await controller.configureSampleRate(123);
+    expect(configureSampleRate).not.toHaveBeenCalled();
+    expect(backend.stopRecording).not.toHaveBeenCalled();
+    const changing = controller.configureHardware({ ...DEFAULT_HACKRF_RX_SETTINGS, rxVgaGainDb: 32 });
+    await controller.configureSampleRate(2_400_000);
+    await controller.tune(101_000_000);
+    await controller.configureMode(defaultModeSettings("AM"));
+    expect(configureSampleRate).not.toHaveBeenCalled();
+    expect(backend.tune).not.toHaveBeenCalled();
+    expect(backend.configureMode).not.toHaveBeenCalled();
+    gain.resolve(metadata()); await changing;
+    await controller.configureSampleRate(2_400_000);
+    expect(configureSampleRate).toHaveBeenCalledWith(2_400_000, 2, { autoRecenter: true });
+    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: 2, session: { actualSampleRateHz: 2_400_000 } });
   });
 });

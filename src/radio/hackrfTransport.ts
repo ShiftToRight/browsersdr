@@ -7,7 +7,7 @@ import {
   type HackrfConfiguration,
   type HackrfConfiguredSession,
 } from "./hackrfProtocol";
-import { isStableHackrfApi, type HackrfIdentity } from "./sourceCapabilities";
+import { isStableHackrfApi, validateHackrfRxSettings, type HackrfRxSettings, type HackrfIdentity } from "./sourceCapabilities";
 
 export const HACKRF_READ_SLOTS = 4;
 /** Keep WebUSB request fan-out bounded independently of the channel backlog.
@@ -98,6 +98,8 @@ export class HackrfTransport {
   private streamTask?: Promise<void>;
   private streaming = false;
   private ready?: ReturnType<typeof deferred<HackrfConfiguredSession>>;
+  private readyObserver?: (session: HackrfConfiguredSession) => void;
+  private settlingSamplesRequired = 0;
   private verifiedRx = false;
   private carry?: number;
   private readonly pairs = new Uint8Array(HACKRF_READ_BYTES);
@@ -176,7 +178,7 @@ export class HackrfTransport {
       );
     });
   }
-  private async command<T>(body: (token: number) => Promise<T>): Promise<T> {
+  private async command<T>(body: (token: number) => Promise<T>, retainStream = false): Promise<T> {
     if (
       this.busy ||
       this.cleanupTask ||
@@ -187,7 +189,9 @@ export class HackrfTransport {
         "HackRF is busy or still owns resources requiring cleanup.",
       );
     this.busy = true;
-    const token = ++this.token;
+    // A live control command shares the pump's ownership token. Stop/close still
+    // invalidate both; incrementing here would silently retire the bulk owner.
+    const token = retainStream ? this.token : ++this.token;
     try {
       return await body(token);
     } catch (error) {
@@ -362,6 +366,8 @@ export class HackrfTransport {
       this.consumerDebtMs = 0;
       this.timings.reset();
       this.ready = deferred<HackrfConfiguredSession>();
+      this.readyObserver = onReady;
+      this.settlingSamplesRequired = Math.ceil(0.12 * this.session!.details.nativeSampleRateHz) + HACKRF_MAX_COMPLEX_SAMPLES;
       await this.output(token, 1, 1, 0);
       this.guard(token);
       this.startTime = this.now();
@@ -370,7 +376,7 @@ export class HackrfTransport {
       this.sequence = 0;
       this.streaming = true;
       this.diag.state = "starting";
-      this.streamTask = this.pump(token, onBlock, onReady);
+      this.streamTask = this.pump(token, onBlock);
       // Catch now; shutdown must not await a pump awaiting its own cleanup.
       void this.streamTask.catch((error: unknown) =>
         this.streamFailed(error, token),
@@ -390,6 +396,61 @@ export class HackrfTransport {
       this.guard(token);
       return ready;
     });
+  }
+  updateRxSettings(settings: HackrfRxSettings): Promise<HackrfConfiguredSession> {
+    let validated: HackrfRxSettings;
+    try { validated = validateHackrfRxSettings(settings, this.identity?.kind); }
+    catch (error) { return Promise.reject(error); }
+    if (!this.streaming || this.diag.state !== "running" || !this.config || !this.session || !this.identity)
+      return Promise.reject(stateError("HackRF must be receiving before updating RX settings live."));
+    return this.command(async (token) => {
+      const config = { ...this.config!, settings: validated };
+      const session = await this.protocol(token).updateRxSettings(this.identity!, config, this.session!);
+      this.guard(token);
+      this.config = config;
+      this.session = session;
+      return structuredClone(session);
+    }, true);
+  }
+  configureSampleRate(
+    request: HackrfConfiguration,
+    onConfigured: (session: HackrfConfiguredSession) => Promise<void>,
+    onReady: (session: HackrfConfiguredSession) => void,
+  ): Promise<HackrfConfiguredSession> {
+    let config: HackrfConfiguration;
+    try {
+      config = validateHackrfConfiguration(request, this.identity);
+      if (config.generation <= this.lastGeneration) throw stateError("HackRF rate change requires a fresh acquisition generation.");
+    } catch (error) { return Promise.reject(error); }
+    if (!this.streaming || this.diag.state !== "running" || !this.identity)
+      return Promise.reject(stateError("HackRF must be receiving before changing rate."));
+    return this.command(async (token) => {
+      this.verifiedRx = false;
+      this.ready = deferred<HackrfConfiguredSession>();
+      this.readyObserver = onReady;
+      this.diag.state = "starting";
+      this.diag.lastDiscontinuity = { generation: config.generation, missingSamples: null, reason: "Sample-rate transition; RF continuity is unknown" };
+      const bufferedSamples = this.diag.rawSlotBytesLimit / 2;
+      const session = await this.protocol(token).updateSampleRate(this.identity!, config);
+      this.guard(token);
+      this.config = config;
+      this.session = session;
+      this.lastGeneration = config.generation;
+      await onConfigured(structuredClone(session));
+      this.guard(token);
+      if (this.carry !== undefined) this.diag.discardedPartialPairs++;
+      this.carry = undefined;
+      // Discard the entire pre-change USB queue as well as the settling budget.
+      this.settlingSamplesRequired = bufferedSamples + Math.ceil(0.12 * session.details.nativeSampleRateHz) + HACKRF_MAX_COMPLEX_SAMPLES;
+      this.startTime = this.now();
+      this.settledSamples = this.sampleIndex = this.sequence = 0;
+      this.consumerDebtMs = 0;
+      this.timings.reset();
+      this.verifiedRx = true;
+      const ready = await this.ready.promise;
+      this.guard(token);
+      return ready;
+    }, true);
   }
   stopRx(): Promise<void> {
     ++this.stopVersion;
@@ -491,7 +552,6 @@ export class HackrfTransport {
   private async pump(
     token: number,
     onBlock: (block: NativeIqBlock) => void,
-    onReady?: (session: HackrfConfiguredSession) => void,
   ): Promise<void> {
     const submit = () => {
       this.guard(token);
@@ -506,21 +566,25 @@ export class HackrfTransport {
         (error: unknown) => ({ ok: false as const, error }),
       );
     };
-    const rate = this.session!.details.nativeSampleRateHz;
-    const slotCount =
+    const desiredSlots = () => {
+      const rate = this.session!.details.nativeSampleRateHz;
+      return (
       rate === 2_400_000 ||
       rate === 4_800_000 ||
       rate === 9_600_000 ||
       rate === 19_200_000
         ? HACKRF_WIDEBAND_READ_SLOTS
-        : HACKRF_READ_SLOTS;
+        : HACKRF_READ_SLOTS);
+    };
+    const slotCount = desiredSlots();
     this.diag.rawSlotBytesLimit = slotCount * HACKRF_READ_BYTES;
     const slots = Array.from({ length: slotCount }, submit);
-    let head = 0;
     try {
       while (this.streaming && token === this.token) {
-        const completed = await this.deadline(slots[head]!);
+        const completed = await this.deadline(slots[0]!);
         this.guard(token);
+        void slots.shift();
+        this.diag.readSlots--;
         if (!completed.ok) throw completed.error;
         const { result, time } = completed;
         if (
@@ -535,10 +599,12 @@ export class HackrfTransport {
         // Re-arm the endpoint before dispatching this block. At 19.2 MS/s a
         // burst of completed promises can otherwise leave no USB read active
         // while the main thread copies and fans out earlier blocks.
-        this.diag.readSlots--;
-        slots[head] = submit();
-        head = (head + 1) % slotCount;
-        this.consume(result.data, time, onBlock, onReady);
+        // Resize only the bounded read queue, retaining submission order. When
+        // shrinking, drain the old slots under the transition discard gate.
+        const target = desiredSlots();
+        while (slots.length < target) slots.push(submit());
+        this.diag.rawSlotBytesLimit = Math.max(slots.length, target) * HACKRF_READ_BYTES;
+        this.consume(result.data, time, onBlock);
         // The callback may synchronously stop/close this transport.
         if (!this.streaming) break;
       }
@@ -555,10 +621,13 @@ export class HackrfTransport {
     view: DataView,
     time: number,
     onBlock: (block: NativeIqBlock) => void,
-    onReady?: (session: HackrfConfiguredSession) => void,
   ): void {
     const assemblyStart = this.now();
     const input = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    if (this.diag.state === "starting" && this.verifiedRx && this.settledSamples >= this.settlingSamplesRequired && time - this.startTime >= 120) {
+      if (this.carry !== undefined) this.diag.discardedPartialPairs++;
+      this.carry = undefined;
+    }
     const prefix = this.carry === undefined ? 0 : 1;
     const length = Math.floor((input.length + prefix) / 2) * 2;
     if (prefix) {
@@ -576,9 +645,7 @@ export class HackrfTransport {
     const session = this.session!;
     if (
       !this.verifiedRx ||
-      this.settledSamples <
-        Math.ceil(0.12 * session.details.nativeSampleRateHz) +
-          HACKRF_MAX_COMPLEX_SAMPLES ||
+      this.settledSamples < this.settlingSamplesRequired ||
       time - this.startTime < 120
     ) {
       this.settledSamples += samples;
@@ -587,7 +654,7 @@ export class HackrfTransport {
     }
     if (this.diag.state === "starting") {
       this.diag.state = "running";
-      this.callSync(onReady, structuredClone(session));
+      this.callSync(this.readyObserver, structuredClone(session));
       this.ready!.resolve(structuredClone(session));
     }
     if (!this.streaming) return;

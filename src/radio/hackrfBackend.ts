@@ -51,6 +51,8 @@ export type HackrfTransportPort = Pick<
   HackrfTransport,
   | "requestAndOpen"
   | "configure"
+  | "updateRxSettings"
+  | "configureSampleRate"
   | "startRx"
   | "stopRx"
   | "close"
@@ -520,6 +522,13 @@ export class HackrfBackend implements ReceiverBackend {
       this.transportSession!.details.captureSettings.requestedCenterFrequencyHz;
     return this.run("hardware", async (token) => {
       this.finishRecording("metadata-change");
+      if (wasRunning) {
+        this.transportSession = await this.transport.updateRxSettings(validated);
+        this.check(token);
+        this.selection = selection;
+        // Gain changes preserve the acquisition/decoder clock and queued DSP.
+        return this.publishMetadata(this.transportSession, selection);
+      }
       this.invalidateSamples();
       this.sessionGeneration = generation;
       await this.prepare(selection, token, center);
@@ -527,6 +536,48 @@ export class HackrfBackend implements ReceiverBackend {
       this.selection = selection;
       if (wasRunning) return this.startConfigured(selection, token);
       return this.publishMetadata(this.transportSession!, selection);
+    });
+  }
+  configureSampleRate(sampleRateHz: number, generation: number, options: ReceiverTuneOptions = {}): Promise<Metadata> {
+    if (!this.receiving || !this.selection || !this.metadata || !this.rxToken)
+      return Promise.reject(new Error("HackRF reception must be running before changing rate."));
+    const selection = { ...this.selection, rate: sampleRateHz as HackrfSampleRateHz };
+    let center: number;
+    try {
+      validateSourceConfiguration({ source: "hackrf", hackrfIdentity: this.identity, channelFrequencyHz: selection.channel, modeSettings: selection.mode, sampleRateHz, hardwareSettings: selection.settings });
+      const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, selection.channel, sampleRateHz, selection.mode.bandwidthHz, options);
+      center = !isWidebandRate(sampleRateHz) && ["DAB", "ADS-B"].includes(selection.mode.mode) ? selection.channel : plan.hardwareCenterFrequencyHz;
+      if (center !== plan.hardwareCenterFrequencyHz && options.autoRecenter === false)
+        throw new Error(`${selection.mode.mode} requires the receiver center to match the channel at this sample rate. Enable Follow channel.`);
+      validateSourceFrequency("hackrf", center, sampleRateHz, this.identity);
+    } catch (error) { return Promise.reject(error); }
+    return this.run("rate", async (token) => {
+      this.finishRecording("metadata-change");
+      this.receiving = false;
+      this.adapter.reset();
+      this.pipeline.reset();
+      this.sessionGeneration = generation;
+      this.sampleBase = undefined;
+      this.sequence = 0;
+      this.ingressTimings.reset();
+      await this.transport.configureSampleRate({ generation: ++this.transportGeneration, centerFrequencyHz: center, sampleRateHz: selection.rate, settings: selection.settings }, async (session) => {
+        this.check(token);
+        this.transportSession = session;
+        this.publishMetadata(session, selection);
+        await this.pipeline.prepare(this.metadata!);
+        this.check(token);
+      }, (ready) => {
+        this.check(token);
+        this.transportSession = ready;
+        this.selection = selection;
+        this.publishMetadata(ready, selection);
+        this.pipeline.requireRunning();
+        this.adapter.ready({ ...ready, generation });
+        this.pipeline.begin(this.metadata!, this.volume);
+        this.receiving = true;
+      });
+      this.check(token);
+      return this.result();
     });
   }
   startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus {

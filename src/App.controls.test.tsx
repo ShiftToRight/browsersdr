@@ -241,14 +241,15 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
   expect(options[0]?.source).toBe("hackrf");
   expect(options[0]).not.toHaveProperty("gainDb");
   await change(control("RX VGA gain"), "3");
-  await click("Apply RX settings");
+  await act(async () => control("RX VGA gain").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
   expect(hardwareCalls).toBe(0);
   expect(document.body.textContent).toContain("even integer");
   await change(control("RX LNA state"), "33");
   await change(control("RX VGA gain"), "62");
+  await act(async () => control("RX VGA gain").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
   await toggle(control("RF amplifier") as HTMLInputElement);
-  await click("Apply RX settings");
-  expect(hardwareCalls).toBe(1);
+
+  expect(hardwareCalls).toBe(2);
   expect(
     controller.getSnapshot().session?.hackrf?.captureSettings,
   ).toMatchObject({
@@ -257,6 +258,22 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
     rfAmplifierEnabled: true,
     antennaPowerEnabled: false,
   });
+});
+it("applies a complete VGA edit once and cancels deferred updates on Stop", async () => {
+  await change(control("Source"), "hackrf");
+  await click("Connect");
+  await click("Start receiving");
+  await change(control("RX VGA gain"), "6");
+  await change(control("RX VGA gain"), "62");
+  expect(hardwareCalls).toBe(0);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+  expect(hardwareCalls).toBe(1);
+  expect(controller.getSnapshot().session?.hackrf?.captureSettings.rxVgaGainDb).toBe(62);
+  await change(control("RX VGA gain"), "30");
+  await click("Stop receiving");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+  expect(hardwareCalls).toBe(1);
+  expect(controller.getSnapshot().lifecycle).toBe("connected");
 });
 it("renders the receive-only B205 rates and offers ci16_le SigMF recording", async () => {
   await change(control("Source"), "usrp-b205");
@@ -362,7 +379,7 @@ it("changes a persistent device rate while stopped without disconnecting", async
   expect(controller.getSnapshot().lifecycle).toBe("connected");
   expect(control("Sample rate").disabled).toBe(false);
   await click("Start receiving");
-  expect(control("Sample rate").disabled).toBe(true);
+  expect(control("Sample rate").disabled).toBe(false);
   await click("Stop receiving");
   expect(controller.getSnapshot().lifecycle).toBe("connected");
   expect(control("Sample rate").disabled).toBe(false);

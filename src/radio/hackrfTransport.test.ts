@@ -70,6 +70,94 @@ async function running(
 }
 afterEach(() => vi.useRealTimers());
 
+describe("HackRF live control ownership", () => {
+  it.each([0x0109, 0x0110, 0x0113])("keeps API %i pumping through all three gains without OFF/reopen", async (api) => {
+    const usb = new FakeHackrfUsb(api);
+    let now = 0;
+    const transport = new HackrfTransport({}, () => now);
+    await transport.open(usb);
+    await transport.configure(config());
+    const blocks: NativeIqBlock[] = [];
+    await running({ usb, transport, time: (value: number) => { now = value; } } as Awaited<ReturnType<typeof setup>>, blocks);
+    const lifecycle = [...usb.lifecycle], calls = usb.calls.length;
+    const nextIndex = blocks.at(-1)!.firstSampleIndex + blocks.at(-1)!.complexSampleCount;
+    const accepted = await transport.updateRxSettings({ ...DEFAULT_HACKRF_RX_SETTINGS, rxLnaGainCode: 33, rxVgaGainDb: 32, rfAmplifierEnabled: true });
+    expect(accepted).toMatchObject({ generation: 1, details: { captureSettings: { rxLnaGainCode: 33, rxVgaGainDb: 32, rfAmplifierEnabled: true } } });
+    expect(usb.lifecycle).toEqual(lifecycle);
+    expect(usb.calls.slice(calls).filter(c => c.direction === "out").map(c => c.setup.request)).toEqual([17]);
+    usb.deliver(Uint8Array.of(1, 2, 3, 4)); await flush();
+    expect(blocks.at(-1)).toMatchObject({ generation: 1, firstSampleIndex: nextIndex, complexSampleCount: 2, bytes: Uint8Array.of(1, 2, 3, 4) });
+    await transport.close();
+  });
+  it("streams while a gain acknowledgement is pending, then cancels without late commands", async () => {
+    const f = await setup(), blocks = await running(f);
+    const pending = deferredUsb<USBInTransferResult>();
+    f.usb.inOverride = setup => setup.request === 19 ? pending.promise : undefined;
+    const calls = f.usb.calls.length;
+    const updating = f.transport.updateRxSettings({ ...DEFAULT_HACKRF_RX_SETTINGS, rxLnaGainCode: 33, rxVgaGainDb: 32 });
+    const failed = expect(updating).rejects.toThrow(/cancelled/);
+    f.usb.deliver(Uint8Array.of(1, 2)); await flush();
+    expect(blocks.at(-1)!.bytes).toEqual(Uint8Array.of(1, 2));
+    const closing = f.transport.close();
+    pending.resolve({ status: "ok", data: usbView([1]) });
+    await failed; await closing;
+    expect(f.usb.calls.slice(calls).filter(c => c.setup.request === 20)).toHaveLength(0);
+  });
+  it("closes after a rejected gain without publishing partial accepted settings", async () => {
+    const f = await setup(); await running(f);
+    f.usb.inOverride = setup => setup.request === 20 ? Promise.resolve({ status: "ok", data: usbView([254]) }) : undefined;
+    await expect(f.transport.updateRxSettings({ ...DEFAULT_HACKRF_RX_SETTINGS, rxVgaGainDb: 32 })).rejects.toThrow(/rejected/);
+    expect(f.usb.opened).toBe(false);
+  });
+  it.each([0x0110, 0x0113])("switches all rates under RX on API %i, resizing reads with a new settled clock", async (api) => {
+    const usb = new FakeHackrfUsb(api);
+    let now = 0;
+    const transport = new HackrfTransport({}, () => now);
+    await transport.open(usb); await transport.configure(config());
+    const blocks: NativeIqBlock[] = [];
+    const start = transport.startRx(block => blocks.push({ ...block, bytes: block.bytes.slice() }));
+    await flush(); now += 200;
+    for (let n = 0; n < 7; n++) { usb.deliver(new Uint8Array(HACKRF_READ_BYTES)); await flush(); }
+    await start;
+    const lifecycle = [...usb.lifecycle], calls = usb.calls.length;
+    let generation = 1;
+    for (const rate of [2_400_000, 4_800_000, 9_600_000, 19_200_000, 1_024_000] as const) {
+      blocks.length = 0;
+      const prepared = vi.fn(async () => {}), ready = vi.fn();
+      const task = transport.configureSampleRate({ ...config(++generation), sampleRateHz: rate }, prepared, ready);
+      await flush();
+      expect(prepared).toHaveBeenCalledOnce();
+      expect(ready).not.toHaveBeenCalled();
+      now += 200;
+      const count = Math.ceil(rate * .12 / (HACKRF_READ_BYTES / 2)) + 70;
+      for (let n = 0; n < count; n++) { usb.deliver(new Uint8Array(HACKRF_READ_BYTES)); await flush(); }
+      const accepted = await task;
+      expect(accepted).toMatchObject({ generation, details: { nativeSampleRateHz: rate } });
+      expect(ready).toHaveBeenCalledOnce();
+      expect(blocks[0]).toMatchObject({ generation, sequence: 0, firstSampleIndex: 0, nativeSampleRateHz: rate });
+      expect(transport.diagnostics.readSlots).toBe(rate === 1_024_000 ? 4 : 64);
+      expect(transport.diagnostics.rawSlotBytesLimit).toBe((rate === 1_024_000 ? 4 : 64) * HACKRF_READ_BYTES);
+    }
+    expect(usb.lifecycle).toEqual(lifecycle);
+    expect(usb.calls.slice(calls).some(c => [1, 54].includes(c.setup.request))).toBe(false);
+    await transport.close();
+  });
+  it("Stop during rate programming prevents readiness and retains cleanup ownership", async () => {
+    const f = await setup(); await running(f);
+    const pending = deferredUsb<USBOutTransferResult>();
+    f.usb.outOverride = setup => setup.request === 6 ? pending.promise : undefined;
+    const ready = vi.fn(), configured = vi.fn(async () => {});
+    const task = f.transport.configureSampleRate({ ...config(2), sampleRateHz: 2_400_000 }, configured, ready);
+    const failed = expect(task).rejects.toThrow(/cancelled/);
+    await flush(); const stopping = f.transport.stopRx();
+    pending.resolve({ status: "ok", bytesWritten: 8 });
+    await failed; await stopping;
+    expect(ready).not.toHaveBeenCalled(); expect(configured).not.toHaveBeenCalled();
+    expect(f.usb.opened).toBe(false);
+    await f.transport.close();
+  });
+});
+
 describe("HackRF protocol vectors", () => {
   it("matches independently calculated pinned host vectors, without uint32 frequency truncation", () => {
     expect(hex(hackrfFrequencyPayload(4_300_000_001))).toBe(

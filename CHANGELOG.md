@@ -1,10 +1,14 @@
 # Changelog
 
-## 1.4.0 — Pending release
+## 1.4.0 — 2026-10-14
 
 - Add account-free shared RF search for worldwide mesh presets, LoRaWAN regional plans, Bluetooth LE advertising, GNSS carriers, personal radio, NOAA weather and HF amateur dial conventions.
 - Group large channel plans and load the frequency catalog when Search opens.
 - Preserve channel directions, regional differences and explicit USB dial semantics; preview and Apply remain deliberate.
+
+- Apply HackRF LNA/IF, VGA and RF amplifier changes during reception without restarting the receiver or decoder.
+- Switch Pro sample rates while receiving, finishing the old recording and retaining USB/audio ownership through the transition.
+- Present owner-accepted Pro 19.2 MS/s without an experimental suffix; retain experimental One support and guarded remote actions.
 
 ## 1.3.0 — 2026-10-14
 

@@ -118,15 +118,15 @@ export interface ReceiverBackend {
     settings: ReceiverModeSettings,
   ): Omit<SourceSessionMetadata, "sessionGeneration">;
   setGain(gainDb: number | null): Promise<number | null>;
-  /** Change the RTL acquisition rate at a clean sample boundary, retaining USB
+  /** Change the acquisition rate at a clean sample boundary, retaining USB
    * and audio ownership. The old recording must be finished before invocation. */
   configureSampleRate?(
     sampleRateHz: number,
     sessionGeneration: number,
     options?: ReceiverTuneOptions,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
-  /** Finish the old capture before invocation. Backend must invalidate old samples,
-   * apply settings at a clean boundary and return accepted metadata after settling.
+  /** Finish the old capture before invocation. Live gains preserve sample/decoder
+   * generations and return accepted metadata without stopping acquisition.
    * Rejection closes the session; no partial accepted configuration is published. */
   configureHardware?(
     settings: HackrfRxSettings,
@@ -166,6 +166,7 @@ export interface ReceiverSnapshot {
   srdWorker?: DigitalWorkerAdapterDiagnostics;
   /** A failed close retains ownership; only Stop/retry is safe until it closes. */
   cleanupRequired?: boolean;
+  hardwareSettingsPending?: boolean;
   issue?: ReceiverIssue;
 }
 
@@ -455,7 +456,7 @@ export class ReceiverController {
 
   startRecording(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus | undefined {
     if (
-      this.snapshot.lifecycle !== "running" ||
+      this.snapshot.lifecycle !== "running" || this.snapshot.hardwareSettingsPending ||
       !this.backend ||
       this.completedRecording
     )
@@ -526,7 +527,7 @@ export class ReceiverController {
 
   async tune(channelFrequencyHz: number, options: ReceiverTuneOptions = {}): Promise<void> {
     if (
-      this.snapshot.lifecycle !== "running" ||
+      this.snapshot.lifecycle !== "running" || this.snapshot.hardwareSettingsPending ||
       !this.snapshot.session ||
       !this.backend
     )
@@ -577,7 +578,7 @@ export class ReceiverController {
     const backend = this.backend;
     const session = this.snapshot.session;
     if (this.snapshot.lifecycle !== "running" || !backend?.configureSampleRate ||
-        !session || session.source !== "rtl-sdr") return;
+        !session || !["rtl-sdr", "hackrf"].includes(session.source) || this.snapshot.hardwareSettingsPending) return;
     if (sampleRateHz === session.requestedSampleRateHz) return;
     const tuneOptions = { autoRecenter: this.autoRecenter };
     try {
@@ -589,10 +590,16 @@ export class ReceiverController {
           mode: session.mode, bandwidthHz: session.channelBandwidthHz,
           squelch: session.squelch, beatToneHz: session.beatToneHz,
         },
-        gainDb: session.gainDb,
+        ...(session.source === "rtl-sdr" ? { gainDb: session.gainDb } : {}),
+        hardwareSettings: session.hackrf?.captureSettings,
+        hackrfIdentity: session.hackrf?.capabilities.identity,
       });
-      planChannelTune(session.hardwareCenterFrequencyHz, session.selectedChannelFrequencyHz,
+      const plan = planChannelTune(session.hardwareCenterFrequencyHz, session.selectedChannelFrequencyHz,
         sampleRateHz, session.channelBandwidthHz, tuneOptions);
+      const mustCenter = session.source === "hackrf" && !isWidebandRate(sampleRateHz) && ["DAB", "ADS-B"].includes(session.mode);
+      if (mustCenter && plan.hardwareCenterFrequencyHz !== session.selectedChannelFrequencyHz && !this.autoRecenter)
+        throw new Error(`${session.mode} requires the receiver center to match the channel at this sample rate. Enable Follow channel.`);
+      if (session.source === "hackrf") validateSourceFrequency("hackrf", mustCenter ? session.selectedChannelFrequencyHz : plan.hardwareCenterFrequencyHz, sampleRateHz, session.hackrf?.capabilities.identity);
     } catch (error) {
       this.publishCommandFailure(error);
       return;
@@ -602,7 +609,7 @@ export class ReceiverController {
     this.publish({
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
-      message: `Switching RTL-SDR to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
+      message: `Switching ${session.source === "hackrf" ? "HackRF" : "RTL-SDR"} to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
       sessionGeneration: generation,
       session: { ...session, sessionGeneration: generation },
       audioState: this.snapshot.audioState,
@@ -627,7 +634,7 @@ export class ReceiverController {
     const backend = this.backend;
     const scanTune = backend?.scanTune;
     if (
-      this.snapshot.lifecycle !== "running" ||
+      this.snapshot.lifecycle !== "running" || this.snapshot.hardwareSettingsPending ||
       !this.snapshot.session ||
       !backend ||
       !scanTune
@@ -689,7 +696,7 @@ export class ReceiverController {
 
   async configureMode(settings: ReceiverModeSettings): Promise<void> {
     if (
-      this.snapshot.lifecycle !== "running" ||
+      this.snapshot.lifecycle !== "running" || this.snapshot.hardwareSettingsPending ||
       !this.snapshot.session ||
       !this.backend
     )
@@ -747,7 +754,7 @@ export class ReceiverController {
 
   updateAnalogMode(settings: ReceiverModeSettings): void {
     if (
-      this.snapshot.lifecycle !== "running" ||
+      this.snapshot.lifecycle !== "running" || this.snapshot.hardwareSettingsPending ||
       !this.snapshot.session ||
       !this.backend
     )
@@ -843,6 +850,7 @@ export class ReceiverController {
     if (
       !backend ||
       !session ||
+      this.snapshot.hardwareSettingsPending ||
       !["connected", "running"].includes(this.snapshot.lifecycle)
     )
       return;
@@ -856,19 +864,21 @@ export class ReceiverController {
       return;
     }
     const wasRunning = this.snapshot.lifecycle === "running";
+    const old = session.hackrf?.captureSettings;
+    if (old && old.rxLnaGainCode === validated.rxLnaGainCode && old.rxVgaGainDb === validated.rxVgaGainDb && old.rfAmplifierEnabled === validated.rfAmplifierEnabled) return;
     this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
-    const generation = ++this.generation;
+    const generation = wasRunning ? this.generation : ++this.generation;
     this.publish({
       ...this.snapshot,
-      aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
-      lifecycle: "tuning",
+      hardwareSettingsPending: true,
+      lifecycle: wasRunning ? "running" : "tuning",
       sessionGeneration: generation,
       message: "Applying HackRF RX settings…",
     });
     try {
       const metadata = await backend.configureHardware!(validated, generation);
       if (this.backend !== backend || this.generation !== generation) return;
-      if (wasRunning) this.publishRunning(metadata, generation);
+      if (wasRunning) this.publish({ ...this.snapshot, hardwareSettingsPending: false, session: { ...metadata, sessionGeneration: generation }, message: "HackRF RX settings applied live." });
       else
         this.publishConnected(
           metadata,

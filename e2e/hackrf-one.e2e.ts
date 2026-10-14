@@ -34,7 +34,6 @@ test("shared HackRF selector detects One, runs paced CI8, exports/replays and re
     page.getByText(/HackRF One · experimental, physical reception unverified/),
   ).toBeVisible();
   await page.getByLabel("RX IF gain (dB)").selectOption("40");
-  await page.getByRole("button", { name: "Apply RX settings" }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();

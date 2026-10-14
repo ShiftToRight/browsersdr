@@ -151,7 +151,7 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
   hackrf: {
     source: "hackrf", label: "HackRF One / Pro", requiresUsb: true, persistentConnection: true,
     frequency: { minimumHz: 100_000, maximumHz: 6_000_000_000, integerHz: true, limitsDiscoveredAtTune: false },
-    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 9_600_000, experimentalHz: [19_200_000] }, modes: RECEIVER_MODES,
+    rates: { kind: "choices", valuesHz: HACKRF_SAMPLE_RATES_HZ, defaultHz: 9_600_000 }, modes: RECEIVER_MODES,
     gain: { kind: "hackrf-stages", lnaCodes: [0, 16, 33], vgaMinimumDb: 0, vgaMaximumDb: 62, vgaStepDb: 2, antennaPowerEnabled: false },
   },
   bladerf: {

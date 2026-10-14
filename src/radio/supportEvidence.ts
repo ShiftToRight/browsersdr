@@ -164,8 +164,8 @@ export const COMPATIBILITY_DETAILS: Record<
         cells: [
           { status: "unsupported", evidence: "Profile tops out at 4.8 MS/s" },
           {
-            status: "experimental",
-            evidence: "Offered with performance warnings",
+            status: "available",
+            evidence: "2026-10-14 owner reports stable Pro reception; broader loaded-host acceptance remains separate",
           },
           {
             status: "experimental",
@@ -382,7 +382,7 @@ export const SUPPORT_EVIDENCE = [
     scope:
       "Owner-audible FM and live/replayed RDS; physical 2 GiB native CI8 capture, download, independent reader, reload retention and range replay. Earlier 9.6 / experimental 19.2 MS/s evidence remains separately dated.",
     limits:
-      "19.2 MS/s remains experimental. Loaded hosts, per-mode audio and HackRF One are not covered.",
+      "Owner reports stable 19.2 MS/s reception on 2026-10-14. Loaded hosts, per-mode audio and HackRF One retain separate acceptance.",
   },
   {
     source: "HackRF One",
