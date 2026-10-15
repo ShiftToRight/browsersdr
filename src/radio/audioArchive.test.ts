@@ -91,3 +91,22 @@ describe("decoded audio retention", () => {
     expect((await wav(audioArchive.recordingWav())).view.getInt16(44, true)).toBe(16384);
   });
 });
+
+it("keeps the PCM/WAV rate stable when the output reveals a different device rate", async () => {
+    let deviceOpened = false;
+    const output = { get sampleRate() { return deviceOpened ? 44_100 : 48_000; },
+      play: () => { deviceOpened = true; }, setVolume: vi.fn(), getVolume: () => 1 };
+    const player = new PcmBatchPlayer(output, () => "Generated 48 kHz PCM; 44.1 kHz device; not RF");
+    audioArchive.startRecording(); audioArchive.setRewind(true);
+    const block = new Float32Array(24_000).fill(.25);
+    player.play(block, block); player.play(block, block);
+    expect(player.sampleRate).toBe(48_000);
+    expect(audioArchive.recording).toBe(true);
+    player.finishAudio(); player.reset();
+    expect(audioArchive.message).toContain("end of file");
+    expect(audioArchive.recordedSeconds).toBe(1);
+    expect(audioArchive.rewindSeconds).toBe(1);
+    const view = new DataView(await audioArchive.recordingWav().arrayBuffer());
+    expect(view.getUint32(24, true)).toBe(48_000);
+    expect(view.getUint32(40, true)).toBe(48_000 * 4);
+});

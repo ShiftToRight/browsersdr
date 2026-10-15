@@ -14,6 +14,7 @@
 - Add generated I/Q and independent ACARS audio checks. Physical off-air acceptance and independent HF reference captures remain pending.
 
 - Add an optional spectrum/waterfall hover frequency guide with trace-relative level, channel offset, paused/stale context and saved display preference. Hover remains passive; waterfall levels describe the latest spectrum.
+- Keep decoded PCM and WAV capture at their established sample rate when an audio device runs at 44.1 kHz, preserving complete replay recordings and rewind.
 - Restore the condensed Audio & decode dock by keeping the collapsed audio recorder in the status row; expanded controls remain keyboard-accessible on laptops and phones.
 - Recover DAB carrier/quadrature synchronization after sustained FIC failure while retaining discovered service selection. Sustained physical acceptance remains separate.
 - Qualify ADS-B DF18 addresses/origins and guard surface position, altitude, velocity and version-dependent reported quality.
