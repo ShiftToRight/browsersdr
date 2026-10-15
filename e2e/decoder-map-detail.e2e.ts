@@ -131,11 +131,11 @@ for (const mode of ["ADS-B", "AIS"] as const) {
 test("a failed detailed-map fetch leaves targets usable and Retry map loads the fine geography", async ({
   page,
 }) => {
-  let failures = 0;
+  let mapAvailable = false;
   await page.route("**/natural-earth-10m-base*", (route) => {
     // Vite also serves an import module at this path; fail only the SVG fetch.
     if (route.request().resourceType() !== "fetch") return route.continue();
-    if (failures++ === 0)
+    if (!mapAvailable)
       return route.fulfill({ status: 503, body: "Unavailable" });
     return route.continue();
   });
@@ -171,6 +171,7 @@ test("a failed detailed-map fetch leaves targets usable and Retry map loads the 
     workspace.getByRole("button", { name: "Retry map", exact: true }),
   ).toBeVisible();
   await expect(workspace.locator(".map-target").first()).toBeVisible();
+  mapAvailable = true;
   await workspace
     .getByRole("button", { name: "Retry map", exact: true })
     .click();
