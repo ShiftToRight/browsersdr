@@ -1,13 +1,35 @@
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
-import { appendTargetFix, boundTargets, type TargetTrackPoint } from "../digital/targetTrack";
+import {
+  appendTargetFix,
+  boundTargets,
+  type TargetTrackPoint,
+} from "../digital/targetTrack";
 import type { DigitalSampleReceiver } from "../rds/rdsMultiplexReceiver";
+
+import {
+  classifyAdsbAddress,
+  decodeAdsbQuality,
+  decodeGlobalCpr,
+  readBits,
+  surfaceMovement,
+  type AdsbQuality,
+  type AdsbAddress,
+  type CprFrame,
+} from "./adsbFields";
 
 export const ADSB_FREQUENCY_HZ = 1_090_000_000;
 export const ADSB_MIN_SAMPLE_RATE_HZ = 2_000_000;
 export const ADSB_BANDWIDTH_HZ = 2_000_000;
 
-export interface AdsbTarget {
-  icao: string;
+export interface AdsbTarget extends Partial<Omit<AdsbAddress, "icao">> {
+  icao: string | null;
+  onGround?: boolean;
+  geometricAltitudeFt?: number | null;
+  positionTimeMs?: number;
+  positionStatus?: string;
+  surfaceSpeedRangeKt?: readonly [number, number | null] | null;
+  quality?: AdsbQuality;
+
   callsign: string | null;
   /** Reported emitter category (A0–D7); absent in older snapshots. */
   category?: string | null;
@@ -31,7 +53,7 @@ export interface AdsbSnapshot {
   validFrames: number;
   /** All frames with an unoverlaid, zero-remainder Mode S CRC. */
   crcValidFrames: number;
-  /** CRC-valid frames whose downlink format is not currently decoded. */
+  /** CRC-valid frames whose downlink/control format is not currently decoded. */
   unsupportedFrames: number;
   crcFailures: number;
   ambiguousFrames: number;
@@ -41,8 +63,12 @@ export interface AdsbSnapshot {
   message: string;
 }
 
-interface CprFrame { lat: number; lon: number; time: number }
-interface MutableTarget extends AdsbTarget { even?: CprFrame; odd?: CprFrame }
+interface MutableTarget extends AdsbTarget {
+  even?: CprFrame;
+  odd?: CprFrame;
+  cprKind?: "surface" | "barometric" | "geometric";
+  cprReference?: TargetTrackPoint;
+}
 
 const CALLSIGN_CHARS = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ#####_###############0123456789######";
 const PREAMBLE_PULSES = new Set([0, 2, 7, 9]);
@@ -162,7 +188,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
       } else if (modeSCrc(bytes.subarray(0, length)) !== 0) {
         this.crcFailures += 1;
         this.rejectedFrames += 1;
-      } else if (df === 17 || df === 18) {
+      } else if ((df === 17 || df === 18) && classifyAdsbAddress(bytes)) {
         this.crcValidFrames += 1;
         this.validFrames += 1;
         accepted = true;
@@ -298,99 +324,218 @@ export class AdsbReceiver implements DigitalSampleReceiver {
   }
 
   private decodeExtendedSquitter(bytes: Uint8Array): void {
-    const icao = [...bytes.subarray(1, 4)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
-    const previous = this.targets.get(icao);
-    const target = (previous && previous.lastSeenMs >= this.now() - 120_000 ? previous : undefined) ?? {
-      icao, callsign: null, category: null, track: [], altitudeFt: null, latitude: null, longitude: null,
-      groundSpeedKt: null, trackDegrees: null, verticalRateFpm: null, emergency: null,
-      messages: 0, lastSeenMs: 0,
+    const address = classifyAdsbAddress(bytes)!;
+    const previous = this.targets.get(address.id);
+    const target: MutableTarget = (previous &&
+    previous.lastSeenMs >= this.now() - 120_000
+      ? previous
+      : undefined) ?? {
+      ...address,
+      callsign: null,
+      category: null,
+      track: [],
+      altitudeFt: null,
+      latitude: null,
+      longitude: null,
+      groundSpeedKt: null,
+      trackDegrees: null,
+      verticalRateFpm: null,
+      emergency: null,
+      messages: 0,
+      lastSeenMs: 0,
     };
-    target.messages += 1; target.lastSeenMs = this.now();
+    target.messages += 1;
+    target.lastSeenMs = this.now();
     const typeCode = bytes[4]! >> 3;
     if (typeCode >= 1 && typeCode <= 4) {
       target.category = `${"DCBA"[typeCode - 1]}${bytes[4]! & 7}`;
       let callsign = "";
-      for (let bit = 40; bit < 88; bit += 6) callsign += CALLSIGN_CHARS[readBits(bytes, bit, 6)] ?? " ";
+      for (let bit = 40; bit < 88; bit += 6)
+        callsign += CALLSIGN_CHARS[readBits(bytes, bit, 6)] ?? " ";
       target.callsign = callsign.replace(/[_#]/g, " ").trim() || null;
-    } else if (typeCode >= 9 && typeCode <= 18) {
-      const altitudeCode = readBits(bytes, 40, 12);
-      if (altitudeCode & 0x10) target.altitudeFt = (((altitudeCode & 0xfe0) >> 1) | (altitudeCode & 0x0f)) * 25 - 1_000;
+    } else if (
+      (typeCode >= 5 && typeCode <= 18) ||
+      (typeCode >= 20 && typeCode <= 22)
+    ) {
+      const surface = typeCode <= 8;
+      const kind = surface
+        ? "surface"
+        : typeCode >= 20
+          ? "geometric"
+          : "barometric";
+      if (target.cprKind !== kind) {
+        target.even = undefined;
+        target.odd = undefined;
+      }
+      target.cprKind = kind;
+      target.onGround = surface;
+      if (surface) {
+        target.altitudeFt = null;
+        target.geometricAltitudeFt = null;
+        target.verticalRateFpm = null;
+        target.surfaceSpeedRangeKt = surfaceMovement(readBits(bytes, 37, 7),
+          target.quality && target.lastSeenMs - target.quality.reportedAtMs <= 30_000
+            ? target.quality.version : undefined);
+        target.groundSpeedKt = null;
+        target.trackDegrees = readBits(bytes, 44, 1)
+          ? (readBits(bytes, 45, 7) * 360) / 128
+          : null;
+      } else {
+        target.surfaceSpeedRangeKt = null;
+        const code = readBits(bytes, 40, 12);
+        // Q=0 Gillham decoding remains unsupported; never retain an old value
+        // in place of an unavailable or unsupported altitude report.
+        const altitude =
+          code & 0x10
+            ? (((code & 0xfe0) >> 1) | (code & 0x0f)) * 25 - 1_000
+            : null;
+        if (kind === "geometric") target.geometricAltitudeFt = altitude;
+        else target.altitudeFt = altitude;
+      }
       const odd = Boolean(readBits(bytes, 53, 1));
-      const frame = { lat: readBits(bytes, 54, 17), lon: readBits(bytes, 71, 17), time: target.lastSeenMs };
-      if (odd) target.odd = frame; else target.even = frame;
-      const position = decodeGlobalCpr(target.even, target.odd);
+      const frame = {
+        lat: readBits(bytes, 54, 17),
+        lon: readBits(bytes, 71, 17),
+        time: target.lastSeenMs,
+      };
+      if (odd) target.odd = frame;
+      else target.even = frame;
+      const reference =
+        target.cprReference &&
+        target.lastSeenMs - target.cprReference.timeMs <= 60_000
+          ? target.cprReference
+          : undefined;
+      const position =
+        surface && !reference
+          ? undefined
+          : decodeGlobalCpr(
+              target.even,
+              target.odd,
+              surface ? reference : undefined,
+            );
       if (position) {
-        target.latitude = position.latitude; target.longitude = position.longitude;
-        target.track = appendTargetFix(target.track ?? [], position.latitude, position.longitude, target.lastSeenMs);
+        target.latitude = position.latitude;
+        target.longitude = position.longitude;
+        target.positionTimeMs = target.lastSeenMs;
+        target.positionStatus = surface
+          ? "Surface CPR pair · recent target fix within 45 NM"
+          : "Airborne global CPR pair";
+        target.track = appendTargetFix(
+          target.track ?? [],
+          position.latitude,
+          position.longitude,
+          target.lastSeenMs,
+        );
+        target.cprReference = { ...position, timeMs: target.lastSeenMs };
+      } else if (surface) {
+        target.latitude = null;
+        target.longitude = null;
+        target.positionStatus = reference
+          ? "Waiting for a compatible surface CPR pair within 45 NM"
+          : "Surface position needs a recent airborne fix for this target";
       }
     } else if (typeCode === 19) {
       const subtype = readBits(bytes, 37, 3);
-      if (subtype === 1 || subtype === 2) {
-        const ew = readBits(bytes, 46, 10) - 1, ns = readBits(bytes, 57, 10) - 1;
-        const vx = readBits(bytes, 45, 1) ? -ew : ew, vy = readBits(bytes, 56, 1) ? -ns : ns;
-        target.groundSpeedKt = Math.hypot(vx, vy) * (subtype === 2 ? 4 : 1);
-        target.trackDegrees = (Math.atan2(vx, vy) * 180 / Math.PI + 360) % 360;
-        const vertical = readBits(bytes, 69, 9) - 1;
-        if (vertical >= 0) target.verticalRateFpm = (readBits(bytes, 68, 1) ? -vertical : vertical) * 64;
+      if (subtype >= 1 && subtype <= 4) {
+        target.onGround = false;
+        target.surfaceSpeedRangeKt = null;
+        if (subtype === 1 || subtype === 2) {
+          const ew = readBits(bytes, 46, 10),
+            ns = readBits(bytes, 57, 10);
+          const vx = (readBits(bytes, 45, 1) ? -1 : 1) * (ew - 1),
+            vy = (readBits(bytes, 56, 1) ? -1 : 1) * (ns - 1);
+          target.groundSpeedKt =
+            ew && ns ? Math.hypot(vx, vy) * (subtype === 2 ? 4 : 1) : null;
+          target.trackDegrees = target.groundSpeedKt
+            ? ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360
+            : null;
+        } else {
+          // Airspeed/heading subtypes are not ground velocity.
+          target.groundSpeedKt = null;
+          target.trackDegrees = null;
+        }
+        const vertical = readBits(bytes, 69, 9);
+        target.verticalRateFpm = vertical
+          ? (vertical - 1) * (readBits(bytes, 68, 1) ? -64 : 64)
+          : null;
       }
     } else if (typeCode === 28 && readBits(bytes, 37, 3) === 1) {
-      target.emergency = ["none", "general", "lifeguard", "minimum fuel", "no communications", "unlawful interference", "downed aircraft", "reserved"][readBits(bytes, 40, 3)] ?? null;
+      target.emergency =
+        [
+          "none",
+          "general",
+          "lifeguard",
+          "minimum fuel",
+          "no communications",
+          "unlawful interference",
+          "downed aircraft",
+          "reserved",
+        ][readBits(bytes, 40, 3)] ?? null;
     }
-    this.targets.set(icao, target);
+    if (typeCode === 31) {
+      // A new unsupported version/subtype invalidates earlier quality.
+      target.quality = decodeAdsbQuality(bytes, target.lastSeenMs);
+    }
+    this.targets.set(address.id, target);
     boundTargets(this.targets);
   }
 
   private publish(): void {
     const cutoff = this.now() - 120_000;
-    for (const [icao, target] of this.targets) if (target.lastSeenMs < cutoff) this.targets.delete(icao);
-    const targets = [...this.targets.values()].sort((a, b) => b.lastSeenMs - a.lastSeenMs).map(({ even: _e, odd: _o, ...target }) => target);
-    this.onUpdate({ frames: this.frames, preamblesDetected: this.frames, validFrames: this.validFrames,
-      crcValidFrames: this.crcValidFrames, unsupportedFrames: this.unsupportedFrames,
-      crcFailures: this.crcFailures, ambiguousFrames: this.ambiguousFrames,
-      rejectedFrames: this.rejectedFrames, targets,
-      message: this.validFrames ? `Tracking ${targets.length} ADS-B target${targets.length === 1 ? "" : "s"}.` : "Waiting for valid 1090ES frames…" });
+    for (const [icao, target] of this.targets)
+      if (target.lastSeenMs < cutoff) this.targets.delete(icao);
+    for (const target of this.targets.values()) {
+      if (
+        target.positionTimeMs !== undefined &&
+        this.now() - target.positionTimeMs > 30_000
+      ) {
+        target.latitude = null;
+        target.longitude = null;
+        target.positionStatus = "Position expired";
+      }
+      if (target.quality && this.now() - target.quality.reportedAtMs > 30_000)
+        target.quality = undefined;
+    }
+    const targets = [...this.targets.values()]
+      .sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+      .map(
+        ({
+          even: _e,
+          odd: _o,
+          cprKind: _c,
+          cprReference: _r,
+          ...target
+        }) => target,
+      );
+    this.onUpdate({
+      frames: this.frames,
+      preamblesDetected: this.frames,
+      validFrames: this.validFrames,
+      crcValidFrames: this.crcValidFrames,
+      unsupportedFrames: this.unsupportedFrames,
+      crcFailures: this.crcFailures,
+      ambiguousFrames: this.ambiguousFrames,
+      rejectedFrames: this.rejectedFrames,
+      targets,
+      message: this.validFrames
+        ? `Tracking ${targets.length} ADS-B target${targets.length === 1 ? "" : "s"}.`
+        : "Waiting for valid 1090ES frames…",
+    });
   }
 }
 
 export function validateAdsbSampleRate(sampleRateHz: number): void {
-  if (!Number.isFinite(sampleRateHz) || sampleRateHz < ADSB_MIN_SAMPLE_RATE_HZ) throw new Error("ADS-B requires at least 2.0 MS/s; select 2.4 MS/s.");
+  if (!Number.isFinite(sampleRateHz) || sampleRateHz < ADSB_MIN_SAMPLE_RATE_HZ)
+    throw new Error("ADS-B requires at least 2.0 MS/s; select 2.4 MS/s.");
 }
 
 export function modeSCrc(bytes: Uint8Array): number {
   let remainder = 0;
-  for (const byte of bytes) for (let bit = 7; bit >= 0; bit -= 1) {
-    const feedback = ((remainder >> 23) & 1) ^ ((byte >> bit) & 1);
-    remainder = (remainder << 1) & 0xffffff;
-    if (feedback) remainder ^= 0xfff409;
-  }
+  for (const byte of bytes)
+    for (let bit = 7; bit >= 0; bit -= 1) {
+      const feedback = ((remainder >> 23) & 1) ^ ((byte >> bit) & 1);
+      remainder = (remainder << 1) & 0xffffff;
+      if (feedback) remainder ^= 0xfff409;
+    }
   return remainder;
-}
-
-function readBits(bytes: Uint8Array, start: number, length: number): number {
-  let value = 0;
-  for (let bit = 0; bit < length; bit += 1) value = value * 2 + ((bytes[(start + bit) >> 3]! >> (7 - ((start + bit) & 7))) & 1);
-  return value;
-}
-
-function positiveModulo(value: number, modulus: number): number { return ((value % modulus) + modulus) % modulus; }
-
-function cprNl(latitude: number): number {
-  if (Math.abs(latitude) >= 87) return Math.abs(latitude) > 87 ? 1 : 2;
-  const nz = 15;
-  return Math.floor(2 * Math.PI / Math.acos(1 - (1 - Math.cos(Math.PI / (2 * nz))) / Math.cos(Math.PI / 180 * latitude) ** 2));
-}
-
-function decodeGlobalCpr(even?: CprFrame, odd?: CprFrame): { latitude: number; longitude: number } | undefined {
-  if (!even || !odd || Math.abs(even.time - odd.time) > 10_000) return undefined;
-  const j = Math.floor(59 * even.lat / 131072 - 60 * odd.lat / 131072 + 0.5);
-  let latEven = 6 * (positiveModulo(j, 60) + even.lat / 131072);
-  let latOdd = 360 / 59 * (positiveModulo(j, 59) + odd.lat / 131072);
-  if (latEven >= 270) latEven -= 360; if (latOdd >= 270) latOdd -= 360;
-  if (cprNl(latEven) !== cprNl(latOdd)) return undefined;
-  const useOdd = odd.time > even.time, latitude = useOdd ? latOdd : latEven;
-  const nl = Math.max(1, cprNl(latitude) - (useOdd ? 1 : 0));
-  const m = Math.floor(even.lon * (cprNl(latitude) - 1) / 131072 - odd.lon * cprNl(latitude) / 131072 + 0.5);
-  let longitude = 360 / nl * (positiveModulo(m, nl) + (useOdd ? odd.lon : even.lon) / 131072);
-  if (longitude > 180) longitude -= 360;
-  return { latitude, longitude };
 }

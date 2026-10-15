@@ -1,7 +1,11 @@
 import { getRealResampler } from "@jtarrio/signals/dsp/resamplers.js";
 import { describe, expect, it, vi } from "vitest";
 import { DAB_MODE_I_NULL, DabModeIProcessor } from "./dabModeI";
-import { ficBits, mscBits, transmissionBody } from "../testing/dabEnsembleFixture";
+import {
+  ficBits,
+  mscBits,
+  transmissionBody,
+} from "../testing/dabEnsembleFixture";
 
 describe("DAB Mode-I live chain", () => {
   it.each([
@@ -156,3 +160,78 @@ it("switches MSC programmes while preserving FIC synchronization", () => {
   processor.selectService("4661:1");
   expect(changed).toHaveBeenCalledTimes(2);
 });
+
+it.each([680, 2180, -3180])(
+  "reacquires a %i Hz carrier after loss without restarting the receiver",
+  (changedHz) => {
+    const logical = new Uint8Array(24).fill(0x57);
+    const body = transmissionBody(ficBits(), mscBits(logical));
+    const status = vi.fn(),
+      delivered = vi.fn();
+    const changed = vi.fn();
+    const processor = new DabModeIProcessor(delivered, status, changed);
+    processor.setSampleRate(2_400_000);
+    const upI = getRealResampler(2_048_000, 2_400_000),
+      upQ = upI.clone();
+    let phase = 0;
+    const push = (I: Float32Array, Q: Float32Array, hz: number) => {
+      const shiftedI = new Float32Array(I.length),
+        shiftedQ = new Float32Array(Q.length);
+      for (let n = 0; n < I.length; n++) {
+        const c = Math.cos(phase),
+          s = Math.sin(phase);
+        shiftedI[n] = I[n]! * c - Q[n]! * s;
+        shiftedQ[n] = I[n]! * s + Q[n]! * c;
+        phase = (phase + (2 * Math.PI * hz) / 2_048_000) % (2 * Math.PI);
+      }
+      const nativeI = upI.resample(shiftedI),
+        nativeQ = upQ.resample(shiftedQ);
+      for (let n = 0; n < nativeI.length; n += 32_768)
+        processor.push(
+          nativeI.subarray(n, n + 32_768),
+          nativeQ.subarray(n, n + 32_768),
+        );
+    };
+    push(body.I.subarray(0, 8192), body.Q.subarray(0, 8192), 180);
+    const nulls = new Float32Array(DAB_MODE_I_NULL);
+    const frames = (count: number, hz: number) => {
+      for (let n = 0; n < count; n++) {
+        push(nulls, nulls, hz);
+        push(body.I, body.Q, hz);
+      }
+    };
+    frames(10, 180);
+    expect(delivered).toHaveBeenCalledWith(logical);
+    const before = status.mock.calls.at(-1)![0];
+    delivered.mockClear();
+    changed.mockClear();
+    // An oscillator step crosses the +/-500 Hz fine-correction range. Null
+    // timing alone cannot repair the now-stale integer-carrier lock.
+    frames(16, changedHz);
+    push(body.I.subarray(0, 8192), body.Q.subarray(0, 8192), changedHz);
+    expect(status.mock.calls.at(-1)![0].ficCompleteFrames).toBeGreaterThan(
+      before.ficCompleteFrames + 8,
+    );
+    expect(delivered).toHaveBeenCalledWith(logical);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(
+      status.mock.calls.some(
+        ([s]) =>
+          s.synchronizationLosses === 1 &&
+          !s.coarseCarrierLocked &&
+          s.state === "searching",
+      ),
+    ).toBe(true);
+    expect(status.mock.calls.at(-1)![0]).toMatchObject({
+      synchronizationLosses: 1,
+      coarseCarrierLocked: true,
+      state: "service",
+    });
+    processor.reset();
+    expect(status.mock.calls.at(-1)![0]).toMatchObject({
+      coarseCarrierLocked: false,
+      ficBlocks: 0,
+    });
+  },
+  20_000,
+);

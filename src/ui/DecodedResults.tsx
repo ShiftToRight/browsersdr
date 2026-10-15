@@ -469,6 +469,10 @@ export function DecodedResults({
                         <dd>{receiver.dab?.quadraturePolarity ?? "—"}</dd>
                       </div>
                       <div>
+                        <dt>Synchronization losses</dt>
+                        <dd>{receiver.dab?.synchronizationLosses ?? 0}</dd>
+                      </div>
+                      <div>
                         <dt>Selected service</dt>
                         <dd>
                           {receiver.dab?.serviceId == null
@@ -563,10 +567,10 @@ export function DecodedResults({
                         {(receiver.adsb?.targets ?? [])
                           .slice(0, 50)
                           .map((target) => (
-                            <tr key={target.icao}>
+                            <tr key={target.id ?? target.icao}>
                               <td>
                                 <strong>{target.callsign ?? "—"}</strong>
-                                <small>{target.icao}</small>
+                                <small>{target.address ?? target.icao} · {target.addressType ?? "ICAO"} · {target.origin ?? "ADS-B"}</small>
                               </td>
                               <td>
                                 {target.altitudeFt == null

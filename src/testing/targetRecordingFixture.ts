@@ -5,10 +5,10 @@ import { defaultModeSettings } from "../radio/receiverConfig";
 import type { SourceSessionMetadata } from "../radio/types";
 
 /** Generated position/category RF for UI acceptance; never off-air evidence. */
-export function targetRecordingFixture(mode: "ADS-B" | "AIS") {
+export function targetRecordingFixture(mode: "ADS-B" | "AIS", qualifiedAddresses = false) {
   const rate = mode === "ADS-B" ? 2_400_000 : 1_024_000;
   const center = mode === "ADS-B" ? 1_090_000_000 : 162_000_000;
-  const I = new Float32Array(Math.ceil(rate * 1.4));
+  const I = new Float32Array(Math.ceil(rate * (qualifiedAddresses ? 2.7 : 1.4)));
   const Q = new Float32Array(I.length);
   if (mode === "ADS-B") {
     const hex = (value: string) =>
@@ -18,7 +18,17 @@ export function targetRecordingFixture(mode: "ADS-B" | "AIS") {
     identification.set([crc >>> 16, (crc >>> 8) & 255, crc & 255], 11);
     const even = hex("8D40621D58C386435CC412692AD6");
     const odd = hex("8D40621D58C382D690C8AC2863A7");
-    [identification, even, odd, even].forEach((frame, index) => {
+    const frames = [identification, even, odd, even];
+    if (qualifiedAddresses) {
+      for (const original of [identification, even, odd]) {
+        const other = original.slice();
+        other[0] = 0x91; // DF18 CF1: explicitly non-ICAO, same address bytes.
+        const parity = modeSCrc(other.subarray(0, 11));
+        other.set([parity >>> 16, (parity >>> 8) & 255, parity & 255], 11);
+        frames.push(other);
+      }
+    }
+    frames.forEach((frame, index) => {
       const ideal = new Float32Array(240);
       for (const chip of [0, 2, 7, 9]) ideal[chip] = 0.9;
       for (let bit = 0; bit < 112; bit++)

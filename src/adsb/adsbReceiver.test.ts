@@ -176,3 +176,174 @@ it("retains only new CPR fixes and clears history at reset or expired identity r
   receiver.reset();
   expect(latest?.targets).toEqual([]);
 });
+
+function setField(
+  bytes: Uint8Array,
+  at: number,
+  length: number,
+  value: number,
+) {
+  for (let n = 0; n < length; n++) {
+    const bit = at + n,
+      mask = 1 << (7 - (bit & 7));
+    bytes[bit >> 3] =
+      (bytes[bit >> 3]! & ~mask) | ((value >> (length - n - 1)) & 1 ? mask : 0);
+  }
+}
+function harness() {
+  let time = 0,
+    latest: AdsbSnapshot;
+  const receiver = new AdsbReceiver(
+    (s) => {
+      latest = s;
+    },
+    () => time,
+  );
+  receiver.setSampleRate(2_000_000);
+  return {
+    receiver,
+    get latest() {
+      return latest!;
+    },
+    send(bytes: Uint8Array, delay = 1000) {
+      time += delay;
+      receiver.receiveSamples(pulseFrame(appendCrc(bytes)));
+    },
+  };
+}
+
+it("does not merge identical address bytes across DF18 sources or count unknown formats as decoded", () => {
+  const h = harness();
+  for (const first of [0x8d, 0x90, 0x91, 0x92, 0x95, 0x96, 0x93, 0x94, 0x97]) {
+    const bytes = fromHex("8D4840D6202CC371C32CE0576098");
+    bytes[0] = first;
+    h.send(bytes);
+  }
+  expect(h.latest).toMatchObject({
+    validFrames: 6,
+    crcValidFrames: 9,
+    unsupportedFrames: 3,
+    rejectedFrames: 3,
+  });
+  expect(h.latest.targets).toHaveLength(6);
+  expect(new Set(h.latest.targets.map((t) => t.id)).size).toBe(6);
+  expect(h.latest.targets.filter((t) => t.icao !== null)).toHaveLength(2);
+});
+
+it("never pairs CPR across direct/rebroadcast origins, altitude kinds, surface or expired pairs", () => {
+  for (const kind of ["origin", "altitude", "surface", "expired"]) {
+    const h = harness(),
+      even = fromHex("8D40621D58C386435CC412692AD6"),
+      odd = fromHex("8D40621D58C382D690C8AC2863A7");
+    h.send(even);
+    if (kind === "origin") odd[0] = 0x90;
+    if (kind === "altitude") setField(odd, 32, 5, 20);
+    if (kind === "surface") setField(odd, 32, 5, 7);
+    h.send(odd, kind === "expired" ? 11000 : 1000);
+    expect(
+      h.latest.targets.every(
+        (t) => t.latitude === null && t.longitude === null,
+      ),
+      kind,
+    ).toBe(true);
+  }
+});
+
+it("clears unavailable velocity/altitude and expires position and version-qualified quality", () => {
+  const h = harness();
+  h.send(fromHex("8D40621D58C386435CC412692AD6"));
+  h.send(fromHex("8D40621D58C382D690C8AC2863A7"));
+  expect(h.latest.targets[0]?.latitude).not.toBeNull();
+  const b = fromHex("8D40621D00000000000000000000");
+  setField(b, 32, 5, 19);
+  setField(b, 37, 3, 1);
+  setField(b, 46, 10, 100);
+  setField(b, 57, 10, 100);
+  setField(b, 69, 9, 10);
+  h.send(b);
+  expect(h.latest.targets[0]?.groundSpeedKt).toBeGreaterThan(0);
+  setField(b, 46, 10, 0);
+  setField(b, 69, 9, 0);
+  h.send(b);
+  expect(h.latest.targets[0]).toMatchObject({
+    groundSpeedKt: null,
+    trackDegrees: null,
+    verticalRateFpm: null,
+  });
+  const p = fromHex("8D40621D58C386435CC412692AD6");
+  setField(p, 40, 12, 0);
+  h.send(p);
+  expect(h.latest.targets[0]?.altitudeFt).toBeNull();
+  const q = fromHex("8D40621D00000000000000000000");
+  setField(q, 32, 5, 31);
+  setField(q, 72, 3, 2);
+  setField(q, 76, 4, 9);
+  h.send(q);
+  expect(h.latest.targets[0]?.quality).toMatchObject({ version: 2, nacP: 9 });
+  h.send(b, 31000);
+  expect(h.latest.targets[0]).toMatchObject({
+    latitude: null,
+    longitude: null,
+    positionStatus: "Position expired",
+  });
+  expect(h.latest.targets[0]?.quality).toBeUndefined();
+});
+
+it("shows surface movement but withholds ambiguous cold-start positions", () => {
+  const h = harness();
+  h.send(fromHex("8C4841753AAB238733C8CD4020B1"));
+  h.send(fromHex("8C4841753A8A35323FAEBDAC702D"));
+  expect(h.latest.targets[0]).toMatchObject({
+    onGround: true,
+    altitudeFt: null,
+    latitude: null,
+    longitude: null,
+    surfaceSpeedRangeKt: [16, 17],
+    trackDegrees: 98.4375,
+    positionStatus: expect.stringContaining("recent airborne fix"),
+  });
+});
+
+it("resolves surface pairs using only a fresh airborne fix from the same qualified target", () => {
+  for (const delay of [1000, 61000]) {
+    const h = harness();
+    h.send(fromHex("8D40621D58C386435CC412692AD6"));
+    h.send(fromHex("8D40621D58C382D690C8AC2863A7"));
+    const even = fromHex("8C4841753AAB238733C8CD4020B1"),
+      odd = fromHex("8C4841753A8A35323FAEBDAC702D");
+    // Re-address published surface vectors to exercise a generated landing
+    // sequence; this is not an independently observed aircraft trajectory.
+    for (const b of [even, odd]) b.set([0x40, 0x62, 0x1d], 1);
+    h.send(even, delay);
+    h.send(odd);
+    if (delay === 1000) {
+      expect(h.latest.targets[0]?.latitude).toBeCloseTo(52.320607, 5);
+      expect(h.latest.targets[0]?.longitude).toBeCloseTo(4.734735, 5);
+      expect(h.latest.targets[0]?.positionStatus).toContain("Surface CPR");
+    } else expect(h.latest.targets[0]?.latitude).toBeNull();
+  }
+});
+
+it("keeps geometric height distinct from barometric altitude", () => {
+  const h = harness();
+  const even = fromHex("8D40621D58C386435CC412692AD6"),
+    odd = fromHex("8D40621D58C382D690C8AC2863A7");
+  setField(even, 32, 5, 20);
+  setField(odd, 32, 5, 20);
+  h.send(even);
+  h.send(odd);
+  expect(h.latest.targets[0]).toMatchObject({
+    altitudeFt: null,
+    geometricAltitudeFt: 38000,
+  });
+  expect(h.latest.targets[0]?.latitude).toBeCloseTo(52.2572, 3);
+});
+
+it("can maintain surface CPR beyond the initial airborne reference while valid fixes continue", () => {
+  const h = harness();
+  h.send(fromHex("8D40621D58C386435CC412692AD6")); h.send(fromHex("8D40621D58C382D690C8AC2863A7"));
+  const even = fromHex("8C4841753AAB238733C8CD4020B1"), odd = fromHex("8C4841753A8A35323FAEBDAC702D");
+  for (const b of [even, odd]) b.set([0x40, 0x62, 0x1d], 1);
+  for (let n = 0; n < 40; n++) { h.send(even); h.send(odd); }
+  expect(h.latest.targets[0]?.latitude).toBeCloseTo(52.320607, 5);
+});

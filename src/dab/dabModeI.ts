@@ -29,6 +29,7 @@ export interface DabModeIStatus {
   state: "searching" | "fic" | "service";
   frameIntervalSamples?: number;
   missedFrames?: number;
+  synchronizationLosses?: number;
   processingMs?: number;
   maxProcessingMs?: number;
   ficBlocks: number;
@@ -375,6 +376,7 @@ export class DabModeIProcessor {
   private processingMs = 0;
   private maxProcessingMs = 0;
   private consecutiveBadFrames = 0;
+  private synchronizationLosses = 0;
   private resamplerI!: RealResampler;
   private resamplerQ!: RealResampler;
   private readonly fft = FFT.ofLength(DAB_MODE_I_FFT);
@@ -477,6 +479,7 @@ export class DabModeIProcessor {
     this.processingMs = 0;
     this.maxProcessingMs = 0;
     this.consecutiveBadFrames = 0;
+    this.synchronizationLosses = 0;
     this.frameOffset = 0;
     this.historyOffset = 0;
     this.historySamples = 0;
@@ -507,6 +510,7 @@ export class DabModeIProcessor {
     this.configureResampler();
     this.onStatus({
       state: "searching",
+      synchronizationLosses: 0,
       ficBlocks: 0,
       ficAttempts: 0,
       ficFrames: 0,
@@ -551,7 +555,6 @@ export class DabModeIProcessor {
           this.maxProcessingMs,
           this.processingMs,
         );
-        this.publishStatus();
         this.capturing = false;
         this.frameOffset = 0;
         this.lowSamples = 0;
@@ -570,12 +573,22 @@ export class DabModeIProcessor {
             DAB_TIMING_MARGIN / 2;
           this.timingHint = DAB_TIMING_MARGIN / 2;
         } else {
+          if (this.lockedCoarseOffset !== undefined) {
+            // Null timing cannot repair a stale integer-carrier alignment.
+            // Re-prove carrier and quadrature after sustained FIC loss while
+            // retaining the discovered ensemble and selected service.
+            this.lockedCoarseOffset = undefined;
+            this.quadraturePolarity = undefined;
+            this.synchronizationLosses += 1;
+            this.onProgrammeChange();
+          }
           this.nullSamplesRemaining = 0;
           this.timingHint = undefined;
           this.msc?.reset();
           // AGC may have moved the noise/signal levels during the capture.
           this.averageSamples = 0;
         }
+        this.publishStatus();
       }
       return;
     }
@@ -719,8 +732,14 @@ export class DabModeIProcessor {
       const standard = this.decodeFicGroups(ficBits);
       this.flipQuadratureMetrics(ficBits);
       const reversed = this.decodeFicGroups(ficBits);
-      const standardCount = standard.reduce((sum, group) => sum + group.length, 0);
-      const reversedCount = reversed.reduce((sum, group) => sum + group.length, 0);
+      const standardCount = standard.reduce(
+        (sum, group) => sum + group.length,
+        0,
+      );
+      const reversedCount = reversed.reduce(
+        (sum, group) => sum + group.length,
+        0,
+      );
       selectedPolarity = reversedCount > standardCount ? 1 : -1;
       groups = selectedPolarity === 1 ? reversed : standard;
       if (standardCount !== reversedCount)
@@ -782,9 +801,15 @@ export class DabModeIProcessor {
   private publishStatus(): void {
     const selected = this.fic.selectedDabPlusService(this.stationKey);
     this.onStatus({
-      state: selected ? "service" : "fic",
+      state:
+        this.lockedCoarseOffset === undefined
+          ? "searching"
+          : selected
+            ? "service"
+            : "fic",
       frameIntervalSamples: this.frameIntervalSamples,
       missedFrames: this.missedFrames,
+      synchronizationLosses: this.synchronizationLosses,
       processingMs: this.processingMs,
       maxProcessingMs: this.maxProcessingMs,
       ficBlocks: this.ficBlocks,
@@ -800,15 +825,16 @@ export class DabModeIProcessor {
       coarseCarrierLocked: this.lockedCoarseOffset !== undefined,
       timingStartSamples: this.timingStartSamples,
       quadraturePolarity:
-        (this.quadraturePolarity ?? -1) === -1
-          ? "standard"
-          : "reversed",
+        (this.quadraturePolarity ?? -1) === -1 ? "standard" : "reversed",
       stations: this.fic.stations(),
       ensemble: this.fic.ensemble,
       ...selected,
-      message: selected
-        ? `Decoding DAB+ service 0x${selected.service.serviceId.toString(16).toUpperCase()} on subchannel ${selected.subchannel.id} (${selected.subchannel.length} CU, EEP ${selected.subchannel.protectionLevel + 1}-${selected.subchannel.eepType}).`
-        : "Waiting for a valid DAB+ service definition…",
+      message:
+        this.lockedCoarseOffset === undefined
+          ? "Reacquiring DAB Mode-I timing and carrier synchronization…"
+          : selected
+            ? `Decoding DAB+ service 0x${selected.service.serviceId.toString(16).toUpperCase()} on subchannel ${selected.subchannel.id} (${selected.subchannel.length} CU, EEP ${selected.subchannel.protectionLevel + 1}-${selected.subchannel.eepType}).`
+            : "Waiting for a valid DAB+ service definition…",
     });
   }
 

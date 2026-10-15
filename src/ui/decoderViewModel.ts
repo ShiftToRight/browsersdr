@@ -99,7 +99,7 @@ export function decoderRecords(
     return (receiver.adsb?.targets ?? [])
       .slice(0, 50)
       .map((t): DecoderRecord => ({
-        key: key(t.icao),
+        key: key(t.id ?? t.icao ?? "unknown"),
         map: {
           symbol: aircraftCategory(t.category).symbol,
           categoryLabel: aircraftCategory(t.category).label,
@@ -107,18 +107,27 @@ export function decoderRecords(
           track: t.track ?? [],
           maximumGapMs: 30_000,
         },
-        label: t.callsign || t.icao,
-        summary: `${value(t.altitudeFt, "ft barometric")} · ${value(t.groundSpeedKt, "kt")}`,
+        label: t.callsign || t.address || t.icao || "Unknown address",
+        summary: `${t.onGround ? "On ground" : value(t.altitudeFt, "ft barometric")} · ${t.surfaceSpeedRangeKt ? surfaceSpeed(t.surfaceSpeedRangeKt) : value(t.groundSpeedKt, "kt")}`,
         integrity: "CRC-valid supported 1090ES frames",
         clock: `${t.lastSeenMs.toLocaleString()} ms on decoder input clock`,
         latitude: t.latitude ?? undefined,
         longitude: t.longitude ?? undefined,
         fields: [
-          ["ICAO address", t.icao],
+          [t.addressType === "icao" || !t.addressType ? "ICAO address" : "Reported address", t.address || t.icao || "Unknown"],
+          ["Address type", t.addressType || "ICAO (legacy snapshot)"],
+          ["Transmission source", t.origin || "Unspecified (legacy snapshot)"],
+          ["Frame format", t.downlinkFormat ? `DF${t.downlinkFormat}${t.controlField == null ? "" : ` / CF${t.controlField}`}` : "Unspecified"],
+          ["Position decoding", t.positionStatus || "Airborne global CPR"],
+          ["Air / ground", t.onGround === undefined ? "Unknown" : t.onGround ? "Ground" : "Airborne"],
           ["Reported identification", t.callsign || "Unknown"],
           ["Reported aircraft category", aircraftCategory(t.category).label],
           ["Barometric altitude", value(t.altitudeFt, "ft")],
-          ["Ground speed", value(t.groundSpeedKt, "kt")],
+          ["Geometric altitude", value(t.geometricAltitudeFt ?? null, "ft")],
+          ["Ground speed", t.surfaceSpeedRangeKt ? surfaceSpeed(t.surfaceSpeedRangeKt) : value(t.groundSpeedKt, "kt")],
+          ["Reported ADS-B version", t.quality ? String(t.quality.version) : "Unknown / expired"],
+          ["Reported NACp", t.quality?.nacP == null ? "Unknown / unsupported" : String(t.quality.nacP)],
+          ["Reported SIL", t.quality?.sil == null ? "Unknown / unsupported" : `${t.quality.sil} · ${t.quality.silBasis}`],
           ["Track", value(t.trackDegrees, "°")],
           ["Vertical rate", value(t.verticalRateFpm, "ft/min")],
           ["Emergency", t.emergency || "Unknown"],
@@ -445,4 +454,8 @@ export function decoderViewExport(
       "This selection exceeds the 256 KiB export limit. Export one selected record instead.",
     );
   return json;
+}
+
+function surfaceSpeed(range: readonly [number, number | null]): string {
+  return range[1] === null ? `≥${range[0]} kt` : `${range[0]}–${range[1]} kt`;
 }

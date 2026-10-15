@@ -327,3 +327,65 @@ test("RS41 uses the geographic canvas and retains labelled telemetry in narrow s
     .click();
   await expect(workspace.locator(".target-plot .map-overlay")).toBeVisible();
 });
+
+test("ADS-B preserves qualified DF18 targets in the map, inspector and export", async ({
+  page,
+}) => {
+  await page.goto("/?browser-test=1");
+  await page
+    .getByRole("combobox", { name: "Signal source" })
+    .selectOption("replay");
+  await page.getByRole("tab", { name: "Capture & replay" }).click();
+  const fixture = targetRecordingFixture("ADS-B", true);
+  const inputs = page.locator(".file-picker-input");
+  await inputs
+    .nth(0)
+    .setInputFiles({
+      name: "qualified.cu8",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from(fixture.data),
+    });
+  await inputs
+    .nth(1)
+    .setInputFiles({
+      name: "qualified.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(fixture.metadata)),
+    });
+  await page.getByRole("button", { name: "Load files", exact: true }).click();
+  await page.getByRole("button", { name: "Start replay" }).click();
+  await openApplicationView(page, "Decoder");
+  const workspace = page.locator("#decoder-view");
+  await expect(workspace.locator(".decoder-state")).toHaveText(
+    "Retained / idle",
+  );
+  await expect(workspace.locator(".map-target-symbol")).toHaveCount(2);
+  await workspace.locator(".decoder-record").last().click();
+  const inspector = workspace.locator(".decoder-inspector");
+  await expect(inspector).toContainText("Reported address");
+  await expect(inspector).toContainText("other");
+  await expect(inspector).toContainText("DF18 / CF1");
+  await expect(inspector).not.toContainText("ICAO address");
+  await workspace.locator(".decoder-export-menu > summary").click();
+  const pending = page.waitForEvent("download");
+  await workspace
+    .getByRole("button", { name: "Export retained results", exact: true })
+    .click();
+  const result = JSON.parse(
+    await readFile((await (await pending).path())!, "utf8"),
+  );
+  expect(result.records).toHaveLength(2);
+  expect(new Set(result.records.map((r: { key: string }) => r.key)).size).toBe(
+    2,
+  );
+  expect(
+    result.records.map((r: { raw: { icao: string | null } }) => r.raw.icao),
+  ).toEqual(["40621D", null]);
+  await page.setViewportSize({ width: 390, height: 950 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await page.screenshot({
+    path: test.info().outputPath("qualified-adsb-detail.png"),
+  });
+});

@@ -37,6 +37,7 @@ export interface DabSnapshot {
   decoderTimingStartSamples?: number;
   frameIntervalSamples?: number;
   missedFrames?: number;
+  synchronizationLosses?: number;
   processingMs?: number;
   maxProcessingMs?: number;
   quadraturePolarity?: "standard" | "reversed";
@@ -113,9 +114,13 @@ export class DabReceiver implements DigitalSampleReceiver {
         ...this.snapshot,
         frameIntervalSamples: status.frameIntervalSamples,
         missedFrames: status.missedFrames,
+        synchronizationLosses: status.synchronizationLosses,
         processingMs: status.processingMs,
         maxProcessingMs: status.maxProcessingMs,
-        state: status.ficBlocks > 0 ? "synchronized" : "searching",
+        state:
+          status.coarseCarrierLocked && status.ficBlocks > 0
+            ? "synchronized"
+            : "searching",
         frameCount: status.ficFrames,
         nullSymbolCount: status.ficFrames,
         coarseFrequencyOffsetHz:
@@ -192,7 +197,9 @@ export class DabReceiver implements DigitalSampleReceiver {
     );
   }
 
-  flushStatus(): void { this.onUpdate(this.snapshot); }
+  flushStatus(): void {
+    this.onUpdate(this.snapshot);
+  }
 
   recordPcm(samples: number, sampleRateHz: number): void {
     this.publish(

@@ -216,3 +216,23 @@ describe("decoder review evidence", () => {
     expect(exported.limits.maximumExportBytes).toBe(DECODER_EXPORT_MAX_BYTES);
   });
 });
+
+it("uses qualified aircraft keys and exposes reported address/quality without an ICAO claim", () => {
+  const targets: AdsbTarget[] = ["icao", "other"].map((type) => ({
+    id: `18:1:${type}:ABCDEF`, address: "ABCDEF", icao: type === "icao" ? "ABCDEF" : null,
+    addressType: type as "icao" | "other", origin: "ads-b", downlinkFormat: 18, controlField: 1,
+    callsign: null, onGround: true, surfaceSpeedRangeKt: [175, null],
+    altitudeFt: null, latitude: null, longitude: null, groundSpeedKt: null,
+    trackDegrees: null, verticalRateFpm: null, emergency: null, messages: 1, lastSeenMs: 1000,
+    quality: { version: 2, nacP: 9, sil: 2, silBasis: "per-hour", reportedAtMs: 1000 },
+  }));
+  const receiver = { ...initial, adsb: { frames: 2, preamblesDetected: 2, validFrames: 2, crcValidFrames: 2, unsupportedFrames: 0, crcFailures: 0, ambiguousFrames: 0, rejectedFrames: 0, targets, message: "" } };
+  const records = decoderRecords(receiver, "ADS-B");
+  expect(new Set(records.map(r => r.key)).size).toBe(2);
+  const nonIcao = records.find(r => (r.raw as AdsbTarget).icao === null)!;
+  expect(nonIcao.fields).toContainEqual(["Reported address", "ABCDEF"]);
+  expect(nonIcao.fields).not.toContainEqual(["ICAO address", "ABCDEF"]);
+  expect(nonIcao.fields).toContainEqual(["Reported SIL", "2 · per-hour"]);
+  expect(nonIcao.summary).toBe("On ground · ≥175 kt");
+  expect(JSON.parse(decoderViewExport(receiver, "ADS-B", records, "retained", false)).records).toHaveLength(2);
+});
