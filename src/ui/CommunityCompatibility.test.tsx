@@ -147,6 +147,9 @@ it("shows one B205mini-i row in both views while retaining alias evidence withou
       "USRP B205mini-i",
     ]);
     expect(rowNames()).toContain("USRP · unknown variant");
+    await act(async () =>
+      buttons().find((button) => button.textContent === "Packet & data")!.click(),
+    );
     const reception = buttons().find(
       (button) =>
         button.getAttribute("aria-label") ===
@@ -323,6 +326,7 @@ it("lists image and CW text modes as untested in reception and unrecorded in eng
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   try {
     await act(async () => root.render(<CommunityCompatibility context={context} />));
+    await act(async () => Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent === "Packet & data")!.click());
     const features = ["WEFAX images", "SSTV Martin images", "CW text assistant"];
     for (const label of features) {
       expect(Array.from(host.querySelectorAll("th")).some(th => th.textContent === label)).toBe(true);

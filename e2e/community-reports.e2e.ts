@@ -124,6 +124,31 @@ test("community matrix immediately combines decoder reports across platforms and
     await expect(
       panel.getByRole("tab", { name: currentVersionName }),
     ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Analog audio", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const expectAlignedIcons = async () => {
+      const icons = await panel
+        .locator(".community-hardware-name svg")
+        .evaluateAll((elements) =>
+          elements.map((element) => {
+            const icon = element.getBoundingClientRect();
+            const label = element.parentElement!.getBoundingClientRect();
+            return {
+              x: icon.x,
+              centerOffset:
+                icon.y + icon.height / 2 - (label.y + label.height / 2),
+            };
+          }),
+        );
+      expect(icons.length).toBeGreaterThan(1);
+      expect(
+        Math.max(...icons.map((icon) => icon.x)) -
+          Math.min(...icons.map((icon) => icon.x)),
+      ).toBeLessThan(1);
+      expect(icons.every((icon) => Math.abs(icon.centerOffset) < 1)).toBe(true);
+    };
+    await expectAlignedIcons();
     await panel
       .getByRole("button", { name: "Digital broadcast", exact: true })
       .click();
@@ -141,6 +166,7 @@ test("community matrix immediately combines decoder reports across platforms and
     await panel
       .getByRole("button", { name: "Platform compatibility", exact: true })
       .click();
+    await expectAlignedIcons();
     await expect(
       panel.getByRole("button", {
         name: "HackRF Pro · Chrome 140 / Linux: Reported working",
@@ -174,7 +200,16 @@ test("community matrix immediately combines decoder reports across platforms and
     await panel.screenshot({
       path: testInfo.outputPath("community-desktop.png"),
     });
+    await panel
+      .getByRole("button", { name: "Packet & data", exact: true })
+      .click();
+    await openApplicationView(page, "Receiver");
+    await openApplicationView(page, "Compatibility");
+    await expect(
+      panel.getByRole("button", { name: "Analog audio", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await page.setViewportSize({ width: 390, height: 844 });
+    await expectAlignedIcons();
     await expect(
       panel.getByRole("button", { name: "Report this test" }),
     ).toBeVisible();
@@ -290,6 +325,9 @@ test("community API outage is distinct from untested cells and can be retried", 
     );
     const panel = await help(page);
     await expect(panel).toContainText("unavailable (503)");
+    await panel
+      .getByRole("button", { name: "Packet & data", exact: true })
+      .click();
     await expect(
       panel.getByRole("button", {
         name: "HackRF Pro · AIS: Unavailable",
@@ -422,6 +460,9 @@ test("new image and CW text reports reach their own community matrix columns", a
       expect(service.community.accept(report).status).toBe(202);
     }
     const panel = await help(page);
+    await panel
+      .getByRole("button", { name: "Packet & data", exact: true })
+      .click();
     for (const [, , label] of modes) {
       await expect(
         panel.getByRole("columnheader", { name: label, exact: true }),

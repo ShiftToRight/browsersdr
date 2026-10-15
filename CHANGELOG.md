@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1 — 2026-10-16
+
+- Align trailing SDR icons across community hardware rows.
+- Open Community tests on Analog audio each time.
+
 ## 1.7.0 — 2026-10-15
 
 - Add receive-only WEFAX weather charts and SSTV Martin M1/M2 color images with bounded progressive rendering, automatic synchronization, manual reception, alignment/slant corrections and PNG/provenance exports.

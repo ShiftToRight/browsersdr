@@ -127,7 +127,7 @@ export function CommunityCompatibility({
   const [matrix, setMatrix] = useState<CommunityMatrix>();
   const [buildId, setBuildId] = useState<string>();
   const [view, setView] = useState<View>("modes");
-  const [group, setGroup] = useState<string>("data");
+  const [group, setGroup] = useState<string>("analog");
   const [selection, setSelection] = useState<{
     title: string;
     keys: string[];
