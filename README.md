@@ -39,3 +39,5 @@ Unchanged features can retain earlier compatibility evidence through explicitly 
 Public Atlas Search uses station headers and loads matching references on demand. Station and reference continuation retain the same filters and catalog generation; changed or expired cursors require refreshing Search. Exact UUID links and deliberate receiver preview/apply remain available beyond the first reference page.
 
 The optional Band guide between spectrum and waterfall offers a common CEPT European reference and country profiles grouped by region. Selected intervals include national differences and source editions in inspect-only details; uncovered ranges stay explicit. The compact strip and profile choice are saved per browser.
+
+Release tooling automatically evaluates compatibility evidence reuse from audited feature fingerprints after stamped integration checks. Carried results retain their original build, setup, dates and expiry; changed or unreviewed feature paths stay untested. See the [collector release procedure](deploy/report-service/README.md#automatic-release-integration).

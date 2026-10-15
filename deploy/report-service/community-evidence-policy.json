@@ -1,0 +1,365 @@
+{
+  "schemaVersion": 1,
+  "features": {
+    "access": {
+      "buildContext": {
+        "contract": "Local WebUSB chooser/granted-device connection, exclusive ownership and release; no streaming, decoding or audio claims.",
+        "node": "22.23.1",
+        "build": "locked Vite production; hardware drivers and existing source/rate/profile guards",
+        "flags": {}
+      },
+      "optionalExclude": [
+        "src/adsb",
+        "src/ais",
+        "src/aprs",
+        "src/dab",
+        "src/diagnostics",
+        "src/digital",
+        "src/dsp",
+        "src/graphics",
+        "src/radio/audioArchive.ts",
+        "src/radio/audioCaptureTap.ts",
+        "src/radio/bookmarkSelection.ts",
+        "src/radio/bookmarks.ts",
+        "src/radio/channelRecording.ts",
+        "src/radio/channelRecordingWorker.ts",
+        "src/radio/dabReplayPlayback.ts",
+        "src/radio/discoveryGuides.ts",
+        "src/radio/discoverySelection.ts",
+        "src/radio/fieldSurvey.ts",
+        "src/radio/pcmBatchPlayer.ts",
+        "src/radio/publicStationClient.ts",
+        "src/radio/publicStationSearch.ts",
+        "src/radio/publicStations.ts",
+        "src/radio/publicTransmissionSearch.ts",
+        "src/radio/recordingExport.ts",
+        "src/radio/recordingExportFormat.ts",
+        "src/radio/recordingJobs.ts",
+        "src/radio/recordingLibrary.ts",
+        "src/radio/recordingSpool.ts",
+        "src/radio/replayActivation.ts",
+        "src/radio/replayBackend.ts",
+        "src/radio/replayReader.ts",
+        "src/radio/sharedFrequencyGuides.ts",
+        "src/radio/sigmf.ts",
+        "src/radio/sigmfImport.ts",
+        "src/radio/surveyStorage.ts",
+        "src/radio/surveyStorageValidation.ts",
+        "src/radio/textModemExport.ts",
+        "src/rds",
+        "src/remote",
+        "src/rs41",
+        "src/srd",
+        "src/textmodem",
+        "src/ui",
+        "src/workers/textModem.worker.ts",
+        "third_party/acarsdec",
+        "third_party/pysstv"
+      ],
+      "include": [
+        "src/ui/AppResourceOwner.tsx",
+        "src/ui/ReceiverWorkspace.tsx"
+      ],
+      "reviewedVariants": {
+        "index.html": {
+          "anchor": "884e62bc1b3cd4b2bc7703a3e1d6691ffd7efa1080739e8691b02238d5197dc5",
+          "hashes": [
+            "884e62bc1b3cd4b2bc7703a3e1d6691ffd7efa1080739e8691b02238d5197dc5",
+            "785ee9066ba80a2b8ac02bb039dc455e479dbf5b134a7c4cfcb65a9c423d9b8c"
+          ],
+          "reason": "Only the installable-app manifest link was added; no WebUSB policy, script entry, context or connection option changed."
+        },
+        "src/App.tsx": {
+          "anchor": "ac48d9d45352df1cfad00500236c588f72318e7a5dddc7fd901792ef1efc4018",
+          "hashes": [
+            "ac48d9d45352df1cfad00500236c588f72318e7a5dddc7fd901792ef1efc4018",
+            "51141b8f2bfcf1af469e3e7950c597637a5777ef97807da06757f66445a4d7bd"
+          ],
+          "reason": "Connection chooser/granted-device handlers, native options and connection controls are unchanged. Changes add decoder modes, audio review and passive presentation; target connection smoke checks retained guards and startup."
+        },
+        "src/radio/receiverController.ts": {
+          "anchor": "0ffc29a250273f72eb1c04b2c052eacb61efa8b7db84c6e14ee7e46b95532202",
+          "hashes": [
+            "0ffc29a250273f72eb1c04b2c052eacb61efa8b7db84c6e14ee7e46b95532202",
+            "518e5986811ee4d5c18ba412b46a21bf49d888f6e3b267b2f74c28bdb3adcaa0"
+          ],
+          "reason": "Connection generation, granted-device, connectDevice, cleanup and ownership logic is unchanged. Changes add text-modem events and fields in receiving/tuning snapshots, outside access (mode normalized OFF)."
+        },
+        "src/radio/receiverConfig.ts": {
+          "anchor": "7ffb0eb565ff5f447ced7c2e3581d9d64894490ed1a8b30551c7f0b027a36b2d",
+          "hashes": [
+            "7ffb0eb565ff5f447ced7c2e3581d9d64894490ed1a8b30551c7f0b027a36b2d",
+            "b217c85bc8e07f1f13d2a257079a3a86828c7ad1993d85194d0db52364d7ddfc"
+          ],
+          "reason": "Existing mode/source/rate validation is unchanged; additions register text modes and their settings. Access does not claim decoding, sample-rate processing or audio output."
+        },
+        "src/radio/types.ts": {
+          "anchor": "08b686295655465e84487a14cb38a9e5db0b9539df43cbcd25b9af6d94950073",
+          "hashes": [
+            "08b686295655465e84487a14cb38a9e5db0b9539df43cbcd25b9af6d94950073",
+            "642c978f91c4d0220febd2e16cff6bd393a888c7e888f74f1e25c6f4aa30c383"
+          ],
+          "reason": "Only optional TextModemSettings type/metadata fields added; no runtime or source identity/USB interface changes."
+        },
+        "src/radio/liveReceiverPipeline.ts": {
+          "anchor": "ad38fde519febfe1d81533bbc2986a0bad700146876e8905984b8e79021d24d9",
+          "hashes": [
+            "ad38fde519febfe1d81533bbc2986a0bad700146876e8905984b8e79021d24d9",
+            "2c798568b4dd45fc8d7249745d34c3cbb1f42ada54d0670e4900a2ad9d836958"
+          ],
+          "reason": "USB access does not consume the receiving pipeline. Changes concern text decoding and audio archive output; target startup/permission and ownership tests check integration. No streaming evidence is reused."
+        },
+        "src/radio/iqRecording.ts": {
+          "anchor": "7a8235214dbaf7fa402d6e0901710bea7487e9c97b238001632746641719e287",
+          "hashes": [
+            "7a8235214dbaf7fa402d6e0901710bea7487e9c97b238001632746641719e287",
+            "789d08a59362dd4d0cc3ce5382819c08444ec09dcd7b613ca4b4151e28d0d9c6"
+          ],
+          "reason": "Changes only retain optional text-modem metadata on recording export/import, not connection ownership or permission."
+        },
+        "src/radio/bladerfBackend.ts": {
+          "anchor": "984d1581f39d3ddf40e02c1a9b9a62a162c83f2102a423c664652b974251c40f",
+          "hashes": [
+            "984d1581f39d3ddf40e02c1a9b9a62a162c83f2102a423c664652b974251c40f",
+            "972f4d2833f458eba61a0e9dca332aa59aee5897669b26c4a640394548cc3dff"
+          ],
+          "reason": "Connect/granted-device, chooser, native transport, identity, setup and release paths are unchanged. Changed code adds optional text-modem metadata and preparation during reception/retuning, outside access."
+        },
+        "src/radio/hackrfBackend.ts": {
+          "anchor": "d1adaa6efdbec69597f238edd632c76a7028515f4b1788e3d7eeaccec0f98e5b",
+          "hashes": [
+            "d1adaa6efdbec69597f238edd632c76a7028515f4b1788e3d7eeaccec0f98e5b",
+            "2c892d641a384789f8c337fedf31b401a2957c51df861e2f208472444c3b6fb9"
+          ],
+          "reason": "Connect/granted-device, chooser, native transport, identity, setup and release paths are unchanged. Changed code adds optional text-modem metadata and preparation during reception/retuning, outside access."
+        },
+        "src/radio/rtlSdrBackend.ts": {
+          "anchor": "9f9b2dc3ba6a7d99723084abc21cc1395a75c376c9081194bd33e1142e157a59",
+          "hashes": [
+            "9f9b2dc3ba6a7d99723084abc21cc1395a75c376c9081194bd33e1142e157a59",
+            "af15fc0705293143f3076115c895d62782bcecc82b6230856144b29e5a7f27d9"
+          ],
+          "reason": "USB chooser, provider acquisition, native requests, exclusive ownership and release behavior are unchanged. configureConnectedSource adds only optional textModem return metadata; other changes prepare text modes during reception/retune. No processing claim is reused."
+        },
+        "src/radio/usrpB205Backend.ts": {
+          "anchor": "3352a56c59067d5bbdaf100f566d81aae34cce982056298136630458d7584aee",
+          "hashes": [
+            "3352a56c59067d5bbdaf100f566d81aae34cce982056298136630458d7584aee",
+            "73a9c7ac4023ef1c79825c39dfd38d716002283f8402acc14c011bdf8e82b8f6"
+          ],
+          "reason": "Connect/granted-device, chooser, native transport, identity, setup and release paths are unchanged. Changed code adds optional text-modem metadata and preparation during reception/retuning, outside access."
+        }
+      }
+    },
+    "wbfm": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "nbfm": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "am": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "usb": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "lsb": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "cw": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "rds": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "dab-discovery": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "dab-audio": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "dab-plus-audio": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "adsb": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "ais": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "rtty": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "psk31": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "navtex": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "acars": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "wefax": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "sstv": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "cw-text": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "aprs": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "rs41": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "srd-acurite": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "srd-wh51": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "processing": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "audio-output": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "display": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "storage": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "export": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "replay": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
+    "tuning": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    }
+  }
+}

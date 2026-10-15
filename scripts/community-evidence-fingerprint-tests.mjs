@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -89,6 +90,35 @@ test("feature fingerprints separate CSS from processing and include unknown code
     assert.throws(get, /unmatched/);
     manifest.features.rds.exclude = ["../private"];
     assert.throws(get, /exclusion/);
+    manifest.features.rds.exclude = [];
+    manifest.features.rds.optionalExclude = ["src/future-presentation"];
+    const beforeOptional = get();
+    write("src/future-presentation/theme.ts", "irrelevant known presentation");
+    assert.equal(get().rds, beforeOptional.rds);
+    manifest.features.rds.exclude = ["src/graphics"];
+    manifest.features.rds.include = ["src/graphics/palette.ts"];
+    const beforeRequired = get();
+    write("src/graphics/palette.ts", "required dependency changes");
+    assert.notEqual(get().rds, beforeRequired.rds);
+    manifest.features.rds.include = [];
+    manifest.features.rds.exclude = [];
+    const digest = (value) => createHash("sha256").update(value).digest("hex");
+    const variantPath = "src/workers/shared.ts";
+    manifest.features.rds.reviewedVariants = {
+      [variantPath]: {
+        anchor: digest("initial"),
+        hashes: [digest("initial"), digest("reviewed non-access change")],
+        reason: "Reviewed identical feature behavior with exact byte variants",
+      },
+    };
+    const beforeVariant = get();
+    write(variantPath, "reviewed non-access change");
+    assert.equal(get().rds, beforeVariant.rds);
+    write(variantPath, "new unreviewed behavior");
+    assert.notEqual(get().rds, beforeVariant.rds);
+    manifest.features.rds.optionalExclude = ["../escape"];
+    assert.throws(get, /optional/);
+    manifest.features.rds.optionalExclude = [];
     manifest.features.rds.exclude = [];
     symlinkSync("/etc", join(root, "src", "escape"));
     assert.throws(get, /symlink/);

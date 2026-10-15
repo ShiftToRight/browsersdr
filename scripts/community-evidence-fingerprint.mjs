@@ -70,7 +70,8 @@ export function fingerprintCommunityEvidence(root, manifest) {
   for (const directory of ["src", "wasm", "third_party"]) walk(directory);
   paths.push(...configFiles);
   const evidenceFingerprints = {},
-    dependencies = {};
+    dependencies = {},
+    sourceDependencies = {};
   for (const [feature, policy] of Object.entries(manifest.features)) {
     if (
       !Object.hasOwn(COMMUNITY_FEATURE_MODES, feature) ||
@@ -85,6 +86,39 @@ export function fingerprintCommunityEvidence(root, manifest) {
         `Unknown feature or missing reviewed buildContext: ${feature}`,
       );
     const exclude = policy.exclude ?? [];
+    const optionalExclude = policy.optionalExclude ?? [];
+    const include = policy.include ?? [];
+    const validPath = (name) =>
+      typeof name === "string" &&
+      /^(?:src|wasm|third_party)\//.test(name) &&
+      !name.includes("..") &&
+      !name.includes("\\");
+    if (
+      !Array.isArray(optionalExclude) ||
+      !optionalExclude.every(validPath) ||
+      !Array.isArray(include) ||
+      !include.every((name) => validPath(name) && paths.includes(name))
+    )
+      throw new Error(
+        `Invalid optional exclusions or required inclusion: ${feature}`,
+      );
+    const variants = policy.reviewedVariants ?? {};
+    if (!variants || typeof variants !== "object" || Array.isArray(variants))
+      throw new Error("Invalid reviewed variants");
+    for (const [name, rule] of Object.entries(variants)) {
+      if (
+        (!validPath(name) && !configFiles.includes(name)) ||
+        !paths.includes(name) ||
+        !rule ||
+        !/^[a-f0-9]{64}$/.test(rule.anchor) ||
+        !Array.isArray(rule.hashes) ||
+        !rule.hashes.includes(rule.anchor) ||
+        rule.hashes.some((h) => !/^[a-f0-9]{64}$/.test(h)) ||
+        typeof rule.reason !== "string" ||
+        rule.reason.length < 30
+      )
+        throw new Error(`Invalid reviewed file equivalence: ${name}`);
+    }
     if (
       !Array.isArray(exclude) ||
       exclude.some(
@@ -97,6 +131,7 @@ export function fingerprintCommunityEvidence(root, manifest) {
       )
     )
       throw new Error(`Invalid or unmatched dependency exclusion: ${feature}`);
+    sourceDependencies[feature] = [];
     const entries = paths
       .filter((name) => {
         if (
@@ -104,8 +139,11 @@ export function fingerprintCommunityEvidence(root, manifest) {
           (name.endsWith(".css") || name.startsWith("src/assets/"))
         )
           return false;
-        return !exclude.some(
-          (prefix) => name === prefix || name.startsWith(prefix + "/"),
+        return (
+          include.includes(name) ||
+          ![...exclude, ...optionalExclude].some(
+            (prefix) => name === prefix || name.startsWith(prefix + "/"),
+          )
         );
       })
       .sort()
@@ -119,7 +157,13 @@ export function fingerprintCommunityEvidence(root, manifest) {
             delete value.packages[""].version;
           bytes = JSON.stringify(stable(value));
         }
-        return [name, hash(bytes)];
+        const digest = hash(bytes);
+        const rule = variants[name];
+        sourceDependencies[feature].push([
+          name,
+          hash(readFileSync(resolve(root, name))),
+        ]);
+        return [name, rule?.hashes.includes(digest) ? rule.anchor : digest];
       });
     dependencies[feature] = entries;
     evidenceFingerprints[feature] = hash(
@@ -128,6 +172,20 @@ export function fingerprintCommunityEvidence(root, manifest) {
           policyVersion: 1,
           feature,
           exclude: [...exclude].sort(),
+          ...(optionalExclude.length
+            ? { optionalExclude: [...optionalExclude].sort() }
+            : {}),
+          ...(include.length ? { include: [...include].sort() } : {}),
+          ...(Object.keys(variants).length
+            ? {
+                reviewedVariantAnchors: Object.fromEntries(
+                  Object.entries(variants).map(([name, rule]) => [
+                    name,
+                    rule.anchor,
+                  ]),
+                ),
+              }
+            : {}),
           buildContext: policy.buildContext,
           node: process.version,
           entries,
@@ -135,7 +193,7 @@ export function fingerprintCommunityEvidence(root, manifest) {
       ),
     );
   }
-  return { evidenceFingerprints, dependencies };
+  return { evidenceFingerprints, dependencies, sourceDependencies };
 }
 
 if (
