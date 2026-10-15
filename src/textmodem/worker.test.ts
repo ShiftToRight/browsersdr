@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { textModemConfiguration } from "../textmodem/settings";
 
 afterEach(() => vi.unstubAllGlobals());
-it.each(["RTTY", "PSK31", "NAVTEX", "ACARS"] as const)(
+it.each(["RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"] as const)(
   "%s worker returns borrowed credits even on rejected input and acknowledges final publication",
   async (mode) => {
     const port = {

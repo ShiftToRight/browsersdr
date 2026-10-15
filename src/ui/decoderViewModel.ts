@@ -22,6 +22,9 @@ export interface DecoderRecord {
   map?: TargetMapPresentation;
 }
 export const DECODER_FORMATS = [
+  { mode: "WEFAX", label: "WEFAX · Images", title: "Weather charts" },
+  { mode: "SSTV", label: "SSTV · Images", title: "Amateur pictures" },
+  { mode: "CW-TEXT", label: "CW + text", title: "Tentative Morse transcription" },
   { mode: "RTTY", label: "RTTY · Text", title: "Radioteletype text" },
   { mode: "PSK31", label: "BPSK31 · Text", title: "Amateur text" },
   { mode: "NAVTEX", label: "NAVTEX / SITOR-B", title: "Marine weather & safety messages" },
@@ -58,6 +61,7 @@ export function decoderAcceptedCount(
   receiver: ReceiverSnapshot,
   mode: ReceiverMode,
 ): number {
+  if (mode === "WEFAX" || mode === "SSTV") return receiver.textModem?.image?.rows ? 1 : 0;
   if (isTextMode(mode)) return receiver.textModem?.counters.accepted ?? 0;
   switch (mode) {
     case "ADS-B":
@@ -88,6 +92,10 @@ export function decoderRecords(
   mode: ReceiverMode,
   messages = false,
 ): DecoderRecord[] {
+  if ((mode === "WEFAX" || mode === "SSTV") && receiver.textModem?.image?.rows) {
+    const image = receiver.textModem.image;
+    return [{ key: `${mode}:${receiver.sessionGeneration}:${image.id}`, label: `${image.mode} image`, summary: `${image.width} × ${image.rows} received rows`, integrity: image.reason, clock: clock(image.provenance), fields: [["Rows", String(image.rows)], ["Complete", image.complete ? "Yes · synchronization only" : "Partial"], ["Checksum", "None"]], raw: image }];
+  }
   if (isTextMode(mode)) return (receiver.textModem?.messages ?? []).slice(-16).map((message): DecoderRecord => ({
     key: `${mode}:${receiver.sessionGeneration}:${message.sequence}`, label: message.address || message.header || `${mode} text ${message.sequence}`,
     summary: message.text, integrity: message.integrity, clock: clock(message.provenance),

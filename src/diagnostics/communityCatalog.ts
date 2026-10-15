@@ -53,6 +53,9 @@ export const COMMUNITY_FEATURES = [
   { id: "psk31", label: "BPSK31 text", group: "data", mode: "PSK31" },
   { id: "navtex", label: "NAVTEX / SITOR-B", group: "data", mode: "NAVTEX" },
   { id: "acars", label: "ACARS", group: "data", mode: "ACARS" },
+  { id: "wefax", label: "WEFAX images", group: "data", mode: "WEFAX" },
+  { id: "sstv", label: "SSTV Martin images", group: "data", mode: "SSTV" },
+  { id: "cw-text", label: "CW text assistant", group: "data", mode: "CW-TEXT" },
   { id: "srd-acurite", label: "SRD Acurite", group: "data", mode: "SRD" },
   { id: "srd-wh51", label: "SRD WH51", group: "data", mode: "SRD" },
   {

@@ -109,7 +109,7 @@ export function validateBookmark(value: unknown): Bookmark {
     mode,
     bandwidthHz: raw.bandwidthHz,
     squelch: raw.squelch,
-    ...(mode === "CW"
+    ...((mode === "CW" || mode === "CW-TEXT")
       ? {
           beatToneHz: typeof raw.beatToneHz === "number" ? raw.beatToneHz : NaN,
         }

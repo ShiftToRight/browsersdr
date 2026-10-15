@@ -1,5 +1,6 @@
 import type { DigitalProvenance } from "../digital";
 import type { TextMode, TextModemSettings } from "./settings";
+import type { ImageProgress } from "./imageTypes";
 export interface TextMessage {
   sequence: number;
   text: string;
@@ -21,6 +22,9 @@ export interface TextModemSnapshot {
   frequencyErrorHz: number;
   markHz: number | null;
   spaceHz: number | null;
+  image?: ImageProgress;
+  decoderStage?: string;
+  cwWpm?: number;
   counters: {
     characters: number;
     accepted: number;

@@ -468,7 +468,7 @@ export class BladeRfBackend implements ReceiverBackend {
       if (!hardware) {
         this.selection = selection;
         this.publish(this.configured!, selection);
-        if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes((this.metadata!).mode)) {
+        if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes((this.metadata!).mode)) {
           await this.pipeline.prepare(this.metadata!);
         }
         this.pipeline.retune(this.metadata!);

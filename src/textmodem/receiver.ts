@@ -23,6 +23,9 @@ import {
   TwoToneDetector,
 } from "./demodulators";
 import { AcarsMskDemodulator } from "./msk";
+import { ImageModem } from "./imageModem";
+import { CwTextDemodulator } from "./cw";
+import type { ImageScanEvent } from "./imageTypes";
 import type { TextMessage, TextModemSnapshot } from "./types";
 
 /** Bounded shared raw-I/Q text route. Modem state never spans a source gap.
@@ -30,7 +33,9 @@ import type { TextMessage, TextModemSnapshot } from "./types";
 export class TextModemCore {
   private channel = new DigitalChannelReducer();
   private configuration?: TextModemConfiguration;
-  private modem?: TwoToneDetector | Bpsk31Demodulator | AcarsMskDemodulator;
+  private modem?: TwoToneDetector | Bpsk31Demodulator | AcarsMskDemodulator | ImageModem | CwTextDemodulator;
+  private imageSequence = 0;
+  private imageEvents: DigitalPublication<ImageScanEvent>[] = [];
   private snapshotValue?: TextModemSnapshot;
   private provenance?: DigitalProvenance;
   private frameStart = 0;
@@ -89,6 +94,8 @@ export class TextModemCore {
     this.nextSnapshot = 0;
     this.messageSequence = 0;
     this.pending = "";
+    this.imageSequence = 0;
+    this.imageEvents = [];
     this.frameStart = 0;
     this.createModem();
     this.sequence++;
@@ -108,7 +115,31 @@ export class TextModemCore {
         this.snapshotValue!.counters.corrected++;
       },
     };
-    if (value.mode === "RTTY") {
+    if (value.mode === "WEFAX" || value.mode === "SSTV") {
+      this.modem = new ImageModem(value.mode, value.outputSampleRateHz, value.settings.image, {
+        start: (mode, width, height, channels) => {
+          const image = { id: ++this.imageSequence, mode, width, height, channels, rows: 0, complete: false, reason: "Receiving · no image checksum", provenance: { ...this.provenance! } };
+          this.snapshotValue!.image = image;
+          this.imageEvent({ type: "start", image: structuredClone(image) });
+        },
+        row: (row, pixels) => {
+          const image = this.snapshotValue!.image!;
+          image.rows = row + 1; image.provenance.lastInputSampleIndex = this.provenance!.lastInputSampleIndex;
+          this.lastCharacter = this.provenance!.lastInputSampleIndex;
+          this.imageEvent({ type: "row", id: image.id, row, pixels });
+        },
+        end: (complete, reason) => {
+          const image = this.snapshotValue!.image!;
+          image.complete = complete; image.reason = reason;
+          this.imageEvent({ type: "end", id: image.id, complete, reason });
+          this.message({ text: `${image.mode} · ${image.width} × ${image.rows} received rows · ${reason}`, header: `${image.mode} image ${image.id}`, complete, integrity: "Image synchronization only · no checksum" });
+        },
+        error: callbacks.error,
+      });
+      this.snapshotValue!.decoderStage = this.modem.stage;
+    } else if (value.mode === "CW-TEXT") {
+      this.modem = new CwTextDemodulator(value.outputSampleRateHz, value.settings.cw, callbacks.character, callbacks.error);
+    } else if (value.mode === "RTTY") {
       const framer = new RttyFramer(value.settings, callbacks);
       this.modem = new TwoToneDetector(
         value.outputSampleRateHz,
@@ -170,7 +201,9 @@ export class TextModemCore {
         firstInputSampleIndex: this.frameStart,
         lastInputSampleIndex: inputIndex,
       };
-      if (this.modem instanceof AcarsMskDemodulator) {
+      if (this.modem instanceof ImageModem) {
+        this.modem.push(narrow.fmHz[n]! - this.configuration.settings.tuningOffsetHz, narrow.envelope[n]!);
+      } else if (this.modem instanceof AcarsMskDemodulator) {
         const amplitude = narrow.envelope[n]!;
         this.dc +=
           (1 - Math.exp((-2 * Math.PI * 20) / rate)) * (amplitude - this.dc);
@@ -191,6 +224,8 @@ export class TextModemCore {
       this.modem instanceof AcarsMskDemodulator ? 0 : this.modem!.confidence;
     state.frequencyErrorHz =
       this.modem instanceof Bpsk31Demodulator ? this.modem.frequencyErrorHz : 0;
+    if (this.modem instanceof ImageModem) state.decoderStage = this.modem.stage;
+    if (this.modem instanceof CwTextDemodulator) state.cwWpm = this.modem.estimatedWpm;
     state.status =
       state.signalLevel < 0.001
         ? "searching"
@@ -211,7 +246,7 @@ export class TextModemCore {
     state.text = (state.text + text).slice(-8192);
     state.counters.characters += text.length;
     this.lastCharacter = this.provenance!.lastInputSampleIndex;
-    if (["RTTY", "PSK31"].includes(this.configuration!.mode)) {
+    if (["RTTY", "PSK31", "CW-TEXT"].includes(this.configuration!.mode)) {
       this.pending += text;
       if (text.includes("\n") || this.pending.length >= 128) this.flushText();
     }
@@ -224,7 +259,7 @@ export class TextModemCore {
       integrity:
         this.configuration!.mode === "RTTY"
           ? "ITA2 framing checked · no checksum"
-          : "BPSK31 Varicode · no checksum",
+          : this.configuration!.mode === "CW-TEXT" ? "Tentative Morse transcription · no checksum" : "BPSK31 Varicode · no checksum",
     });
     this.pending = "";
   }
@@ -261,6 +296,7 @@ export class TextModemCore {
     this.sequence++;
   }
   private resetPartial(nextInputSampleIndex = this.expected ?? 0): void {
+    if (this.modem instanceof ImageModem) this.modem.flush("Input discontinuity · partial image");
     this.flushText();
     this.pending = "";
     this.createModem();
@@ -276,6 +312,8 @@ export class TextModemCore {
     this.expected = undefined;
   }
   flush(): void {
+    if (this.modem instanceof ImageModem || this.modem instanceof CwTextDemodulator) this.modem.flush();
+    if (this.modem instanceof ImageModem) this.snapshotValue!.decoderStage = this.modem.stage;
     this.flushText();
     this.sequence++;
   }
@@ -288,13 +326,18 @@ export class TextModemCore {
       value: structuredClone(this.snapshotValue),
     };
   }
-  drainEvents(): readonly DigitalPublication<never>[] {
-    return [];
+  private imageEvent(value: ImageScanEvent): void {
+    if (this.imageEvents.length >= 256) throw new Error("Image row event capacity exceeded; drain between bounded input blocks.");
+    this.imageEvents.push({ sequence: ++this.sequence, provenance: { ...this.provenance! }, value });
+  }
+  drainEvents(): readonly DigitalPublication<ImageScanEvent>[] {
+    const events = this.imageEvents; this.imageEvents = []; return events;
   }
   dispose(): void {
     this.disposed = true;
     this.channel.dispose();
     this.modem = undefined;
     this.snapshotValue = undefined;
+    this.imageEvents = [];
   }
 }

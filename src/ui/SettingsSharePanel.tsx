@@ -224,7 +224,7 @@ export function SettingsSharePanel({
                   {proposal.display.rangeDb} dB
                 </dd>
               </div>
-              {proposal.settings.mode === "CW" && (
+              {(proposal.settings.mode === "CW" || proposal.settings.mode === "CW-TEXT") && (
                 <div>
                   <dt>Beat tone</dt>
                   <dd>{proposal.settings.beatToneHz} Hz</dd>

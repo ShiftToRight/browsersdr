@@ -640,7 +640,7 @@ function FavoriteEditor({
           }
         />
       </label>
-      {item.settings.mode === "CW" && (
+      {(item.settings.mode === "CW" || item.settings.mode === "CW-TEXT") && (
         <label>
           Favorite beat tone (Hz)
           <input

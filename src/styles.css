@@ -5036,3 +5036,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offs
 .text-modem-controls { border: 1px solid var(--border-color, #456); border-radius: 8px; padding: 0.8rem; min-width: 0; display: grid; gap: 0.6rem; }
 .text-decode-panel { min-width: 0; padding: 0.8rem; }
 .decoded-text-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow-y: auto; font: 0.9rem/1.5 monospace; padding: 0.75rem; background: rgba(0, 0, 0, 0.15); border-radius: 6px; }
+
+.image-decoder-canvas-wrap { max-width: 100%; max-height: 65vh; overflow: auto; background: #161c28; border: 1px solid var(--border); border-radius: 8px; }
+.image-decoder-canvas-wrap canvas { display: block; width: 100%; max-width: 100%; height: auto; min-height: 0; cursor: default; image-rendering: auto; }
+.image-corrections { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin-block: 1rem; }
+.image-corrections label { display: grid; gap: .35rem; max-width: 100%; }
+.image-corrections input { max-width: 100%; }

@@ -10,7 +10,7 @@ import {
   type SrdModeSettings,
 } from "../srd/settings";
 
-export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD" | "APRS" | "RS41" | "RTTY" | "PSK31" | "NAVTEX" | "ACARS";
+export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD" | "APRS" | "RS41" | "RTTY" | "PSK31" | "NAVTEX" | "ACARS" | "WEFAX" | "SSTV" | "CW-TEXT";
 
 export const CW_FILTER_BANDWIDTHS_HZ = [100, 250, 500, 1_000] as const;
 export const CW_DEFAULT_BANDWIDTH_HZ = 500;
@@ -36,7 +36,7 @@ export interface ModeCapabilities {
   squelchSettable: boolean;
 }
 
-export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"];
+export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"];
 export const SQUELCH_MIN = 0;
 export const SQUELCH_MAX = 6;
 export const MANUAL_GAIN_MIN_DB = 0;
@@ -58,6 +58,9 @@ const MODE_CAPABILITIES: Record<ReceiverMode, ModeCapabilities> = {
   AIS: { bandwidthSettable: false, minimumBandwidthHz: AIS_BANDWIDTH_HZ, maximumBandwidthHz: AIS_BANDWIDTH_HZ, squelchSettable: false },
   APRS: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
   RS41: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
+  WEFAX: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
+  SSTV: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
+  "CW-TEXT": { bandwidthSettable: true, minimumBandwidthHz: 100, maximumBandwidthHz: 1_000, squelchSettable: false },
   RTTY: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
   PSK31: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
   NAVTEX: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
@@ -70,9 +73,9 @@ export function modeCapabilities(mode: ReceiverMode): ModeCapabilities {
 }
 
 export function defaultModeSettings(mode: ReceiverMode): ReceiverModeSettings {
-  if (isTextMode(mode)) return { mode, bandwidthHz: mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings() };
+  if (isTextMode(mode) && mode !== "CW-TEXT") return { mode, bandwidthHz: mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings(undefined, mode) };
   if (mode === "OFF") return { mode, bandwidthHz: 1, squelch: 0 };
-  if (mode === "CW") return { mode, bandwidthHz: CW_DEFAULT_BANDWIDTH_HZ, squelch: 0, beatToneHz: CW_DEFAULT_TONE_HZ };
+  if (mode === "CW" || mode === "CW-TEXT") return { mode, bandwidthHz: CW_DEFAULT_BANDWIDTH_HZ, squelch: 0, beatToneHz: CW_DEFAULT_TONE_HZ, ...(mode === "CW-TEXT" ? { textModem: normalizeTextModemSettings(undefined, "CW-TEXT") } : {}) };
   if (mode === "DAB") return { mode, bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
   if (mode === "ADS-B") return { mode, bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
   if (mode === "AIS") return { mode, bandwidthHz: AIS_BANDWIDTH_HZ, squelch: 0 };
@@ -90,15 +93,15 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
   if (!RECEIVER_MODES.includes(settings.mode)) throw new Error(`Unsupported receiver mode: ${String(settings.mode)}`);
   if (!Number.isFinite(settings.bandwidthHz)) throw new Error("Enter a valid channel bandwidth.");
   if (!Number.isFinite(settings.squelch)) throw new Error("Enter a valid squelch level.");
-  if (isTextMode(settings.mode)) return { mode: settings.mode, bandwidthHz: settings.mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings(settings.textModem) };
+  if (isTextMode(settings.mode) && settings.mode !== "CW-TEXT") return { mode: settings.mode, bandwidthHz: settings.mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings(settings.textModem, settings.mode) };
   if (settings.mode === "OFF") return { mode: "OFF", bandwidthHz: 1, squelch: 0 };
-  if (settings.mode === "CW") {
+  if (settings.mode === "CW" || settings.mode === "CW-TEXT") {
     const beatToneHz = settings.beatToneHz ?? CW_DEFAULT_TONE_HZ;
     if (!(CW_FILTER_BANDWIDTHS_HZ as readonly number[]).includes(settings.bandwidthHz))
       throw new Error("CW filter bandwidth must be 100, 250, 500 or 1,000 Hz.");
     if (!Number.isFinite(beatToneHz) || beatToneHz < CW_TONE_MIN_HZ || beatToneHz > CW_TONE_MAX_HZ)
       throw new Error(`CW beat tone must be ${CW_TONE_MIN_HZ}–${CW_TONE_MAX_HZ} Hz.`);
-    return { mode: "CW", bandwidthHz: settings.bandwidthHz, squelch: 0, beatToneHz };
+    return { mode: settings.mode, bandwidthHz: settings.bandwidthHz, squelch: 0, beatToneHz, ...(settings.mode === "CW-TEXT" ? { textModem: normalizeTextModemSettings(settings.textModem, "CW-TEXT") } : {}) };
   }
   if (settings.mode === "DAB") return { mode: "DAB", bandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelch: 0 };
   if (settings.mode === "ADS-B") return { mode: "ADS-B", bandwidthHz: ADSB_BANDWIDTH_HZ, squelch: 0 };
@@ -123,8 +126,8 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
 export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   const normalized = normalizeModeSettings(settings);
   if (normalized.mode === "OFF") throw new Error("OFF does not use the analog demodulator.");
-  if (["DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
-  const parameters = modeParameters(getMode(normalized.mode));
+  if (["DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
+  const parameters = modeParameters(getMode(normalized.mode === "CW-TEXT" ? "CW" : normalized.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(normalized.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);
   if (normalized.mode === "WBFM" && parameters.hasStereo()) parameters.setStereo(false);
@@ -136,7 +139,7 @@ export function validateModeSampleRate(mode: ReceiverMode, sampleRateHz: number)
   if (mode === "DAB") validateDabSampleRate(sampleRateHz);
   else if (mode === "ADS-B") validateAdsbSampleRate(sampleRateHz);
   else if (mode === "AIS") validateAisSampleRate(sampleRateHz);
-  else if (["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode) && sampleRateHz !== 1_024_000 && sampleRateHz !== 2_400_000)
+  else if (["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode) && sampleRateHz !== 1_024_000 && sampleRateHz !== 2_400_000)
     throw new Error(`${mode} requires an effective channel rate of 1.024 or 2.4 MS/s.`);
 }
 

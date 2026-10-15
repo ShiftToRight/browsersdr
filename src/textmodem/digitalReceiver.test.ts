@@ -12,10 +12,10 @@ import { TextModemCore } from "./receiver";
 import { TextDigitalReceiver } from "./digitalReceiver";
 import type { TextModemSnapshot } from "./types";
 
-class FakeWorker implements DigitalWorkerPort<TextModemSnapshot, never> {
+class FakeWorker implements DigitalWorkerPort<TextModemSnapshot, import("./imageTypes").ImageScanEvent> {
   onmessage:
     | ((
-        event: MessageEvent<DigitalWorkerOutput<TextModemSnapshot, never>>,
+        event: MessageEvent<DigitalWorkerOutput<TextModemSnapshot, import("./imageTypes").ImageScanEvent>>,
       ) => void)
     | null = null;
   onerror: OnErrorEventHandler = null;
@@ -28,9 +28,9 @@ class FakeWorker implements DigitalWorkerPort<TextModemSnapshot, never> {
       message as DigitalWorkerInput<ReturnType<typeof testConfiguration>>,
     );
   }
-  emit(message: DigitalWorkerOutput<TextModemSnapshot, never>): void {
+  emit(message: DigitalWorkerOutput<TextModemSnapshot, import("./imageTypes").ImageScanEvent>): void {
     this.onmessage?.({ data: message } as MessageEvent<
-      DigitalWorkerOutput<TextModemSnapshot, never>
+      DigitalWorkerOutput<TextModemSnapshot, import("./imageTypes").ImageScanEvent>
     >);
   }
 }
@@ -112,3 +112,29 @@ class TextModemCoreForSnapshot extends TextModemCore {
     this.configure(testConfiguration(1_024_000, 6, 12_000));
   }
 }
+
+it("bounds image rasters, rejects malformed rows and suppresses old-generation image events", () => {
+  const worker = new FakeWorker(), updates = vi.fn(), errors = vi.fn();
+  const receiver = new TextDigitalReceiver(updates, errors, () => worker);
+  receiver.configureSession(textModemConfiguration("SSTV", undefined, 1_024_000, 7));
+  const provenance = { generation: 7, firstInputSampleIndex: 0, lastInputSampleIndex: 100, actualInputSampleRateHz: 1_024_000, selectedChannelOffsetHz: 0 };
+  const image = { id: 1, mode: "Martin M2" as const, width: 160, height: 256, channels: 3 as const, rows: 0, complete: false, reason: "receiving", provenance };
+  const event = (value: import("./imageTypes").ImageScanEvent, generation = 7) => worker.emit({ type: "event", generation, publication: { sequence: 1, provenance: { ...provenance, generation }, value } });
+  event({ type: "start", image: { ...image, width: 2000 } });
+  expect(errors).toHaveBeenCalledOnce();
+  event({ type: "start", image });
+  event({ type: "row", id: 1, row: 0, pixels: new Uint8Array(480).fill(255) });
+  event({ type: "row", id: 1, row: 256, pixels: new Uint8Array(480) });
+  expect(errors).toHaveBeenCalledTimes(2);
+  const core = new TextModemCore(); core.configure(textModemConfiguration("SSTV", undefined, 1_024_000, 7));
+  worker.emit({ type: "snapshot", generation: 7, publication: { ...core.snapshot(), value: { ...core.snapshot().value, image: { ...image, rows: 1 } } } });
+  expect(updates.mock.lastCall?.[0].image.pixels).toHaveLength(160 * 256 * 3);
+  expect(updates.mock.lastCall?.[0].image.pixels[0]).toBe(255);
+  receiver.configureSession(textModemConfiguration("SSTV", undefined, 1_024_000, 8));
+  event({ type: "row", id: 1, row: 1, pixels: new Uint8Array(480) });
+  expect(receiver.diagnostics.staleResults).toBe(1);
+  core.configure(textModemConfiguration("SSTV", undefined, 1_024_000, 8));
+  worker.emit({ type: "snapshot", generation: 8, publication: core.snapshot() });
+  expect(updates.mock.lastCall?.[0].image).toBeUndefined();
+  receiver.dispose();
+});

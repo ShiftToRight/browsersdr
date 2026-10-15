@@ -2,13 +2,14 @@ import type { DigitalWorkerInput, DigitalWorkerOutput } from "../digital";
 import { TextModemCore } from "../textmodem/receiver";
 import type { TextModemConfiguration } from "../textmodem/settings";
 import type { TextModemSnapshot } from "../textmodem/types";
+import type { ImageScanEvent } from "../textmodem/imageTypes";
 
 const receiver = new TextModemCore();
 let generation = -1;
 let lastSnapshotSequence = -1;
 
 function send(
-  message: DigitalWorkerOutput<TextModemSnapshot, never>,
+  message: DigitalWorkerOutput<TextModemSnapshot, ImageScanEvent>,
   transfer: Transferable[] = [],
 ): void {
   self.postMessage(message, { transfer });
@@ -74,6 +75,8 @@ self.onmessage = (
 };
 
 function publish(): void {
+  for (const publication of receiver.drainEvents())
+    send({ type: "event", generation, publication });
   const snapshot = receiver.snapshot();
   if (snapshot.sequence !== lastSnapshotSequence) {
     lastSnapshotSequence = snapshot.sequence;
@@ -83,6 +86,4 @@ function publish(): void {
       publication: { ...snapshot, value: snapshot.value },
     });
   }
-  for (const publication of receiver.drainEvents())
-    send({ type: "event", generation, publication });
 }

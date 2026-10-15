@@ -1,6 +1,9 @@
 import type { ReceiverSnapshot } from "../radio/receiverController";
 import { textModemExport } from "../radio/textModemExport";
 import type { TextMode } from "../textmodem/settings";
+import { isImageMode } from "../textmodem/settings";
+import { lazy, Suspense } from "react";
+const ImageDecodePanel = lazy(() => import("./ImageDecodePanel").then(module => ({ default: module.ImageDecodePanel })));
 function download(receiver: ReceiverSnapshot, format: "txt" | "json"): void {
   const data = textModemExport(receiver);
   if (!data) return;
@@ -29,6 +32,7 @@ export function TextDecodePanel({
   const state =
     receiver.textModem?.mode === mode ? receiver.textModem : undefined;
   const worker = receiver.textModemWorker;
+  if (isImageMode(mode)) return <Suspense fallback={<p role="status">Loading image decoder…</p>}><ImageDecodePanel receiver={receiver} mode={mode} /></Suspense>;
   return (
     <div className="text-decode-panel" aria-label={`${mode} decoded text`}>
       <h4>
@@ -36,7 +40,8 @@ export function TextDecodePanel({
         tuning
       </h4>
       <p className="support-copy">
-        {mode === "ACARS"
+        {mode === "CW-TEXT" ? "Tentative Morse transcription alongside CW audio. Speed and threshold are adjustable; noise, fading and hand-sent timing can produce errors. No checksum or language guessing."
+          : mode === "ACARS"
           ? "CRC and odd parity are required. Reported aircraft addresses are message fields; they are not linked to ADS-B targets."
           : mode === "NAVTEX"
             ? "CCIR476 phasing and delayed-copy FEC. Erasures remain visible; a complete message requires ZCZC/header and NNNN. No message CRC."
@@ -98,6 +103,7 @@ export function TextDecodePanel({
           </div>
         )}
       </dl>
+      {mode === "CW-TEXT" && <p className="support-copy">Timing estimate: {(state?.cwWpm ?? state?.settings.cw?.wpm ?? 20).toFixed(1)} WPM · relative detector confidence, not text correctness.</p>}
       <pre className="decoded-text-output" aria-label="Received text">
         {state?.text || "Waiting for decoded text…"}
       </pre>

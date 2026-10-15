@@ -113,7 +113,7 @@ export function DecodedResults({
                 ? "Demodulation disabled"
                 : mode === "DAB"
                   ? "DAB+ audio output"
-                  : ["ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode)
+                  : mode === "CW-TEXT" ? "CW audio + tentative text" : ["ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode)
                     ? "Data acquisition"
                     : "Audio output"}
           </span>
@@ -197,7 +197,7 @@ export function DecodedResults({
           </span>
         </div>
         {source !== "synthetic" &&
-          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(
+          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(
             mode,
           ) && (
             <div className="rds-content">
@@ -210,7 +210,7 @@ export function DecodedResults({
                       ? "Aircraft targets"
                       : mode === "AIS"
                         ? "Vessel targets"
-                        : isTextMode(mode) ? `${mode === "PSK31" ? "BPSK31" : mode} text & messages` : mode === "APRS"
+                        : isTextMode(mode) ? (mode === "WEFAX" || mode === "SSTV" ? `${mode} images` : `${mode === "PSK31" ? "BPSK31" : mode} text & messages`) : mode === "APRS"
                           ? "APRS stations"
                           : mode === "RS41"
                             ? "RS41 radiosondes"

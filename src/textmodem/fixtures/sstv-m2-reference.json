@@ -1,0 +1,46 @@
+{
+  "source": "https://github.com/dnet/pysstv",
+  "revision": "d998fad154d3e6ad2d73af5add49beec0d2ab59f",
+  "generated": "2026-10-15",
+  "sampleRateHz": 8000,
+  "sampleFrames": 18247,
+  "colors": [
+    [
+      255,
+      0,
+      0
+    ],
+    [
+      0,
+      255,
+      0
+    ],
+    [
+      0,
+      0,
+      255
+    ],
+    [
+      255,
+      255,
+      255
+    ]
+  ],
+  "imageWidth": 160,
+  "imageHeight": 256,
+  "prefixRows": 6,
+  "files": {
+    "sstv-m2-reference-bars.png": {
+      "bytes": 669,
+      "sha256": "3b0ee8e8e5715432e7624fda0c873f8946ffb65eff72c339bbd9ba6c36410162"
+    },
+    "sstv-m2-reference-prefix.wav": {
+      "bytes": 36538,
+      "sha256": "938f062d9ed1146b00f5c0366da152e1a27fb611e324ec9c73fc790e89d9cb32"
+    },
+    "sstv-m2-reference-analytic.wav": {
+      "bytes": 73032,
+      "sha256": "9f21fd26415df88a1e091f85571bc3c3d9ccb7e423cab7cae14f45e6af273a63"
+    }
+  }
+}

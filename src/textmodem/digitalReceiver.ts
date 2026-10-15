@@ -12,13 +12,15 @@ import {
   type TextModemConfiguration,
 } from "./settings";
 import type { TextModemSnapshot } from "./types";
+import type { ImageScanEvent, ReceivedImage } from "./imageTypes";
 
 export interface TextDigitalUpdate {
   snapshot: TextModemSnapshot;
   diagnostics: DigitalWorkerAdapterDiagnostics;
+  image?: ReceivedImage;
 }
 
-type WorkerFactory = () => DigitalWorkerPort<TextModemSnapshot, never>;
+type WorkerFactory = () => DigitalWorkerPort<TextModemSnapshot, ImageScanEvent>;
 
 /** Bridges the established SampleReceiver fan-out to the bounded foundation
  * contract. Browser input is copied into explicitly owned transferable buffers;
@@ -27,7 +29,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
   private adapter?: BoundedDigitalWorkerAdapter<
     TextModemConfiguration,
     TextModemSnapshot,
-    never
+    ImageScanEvent
   >;
   private inline?: TextModemCore;
   private inlineTask?: Promise<void>;
@@ -35,6 +37,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
   private firstSampleIndex = 0;
   private disposed = false;
   private latest?: TextModemSnapshot;
+  private image?: ReceivedImage;
 
   constructor(
     private readonly onUpdate: (update: TextDigitalUpdate) => void,
@@ -48,7 +51,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
             {
               type: "module",
             },
-          ) as DigitalWorkerPort<TextModemSnapshot, never>,
+          ) as DigitalWorkerPort<TextModemSnapshot, ImageScanEvent>,
   ) {}
 
   configureSession(configuration: TextModemConfiguration): void {
@@ -57,6 +60,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
     if (JSON.stringify(this.configuration) === JSON.stringify(configuration))
       return;
     this.latest = undefined;
+    this.image = undefined;
     this.configuration = structuredClone(configuration);
     this.firstSampleIndex = 0;
     if (this.workerFactory) {
@@ -66,6 +70,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
           this.publish();
         },
         dropped: () => this.publish(),
+        event: publication => this.imageEvent(publication.value),
         error: this.onError,
       });
       this.adapter.configure(configuration);
@@ -122,6 +127,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
     if (this.adapter) this.adapter.submitBorrowed(input);
     else if (this.inline) {
       this.inline.receive(input);
+      for (const event of this.inline.drainEvents()) this.imageEvent(event.value);
       this.latest = this.inline.snapshot().value;
       this.publish();
     }
@@ -139,6 +145,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
     this.adapter?.reset(discontinuity);
     if (this.inline) {
       this.inline.reset(discontinuity);
+      for (const event of this.inline.drainEvents()) this.imageEvent(event.value);
       this.latest = this.inline.snapshot().value;
       this.publish();
     }
@@ -148,6 +155,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
     if (this.adapter) await this.adapter.flush();
     else if (this.inline) {
       this.inline.flush();
+      for (const event of this.inline.drainEvents()) this.imageEvent(event.value);
       this.latest = this.inline.snapshot().value;
       this.publish();
     }
@@ -159,6 +167,7 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
     this.adapter?.dispose();
     this.inline?.dispose();
     this.configuration = undefined;
+    this.image = undefined;
   }
 
   get diagnostics(): DigitalWorkerAdapterDiagnostics {
@@ -176,7 +185,21 @@ export class TextDigitalReceiver implements DigitalSampleReceiver {
   }
 
   private publish(): void {
+    if (this.image && this.latest?.image?.id === this.image.id) Object.assign(this.image, this.latest.image);
     if (this.latest)
-      this.onUpdate({ snapshot: this.latest, diagnostics: this.diagnostics });
+      this.onUpdate({ snapshot: this.latest, diagnostics: this.diagnostics, image: this.image });
+  }
+  private imageEvent(event: ImageScanEvent): void {
+    if (event.type === "start") {
+      const { width, height, channels } = event.image;
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || width > 1809 || height < 1 || height > 2048 || ![1, 3].includes(channels) || width * height * channels > 4 * 1024 * 1024) { this.onError(new Error("Image raster exceeds bounded dimensions.")); return; }
+      this.image = { ...structuredClone(event.image), pixels: new Uint8Array(width * height * channels).fill(127) };
+    } else if (this.image?.id === event.id) {
+      if (event.type === "row") {
+        if (!Number.isInteger(event.row) || event.row < 0 || event.row >= this.image.height || event.pixels.length !== this.image.width * this.image.channels) { this.onError(new Error("Invalid image scan row.")); return; }
+        this.image.pixels.set(event.pixels, event.row * event.pixels.length);
+        this.image.rows = Math.max(this.image.rows, event.row + 1);
+      } else { this.image.complete = event.complete; this.image.reason = event.reason; }
+    }
   }
 }

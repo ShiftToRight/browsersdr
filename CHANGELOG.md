@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add receive-only WEFAX weather charts and SSTV Martin M1/M2 color images with bounded progressive rendering, automatic synchronization, manual reception, alignment/slant corrections and PNG/provenance exports.
+- Add opt-in CW + text with adjustable Morse speed/threshold, tentative transcription and the existing CW audio monitor. Preserve ordinary CW listening and the default quick modes.
+- Add independent PySSTV encoder reference audio and generated image/CW checks; physical reception and independent WEFAX/CW recordings remain separate acceptance work.
+
 - Add bounded decoded-audio WAV recording and opt-in 60-second rewind for local/replay listening, DAB+ and processed remote audio; preserve export at source boundaries and rewind after replay completion.
 - Add a standalone web-app manifest, branded app icons and browser-driven installation from Settings. Offline startup remains separate.
 

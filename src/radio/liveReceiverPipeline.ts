@@ -371,7 +371,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
     } else this.receiver.resetDigitalReceiver();
     this.dabResources?.reset();
-    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(this.metadata.mode)) {
+    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(this.metadata.mode)) {
       this.demodulator.setMode(createSignalsMode({
         mode: this.metadata.mode,
         bandwidthHz: this.metadata.channelBandwidthHz,
@@ -389,7 +389,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
 
   updateAnalogMode(settings: ReceiverModeSettings): void {
     this.requireOpen();
-    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(settings.mode))
+    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode))
       throw new Error(`${settings.mode} does not use the analog audio path.`);
     this.demodulator.setCwToneFrequency?.(settings.beatToneHz ?? 600);
     this.demodulator.setMode(createSignalsMode(settings));
@@ -399,7 +399,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     const rate = channelSampleRate(metadata.actualSampleRateHz);
     const offset = isWidebandRate(metadata.actualSampleRateHz) ? 0 : metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz;
     if (isTextMode(metadata.mode)) {
-      this.textModem ??= new TextDigitalReceiver(({ snapshot, diagnostics }) => this.events.textModemChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
+      this.textModem ??= new TextDigitalReceiver(({ snapshot, diagnostics, image }) => this.events.textModemChanged?.(snapshot, diagnostics, image), error => this.events.runtimeError(error));
       this.textModem.configureSession(textModemConfiguration(metadata.mode, metadata.textModem, rate, metadata.sessionGeneration, offset));
     }
     if (metadata.mode === "APRS") {
@@ -479,7 +479,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       );
     }
     // Configure first: rate rejection cannot replace the active decoder route.
-    this.receiver.setDigitalReceiver(digital, rate, offset);
+    this.receiver.setDigitalReceiver(digital, rate, offset, metadata.mode === "CW-TEXT");
     if (metadata.mode !== "DAB") this.releaseDabResources();
     if (digital !== this.adsb) this.adsb.reset();
     if (digital !== this.ais) this.ais.reset();
@@ -487,9 +487,9 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (digital !== this.rs41) this.rs41?.reset();
     if (digital !== this.textModem) this.textModem?.reset();
     if (digital !== this.srd) this.srd?.reset({ reason: "reconfigure", missingInputSamples: null });
-    if (!digital && this.outputEnabled)
+    if ((!digital || metadata.mode === "CW-TEXT") && this.outputEnabled)
       this.demodulator.setCwToneFrequency?.(metadata.beatToneHz ?? 600);
-    if (!digital && this.outputEnabled)
+    if ((!digital || metadata.mode === "CW-TEXT") && this.outputEnabled)
       this.demodulator.setMode(
         createSignalsMode({
           mode: metadata.mode,
@@ -499,7 +499,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
         }),
       );
     this.player.configure(metadata.actualSampleRateHz === 19_200_000);
-    this.demodulator.setFrequencyOffset(offset);
+    this.demodulator.setFrequencyOffset(offset + (metadata.mode === "CW-TEXT" ? metadata.textModem?.tuningOffsetHz ?? 0 : 0));
     this.rds.setEnabled(metadata.mode === "WBFM");
     this.rds.setFrequencyOffset(offset);
   }

@@ -77,6 +77,7 @@ export class RdsMultiplexReceiver implements SampleReceiver {
 export class AudioFirstRdsReceiver implements SampleReceiver {
   private I = new Float32Array(0);
   private Q = new Float32Array(0);
+  private monitorDigital = false;
 
   constructor(
     private readonly primary: SampleReceiver & { readonly sharesWbfmMultiplex?: boolean },
@@ -86,11 +87,12 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
   ) {}
 
   setAnalysis(analysis?: SampleReceiver): void { this.analysis = analysis; }
-  setDigitalReceiver(digital: DigitalSampleReceiver | undefined, sampleRateHz: number, frequencyOffsetHz: number): void {
+  setDigitalReceiver(digital: DigitalSampleReceiver | undefined, sampleRateHz: number, frequencyOffsetHz: number, monitor = false): void {
     // Configure first so a rejected rate cannot replace the active route.
     digital?.configure(sampleRateHz, frequencyOffsetHz);
     if (this.digital && this.digital !== digital) this.digital.reset();
     this.digital = digital;
+    this.monitorDigital = monitor;
   }
 
   resetDigitalReceiver(): void { this.digital?.reset(); }
@@ -107,6 +109,8 @@ export class AudioFirstRdsReceiver implements SampleReceiver {
     this.analysis?.receiveSamples(block);
     if (this.digital) {
       this.digital.receiveSamples(block);
+      // Digital input is consumed/copied before the analog path mutates I/Q.
+      if (this.monitorDigital) this.primary.receiveSamples(block);
       return;
     }
     if (!this.rds.isEnabled || this.primary.sharesWbfmMultiplex) {

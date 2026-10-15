@@ -143,7 +143,7 @@ export function validatePersistedSurveyRun(value: unknown): PersistedSurveyRun {
       "AIS",
       "SRD",
       "APRS",
-      "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS",
+      "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT",
     ].includes(r.mode) ||
     !finite(r.channelBandwidthHz) ||
     !finite(r.squelch) ||

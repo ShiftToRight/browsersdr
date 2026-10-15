@@ -247,7 +247,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
           ? "Configured / idle"
           : "Preview";
   const unit =
-    isTextMode(reviewMode) ? (reviewMode === "RTTY" || reviewMode === "PSK31" ? "text segments" : "message blocks") : reviewMode === "WBFM"
+    isTextMode(reviewMode) ? (reviewMode === "WEFAX" || reviewMode === "SSTV" ? "images" : reviewMode === "RTTY" || reviewMode === "PSK31" || reviewMode === "CW-TEXT" ? "text segments" : "message blocks") : reviewMode === "WBFM"
       ? "groups"
       : reviewMode === "DAB"
         ? "FIC blocks"

@@ -78,7 +78,7 @@ export async function applyBookmark(
       accepted.session.mode !== bookmark.settings.mode ||
       accepted.session.channelBandwidthHz !== bookmark.settings.bandwidthHz ||
       accepted.session.squelch !== bookmark.settings.squelch ||
-      (bookmark.settings.mode === "CW" &&
+      ((bookmark.settings.mode === "CW" || bookmark.settings.mode === "CW-TEXT") &&
         accepted.session.beatToneHz !== bookmark.settings.beatToneHz) ||
       (bookmark.settings.mode === "SRD" &&
         JSON.stringify(accepted.session.srd) !==

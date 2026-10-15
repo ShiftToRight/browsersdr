@@ -880,7 +880,7 @@ export function ReceiverApp({
   }, [spectrumDisplay]);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
-    !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(initialPreferences.modeSettings.mode),
+    !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(initialPreferences.modeSettings.mode),
   );
   const [channelTuneIssue, setChannelTuneIssue] = useState<string>();
   const [autoRecenter, setAutoRecenter] = useState(() =>
@@ -1648,7 +1648,7 @@ export function ReceiverApp({
     setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
     setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
     setTextModemSettings(next.modeSettings.textModem ?? defaultTextModemSettings());
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(next.modeSettings.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(next.modeSettings.mode));
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
@@ -1672,7 +1672,7 @@ export function ReceiverApp({
       setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
       setTextModemSettings(loadedReplay.metadata.textModem ?? defaultTextModemSettings());
       setChannelAdvancedOpen(
-        !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(loadedReplay.metadata.mode),
+        !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(loadedReplay.metadata.mode),
       );
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
@@ -1739,7 +1739,7 @@ export function ReceiverApp({
       const active = controller.getSnapshot().session;
       if (
         active?.mode === settings.mode &&
-        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(settings.mode)
+        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode)
       ) {
         controller.updateAnalogMode(settings);
         return;
@@ -1774,7 +1774,7 @@ export function ReceiverApp({
     if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(nextMode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
@@ -1952,7 +1952,7 @@ export function ReceiverApp({
       setChannelTuneIssue(undefined);
       // A stored catalog reference is not a freshly checked receiver candidate.
       setReceptionCandidate(undefined);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(accepted.settings.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(accepted.settings.mode));
       return `Recalled ${accepted.name}. ${running ? "Applied to reception." : "Start remains manual."}${accepted.atlasReference ? " Saved Atlas reference has not been rechecked; station identity is unconfirmed." : ""}`;
     } finally {
       stationSelectionPending.current = false;
@@ -2263,7 +2263,7 @@ export function ReceiverApp({
       setLoadedReplay(recording);
       setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
       setMode(recording.metadata.mode);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(recording.metadata.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(recording.metadata.mode));
       setBandwidthHz(recording.metadata.channelBandwidthHz);
       setSquelch(recording.metadata.squelch);
       setSrdSettings(recording.metadata.srd ?? defaultSrdModeSettings());
@@ -3319,7 +3319,7 @@ export function ReceiverApp({
                   <FmStationSummary controller={controller} />
                 )}
                 {source !== "synthetic" &&
-                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode) && (
+                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode) && (
                     <>
                       <label htmlFor="receiver-volume">
                         <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} /><span id="receiver-volume-label">Volume</span> <output aria-hidden="true">{Math.round(volume * 100)}%</output></span>
@@ -3434,7 +3434,7 @@ export function ReceiverApp({
                       : `${bandwidthHz.toLocaleString()} Hz`}
                     {mode === "OFF"
                       ? ""
-                      : mode === "CW"
+                      : (mode === "CW" || mode === "CW-TEXT")
                         ? ` · ${beatToneHz.toLocaleString()} Hz tone`
                         : modeCaps.squelchSettable
                           ? ` · squelch ${squelch.toFixed(1)}`
@@ -3450,7 +3450,7 @@ export function ReceiverApp({
                       No channel filter, audio demodulator, or digital decoder
                       is active. RF acquisition and spectrum analysis continue.
                     </p>
-                  ) : mode === "CW" ? (
+                  ) : (mode === "CW" || mode === "CW-TEXT") ? (
                     <label>
                       Receive filter bandwidth
                       <select
@@ -3563,7 +3563,7 @@ export function ReceiverApp({
                       onChange={applySquelch}
                     />
                   )}
-                  {mode === "CW" && (
+                  {(mode === "CW" || mode === "CW-TEXT") && (
                     <label>
                       Beat tone{" "}
                       <output>{beatToneHz.toLocaleString()} Hz</output>
@@ -3959,7 +3959,7 @@ export function ReceiverApp({
               {captureCurrentChannel && (
                 <p className="display-note" aria-live="polite">
                   {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
                     : channelCapturePreview.error}
                 </p>
               )}

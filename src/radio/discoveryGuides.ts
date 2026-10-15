@@ -190,6 +190,9 @@ export const DISCOVERY_GUIDES: readonly DiscoveryGuide[] = [
       ["PSK31", "BPSK31 text", ["psk31", "bpsk31", "varicode"]],
       ["NAVTEX", "NAVTEX / SITOR-B", ["navtex", "sitor", "marine weather"]],
       ["ACARS", "ACARS aviation messages", ["acars", "aviation messages"]],
+      ["WEFAX", "Weather-fax chart images", ["wefax", "radiofax", "weather chart"]],
+      ["SSTV", "SSTV Martin M1/M2 pictures", ["sstv", "martin", "slow scan television"]],
+      ["CW-TEXT", "CW text assistant", ["morse text", "cw text", "transcription"]],
       ["RS41", "RS41 radiosondes", ["rs41", "radiosonde", "weather balloon"]],
       ["SRD", "Short-range devices", ["srd", "ook", "2fsk", "sensors"]],
     ] as const

@@ -266,3 +266,7 @@ under GPL-2.0-only. The upstream license is retained in
 comparison are in `src/textmodem/fixtures/README.md`. The fixture is used only
 by tests and is not bundled into the application. No upstream decoder code is
 incorporated. Source: <https://github.com/f00b4r0/acarsdec>.
+
+## Independent SSTV encoder test reference
+
+The test-only Martin M2 audio and analytic derivative in `src/textmodem/fixtures/` were generated using [PySSTV](https://github.com/dnet/pysstv) at `d998fad154d3e6ad2d73af5add49beec0d2ab59f`, Copyright (c) 2013 Andras Veres-Szentkiralyi, MIT license. The original license is retained in `third_party/pysstv/LICENSE.txt`. The source color bars are original BrowserSDR test artwork. Exact generated/derived file hashes, generation steps and reception limitations are retained beside the fixtures. No PySSTV implementation is included in runtime bundles.
