@@ -48,7 +48,10 @@ const flags = Object.fromEntries(
 for (const feature of Object.values(policy.features))
   feature.buildContext.flags = flags;
 const fingerprints = fingerprintCommunityEvidence(source, policy);
-const work = join(source, ".local/community-release-check");
+const work = resolve(
+  process.env.BSD_COMMUNITY_CHECK_OUTPUT ??
+    join(source, ".local/community-release-check"),
+);
 mkdirSync(work, { recursive: true });
 const mime = {
   ".html": "text/html",
