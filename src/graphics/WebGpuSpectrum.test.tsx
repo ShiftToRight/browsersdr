@@ -195,6 +195,18 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   current.bins.fill(-90);
   current.bins[2000] = -40;
   await act(async () => listener(current, [current]));
+  // The GPU renderer's hover must inspect its accepted frame, including Pause.
+  const hoverCallbacks = new Map<number, FrameRequestCallback>();
+  let hoverId = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { hoverCallbacks.set(++hoverId, callback); return hoverId; });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => hoverCallbacks.delete(id));
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 800, height: 400 } as DOMRect);
+  const flushHover = async () => act(async () => {
+    const pending = [...hoverCallbacks.values()]; hoverCallbacks.clear(); pending.forEach(callback => callback(0));
+  });
+  await act(async () => canvas.dispatchEvent(new MouseEvent("pointermove", { clientX: 800 * 2000 / 4095, clientY: 80 })));
+  await flushHover();
+  expect(host.querySelector(".spectrum-hover-readout")?.textContent).toContain("Level -40 dB rel.");
   const pause = host.querySelector<HTMLButtonElement>(".display-pause")!;
   const autoScale = Array.from(
     host.querySelectorAll(".spectrum-actions button"),
@@ -205,6 +217,9 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   await act(async () => pause.click());
   expect(pause.textContent).toContain("Resume display");
   await send(7); // Incoming data must not alter scaling of the frozen display.
+  await flushHover();
+  expect(host.querySelector(".spectrum-hover-readout")?.textContent).toContain("Level -40 dB rel.");
+  expect(host.querySelector(".spectrum-hover-readout")?.textContent).toContain("Paused");
   await act(async () => autoScale.click());
   expect(
     Array.from(host.querySelectorAll(".display-controls output")).map(

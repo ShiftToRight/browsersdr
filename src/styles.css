@@ -821,6 +821,14 @@ canvas {
   gap: 16px;
   margin-top: 16px;
 }
+.spectrum-hover-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  width: fit-content;
+}
+.spectrum-hover-toggle input { width: auto; min-height: auto; }
 .display-controls label {
   grid-template-columns: 1fr auto;
 }

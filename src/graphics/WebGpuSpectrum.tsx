@@ -1,3 +1,4 @@
+import type { HoverSpectrumFrame } from "./spectrumHoverMath";
 import { ActionButton } from "../ui/ActionButton";
 import type { CanvasSpectrum } from "./canvasSpectrum";
 import { SPECTRUM_PALETTES } from "./spectrumPalette";
@@ -18,6 +19,7 @@ import { defaultDiagnosticRecorder } from "../diagnostics/diagnosticRecorder";
 import { channelPassbands, formatPassbandWidth } from "./channelPassband";
 import { formatFrequencyMHz } from "../ui/frequencyFormat";
 import { lazy, Suspense, type CSSProperties } from "react";
+const SpectrumHover = lazy(() => import("./SpectrumHover").then(module => ({ default: module.SpectrumHover })));
 const BandGuideFeature = lazy(() => import("./BandGuideFeature").then(module => ({default:module.BandGuideFeature})));
 
 export interface SpectrumDisplayStatus {
@@ -89,6 +91,11 @@ export function WebGpuSpectrum({
       : "",
   );
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hoverFrameRef = useRef<HoverSpectrumFrame | undefined>(undefined);
+  const [hoverEnabled, setHoverEnabled] = useState(() => {
+    try { return localStorage.getItem("browsersdr.spectrum-hover.v1") !== "off"; }
+    catch { return true; }
+  });
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const renderRef = useRef<() => void>(() => undefined);
@@ -232,6 +239,7 @@ export function WebGpuSpectrum({
   }, [session]);
 
   useEffect(() => {
+    hoverFrameRef.current = undefined;
     let disposed = false;
     const size = fftSize;
     let canvasDisplay: CanvasSpectrum | undefined;
@@ -310,6 +318,11 @@ export function WebGpuSpectrum({
               floorRef.current, rangeRef.current, paletteRef.current,
               guideGapRef.current,
             );
+            if (latestFrame) hoverFrameRef.current = {
+              center: latestFrame.centerFrequencyHz, rate: latestFrame.sampleRateHz,
+              bins: latestFrame.bins, columns: Math.min(canvasRef.current?.width ?? 1, FFT_SIZE),
+              floor: floorRef.current, range: rangeRef.current,
+            };
           } catch (error) {
             setState({ kind: "error", message: `Canvas2D rendering failed: ${error instanceof Error ? error.message : String(error)}` });
           }
@@ -377,6 +390,12 @@ export function WebGpuSpectrum({
       }
       pass.end();
       device.queue.submit([encoder.finish()]);
+      if (latestFrame) hoverFrameRef.current = {
+        center: latestFrame.centerFrequencyHz, rate: latestFrame.sampleRateHz,
+        // Experimental GPU FFT does not expose the plotted bins on the CPU.
+        bins: fft ? undefined : latestFrame.bins, columns: size,
+        floor: floorRef.current, range: rangeRef.current,
+      };
       } catch (error) {
         defaultDiagnosticRecorder.record({ area: "graphics", code: "WEBGPU_RENDER_FAILURE", severity: "warning", operation: "render", error });
         fallbackToCanvas(`WebGPU rendering failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -390,6 +409,7 @@ export function WebGpuSpectrum({
         if (pausedRef.current) return;
         const accepted = canvasDisplay.accept(frames);
         if (!accepted) return;
+        latestFrame = accepted;
         latestBinsRef.current = accepted.bins;
         lastFrameAt.current = performance.now();
         setDisplayedGeneration(accepted.sessionGeneration);
@@ -721,6 +741,7 @@ export function WebGpuSpectrum({
     void initialize();
     return () => {
       disposed = true;
+      hoverFrameRef.current = undefined;
       renderRef.current = () => undefined;
       unsubscribe();
       if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
@@ -1001,6 +1022,14 @@ export function WebGpuSpectrum({
               </small>
             )}
           </div>
+          {hoverEnabled && visible && hasFrame && state.kind === "ready" && (
+            <Suspense fallback={null}>
+              <SpectrumHover key={`${renderer}:${session?.sessionGeneration}`}
+                canvas={canvasRef} frame={hoverFrameRef} guideGap={guideGap}
+                selectedHz={session?.selectedChannelFrequencyHz ?? 0}
+                paused={paused} stalled={stalled} />
+            </Suspense>
+          )}
           <SpectrumInfo>
             <p className="diagnostic-message">{state.message}</p>
             {fftMessage && <p className="display-note">{fftMessage}</p>}
@@ -1016,6 +1045,14 @@ export function WebGpuSpectrum({
       </div>
       <details className="display-settings">
         <summary>Display settings</summary>
+        <label className="spectrum-hover-toggle">
+          <input type="checkbox" checked={hoverEnabled} onChange={event => {
+            const enabled = event.currentTarget.checked;
+            setHoverEnabled(enabled);
+            try { localStorage.setItem("browsersdr.spectrum-hover.v1", enabled ? "on" : "off"); } catch { /* Keep the in-tab choice when storage is unavailable. */ }
+          }} />
+          Hover frequency guide
+        </label>
         <div className="display-controls">
           <label>
             Display renderer
