@@ -108,7 +108,7 @@ export function mapViewportForSurface(
   surfaceWidth: number,
   surfaceHeight: number,
 ): MapViewport {
-  if (!viewport.local || surfaceWidth <= 0 || surfaceHeight <= 0)
+  if (surfaceWidth <= 0 || surfaceHeight <= 0)
     return viewport;
   const aspect = surfaceWidth / surfaceHeight;
   const width = Math.max(viewport.width, viewport.height * aspect);
@@ -154,4 +154,86 @@ export function mapViewportInReference(
     width:
       (viewport.width * reference.longitudeScale) / viewport.longitudeScale,
   };
+}
+
+/** Zoom about the current center, without changing target coordinates/projection. */
+export function zoomMapViewport(
+  viewport: MapViewport,
+  steps: number,
+): MapViewport {
+  const zoom = Math.max(0, Math.min(12, viewport.zoom + steps));
+  const scale = 2 ** (viewport.zoom - zoom);
+  const width = viewport.width * scale;
+  const height = viewport.height * scale;
+  return {
+    ...viewport,
+    x: viewport.x + (viewport.width - width) / 2,
+    y: Math.max(
+      0,
+      Math.min(360 - height, viewport.y + (viewport.height - height) / 2),
+    ),
+    width,
+    height,
+    zoom,
+    local: width < 720,
+  };
+}
+
+/** Pixel budgets include RGBA backing storage, independently of CSS dimensions. */
+export function boundedMapPixels(
+  width: number,
+  height: number,
+  pixelRatio: number,
+  maxPixels: number,
+) {
+  const ratio = Math.min(2, Math.max(1, pixelRatio));
+  const scale = Math.min(
+    ratio,
+    Math.sqrt(maxPixels / Math.max(1, width * height)),
+  );
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+  };
+}
+
+export function mapRasterPlan(
+  viewport: MapViewport,
+  width: number,
+  height: number,
+  pixelRatio: number,
+) {
+  // A modest pan buffer leaves most backing pixels available to the visible map.
+  const coverage = 1.25;
+  return {
+    viewport: {
+      ...viewport,
+      x: viewport.x - (viewport.width * (coverage - 1)) / 2,
+      y: viewport.y - (viewport.height * (coverage - 1)) / 2,
+      width: viewport.width * coverage,
+      height: viewport.height * coverage,
+    },
+    pixels: boundedMapPixels(
+      width * coverage,
+      height * coverage,
+      pixelRatio,
+      2 * 1024 * 1024,
+    ),
+    // Keep strokes at CSS-pixel sizes after cropping the buffered raster.
+    cssWidth: width,
+    visibleWidth: viewport.width,
+  };
+}
+
+export function mapViewportContains(
+  reference: MapViewport,
+  viewport: MapViewport,
+) {
+  const projected = mapViewportInReference(viewport, reference);
+  return (
+    projected.x >= reference.x &&
+    viewport.y >= reference.y &&
+    projected.x + projected.width <= reference.x + reference.width &&
+    viewport.y + viewport.height <= reference.y + reference.height
+  );
 }

@@ -81,14 +81,21 @@ test("Decoder map pans without selecting a dragged aircraft and Fit restores fra
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     390,
   );
-  const detail = await workspace
-    .getByRole("button", { name: "Detailed map" })
+  const zoom = await workspace
+    .getByRole("button", { name: "Zoom in", exact: true })
     .boundingBox();
   const fit = await workspace
     .getByRole("button", { name: "Fit targets", exact: true })
     .boundingBox();
-  expect(detail!.y).toBeGreaterThanOrEqual(fit!.y + fit!.height);
-  await expect(workspace).toContainText("Natural Earth 1:110m overview");
+  expect(zoom!.y).toBeGreaterThanOrEqual(fit!.y + fit!.height);
+  await expect(
+    workspace.getByRole("button", { name: "Detailed map" }),
+  ).toHaveCount(0);
+  await expect(workspace).toContainText("Natural Earth 1:10m");
+  await expect(workspace.locator("canvas.map-basemap")).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
   await page.screenshot({
     path: test.info().outputPath("phone-map-controls.png"),
   });

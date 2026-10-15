@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0 — 2026-10-15
+
+- Show detailed local geography automatically in geographic decoder views; remove the detail switch.
+- Improve map contrast and visible raster resolution within the existing pixel-memory limits.
+- Add button and keyboard zoom alongside panning and Fit targets, with a retry action when geography cannot load.
+- Retain the searchable decoder chooser and saved quick modes introduced in 1.5.0.
+
 ## 1.5.0 — 2026-10-15
 
 - Short, customizable quick-mode dropdown and adjacent More modes decoder chooser with search and categories.

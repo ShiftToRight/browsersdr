@@ -9,11 +9,14 @@ import {
 } from "react";
 // Keep large static map assets separate from JavaScript; fetch their bundled
 // URLs once for the cached background raster.
-import naturalEarthOverviewUrl from "../assets/natural-earth-110m.svg?no-inline";
 import naturalEarthBaseUrl from "../assets/natural-earth-10m-base.svg?no-inline";
 import naturalEarthStatesUrl from "../assets/natural-earth-10m-states.svg?no-inline";
 import {
+  boundedMapPixels,
   computeMapViewport,
+  mapRasterPlan,
+  mapViewportContains,
+  zoomMapViewport,
   latitudeToY,
   longitudeForViewportX,
   longitudeToX,
@@ -169,67 +172,115 @@ function mapSource(url: string) {
   return pending;
 }
 
-// Rasterize a generous region once per held frame. Resizing the inspector/tray
-// crops that bitmap; it does not decode the world SVG again.
+// Recolor source artwork at presentation time; geographic source bytes stay intact.
+const MAP_COLORS: Record<string, string> = {
+  "#07141b": "#091c28",
+  "#102c35": "#244a58",
+  "#315968": "#83b4c5",
+  "#294d5a": "#75a7bb",
+  "#266071": "#6eb0cb",
+  "#4a7180": "#c0d5df",
+  "#355966": "#8fb0c2",
+};
+function mapArtwork(source: string, strokeScale: number) {
+  return source
+    .replace(/#[0-9a-f]{6}/g, (color) => MAP_COLORS[color] ?? color)
+    .replace(
+      /stroke-width="([0-9.]+)"/g,
+      (_, width: string) =>
+        `stroke-width="${Math.max(0.8, Number(width) * 1.8) * strokeScale}"`,
+    )
+    .replace(
+      /stroke-dasharray="2 1.5"/g,
+      `stroke-dasharray="${4 * strokeScale} ${3 * strokeScale}"`,
+    );
+}
+
+// Cache a nearby region at surface-appropriate resolution. Telemetry/selection
+// and small pans/resizes reuse pixels; zoom or leaving coverage prepares a new one.
 const MapBackground = memo(function MapBackground({
   viewport,
-  rasterViewport,
-  detailedBoundaries,
-  detail,
+  surfaceSize,
+  dragging,
 }: {
   viewport: MapViewport;
-  rasterViewport: MapViewport;
-  detailedBoundaries: boolean;
-  detail: boolean;
+  surfaceSize: { width: number; height: number };
+  dragging: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const [retry, setRetry] = useState(0);
+  const pixelRatio =
+    typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+  const plan = useMemo(
+    () =>
+      mapRasterPlan(
+        viewport,
+        surfaceSize.width,
+        surfaceSize.height,
+        pixelRatio,
+      ),
+    [viewport, surfaceSize, pixelRatio],
+  );
+  const boundaries = viewport.zoom >= 5.5;
+  const [request, setRequest] = useState({ plan, boundaries, retry });
+  const sampling = request.plan.pixels.width / request.plan.viewport.width;
+  const desiredSampling = plan.pixels.width / plan.viewport.width;
+  if (
+    !dragging &&
+    (request.retry !== retry ||
+      request.boundaries !== boundaries ||
+      !mapViewportContains(request.plan.viewport, viewport) ||
+      sampling < desiredSampling * 0.8)
+  ) {
+    setRequest({ plan, boundaries, retry });
+  }
   const [raster, setRaster] = useState<{
-    viewport: MapViewport;
+    request: typeof request;
     bitmap?: HTMLCanvasElement;
+    bitmapPlan?: typeof plan;
     error?: string;
   }>();
   useEffect(() => {
     let active = true;
     let url: string | undefined;
     let image: HTMLImageElement | undefined;
-    if (!canvas.current?.getContext("2d")) {
-      setRaster({
-        viewport: rasterViewport,
-        error: "Map background renderer unavailable.",
-      });
-      return;
-    }
     void (async () => {
+      if (!canvas.current?.getContext("2d"))
+        throw new Error("Map background renderer unavailable.");
+      const { viewport: region, pixels } = request.plan;
       const layers = await Promise.all([
-        mapSource(detail && rasterViewport.local ? naturalEarthBaseUrl : naturalEarthOverviewUrl),
-        detail && detailedBoundaries ? mapSource(naturalEarthStatesUrl) : Promise.resolve(""),
+        mapSource(naturalEarthBaseUrl),
+        request.boundaries
+          ? mapSource(naturalEarthStatesUrl)
+          : Promise.resolve(""),
       ]);
       if (!active) return;
-      const content = mapLayerOffsets(rasterViewport)
-        .map(
-          (offset) =>
-            `<g transform="translate(${offset} 0)">${layers.join("")}</g>`,
-        )
+      const strokeScale =
+        (pixels.width * request.plan.visibleWidth) /
+        (region.width * request.plan.cssWidth);
+      const artwork = mapArtwork(layers.join(""), strokeScale);
+      const content = mapLayerOffsets(region)
+        .map((offset) => `<g transform="translate(${offset} 0)">${artwork}</g>`)
         .join("");
-      const source = `<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024" viewBox="${rasterViewport.x} ${rasterViewport.y} ${rasterViewport.width} ${rasterViewport.height}"><g transform="${mapLayerTransform(rasterViewport)}">${content}</g></svg>`;
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" width="${pixels.width}" height="${pixels.height}" viewBox="${region.x} ${region.y} ${region.width} ${region.height}"><rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" fill="#091c28"/><g transform="${mapLayerTransform(region)}">${content}</g></svg>`;
       url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml" }));
       image = new Image();
       image.src = url;
       await image.decode();
       if (!active) return;
       const bitmap = document.createElement("canvas");
-      bitmap.width = 2048;
-      bitmap.height = 1024;
+      bitmap.width = pixels.width;
+      bitmap.height = pixels.height;
       const context = bitmap.getContext("2d");
       if (!context) throw new Error("Map background renderer unavailable.");
       context.drawImage(image, 0, 0, bitmap.width, bitmap.height);
-      setRaster({ viewport: rasterViewport, bitmap });
+      setRaster({ request, bitmap, bitmapPlan: request.plan });
     })()
       .catch((error: unknown) => {
         if (active)
-          setRaster(previous => ({
-            ...(previous?.viewport === rasterViewport ? previous : {}),
-            viewport: rasterViewport,
+          setRaster((previous) => ({
+            ...previous,
+            request,
             error:
               error instanceof Error
                 ? error.message
@@ -244,53 +295,68 @@ const MapBackground = memo(function MapBackground({
       if (image) image.src = "";
       if (url) URL.revokeObjectURL(url);
     };
-  }, [rasterViewport, detailedBoundaries, detail]);
-  const ready = raster?.viewport === rasterViewport;
+  }, [request]);
+  const ready = raster?.request === request;
+  const front = boundedMapPixels(
+    surfaceSize.width,
+    surfaceSize.height,
+    pixelRatio,
+    1024 * 1024,
+  );
   useEffect(() => {
     const element = canvas.current;
     const context = element?.getContext("2d");
     if (!element || !context) return;
-    element.height = Math.max(
-      1,
-      Math.min(1024, Math.round((1024 * viewport.height) / viewport.width)),
-    );
-    if (!raster?.bitmap) return;
-    const sourceViewport = mapViewportInReference(viewport, raster.viewport);
-    const sx =
-      ((sourceViewport.x - raster.viewport.x) / raster.viewport.width) *
-      raster.bitmap.width;
-    const sy =
-      ((viewport.y - raster.viewport.y) / raster.viewport.height) *
-      raster.bitmap.height;
-    const sw =
-      (sourceViewport.width / raster.viewport.width) * raster.bitmap.width;
-    const sh =
-      (viewport.height / raster.viewport.height) * raster.bitmap.height;
+    element.width = front.width;
+    element.height = front.height;
+    if (!raster?.bitmap || !raster.bitmapPlan) return;
+    const region = raster.bitmapPlan.viewport;
+    const sourceViewport = mapViewportInReference(viewport, region);
     context.drawImage(
       raster.bitmap,
-      sx,
-      sy,
-      sw,
-      sh,
+      ((sourceViewport.x - region.x) / region.width) * raster.bitmap.width,
+      ((viewport.y - region.y) / region.height) * raster.bitmap.height,
+      (sourceViewport.width / region.width) * raster.bitmap.width,
+      (viewport.height / region.height) * raster.bitmap.height,
       0,
       0,
       element.width,
       element.height,
     );
-  }, [viewport, rasterViewport, ready, raster]);
+  }, [viewport, raster, front.width, front.height]);
   return (
     <>
       <canvas
         className="map-basemap"
         ref={canvas}
-        width={1024}
-        height={512}
+        width={front.width}
+        height={front.height}
         aria-hidden="true"
-        data-state={ready && !raster.error ? "ready" : "loading"}
+        data-state={ready ? (raster.error ? "error" : "ready") : "loading"}
+        data-raster-width={raster?.bitmap?.width}
+        data-raster-height={raster?.bitmap?.height}
+        data-raster-viewbox={
+          raster?.bitmapPlan
+            ? `${raster.bitmapPlan.viewport.x} ${raster.bitmapPlan.viewport.y} ${raster.bitmapPlan.viewport.width} ${raster.bitmapPlan.viewport.height}`
+            : undefined
+        }
       />
       {(!ready || raster.error) && (
         <small className="map-background-status" role="status">
-          {ready ? raster.error : "Loading map background…"}
+          {ready ? (
+            <>
+              {raster.error}{" "}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setRetry((value) => value + 1)}
+              >
+                Retry map
+              </button>
+            </>
+          ) : (
+            "Loading detailed map…"
+          )}
         </small>
       )}
     </>
@@ -364,7 +430,12 @@ export function PositionMap({
     framingKey && framing?.key === framingKey
       ? framing.viewport
       : automaticViewport;
-  const [detail, setDetail] = useState(false);
+  const [zoom, setZoom] = useState<{ frame: MapViewport; steps: number }>();
+  const zoomSteps = zoom?.frame === baseViewport ? zoom.steps : 0;
+  const zoomedViewport = useMemo(
+    () => zoomMapViewport(baseViewport, zoomSteps),
+    [baseViewport, zoomSteps],
+  );
   const [places, setPlaces] = useState<readonly PlaceRow[]>([]);
   const surface = useRef<HTMLDivElement>(null);
   const [surfaceSize, setSurfaceSize] = useState({ width: 720, height: 360 });
@@ -372,10 +443,6 @@ export function PositionMap({
   type Pan = { frame: MapViewport; x: number; y: number };
   const [pan, setPan] = useState<Pan>();
   const [gestureFrame, setGestureFrame] = useState<MapViewport>();
-  const [rasterAnchor, setRasterAnchor] = useState<{
-    frame: MapViewport;
-    viewport: MapViewport;
-  }>();
   const pendingPan = useRef<Pan | undefined>(undefined);
   const panAnimation = useRef<number>(0);
   const suppressClick = useRef(false);
@@ -402,7 +469,7 @@ export function PositionMap({
         surface.current.releasePointerCapture(drag.current.pointerId);
       drag.current = undefined;
     },
-    [baseViewport],
+    [baseViewport, zoomSteps],
   );
   useEffect(() => {
     const element = surface.current;
@@ -423,11 +490,11 @@ export function PositionMap({
   const fittedViewport = useMemo(
     () =>
       mapViewportForSurface(
-        baseViewport,
+        zoomedViewport,
         surfaceSize.width,
         surfaceSize.height,
       ),
-    [baseViewport, surfaceSize],
+    [zoomedViewport, surfaceSize],
   );
   const currentPan = pannable && pan?.frame === baseViewport ? pan : undefined;
   const viewport = useMemo(
@@ -437,36 +504,21 @@ export function PositionMap({
         : fittedViewport,
     [fittedViewport, currentPan],
   );
-  const anchor =
-    rasterAnchor?.frame === baseViewport ? rasterAnchor.viewport : baseViewport;
-  const coverageFactor = Math.max(
-    4,
-    Math.ceil(viewport.width / baseViewport.width),
-    Math.ceil(viewport.height / baseViewport.height),
-  );
-  const rasterViewport = useMemo(
-    () => ({
-      ...anchor,
-      x: anchor.x - (anchor.width * (coverageFactor - 1)) / 2,
-      y: anchor.y - (anchor.height * (coverageFactor - 1)) / 2,
-      width: anchor.width * coverageFactor,
-      height: anchor.height * coverageFactor,
-    }),
-    [anchor, coverageFactor],
-  );
   useEffect(() => {
-    if (!detail || !viewport.local || places.length > 0) return;
+    if (!viewport.local || places.length > 0) return;
     let active = true;
-    void import("../assets/natural-earth-10m-places.json").then((module) => {
-      if (active) setPlaces(module.default as unknown as readonly PlaceRow[]);
-    }).catch(() => undefined);
+    void import("../assets/natural-earth-10m-places.json")
+      .then((module) => {
+        if (active) setPlaces(module.default as unknown as readonly PlaceRow[]);
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [detail, places.length, viewport.local]);
+  }, [places.length, viewport.local]);
   const cityLabels = useMemo(
-    () => detail ? selectLabels(viewport, places) : [],
-    [detail, places, viewport],
+    () => selectLabels(viewport, places),
+    [places, viewport],
   );
   const longitudeStep = gridStep(viewport.width / 2);
   const latitudeStep = gridStep(viewport.height / 2);
@@ -491,24 +543,16 @@ export function PositionMap({
   const dragging = gestureFrame === baseViewport;
   function commitPan(next: Pan) {
     setPan(next);
-    const nextViewport = mapViewportInReference(
-      panMapViewport(fittedViewport, next.x, next.y),
-      rasterViewport,
-    );
-    if (
-      nextViewport.x < rasterViewport.x ||
-      nextViewport.y < rasterViewport.y ||
-      nextViewport.x + nextViewport.width >
-        rasterViewport.x + rasterViewport.width ||
-      nextViewport.y + nextViewport.height >
-        rasterViewport.y + rasterViewport.height
-    ) {
-      setRasterAnchor({
-        frame: baseViewport,
-        viewport: panMapViewport(baseViewport, next.x, next.y),
-      });
-    }
   }
+  function changeZoom(steps: number) {
+    const next = Math.max(
+      -baseViewport.zoom,
+      Math.min(12 - baseViewport.zoom, zoomSteps + steps),
+    );
+    setZoom({ frame: baseViewport, steps: next });
+    setGestureFrame(undefined);
+  }
+
   function movePointer(event: PointerEvent<HTMLDivElement>) {
     const gesture = drag.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
@@ -547,8 +591,30 @@ export function PositionMap({
 
   return (
     <div className="target-plot">
-      <button type="button" className="map-detail-toggle secondary" aria-pressed={detail}
-        title="Load detailed local geography and city labels (up to 16 MB)" onClick={() => setDetail(!detail)}>Detailed map</button>
+      {pannable && (
+        <div className="map-zoom-controls" role="group" aria-label="Map zoom">
+          <button
+            type="button"
+            className="secondary"
+            aria-label="Zoom in"
+            title="Zoom in (+)"
+            disabled={zoomedViewport.zoom >= 12}
+            onClick={() => changeZoom(1)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            aria-label="Zoom out"
+            title="Zoom out (−)"
+            disabled={zoomedViewport.zoom <= 0}
+            onClick={() => changeZoom(-1)}
+          >
+            −
+          </button>
+        </div>
+      )}
       <div
         className={`map-surface${pannable ? " map-surface-pannable" : ""}${dragging ? " map-surface-panning" : ""}`}
         ref={surface}
@@ -613,6 +679,11 @@ export function PositionMap({
                   event.metaKey
                 )
                   return;
+                if (["+", "=", "-", "_"].includes(event.key)) {
+                  event.preventDefault();
+                  changeZoom(event.key === "+" || event.key === "=" ? 1 : -1);
+                  return;
+                }
                 const delta: Record<string, [number, number]> = {
                   ArrowLeft: [-1, 0],
                   ArrowRight: [1, 0],
@@ -634,9 +705,8 @@ export function PositionMap({
       >
         <MapBackground
           viewport={viewport}
-          rasterViewport={rasterViewport}
-          detail={detail}
-          detailedBoundaries={baseViewport.zoom >= 5.5}
+          surfaceSize={surfaceSize}
+          dragging={dragging}
         />
         <svg
           className="map-overlay"
@@ -786,10 +856,10 @@ export function PositionMap({
       </div>
       <small id={helpId}>
         {pannable &&
-          "Drag to move · Arrow keys to pan · Fit targets to reset · "}
+          "Drag to move · Arrow keys to pan · +/− to zoom · Fit targets to reset · "}
         {viewport.local
-          ? `Natural Earth ${detail ? "1:10m" : "1:110m overview"} · ${framingKey ? (pannable ? "view held" : "framing held; Fit targets to update") : "auto-framed"} · ${positioned.length} transmitted position${positioned.length === 1 ? "" : "s"} · minimum 50 km radius context`
-          : "Public-domain Natural Earth overview · waiting for transmitted coordinates"}
+          ? `Natural Earth 1:10m · ${framingKey ? (pannable ? "view held" : "framing held; Fit targets to update") : "auto-framed"} · ${positioned.length} transmitted position${positioned.length === 1 ? "" : "s"} · ${zoomSteps === 0 ? "fitted with minimum 50 km radius context" : "zoomed view"}`
+          : "Public-domain Natural Earth 1:10m · waiting for transmitted coordinates"}
       </small>
       {positioned.some((point) => point.map) && (
         <small>

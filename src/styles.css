@@ -5023,10 +5023,11 @@ button:has(> .app-icon) {
 input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
 
 .target-plot { position: relative; }
-.map-detail-toggle { position: absolute; top: 8px; right: 8px; z-index: 3; min-height: 44px; }
+.map-zoom-controls { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 4px; }
+.map-zoom-controls button { width: 44px; min-height: 44px; padding: 0; font-size: 22px; }
 
 @media (max-width: 600px) {
-  .decoder-map .map-detail-toggle { top: 64px; }
+  .decoder-map .map-zoom-controls { top: 64px; }
 }
 
 .compatibility-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }

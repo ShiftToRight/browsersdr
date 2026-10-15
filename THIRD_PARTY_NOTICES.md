@@ -46,9 +46,10 @@ used only in tests and is not bundled into the application. Source:
 The map assets under `src/assets/natural-earth-*` are derived from Natural
 Earth Vector data downloaded from the Natural Earth Vector repository and
 converted to equirectangular SVG and compact label JSON by
-`scripts/generate-natural-earth-map.mjs`. The empty map uses the 1:110m land
-overview. Auto-framed maps use the 1:10m land, lakes, national boundary,
-state/province boundary and populated-place layers.
+`scripts/generate-natural-earth-map.mjs`. Geographic views use the 1:10m land,
+lakes, rivers, national boundary, scale-aware state/province boundary and
+populated-place layers, with presentation colors and cached regional rendering.
+The retained 1:110m source asset is not used by the geographic views.
 
 The source GeoJSON files used for the current conversion had these SHA-256
 digests:

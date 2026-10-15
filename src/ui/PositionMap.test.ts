@@ -6,6 +6,10 @@ import {
   mapViewportInReference,
   panMapViewport,
   xForViewport,
+  zoomMapViewport,
+  boundedMapPixels,
+  mapRasterPlan,
+  mapViewportContains,
 } from "./positionMapGeometry";
 
 describe("computeMapViewport", () => {
@@ -71,6 +75,59 @@ describe("computeMapViewport", () => {
   });
 });
 
+describe("zoom and raster resolution", () => {
+  it("zooms around the geographic center, bounds levels, and preserves seam alignment", () => {
+    const initial = computeMapViewport([
+      { latitude: 52, longitude: 179.8, label: "Target" },
+    ]);
+    const close = zoomMapViewport(initial, 1);
+    expect(close.width).toBeCloseTo(initial.width / 2);
+    expect(close.height).toBeCloseTo(initial.height / 2);
+    expect(close.x + close.width / 2).toBeCloseTo(
+      initial.x + initial.width / 2,
+    );
+    expect(close.y + close.height / 2).toBeCloseTo(
+      initial.y + initial.height / 2,
+    );
+    expect(zoomMapViewport(initial, 100).zoom).toBe(12);
+    expect(zoomMapViewport(initial, -100).zoom).toBe(0);
+    const region = mapRasterPlan(close, 1440, 720, 2);
+    expect(mapViewportContains(region.viewport, close)).toBe(true);
+    expect(
+      mapViewportContains(
+        region.viewport,
+        panMapViewport(close, close.width, 0),
+      ),
+    ).toBe(false);
+  });
+
+  it("uses visible-map pixels without exceeding raster/front memory on desktop, phone or high DPI", () => {
+    const viewport = computeMapViewport([
+      { latitude: 52, longitude: 13, label: "Target" },
+    ]);
+    for (const [width, height, dpr] of [
+      [1440, 600, 1],
+      [390, 600, 3],
+      [3840, 2160, 2],
+    ]) {
+      const plan = mapRasterPlan(viewport, width!, height!, dpr!);
+      const front = boundedMapPixels(width!, height!, dpr!, 1024 * 1024);
+      expect(plan.pixels.width * plan.pixels.height * 4).toBeLessThanOrEqual(
+        8 * 1024 * 1024,
+      );
+      expect(front.width * front.height * 4).toBeLessThanOrEqual(
+        4 * 1024 * 1024,
+      );
+      expect(plan.pixels.width / plan.pixels.height).toBeCloseTo(
+        width! / height!,
+        1,
+      );
+    }
+    const desktop = mapRasterPlan(viewport, 1440, 600, 1);
+    expect(desktop.pixels.width / 1.25).toBe(1440);
+  });
+});
+
 describe("panning", () => {
   it("moves the view while preserving target/bitmap alignment across the longitude seam", () => {
     const original = computeMapViewport([
@@ -97,6 +154,22 @@ describe("panning", () => {
 });
 
 describe("mapViewportForSurface", () => {
+  it("keeps a zoomed-out world aligned with the surface aspect ratio", () => {
+    const world = zoomMapViewport(
+      computeMapViewport([{ latitude: 52, longitude: 13, label: "Target" }]),
+      -100,
+    );
+    for (const [width, height] of [
+      [1440, 600],
+      [390, 600],
+    ]) {
+      const fitted = mapViewportForSurface(world, width!, height!);
+      expect(fitted.width / fitted.height).toBeCloseTo(width! / height!);
+      expect(fitted.x + fitted.width / 2).toBeCloseTo(
+        world.x + world.width / 2,
+      );
+    }
+  });
   it("fills wide and narrow surfaces by adding context without clipping the fitted bounds", () => {
     const original = computeMapViewport([
       { latitude: 52.52, longitude: 13.405, label: "Berlin" },

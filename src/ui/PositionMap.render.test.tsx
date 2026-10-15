@@ -21,10 +21,22 @@ it("ignores a stale raster and reuses the current bitmap across resize and targe
         '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L720 360"/></svg>',
     })),
   );
-  const createDescriptor = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
-  const revokeDescriptor = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
-  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:map") });
-  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  const createDescriptor = Object.getOwnPropertyDescriptor(
+    URL,
+    "createObjectURL",
+  );
+  const revokeDescriptor = Object.getOwnPropertyDescriptor(
+    URL,
+    "revokeObjectURL",
+  );
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn(() => "blob:map"),
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
   let resize: ResizeObserverCallback;
   const disconnect = vi.fn();
   vi.stubGlobal(
@@ -82,16 +94,18 @@ it("ignores a stale raster and reuses the current bitmap across resize and targe
       (call) => call[0] instanceof Image,
     ).length;
     expect(rasterDraws).toBe(1);
-    const backing = draw.mock.calls.find(call => call[0] instanceof Image)!;
+    const backing = draw.mock.calls.find((call) => call[0] instanceof Image)!;
     expect(backing[3] * backing[4] * 4).toBeLessThanOrEqual(8 * 1024 * 1024);
     const canvas = container.querySelector("canvas")!;
-    expect(canvas.width * canvas.height * 4).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expect(canvas.width * canvas.height * 4).toBeLessThanOrEqual(
+      4 * 1024 * 1024,
+    );
     const previousBox = container
       .querySelector(".map-overlay")
       ?.getAttribute("viewBox");
     await act(async () => {
       resize!(
-        [{ contentRect: { width: 1600, height: 400 } } as ResizeObserverEntry],
+        [{ contentRect: { width: 800, height: 360 } } as ResizeObserverEntry],
         {} as ResizeObserver,
       );
     });
@@ -127,16 +141,43 @@ it("ignores a stale raster and reuses the current bitmap across resize and targe
     expect(
       container.querySelector(".map-overlay")?.getAttribute("viewBox"),
     ).not.toBe(pannedBox);
+    expect(images).toHaveLength(2);
+    const beforeZoom = container
+      .querySelector(".map-overlay")
+      ?.getAttribute("viewBox");
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!
+        .click(),
+    );
+    expect(
+      container.querySelector(".map-overlay")?.getAttribute("viewBox"),
+    ).not.toBe(beforeZoom);
+    expect(container.querySelector("canvas")?.getAttribute("data-state")).toBe(
+      "loading",
+    );
     expect(images).toHaveLength(3);
     await act(async () => images[2]!.finish());
+    expect(container.querySelector("canvas")?.getAttribute("data-state")).toBe(
+      "ready",
+    );
+    await act(async () => render("fit-reset", 48.02));
+    expect(
+      container.querySelector(".map-overlay")?.getAttribute("viewBox"),
+    ).toBe(beforeZoom);
+    expect(container.textContent).not.toContain("Detailed map");
+    expect(container.textContent).toContain("Natural Earth 1:10m");
+    await act(async () => images[3]!.finish());
   } finally {
     await act(async () => root.unmount());
     expect(disconnect).toHaveBeenCalled();
     container.remove();
     context.mockRestore();
-    if (createDescriptor) Object.defineProperty(URL, "createObjectURL", createDescriptor);
+    if (createDescriptor)
+      Object.defineProperty(URL, "createObjectURL", createDescriptor);
     else Reflect.deleteProperty(URL, "createObjectURL");
-    if (revokeDescriptor) Object.defineProperty(URL, "revokeObjectURL", revokeDescriptor);
+    if (revokeDescriptor)
+      Object.defineProperty(URL, "revokeObjectURL", revokeDescriptor);
     else Reflect.deleteProperty(URL, "revokeObjectURL");
     vi.unstubAllGlobals();
   }
