@@ -403,3 +403,59 @@ test("community matrix carries reviewed feature evidence with separate fresh cou
     await service.close();
   }
 });
+
+test("new image and CW text reports reach their own community matrix columns", async ({
+  page,
+}, testInfo) => {
+  const service = await isolated(page, false);
+  try {
+    const modes = [
+      ["WEFAX", "wefax", "WEFAX images"],
+      ["SSTV", "sstv", "SSTV Martin images"],
+      ["CW-TEXT", "cw-text", "CW text assistant"],
+    ] as const;
+    for (const [mode, feature] of modes) {
+      const report = fixture("a");
+      report.setup.mode = mode;
+      report.observations = [{ feature, result: "working" }];
+      expect(validateCommunityReport(report)).toBeNull();
+      expect(service.community.accept(report).status).toBe(202);
+    }
+    const panel = await help(page);
+    for (const [, , label] of modes) {
+      await expect(
+        panel.getByRole("columnheader", { name: label, exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByRole("button", {
+          name: `HackRF Pro · ${label}: Reported working`,
+          exact: true,
+        }),
+      ).toHaveText(/1\/2/);
+    }
+    await panel
+      .getByRole("button", { name: "Engine checks", exact: true })
+      .click();
+    const engine = panel.getByRole("table", {
+      name: "Exact-build engine checks",
+    });
+    for (const [, , label] of modes)
+      await expect(
+        engine.getByRole("row").filter({
+          has: page.getByRole("rowheader", { name: label, exact: true }),
+        }),
+      ).toContainText("Not recorded");
+    await panel
+      .getByRole("button", { name: "Reception & decoders", exact: true })
+      .click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    ).toBe(true);
+    await panel.screenshot({
+      path: testInfo.outputPath("community-new-modes.png"),
+    });
+  } finally {
+    await service.close();
+  }
+});

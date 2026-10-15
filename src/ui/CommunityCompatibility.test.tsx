@@ -316,3 +316,25 @@ it("shows carried confirmation, original source and expiry alongside fresh count
     vi.restoreAllMocks();
   }
 });
+
+it("lists image and CW text modes as untested in reception and unrecorded in engine checks", async () => {
+  const build = { id: "new-modes-fixture", version: "1.6.1", builtAt: "2026-10-15T00:00:00Z" };
+  vi.mocked(readCommunityMatrix).mockResolvedValue({ schemaVersion: 1, generatedAt: build.builtAt, builds: [build], buildId: build.id, cells: [], engineChecks: [] });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<CommunityCompatibility context={context} />));
+    const features = ["WEFAX images", "SSTV Martin images", "CW text assistant"];
+    for (const label of features) {
+      expect(Array.from(host.querySelectorAll("th")).some(th => th.textContent === label)).toBe(true);
+      const cells = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).filter(b => b.getAttribute("aria-label")?.includes(` · ${label}: Untested`));
+      expect(cells.length).toBeGreaterThan(0);
+      expect(cells.every(b => b.textContent?.includes("0/2"))).toBe(true);
+    }
+    const engine = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent?.trim() === "Engine checks")!;
+    await act(async () => engine.click());
+    for (const label of features) {
+      const row = Array.from(host.querySelectorAll("tr")).find(r => r.querySelector("th")?.textContent === label)!;
+      expect(row.textContent).toContain("Not recorded"); expect(row.textContent).not.toContain("Passed");
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

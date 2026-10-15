@@ -168,3 +168,26 @@ it("records a short sustained test and explains duration eligibility without pen
   expect(document.body.textContent).toContain("A longer test is needed");
   expect(document.body.textContent).not.toContain("review is pending");
 });
+
+it.each([
+  ["WEFAX", "wefax", "WEFAX images"],
+  ["SSTV", "sstv", "SSTV Martin images"],
+  ["CW-TEXT", "cw-text", "CW text assistant"],
+] as const)("offers and submits only the exercised %s decoder", async (mode, feature, label) => {
+  await render({ ...context, mode });
+  await act(async () => button("Report this test").click());
+  const result = document.querySelector<HTMLSelectElement>(`[aria-label="${label} test result"]`)!;
+  expect(result).not.toBeNull(); expect(result.value).toBe("not-tested");
+  for (const other of ["WEFAX images", "SSTV Martin images", "CW text assistant", "CW"]) {
+    if (other !== label) expect(document.querySelector(`[aria-label="${other} test result"]`)).toBeNull();
+  }
+  await act(async () => { result.value = "working"; result.dispatchEvent(new Event("change", { bubbles: true })); });
+  const duration = document.querySelector<HTMLInputElement>('[aria-label="Test duration (minutes)"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(duration, "10");
+    duration.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("Send community report").click());
+  expect(sendCommunityReport).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(sendCommunityReport).mock.calls[0]?.[0]).toMatchObject({ setup: { mode }, observations: [{ feature, result: "working" }] });
+});

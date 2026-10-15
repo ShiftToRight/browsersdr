@@ -293,3 +293,16 @@ describe("community wire and public evidence boundaries", () => {
     ).toBe(true);
   });
 });
+
+it.each([
+  ["WEFAX", "wefax"], ["SSTV", "sstv"], ["CW-TEXT", "cw-text"],
+] as const)("builds a schema-valid %s report without changing its mode or feature", (mode, feature) => {
+  const input = { ...buildCommunityReport({ ...context, mode }, {
+    hardwareId: "hackrf-pro", participantToken: "a".repeat(64), durationMinutes: 10,
+    observations: [{ feature, result: "working" }],
+  }), build };
+  const ajv = new Ajv2020(); addFormats(ajv);
+  expect(ajv.compile(schema)(input)).toBe(true);
+  expect(input.setup.mode).toBe(mode);
+  expect(input.observations).toEqual([{ feature, result: "working" }]);
+});

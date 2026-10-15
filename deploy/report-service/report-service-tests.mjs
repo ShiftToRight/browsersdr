@@ -1233,3 +1233,31 @@ test("One reports retain their variant/profile separately from Pro", () => {
     service.database.close();
   }
 });
+
+for (const [mode, feature] of [["WEFAX", "wefax"], ["SSTV", "sstv"], ["CW-TEXT", "cw-text"]]) {
+  test(`${mode} reports validate, aggregate independently and reject a different exercised mode`, () => {
+    const s = communityService();
+    try {
+      const input = communityFixture({ observations: [{ feature, result: "working" }] });
+      input.setup.mode = mode;
+      assert.equal(validateCommunityReport(input), null);
+      const mismatched = structuredClone(input); mismatched.setup.mode = "CW";
+      assert.notEqual(validateCommunityReport(mismatched), null);
+      assert.equal(s.community.accept(input).status, 202);
+      let matrix = s.community.matrix(communityBuild.id);
+      assert.equal(matrix.cells.length, 1);
+      assert.equal(matrix.cells[0].feature, feature);
+      assert.equal(matrix.cells[0].setup.mode, mode);
+      assert.equal(matrix.cells[0].eligibleWorking, 1);
+      assert.equal(matrix.cells[0].status, "working");
+      const second = structuredClone(input); second.reportId = `BC-${randomUUID()}`; second.participantToken = "b".repeat(64);
+      assert.equal(s.community.accept(second).status, 202);
+      matrix = s.community.matrix(communityBuild.id);
+      assert.equal(matrix.cells[0].status, "confirmed");
+      assert.equal(matrix.cells[0].eligibleWorking, 2);
+      assert.deepEqual(matrix.engineChecks, []);
+      assert.equal(JSON.stringify(matrix).includes("PRIVATE-MARKER"), false);
+      assert.equal(matrix.cells.some(c => c.feature === "cw"), false);
+    } finally { s.database.close(); }
+  });
+}
