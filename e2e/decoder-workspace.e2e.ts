@@ -338,20 +338,16 @@ test("ADS-B preserves qualified DF18 targets in the map, inspector and export", 
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   const fixture = targetRecordingFixture("ADS-B", true);
   const inputs = page.locator(".file-picker-input");
-  await inputs
-    .nth(0)
-    .setInputFiles({
-      name: "qualified.cu8",
-      mimeType: "application/octet-stream",
-      buffer: Buffer.from(fixture.data),
-    });
-  await inputs
-    .nth(1)
-    .setInputFiles({
-      name: "qualified.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(fixture.metadata)),
-    });
+  await inputs.nth(0).setInputFiles({
+    name: "qualified.cu8",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from(fixture.data),
+  });
+  await inputs.nth(1).setInputFiles({
+    name: "qualified.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture.metadata)),
+  });
   await page.getByRole("button", { name: "Load files", exact: true }).click();
   await page.getByRole("button", { name: "Start replay" }).click();
   await openApplicationView(page, "Decoder");

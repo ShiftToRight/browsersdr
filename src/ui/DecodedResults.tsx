@@ -103,7 +103,6 @@ export function DecodedResults({
       <h2 id={`${panelId}-heading`} className="visually-hidden">
         Decoded data
       </h2>
-      <AudioCapturePanel />
       <div className="decode-layout">
         <div className="audio-summary">
           <span>
@@ -195,6 +194,7 @@ export function DecodedResults({
                                 ? "no audio"
                                 : `${mode} audio`}
           </span>
+          <AudioCapturePanel />
         </div>
         {source !== "synthetic" &&
           ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(

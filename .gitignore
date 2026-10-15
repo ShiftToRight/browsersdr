@@ -18,6 +18,7 @@ test-results/
 
 # Private knowledge, recordings, evidence and deployment operations stay local.
 /AGENTS.md
+/PROJECT-REVIEW-2026-10-15.md
 /BrowserSDR
 /docs
 /samples

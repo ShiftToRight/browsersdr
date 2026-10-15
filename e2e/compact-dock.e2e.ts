@@ -137,3 +137,57 @@ test("condensed recording keeps Stop, retained actions and reload warning visibl
   ).toBeEnabled();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
+
+test("compact audio controls open by keyboard and remain reachable without page overflow", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Compact", exact: true }).click();
+  const dock = page.locator(".receiver-dock");
+  const panel = dock.locator(".audio-capture-panel");
+  const summary = panel.locator("summary");
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page
+      .getByRole("tab", { name: "Audio & decode", exact: true })
+      .click();
+    await summary.scrollIntoViewIfNeeded();
+    await fullyInside(summary, dock);
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(panel).toHaveAttribute("open", "");
+    const record = panel.getByRole("button", {
+      name: "Record audio",
+      exact: true,
+    });
+    await expect(record).toBeEnabled();
+    await record.focus();
+    await expect(record).toBeFocused();
+    await fullyInside(record, dock);
+    const rewind = panel.getByRole("checkbox", {
+      name: "Keep last 60 seconds for rewind",
+    });
+    await rewind.focus();
+    await expect(rewind).toBeFocused();
+    await fullyInside(rewind, dock);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(viewport.width);
+    await panel.screenshot({
+      path: testInfo.outputPath(`audio-controls-${viewport.width}.png`),
+    });
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(panel).not.toHaveAttribute("open", "");
+    await expect(summary).toBeFocused();
+    if (viewport.width === 1280) {
+      expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(165);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollHeight),
+      ).toBe(viewport.height);
+    }
+  }
+});
