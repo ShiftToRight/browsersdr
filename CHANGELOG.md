@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add bounded decoded-audio WAV recording and opt-in 60-second rewind for local/replay listening, DAB+ and processed remote audio; preserve export at source boundaries and rewind after replay completion.
+- Add a standalone web-app manifest, branded app icons and browser-driven installation from Settings. Offline startup remains separate.
+
 - Add receive-only RTTY, BPSK31, NAVTEX/SITOR-B and single-channel VHF ACARS to the mode chooser, Search guides, Decoder and compatibility report catalog.
 - Add DWD/amateur RTTY presets, fine tuning, polarity/framing controls, bounded live/replay workers, integrity diagnostics and text/JSON exports. Preserve modem settings in recordings, favorites and settings links.
 - Add generated I/Q and independent ACARS audio checks. Physical off-air acceptance and independent HF reference captures remain pending.

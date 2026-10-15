@@ -1,0 +1,9 @@
+.audio-capture-panel { min-width: 0; margin: .6rem 0; border: 1px solid var(--border-color, #456); border-radius: 8px; padding: .6rem .8rem; }
+.audio-capture-panel summary { cursor: pointer; }
+.audio-capture-body { display: grid; gap: .7rem; min-width: 0; padding-top: .6rem; }
+.audio-capture-body p { margin: 0; }
+.audio-capture-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; min-width: 0; }
+.audio-capture-actions label { display: flex; align-items: center; gap: .5rem; }
+.audio-capture-actions audio { max-width: 100%; }
+.audio-rewind-toggle { display: flex; align-items: center; gap: .5rem; }
+.audio-rewind-toggle input { width: auto; }

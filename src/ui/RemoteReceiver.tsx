@@ -1,3 +1,4 @@
+import { AudioCapturePanel } from "./AudioCaptureSection";
 import { RemoteLocationPanel } from "./ReceiverLocationPanel";
 import {
   useEffect,
@@ -768,6 +769,7 @@ function RemoteReceiverView({
           className="receiver-dock-panel"
           hidden={!layout.dockExpanded || tool !== "audio"}
         >
+          <AudioCapturePanel />
           <div className="remote-audio-controls">
             <label className="remote-volume">
               Volume

@@ -10,8 +10,9 @@ import type { SourceKind } from "../radio/types";
 import type { ReceiverMode } from "../radio/receiverConfig";
 import { isWidebandRate } from "../radio/sourceCapabilities";
 const PacketDecodePanel = lazy(() => import("./PacketDecodePanel").then(module => ({ default: module.PacketDecodePanel })));
-import { DabMetadata } from "./DabMetadata";
+const DabMetadata = lazy(() => import("./DabMetadata").then(module => ({ default: module.DabMetadata })));
 import { AppIcon } from "./AppIcon";
+import { AudioCapturePanel } from "./AudioCaptureSection";
 function downloadDecodedTargets(mode: string, targets: unknown[]): void {
   const url = URL.createObjectURL(
     new Blob(
@@ -102,6 +103,7 @@ export function DecodedResults({
       <h2 id={`${panelId}-heading`} className="visually-hidden">
         Decoded data
       </h2>
+      <AudioCapturePanel />
       <div className="decode-layout">
         <div className="audio-summary">
           <span>
@@ -352,7 +354,7 @@ export function DecodedResults({
                         "Waiting for ensemble name…"}
                     </strong>
                   </p>
-                  <DabMetadata metadata={receiver.dab?.programmeMetadata} />
+                  <Suspense fallback={<p role="status">Loading DAB programme details…</p>}><DabMetadata metadata={receiver.dab?.programmeMetadata} /></Suspense>
                   <details className="decoder-details">
                     <summary>Decoder details</summary>
                     <p className="display-note">

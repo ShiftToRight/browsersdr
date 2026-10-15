@@ -16,6 +16,7 @@ import { ci8SessionDetails, type HackrfRecordingFormat } from "./ci8Recording";
 import { validateLiveRateBudget } from "./liveRateBudget";
 import { SharedWbfmDemodulator } from "./sharedWbfmDemodulator";
 import { AudioPlayer } from "@jtarrio/signals/players/audioplayer.js";
+import { audioCaptureTap, audioSourceDescription } from "./audioCaptureTap";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { decodeRecordingSamples, recordingRoutingSampleRate, preferredRecordingStorageMode, recordingSampleFormat, RECORDING_FORMAT, IqRecorder, validateRecordingMetadata, type IqRecording, type RecordingStatus } from "./iqRecording";
 import {
@@ -98,7 +99,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.audioContext = new AudioContext();
     this.audioContext.addEventListener("statechange", this.onAudioStateChange);
     this.audioResume = this.audioContext.resume();
-    this.player = new PcmBatchPlayer(new AudioPlayer({ newAudioContext: () => this.audioContext }));
+    this.player = new PcmBatchPlayer(new AudioPlayer({ newAudioContext: () => this.audioContext }), () => audioSourceDescription(this.metadata));
     this.rds = new RdsMultiplexReceiver((state) => this.events.rdsChanged(state));
     this.demodulator = new SharedWbfmDemodulator(
       this.player,
@@ -302,7 +303,7 @@ export class ReplayBackend implements ReceiverBackend {
 
   private digitalReceiver(mode: ReceiverModeSettings["mode"]): DigitalSampleReceiver | undefined {
     if (mode === "DAB") {
-      this.dabPlayback ??= createDabReplayPlayback(this.audioContext, this.events, this.volume);
+      this.dabPlayback ??= createDabReplayPlayback(this.audioContext, this.events, this.volume, undefined, () => audioSourceDescription(this.metadata));
       return this.dabPlayback.receiver;
     }
     if (mode === "ADS-B") return this.adsb;
@@ -388,9 +389,10 @@ export class ReplayBackend implements ReceiverBackend {
     }
     if (this.position >= this.rangeEnd) {
       this.player.flush();
+      this.player.finishAudio();
       this.ended = true;
       if (this.metadata?.mode === "DAB" && this.dabPlayback) {
-        void this.dabPlayback.flush().then(() => { if (!this.stopped) this.events.sourceEnded(); })
+        void this.dabPlayback.flush().then(() => { if (!this.stopped) { audioCaptureTap.archive?.finish(this.dabPlayback!.output); this.events.sourceEnded(); } })
           .catch(error => { if (!this.stopped) this.events.runtimeError(error); });
       } else if (this.metadata && (this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode))) {
         void (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41).flush()

@@ -9,11 +9,12 @@ import { AppResourceOwner, type AppRuntime } from "./ui/AppResourceOwner";
 export { AppResourceOwner } from "./ui/AppResourceOwner";
 import { ReplayActivation, readReplayMetadata } from "./radio/replayActivation";
 import { RecordingLibrary } from "./ui/RecordingLibrary";
-import { ReceiverDecodePanel } from "./ui/DecodedResults";
+const ReceiverDecodePanel = lazy(() => import("./ui/DecodedResults").then(module => ({ default: module.ReceiverDecodePanel })));
 const DecoderWorkspace = lazy(() => import("./ui/DecoderWorkspace").then(module => ({ default: module.DecoderWorkspace })));
 const CommunityCompatibility = lazy(() => import("./ui/CommunityCompatibility").then(module => ({ default: module.CommunityCompatibility })));
 import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
+import { AudioCaptureGuard } from "./ui/AudioCaptureGuard";
 const RemoteReceiver = lazy(() => import("./ui/RemoteReceiver").then(module => ({ default: module.RemoteReceiver })));
 import { RemotePresetSharePanel } from "./ui/RemotePresetSharePanel";
 import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
@@ -2482,6 +2483,7 @@ export function ReceiverApp({
                     : "Licences, privacy and provenance"}
           </p>
         </nav>
+        <AudioCaptureGuard sourceKey={remoteSelected ? "remote" : source} />
         <WorkspaceControls layout={layout} onChange={setLayout} activeView={utilityView ?? activeView}
           onSettings={() => openAuxiliaryView("settings")}
           onHelp={() => openAuxiliaryView("help")}
@@ -3706,14 +3708,14 @@ export function ReceiverApp({
             </div>
           </div>
 
-          <ReceiverDecodePanel
+          {receiverDockExpanded && receiverDockView === "decode" && <Suspense fallback={<p role="status">Loading audio &amp; decode…</p>}><ReceiverDecodePanel
             controller={controller}
             source={source}
             mode={liveMode}
             volume={volume}
             active={receiverDockExpanded && receiverDockView === "decode"}
             onOpenDecoder={() => setActiveView("decoder")}
-          />
+          /></Suspense>}
 
           <section
             id="capture-panel"

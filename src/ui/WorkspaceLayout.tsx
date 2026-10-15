@@ -2,12 +2,16 @@ import {
   useEffect,
   useRef,
   useState,
+  lazy,
+  Suspense,
   type Dispatch,
   type SetStateAction,
   type ReactNode,
 } from "react";
 import { AppIcon, type AppIconName } from "./AppIcon";
 import { ThemePicker } from "./ThemePicker";
+import "./appInstallation";
+const InstallAppControl = lazy(() => import("./InstallAppControl").then(module => ({ default: module.InstallAppControl })));
 export const WORKSPACE_KEY = "browsersdr.workspace.v1";
 export interface WorkspaceLayout {
   compact: boolean;
@@ -60,11 +64,12 @@ export function useWorkspaceLayout() {
   }, [layout]);
   return [layout, setLayout] as const;
 }
-function HeaderMenu({ label, icon, active, children }: {
+function HeaderMenu({ label, icon, active, children, onOpen }: {
   label: string;
   icon: AppIconName;
   active: boolean;
   children: ReactNode;
+  onOpen?: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -79,6 +84,7 @@ function HeaderMenu({ label, icon, active, children }: {
     <details
       className={`header-utility-menu${active ? " is-active" : ""}`}
       ref={menu}
+      onToggle={event => { if (event.currentTarget.open) onOpen?.(); }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget))
           menu.current?.removeAttribute("open");
@@ -115,6 +121,7 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onComp
   activeView: string;
 }) {
   const compactButton = useRef<HTMLButtonElement>(null);
+  const [settingsOpened, setSettingsOpened] = useState(false);
   return (
     <div className="workspace-controls" aria-label="Layout and application options">
       <button ref={compactButton} type="button" className="secondary"
@@ -124,8 +131,9 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onComp
         onClick={() => onChange((old) => ({ ...old, compact: !old.compact }))}
       >Compact</button>
       {!layout.compact && <span id="compact-layout-hint" className="compact-layout-hint">Short screen? Try Compact.</span>}
-      <HeaderMenu label="Settings" icon="settings" active={activeView === "settings"}>
+      <HeaderMenu label="Settings" icon="settings" active={activeView === "settings"} onOpen={() => setSettingsOpened(true)}>
         <ThemePicker />
+        {settingsOpened && <Suspense fallback={<span>Loading app options…</span>}><InstallAppControl /></Suspense>}
         <button type="button" className="secondary" aria-controls="settings-view" onClick={onSettings}>
           <AppIcon name="plug" />Integration settings
         </button>

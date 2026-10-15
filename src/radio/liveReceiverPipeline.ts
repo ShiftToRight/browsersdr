@@ -12,6 +12,7 @@ import { channelSampleRate } from "./sourceCapabilities";
 import { validateLiveRateBudget } from "./liveRateBudget";
 import type { Demodulator } from "@jtarrio/signals/demod/demodulator.js";
 import { AudioPlayer } from "@jtarrio/signals/players/audioplayer.js";
+import { audioSourceDescription } from "./audioCaptureTap";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import type { SampleBlock } from "@jtarrio/signals/radio/sample_block.js";
 import {
@@ -105,6 +106,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.audioContext.addEventListener("statechange", this.audioChanged);
     this.player = new PcmBatchPlayer(
       new AudioPlayer({ newAudioContext: () => this.audioContext }),
+      () => audioSourceDescription(this.metadata),
     );
     this.rds = new RdsMultiplexReceiver((value) => events.rdsChanged(value));
     this.demodulator =
@@ -123,7 +125,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
 
   private createDabResources() {
-    const output = new DabAudioPlayer(this.audioContext);
+    const output = new DabAudioPlayer(this.audioContext, () => audioSourceDescription(this.metadata));
     output.setVolume(this.volume);
     const pcm = new DabPcmPlayer(output);
     let active = true;

@@ -6,8 +6,8 @@ import { DabModeIProcessor } from "../dab/dabModeI";
 import type { ReceiverBackendEvents } from "./receiverController";
 
 /** Replay uses the same OFDM/FIC/MSC, DAB+ and HE-AAC components as live reception. */
-export function createDabReplayPlayback(context: AudioContext, events: ReceiverBackendEvents, volume: number, bindings?: DabWebCodecsBindings) {
-  const output = new DabAudioPlayer(context);
+export function createDabReplayPlayback(context: AudioContext, events: ReceiverBackendEvents, volume: number, bindings?: DabWebCodecsBindings, provenance?: () => string) {
+  const output = new DabAudioPlayer(context, provenance);
   output.setVolume(volume);
   const pcm = new DabPcmPlayer(output);
   let active = true;

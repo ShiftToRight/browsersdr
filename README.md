@@ -14,6 +14,10 @@ The DSP filter uses a standard-SIMD compatibility kernel when the browser cannot
 
 **Mode selection:** The short Mode dropdown keeps common listening modes close to tuning. More modes opens a searchable decoder chooser with categories and an explicit Use mode action. Pin up to seven quick choices; the current mode stays visible even when unpinned. Pins stay in this browser.
 
+**Audio recorder & rewind (local development):** Open Audio & decode → Audio recorder & rewind to record decoded audio as stereo PCM16 WAV, up to two minutes per clip. Enable the optional 60-second rolling buffer to replay or save recent audio while reception continues. Recordings use audio before the volume control; live sound is muted while rewind plays. Source/tuning/programme changes and detected gaps stop the clip and clear rewind; completed replay retains rewind until the next source. Download before closing; these clips stay in memory and are separate from I/Q recordings. Remote audio exports contain processed server audio.
+
+**Installable app (local development):** Settings offers Install BrowserSDR app when your browser makes installation available. The app launches in its own window with the same receiver permissions. Opening it requires internet access; offline startup is separate work. Use one tab or app window per physical receiver.
+
 **Decoder maps:** Geographic views use detailed local geography automatically, with clearer coastlines, rivers, boundaries and city labels. Zoom with the scroll wheel, +/− controls or keys, drag to pan, and use Fit targets to reset the view. Map data loads when needed.
 
 **Appearance:** Choose Midnight Observatory, Amber Field Deck or Vice Afterglow from Settings → Theme. Your choice stays in this browser and applies while receiving or replaying.

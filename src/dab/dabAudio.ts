@@ -1,4 +1,5 @@
 import type { Player } from "@jtarrio/signals/demod/player.js";
+import { audioCaptureTap } from "../radio/audioCaptureTap";
 import {
   getRealResampler,
   type RealResampler,
@@ -24,25 +25,27 @@ export class DabAudioPlayer implements Player {
   private gain?: GainNode;
   private volume = 0;
   private nextTime = 0;
-  constructor(private readonly context: AudioContext) {}
+  constructor(private readonly context: AudioContext, private readonly provenance = () => "Decoded DAB+ programme audio. Processed audio, not original I/Q.") {}
   getVolume(): number {
     return this.volume;
   }
   setVolume(volume: number): void {
     this.volume = volume;
-    if (this.gain) this.gain.gain.value = volume;
+    if (this.gain) this.gain.gain.value = audioCaptureTap.archive?.reviewing ? 0 : volume;
   }
   play(left: Float32Array, right: Float32Array): void {
     if (!left.length || left.length !== right.length) return;
     if (!this.gain) {
       this.gain = this.context.createGain();
-      this.gain.gain.value = this.volume;
+      this.gain.gain.value = audioCaptureTap.archive?.reviewing ? 0 : this.volume;
       this.gain.connect(this.context.destination);
     }
     const now = this.context.currentTime;
     // Decoder/USB bursts may enqueue several frames together; never grow
     // latency without bound after a stalled or backgrounded tab.
     if (this.nextTime - now > 1) this.reset();
+    const audioArchive = audioCaptureTap.archive;
+    if (audioArchive?.active) audioArchive.push(this, left, right, this.sampleRate, this.provenance(), muted => { if (this.gain) this.gain.gain.value = muted ? 0 : this.volume; });
     const buffer = this.context.createBuffer(2, left.length, this.sampleRate);
     buffer.copyToChannel(Float32Array.from(left), 0);
     buffer.copyToChannel(Float32Array.from(right), 1);
@@ -68,6 +71,7 @@ export class DabAudioPlayer implements Player {
     this.gain = undefined;
   }
   reset(): void {
+    audioCaptureTap.archive?.boundary(this);
     for (const source of this.sources) {
       source.stop();
       source.disconnect();

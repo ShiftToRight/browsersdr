@@ -1,9 +1,11 @@
-/** Mono processed server audio. Bounded scheduling; this graph never enters the RF analysis/recording path. */
+import { audioCaptureTap } from "../radio/audioCaptureTap";
+/** Mono processed server audio. Bounded scheduling; this graph never enters the RF analysis/IQ recording path. */
 export class RemoteAudio {
   private context?: AudioContext;
   private gain?: GainNode;
   private nodes = new Set<AudioBufferSourceNode>();
   private end = 0;
+  private requestedVolume = 0;
   drops = 0;
   get state() {
     return this.context?.state ?? "closed";
@@ -21,7 +23,8 @@ export class RemoteAudio {
       throw new Error("Audio is paused by the browser. Press Resume audio.");
   }
   volume(value: number) {
-    if (this.gain) this.gain.gain.value = Math.max(0, Math.min(1, value));
+    this.requestedVolume = Math.max(0, Math.min(1, value));
+    if (this.gain) this.gain.gain.value = audioCaptureTap.archive?.reviewing ? 0 : this.requestedVolume;
   }
   push(samples: Float32Array, rate: number) {
     const context = this.context;
@@ -40,6 +43,8 @@ export class RemoteAudio {
       this.flush();
       this.drops++;
     }
+    const audioArchive = audioCaptureTap.archive;
+    if (audioArchive?.active) audioArchive.push(this, samples, samples, rate, "Processed remote receiver audio; server demodulation and compression. Mono duplicated to stereo; not original RF I/Q.", muted => { if (this.gain) this.gain.gain.value = muted ? 0 : this.requestedVolume; });
     const buffer = context.createBuffer(1, samples.length, rate);
     buffer.getChannelData(0).set(samples);
     const node = context.createBufferSource();
@@ -55,6 +60,7 @@ export class RemoteAudio {
     node.start(start);
   }
   flush() {
+    audioCaptureTap.archive?.boundary(this);
     for (const node of this.nodes) {
       node.onended = null;
       try {
