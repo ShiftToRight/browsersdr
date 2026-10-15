@@ -55,6 +55,7 @@ const work = resolve(
 mkdirSync(work, { recursive: true });
 const mime = {
   ".html": "text/html",
+  ".txt": "text/plain; charset=utf-8",
   ".js": "application/javascript",
   ".css": "text/css",
   ".json": "application/json",
