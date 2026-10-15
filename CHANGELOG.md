@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1 — 2026-10-15
+
+- Enable mouse-wheel map zoom in both directions while preserving page scrolling outside the map, browser pinch zoom and Fit reset.
+
 ## 1.6.0 — 2026-10-15
 
 - Show detailed local geography automatically in geographic decoder views; remove the detail switch.

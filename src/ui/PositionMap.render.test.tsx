@@ -168,6 +168,51 @@ it("ignores a stale raster and reuses the current bitmap across resize and targe
     expect(container.textContent).not.toContain("Detailed map");
     expect(container.textContent).toContain("Natural Earth 1:10m");
     await act(async () => images[3]!.finish());
+    let wheelFrame: FrameRequestCallback | undefined;
+    const schedule = vi.fn((callback: FrameRequestCallback) => {
+      wheelFrame = callback;
+      return 42;
+    });
+    const cancel = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", schedule);
+    vi.stubGlobal("cancelAnimationFrame", cancel);
+    const navigationAfterFit =
+      container.querySelector<HTMLElement>(".map-surface")!;
+    const wheelUp = () =>
+      new WheelEvent("wheel", {
+        deltaY: -120,
+        bubbles: true,
+        cancelable: true,
+      });
+    await act(async () => {
+      expect(navigationAfterFit.dispatchEvent(wheelUp())).toBe(false);
+      expect(navigationAfterFit.dispatchEvent(wheelUp())).toBe(false);
+    });
+    expect(schedule).toHaveBeenCalledTimes(1);
+    await act(async () => wheelFrame!(0));
+    const wheelWidth = Number(
+      container
+        .querySelector(".map-overlay")!
+        .getAttribute("viewBox")!
+        .split(" ")[2],
+    );
+    expect(wheelWidth).toBeCloseTo(Number(beforeZoom!.split(" ")[2]) / 2);
+    const pinch = new WheelEvent("wheel", {
+      deltaY: -240,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(navigationAfterFit.dispatchEvent(pinch)).toBe(true);
+    expect(schedule).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      navigationAfterFit.dispatchEvent(wheelUp());
+    });
+    await act(async () => render("new-source", 48.02));
+    expect(cancel).toHaveBeenCalledWith(42);
+    expect(
+      container.querySelector(".map-overlay")!.getAttribute("viewBox"),
+    ).toBe(beforeZoom);
   } finally {
     await act(async () => root.unmount());
     expect(disconnect).toHaveBeenCalled();

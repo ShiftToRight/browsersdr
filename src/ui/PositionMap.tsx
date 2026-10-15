@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -544,14 +545,58 @@ export function PositionMap({
   function commitPan(next: Pan) {
     setPan(next);
   }
-  function changeZoom(steps: number) {
-    const next = Math.max(
-      -baseViewport.zoom,
-      Math.min(12 - baseViewport.zoom, zoomSteps + steps),
-    );
-    setZoom({ frame: baseViewport, steps: next });
-    setGestureFrame(undefined);
-  }
+  const changeZoom = useCallback(
+    (steps: number) => {
+      setZoom((previous) => ({
+        frame: baseViewport,
+        steps: Math.max(
+          -baseViewport.zoom,
+          Math.min(
+            12 - baseViewport.zoom,
+            (previous?.frame === baseViewport ? previous.steps : 0) + steps,
+          ),
+        ),
+      }));
+      setGestureFrame(undefined);
+    },
+    [baseViewport],
+  );
+  useEffect(() => {
+    const element = surface.current;
+    if (!element || !pannable) return;
+    let pending = 0;
+    let animation = 0;
+    function wheel(event: WheelEvent) {
+      // Keep browser pinch/page zoom and purely horizontal scrolling intact.
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        !Number.isFinite(event.deltaY) ||
+        !event.deltaY
+      )
+        return;
+      event.preventDefault();
+      const unit =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? element!.clientHeight
+            : 1;
+      pending -= (event.deltaY * unit) / 240;
+      if (!animation)
+        animation = requestAnimationFrame(() => {
+          animation = 0;
+          changeZoom(Math.max(-1, Math.min(1, pending)));
+          pending = 0;
+        });
+    }
+    // React's delegated wheel listener is passive; cancellation needs this local listener.
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      element.removeEventListener("wheel", wheel);
+      if (animation) cancelAnimationFrame(animation);
+    };
+  }, [pannable, changeZoom]);
 
   function movePointer(event: PointerEvent<HTMLDivElement>) {
     const gesture = drag.current;
@@ -856,7 +901,7 @@ export function PositionMap({
       </div>
       <small id={helpId}>
         {pannable &&
-          "Drag to move · Arrow keys to pan · +/− to zoom · Fit targets to reset · "}
+          "Drag to move · Arrow keys to pan · Scroll or +/− to zoom · Fit targets to reset · "}
         {viewport.local
           ? `Natural Earth 1:10m · ${framingKey ? (pannable ? "view held" : "framing held; Fit targets to update") : "auto-framed"} · ${positioned.length} transmitted position${positioned.length === 1 ? "" : "s"} · ${zoomSteps === 0 ? "fitted with minimum 50 km radius context" : "zoomed view"}`
           : "Public-domain Natural Earth 1:10m · waiting for transmitted coordinates"}
