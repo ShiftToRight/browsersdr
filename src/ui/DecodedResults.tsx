@@ -1,3 +1,6 @@
+import { isTextMode } from "../textmodem/settings";
+import { lazy, Suspense } from "react";
+const TextDecodePanel = lazy(() => import("./TextDecodePanel").then(module => ({ default: module.TextDecodePanel })));
 import { useVisibleReceiver } from "./useVisibleReceiver";
 import type {
   ReceiverController,
@@ -6,7 +9,7 @@ import type {
 import type { SourceKind } from "../radio/types";
 import type { ReceiverMode } from "../radio/receiverConfig";
 import { isWidebandRate } from "../radio/sourceCapabilities";
-import { PacketDecodePanel } from "./PacketDecodePanel";
+const PacketDecodePanel = lazy(() => import("./PacketDecodePanel").then(module => ({ default: module.PacketDecodePanel })));
 import { DabMetadata } from "./DabMetadata";
 import { AppIcon } from "./AppIcon";
 function downloadDecodedTargets(mode: string, targets: unknown[]): void {
@@ -108,7 +111,7 @@ export function DecodedResults({
                 ? "Demodulation disabled"
                 : mode === "DAB"
                   ? "DAB+ audio output"
-                  : ["ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode)
+                  : ["ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode)
                     ? "Data acquisition"
                     : "Audio output"}
           </span>
@@ -119,7 +122,7 @@ export function DecodedResults({
                 ? "No audio or decoder output"
                 : mode === "DAB"
                   ? (receiver.dab?.message ?? "Not active")
-                  : mode === "APRS"
+                  : isTextMode(mode) ? `${receiver.textModem?.counters.characters ?? 0} decoded characters` : mode === "APRS"
                     ? `${receiver.aprs?.stations.length ?? 0} validated station(s)`
                     : mode === "RS41"
                       ? `${receiver.rs41?.sondes.length ?? 0} validated sonde(s)`
@@ -140,7 +143,7 @@ export function DecodedResults({
               ? "Raw I/Q continues to feed the spectrum, waterfall, surveys and recordings."
               : mode === "DAB"
                 ? `Mode I · browser HE-AAC · ${Math.round(volume * 100)}% volume`
-                : mode === "APRS"
+                : isTextMode(mode) ? "Receive-only text · open Decoder for messages and export" : mode === "APRS"
                   ? "1200-baud Bell-202 · AX.25 FCS"
                   : mode === "RS41"
                     ? "4800 bit/s · unencrypted RS41"
@@ -166,7 +169,7 @@ export function DecodedResults({
             </button>
           )}
           <span
-            className={`status-pill ${!modeChangePending && (mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+            className={`status-pill ${!modeChangePending && (isTextMode(mode) ? receiver.textModem?.status === "decoding" : mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
           >
             {modeChangePending
               ? "reconfiguring"
@@ -176,7 +179,7 @@ export function DecodedResults({
                   ? (receiver.dab?.state ?? "not started")
                   : mode === "ADS-B"
                     ? `${receiver.adsb?.validFrames ?? 0} valid frames`
-                    : mode === "APRS"
+                    : isTextMode(mode) ? receiver.textModem?.status ?? "not started" : mode === "APRS"
                       ? `${receiver.aprs?.counters.validAx25Frames ?? 0} FCS-valid packets`
                       : mode === "RS41"
                         ? `${(receiver.rs41?.counters.uncorrectedFrames ?? 0) + (receiver.rs41?.counters.correctedFrames ?? 0)} integrity-valid frames`
@@ -192,7 +195,7 @@ export function DecodedResults({
           </span>
         </div>
         {source !== "synthetic" &&
-          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(
+          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(
             mode,
           ) && (
             <div className="rds-content">
@@ -205,7 +208,7 @@ export function DecodedResults({
                       ? "Aircraft targets"
                       : mode === "AIS"
                         ? "Vessel targets"
-                        : mode === "APRS"
+                        : isTextMode(mode) ? `${mode === "PSK31" ? "BPSK31" : mode} text & messages` : mode === "APRS"
                           ? "APRS stations"
                           : mode === "RS41"
                             ? "RS41 radiosondes"
@@ -218,8 +221,8 @@ export function DecodedResults({
                   Spectrum-only mode keeps RF acquisition and analysis active
                   without sending samples to an audio or digital decoder.
                 </p>
-              ) : mode === "APRS" || mode === "RS41" ? (
-                <PacketDecodePanel receiver={receiver} mode={mode} />
+              ) : isTextMode(mode) ? <Suspense fallback={<p role="status">Loading decoded text…</p>}><TextDecodePanel receiver={receiver} mode={mode} /></Suspense> : mode === "APRS" || mode === "RS41" ? (
+                <Suspense fallback={<p role="status">Loading packet details…</p>}><PacketDecodePanel receiver={receiver} mode={mode} /></Suspense>
               ) : mode === "SRD" ? (
                 <>
                   <div className="target-table-wrap">

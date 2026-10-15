@@ -1,3 +1,4 @@
+import type { TextModemSettings } from "../textmodem/settings";
 import { DurableRecordingSpool } from "./recordingLibrary";
 import { snapshotReceiverLocation, validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { ChannelRecordingWorker } from "./channelRecordingWorker";
@@ -65,6 +66,7 @@ interface CommonRecordingMetadata {
   beatToneHz?: number;
   /** Optional for backwards compatibility with recordings created before SRD. */
   srd?: SrdModeSettings;
+  textModem?: TextModemSettings;
   knownGaps: RecordingGap[];
   stopReason: "user" | "capacity" | "source-stop" | "metadata-change" | "import";
   provenance?: string;
@@ -491,6 +493,7 @@ export class IqRecorder {
         squelch: this.session.squelch,
         ...(this.session.beatToneHz !== undefined ? { beatToneHz: this.session.beatToneHz } : {}),
         ...(this.session.srd !== undefined ? { srd: structuredClone(this.session.srd) } : {}),
+        ...(this.session.textModem !== undefined ? { textModem: structuredClone(this.session.textModem) } : {}),
         ...(this.encoding.format === RECORDING_FORMAT ? { gainDb: this.session.gainDb } : {}),
         knownGaps: this.gaps.map((gap) => ({ ...gap })),
         stopReason: this.capacityReached ? "capacity" : reason,
@@ -546,7 +549,7 @@ export function validateRecordingMetadata(
     throw new Error("Recording frequency exceeds the supported numeric range.");
   }
   if (!RECEIVER_MODES.includes(metadata.mode as ReceiverMode)) throw new Error("Recording metadata has an unsupported receiver mode.");
-  const settings = normalizeModeSettings({ mode: metadata.mode as ReceiverMode, bandwidthHz: metadata.channelBandwidthHz, squelch: metadata.squelch!, beatToneHz: metadata.beatToneHz, srd: metadata.srd });
+  const settings = normalizeModeSettings({ mode: metadata.mode as ReceiverMode, bandwidthHz: metadata.channelBandwidthHz, squelch: metadata.squelch!, beatToneHz: metadata.beatToneHz, srd: metadata.srd, textModem: metadata.textModem });
   if (settings.bandwidthHz !== metadata.channelBandwidthHz || settings.squelch !== metadata.squelch || (metadata.beatToneHz !== undefined && settings.beatToneHz !== metadata.beatToneHz)) throw new Error("Recording has out-of-range mode settings.");
   if (metadata.format === CHANNEL_RECORDING_FORMAT) {
     validateChannelRecording(metadata as ChannelRecordingFormat, metadata.sampleRateHz, metadata.centerFrequencyHz, metadata.channelBandwidthHz);
@@ -599,7 +602,7 @@ export function validateRecordingMetadata(
     if (typeof gap.reason !== "string" || gap.reason.length > 1024) throw new Error("Recording metadata contains an invalid gap reason.");
   }
   if ((metadata.sampleCount! + missingSamples) / metadata.sampleRateHz > 3600) throw new Error("Replay duration including known gaps exceeds one hour.");
-  return structuredClone({ ...metadata, ...(receiverLocation ? { receiverLocation } : {}), ...(settings.srd ? { srd: settings.srd } : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
+  return structuredClone({ ...metadata, ...(receiverLocation ? { receiverLocation } : {}), ...(settings.srd ? { srd: settings.srd } : {}), ...(settings.textModem ? { textModem: settings.textModem } : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
 }
 
 export function recordingMetadataJson(recording: IqRecording): string {

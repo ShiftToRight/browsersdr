@@ -219,6 +219,7 @@ export async function importSigmfRecording(
     squelch: mode.squelch,
     ...(mode.beatToneHz !== undefined ? { beatToneHz: mode.beatToneHz } : {}),
     ...(mode.srd ? { srd: mode.srd } : {}),
+    ...(mode.textModem ? { textModem: mode.textModem } : {}),
     knownGaps: importGapAnnotations(root.annotations, knownGaps, sampleCount),
     stopReason: "import",
     provenance: "Imported from a local SigMF pair; original metadata text is retained without treating annotations as receiver settings.",

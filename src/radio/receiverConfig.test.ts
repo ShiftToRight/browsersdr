@@ -11,7 +11,7 @@ import {
 
 describe("receiver mode configuration", () => {
   it("uses the constraints exposed by every installed Signals mode", () => {
-    expect(RECEIVER_MODES).toEqual(["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"]);
+    expect(RECEIVER_MODES).toEqual(["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"]);
     expect(defaultModeSettings("OFF")).toEqual({ mode: "OFF", bandwidthHz: 1, squelch: 0 });
     expect(modeCapabilities("OFF")).toMatchObject({ bandwidthSettable: false, squelchSettable: false });
     expect(() => createSignalsMode(defaultModeSettings("OFF"))).toThrow(/does not use the analog demodulator/);

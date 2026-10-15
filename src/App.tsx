@@ -1,3 +1,5 @@
+import { isTextMode, defaultTextModemSettings, type TextModemSettings } from "./textmodem/settings";
+const TextModemControls = lazy(() => import("./ui/TextModemControls").then(module => ({ default: module.TextModemControls })));
 import { useCaptureRetention } from "./ui/useCaptureRetention";
 import { COMPATIBILITY_DETAILS, COMPATIBILITY_STATUS_LABELS, DESKTOP_SUPPORT_SCOPE, SUPPORT_EVIDENCE, type CompatibilityDetailView } from "./radio/supportEvidence";
 import { DeferredWorkspace } from "./ui/DeferredWorkspace";
@@ -49,6 +51,7 @@ import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCap
 import {
   memo,
   lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -876,7 +879,7 @@ export function ReceiverApp({
   }, [spectrumDisplay]);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
-    !["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(initialPreferences.modeSettings.mode),
+    !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(initialPreferences.modeSettings.mode),
   );
   const [channelTuneIssue, setChannelTuneIssue] = useState<string>();
   const [autoRecenter, setAutoRecenter] = useState(() =>
@@ -899,6 +902,7 @@ export function ReceiverApp({
   const [beatToneHz, setBeatToneHz] = useState(
     initialPreferences.modeSettings.beatToneHz ?? 600,
   );
+  const [textModemSettings, setTextModemSettings] = useState<TextModemSettings>(initialPreferences.modeSettings.textModem ?? defaultTextModemSettings());
   const [srdSettings, setSrdSettings] = useState<SrdModeSettings>(
     initialPreferences.modeSettings.srd ?? defaultSrdModeSettings(),
   );
@@ -936,8 +940,9 @@ export function ReceiverApp({
       squelch,
       beatToneHz,
       ...(mode === "SRD" ? { srd: srdSettings } : {}),
+      ...(isTextMode(mode) ? { textModem: textModemSettings } : {}),
     }),
-    [bandwidthHz, beatToneHz, mode, squelch, srdSettings],
+    [bandwidthHz, beatToneHz, mode, squelch, srdSettings, textModemSettings],
   );
   useEffect(() => {
     saveSourcePreferences(preferenceStorage, source, {
@@ -1641,7 +1646,8 @@ export function ReceiverApp({
     setSquelch(next.modeSettings.squelch);
     setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
     setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(next.modeSettings.mode));
+    setTextModemSettings(next.modeSettings.textModem ?? defaultTextModemSettings());
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(next.modeSettings.mode));
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
@@ -1663,8 +1669,9 @@ export function ReceiverApp({
       setSquelch(loadedReplay.metadata.squelch);
       setBeatToneHz(loadedReplay.metadata.beatToneHz ?? 600);
       setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
+      setTextModemSettings(loadedReplay.metadata.textModem ?? defaultTextModemSettings());
       setChannelAdvancedOpen(
-        !["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(loadedReplay.metadata.mode),
+        !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(loadedReplay.metadata.mode),
       );
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
@@ -1731,7 +1738,7 @@ export function ReceiverApp({
       const active = controller.getSnapshot().session;
       if (
         active?.mode === settings.mode &&
-        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(settings.mode)
+        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(settings.mode)
       ) {
         controller.updateAnalogMode(settings);
         return;
@@ -1766,11 +1773,12 @@ export function ReceiverApp({
     if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(nextMode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
     setSrdSettings(next.srd ?? defaultSrdModeSettings());
+    setTextModemSettings(next.textModem ?? defaultTextModemSettings());
     if (running) applyModeSettings(next);
     if (sourceConfigurationEditable)
       setSampleRateHz(
@@ -1936,13 +1944,14 @@ export function ReceiverApp({
       setSquelch(accepted.settings.squelch);
       setBeatToneHz(accepted.settings.beatToneHz ?? 600);
       setSrdSettings(accepted.settings.srd ?? defaultSrdModeSettings());
+      setTextModemSettings(accepted.settings.textModem ?? defaultTextModemSettings());
       if (!running) setSampleRateHz(nextRate);
       setFrequencyMhz(accepted.frequencyHz / 1e6);
       setChannelFrequencyDraft(undefined);
       setChannelTuneIssue(undefined);
       // A stored catalog reference is not a freshly checked receiver candidate.
       setReceptionCandidate(undefined);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(accepted.settings.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(accepted.settings.mode));
       return `Recalled ${accepted.name}. ${running ? "Applied to reception." : "Start remains manual."}${accepted.atlasReference ? " Saved Atlas reference has not been rechecked; station identity is unconfirmed." : ""}`;
     } finally {
       stationSelectionPending.current = false;
@@ -2253,10 +2262,11 @@ export function ReceiverApp({
       setLoadedReplay(recording);
       setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
       setMode(recording.metadata.mode);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41"].includes(recording.metadata.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(recording.metadata.mode));
       setBandwidthHz(recording.metadata.channelBandwidthHz);
       setSquelch(recording.metadata.squelch);
       setSrdSettings(recording.metadata.srd ?? defaultSrdModeSettings());
+      setTextModemSettings(recording.metadata.textModem ?? defaultTextModemSettings());
       setBeatToneHz(recording.metadata.beatToneHz ?? 600);
       setSampleRateHz(recordingRoutingSampleRate(recording.metadata));
       setSource("replay");
@@ -3307,7 +3317,7 @@ export function ReceiverApp({
                   <FmStationSummary controller={controller} />
                 )}
                 {source !== "synthetic" &&
-                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(mode) && (
+                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode) && (
                     <>
                       <label htmlFor="receiver-volume">
                         <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} /><span id="receiver-volume-label">Volume</span> <output aria-hidden="true">{Math.round(volume * 100)}%</output></span>
@@ -3333,6 +3343,10 @@ export function ReceiverApp({
                       </label>
                     </>
                   )}
+                {isTextMode(mode) && <Suspense fallback={<p role="status">Loading decoder controls…</p>}><TextModemControls mode={mode} settings={textModemSettings} disabled={Boolean(modeChangeBlockedReason)} onChange={next => {
+                  setTextModemSettings(next);
+                  void applyModeSettings({ ...currentModeSettings, textModem: next });
+                }} /></Suspense>}
                 {mode === "APRS" && <p className="support-copy">1200-baud VHF APRS · receive only. IARU Region 1 suggestion: 144.800 MHz; tuning remains yours.</p>}
                 {mode === "RS41" && <p className="support-copy">Unencrypted RS41 · select the sonde frequency. Calibrated PTU and encrypted SGM are unsupported.</p>}
                 {mode === "SRD" && (
@@ -3943,7 +3957,7 @@ export function ReceiverApp({
               {captureCurrentChannel && (
                 <p className="display-note" aria-live="polite">
                   {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
                     : channelCapturePreview.error}
                 </p>
               )}
@@ -4393,6 +4407,7 @@ export function ReceiverApp({
             setBandwidthHz(settings.bandwidthHz);
             setSquelch(settings.squelch);
             setSrdSettings(settings.srd ?? defaultSrdModeSettings());
+            setTextModemSettings(settings.textModem ?? defaultTextModemSettings());
             if (receiver.lifecycle === "running")
               void controller
                 .configureMode(settings)

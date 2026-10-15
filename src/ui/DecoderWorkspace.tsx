@@ -1,3 +1,5 @@
+import { isTextMode } from "../textmodem/settings";
+import { TextDecodePanel } from "./TextDecodePanel";
 import { useVisibleReceiver } from "./useVisibleReceiver";
 import {
   useMemo,
@@ -122,7 +124,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   const display = held ?? live;
   const hasReviewData =
     display.results.length > 0 || display.messages.length > 0;
-  const hasMessages = ["APRS", "RS41", "SRD"].includes(reviewMode);
+  const hasMessages = isTextMode(reviewMode) || ["APRS", "RS41", "SRD"].includes(reviewMode);
   const supportsMap = ["ADS-B", "AIS", "APRS", "RS41"].includes(reviewMode);
   const preferredView =
     view?.format === format ? view.value : supportsMap ? "map" : "results";
@@ -245,7 +247,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
           ? "Configured / idle"
           : "Preview";
   const unit =
-    reviewMode === "WBFM"
+    isTextMode(reviewMode) ? (reviewMode === "RTTY" || reviewMode === "PSK31" ? "text segments" : "message blocks") : reviewMode === "WBFM"
       ? "groups"
       : reviewMode === "DAB"
         ? "FIC blocks"
@@ -817,6 +819,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               </>
             )}
           </section>
+          {isTextMode(reviewMode) && applied && <TextDecodePanel receiver={receiver} mode={reviewMode} />}
           <footer className="decoder-footer">
             {!satellite && (
               <details

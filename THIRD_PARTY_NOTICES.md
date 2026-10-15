@@ -255,3 +255,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Independent ACARS audio test fixture
+
+`src/textmodem/fixtures/acarsdec-test.wav` is the unchanged `test.wav` from
+f00b4r0/acarsdec revision `36f1ccc6c3029d536364dce94aa7665029ad359a`,
+copyright (c) 2007-2022,2025 Thierry Leconte and (c) 2024-2026 Thibaut VARENE,
+under GPL-2.0-only. The upstream license is retained in
+`third_party/acarsdec/LICENSE.md`; source, hash, format and independent reference
+comparison are in `src/textmodem/fixtures/README.md`. The fixture is used only
+by tests and is not bundled into the application. No upstream decoder code is
+incorporated. Source: <https://github.com/f00b4r0/acarsdec>.

@@ -82,7 +82,8 @@ export async function applyBookmark(
         accepted.session.beatToneHz !== bookmark.settings.beatToneHz) ||
       (bookmark.settings.mode === "SRD" &&
         JSON.stringify(accepted.session.srd) !==
-          JSON.stringify(bookmark.settings.srd))
+          JSON.stringify(bookmark.settings.srd)) ||
+      (bookmark.settings.textModem !== undefined && JSON.stringify(accepted.session.textModem) !== JSON.stringify(bookmark.settings.textModem))
     )
       throw new Error(
         accepted.message || "Receiver rejected the favorite settings.",

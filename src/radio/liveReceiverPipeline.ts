@@ -1,3 +1,5 @@
+import { TextDigitalReceiver } from "../textmodem/digitalReceiver";
+import { isTextMode, textModemConfiguration } from "../textmodem/settings";
 import type { IngressTimings } from "./ingressTimings";
 import { SharedWbfmDemodulator } from "./sharedWbfmDemodulator";
 import { PcmBatchPlayer } from "./pcmBatchPlayer";
@@ -77,6 +79,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private readonly ais: AisReceiver;
   private aprs?: AprsDigitalReceiver;
   private rs41?: Rs41DigitalReceiver;
+  private textModem?: TextDigitalReceiver;
   private srd?: SrdDigitalReceiver;
   private readonly receiver: AudioFirstRdsReceiver;
   private generation?: number;
@@ -278,10 +281,11 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
   async prepare(metadata: SourceSessionMetadata): Promise<void> {
     this.requireOpen();
-    if (metadata.mode === "APRS" || metadata.mode === "RS41") this.enabled = false;
+    if (metadata.mode === "APRS" || metadata.mode === "RS41" || isTextMode(metadata.mode)) this.enabled = false;
     this.preparePackets(metadata);
     if (metadata.mode === "APRS") await this.aprs!.prepare();
     if (metadata.mode === "RS41") await this.rs41!.prepare();
+    if (isTextMode(metadata.mode)) await this.textModem!.prepare();
     this.requireOpen();
     const dabReady =
       metadata.mode === "DAB"
@@ -360,12 +364,12 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.analysis?.markDiscontinuity(missingSamples ?? 0);
     this.player.reset();
     this.rds.reset();
-    if (this.metadata.mode === "APRS" || this.metadata.mode === "RS41") {
+    if (this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode)) {
       const missing = missingSamples === null ? null : missingSamples / (this.metadata.actualSampleRateHz / channelSampleRate(this.metadata.actualSampleRateHz));
-      (this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
+      (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
     } else this.receiver.resetDigitalReceiver();
     this.dabResources?.reset();
-    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(this.metadata.mode)) {
+    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(this.metadata.mode)) {
       this.demodulator.setMode(createSignalsMode({
         mode: this.metadata.mode,
         bandwidthHz: this.metadata.channelBandwidthHz,
@@ -383,7 +387,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
 
   updateAnalogMode(settings: ReceiverModeSettings): void {
     this.requireOpen();
-    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(settings.mode))
+    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(settings.mode))
       throw new Error(`${settings.mode} does not use the analog audio path.`);
     this.demodulator.setCwToneFrequency?.(settings.beatToneHz ?? 600);
     this.demodulator.setMode(createSignalsMode(settings));
@@ -392,6 +396,10 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private preparePackets(metadata: SourceSessionMetadata): void {
     const rate = channelSampleRate(metadata.actualSampleRateHz);
     const offset = isWidebandRate(metadata.actualSampleRateHz) ? 0 : metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz;
+    if (isTextMode(metadata.mode)) {
+      this.textModem ??= new TextDigitalReceiver(({ snapshot, diagnostics }) => this.events.textModemChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
+      this.textModem.configureSession(textModemConfiguration(metadata.mode, metadata.textModem, rate, metadata.sessionGeneration, offset));
+    }
     if (metadata.mode === "APRS") {
       this.aprs ??= new AprsDigitalReceiver(({ snapshot, diagnostics }) => this.events.aprsChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
       this.aprs.configureSession(defaultAprsConfiguration(rate as 1_024_000 | 2_400_000, metadata.sessionGeneration, offset));
@@ -445,6 +453,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
           : metadata.mode === "SRD"
             ? this.srd
           : metadata.mode === "APRS" ? this.aprs
+          : isTextMode(metadata.mode) ? this.textModem
           : metadata.mode === "RS41" ? this.rs41
           : undefined;
     this.outputEnabled = metadata.mode !== "OFF";
@@ -474,6 +483,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (digital !== this.ais) this.ais.reset();
     if (digital !== this.aprs) this.aprs?.reset();
     if (digital !== this.rs41) this.rs41?.reset();
+    if (digital !== this.textModem) this.textModem?.reset();
     if (digital !== this.srd) this.srd?.reset({ reason: "reconfigure", missingInputSamples: null });
     if (!digital && this.outputEnabled)
       this.demodulator.setCwToneFrequency?.(metadata.beatToneHz ?? 600);
@@ -512,6 +522,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.srd?.reset();
     this.aprs?.reset();
     this.rs41?.reset();
+    this.textModem?.reset();
   }
   async suspend(): Promise<void> {
     if (this.audioContext.state === "running")
@@ -526,6 +537,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       this.srd?.dispose();
       this.aprs?.dispose();
       this.rs41?.dispose();
+      this.textModem?.dispose();
       if (this.audioContext.state !== "closed") await this.audioContext.close();
       this.audioContext.removeEventListener("statechange", this.audioChanged);
       this.closed = true;

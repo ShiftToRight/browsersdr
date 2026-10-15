@@ -37,7 +37,7 @@ export function ReceiverStatus({
     );
   const noAudio =
     receiver.session?.source === "synthetic" ||
-    ["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(receiver.session?.mode ?? "");
+    ["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(receiver.session?.mode ?? "");
   const issues =
     Number(receiverIssue) +
     Number(

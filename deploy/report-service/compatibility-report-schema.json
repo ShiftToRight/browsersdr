@@ -198,6 +198,10 @@
                 "AIS",
                 "APRS",
                 "RS41",
+                "RTTY",
+                "PSK31",
+                "NAVTEX",
+                "ACARS",
                 "SRD"
               ]
             },
@@ -293,6 +297,10 @@
                   "ais",
                   "aprs",
                   "rs41",
+                  "rtty",
+                  "psk31",
+                  "navtex",
+                  "acars",
                   "srd-acurite",
                   "srd-wh51",
                   "access",

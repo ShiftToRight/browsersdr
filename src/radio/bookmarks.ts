@@ -1,3 +1,4 @@
+import { isTextMode, normalizeTextModemSettings } from "../textmodem/settings";
 import {
   defaultModeSettings,
   modeCapabilities,
@@ -114,6 +115,7 @@ export function validateBookmark(value: unknown): Bookmark {
         }
       : {}),
     ...(srd ? { srd } : {}),
+    ...(isTextMode(mode) ? { textModem: normalizeTextModemSettings(raw.textModem as import("../textmodem/settings").TextModemSettings | undefined) } : {}),
   });
   if (!Array.isArray(row.tags) || row.tags.length > 10)
     throw new Error("A favorite supports at most 10 tags.");

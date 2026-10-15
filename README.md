@@ -10,6 +10,8 @@ HackRF gains apply live, and Pro sample rates can switch during reception. An ac
 
 The DSP filter uses a standard-SIMD compatibility kernel when the browser cannot compile relaxed SIMD, allowing the interface to load on affected Safari configurations.
 
+**Text decoders (local development):** RTTY includes DWD 50-baud/450-Hz and amateur 45.45-baud/170-Hz presets, configurable polarity/framing and fine tuning. BPSK31 receives 31.25-baud Varicode text. NAVTEX/SITOR-B uses CCIR476 phasing and delayed-copy FEC to assemble framed marine messages. Single-channel VHF ACARS requires CRC and odd parity. All four use bounded workers for live I/Q and compatible replay, show tuning/integrity status in Decoder, and export text/JSON with sample-clock provenance. RTTY/BPSK31 have no checksum; text is tentative. Independent ACARS modem audio is tested; independent HF reference and physical off-air acceptance remain open. Suitable HF/LF input and antenna are required; RTL Q-branch support and processed remote audio remain separate work.
+
 **Mode selection:** The short Mode dropdown keeps common listening modes close to tuning. More modes opens a searchable decoder chooser with categories and an explicit Use mode action. Pin up to seven quick choices; the current mode stays visible even when unpinned. Pins stay in this browser.
 
 **Decoder maps:** Geographic views use detailed local geography automatically, with clearer coastlines, rivers, boundaries and city labels. Zoom with the scroll wheel, +/− controls or keys, drag to pan, and use Fit targets to reset the view. Map data loads when needed.

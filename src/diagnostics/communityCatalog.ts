@@ -49,6 +49,10 @@ export const COMMUNITY_FEATURES = [
   { id: "ais", label: "AIS", group: "data", mode: "AIS" },
   { id: "aprs", label: "APRS", group: "data", mode: "APRS" },
   { id: "rs41", label: "RS41", group: "data", mode: "RS41" },
+  { id: "rtty", label: "RTTY text", group: "data", mode: "RTTY" },
+  { id: "psk31", label: "BPSK31 text", group: "data", mode: "PSK31" },
+  { id: "navtex", label: "NAVTEX / SITOR-B", group: "data", mode: "NAVTEX" },
+  { id: "acars", label: "ACARS", group: "data", mode: "ACARS" },
   { id: "srd-acurite", label: "SRD Acurite", group: "data", mode: "SRD" },
   { id: "srd-wh51", label: "SRD WH51", group: "data", mode: "SRD" },
   {

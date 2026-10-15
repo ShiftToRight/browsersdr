@@ -1,3 +1,4 @@
+import type { TextModemSettings } from "../textmodem/settings";
 export type SourceKind =
   "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
 import type {
@@ -70,6 +71,7 @@ export interface SourceSessionMetadata {
   /** Selected audible CW beat note; absent in recordings made before CW support. */
   beatToneHz?: number;
   srd?: SrdModeSettings;
+  textModem?: TextModemSettings;
   /** Legacy RTL scalar. HackRF keeps null for compatibility; this is NOT AGC. */
   gainDb: number | null;
   /** Required by the HackRF backend; legacy constructors need no new fields. */

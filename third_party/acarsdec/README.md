@@ -1,0 +1,3 @@
+# ACARS independent reference
+
+[f00b4r0/acarsdec](https://github.com/f00b4r0/acarsdec), revision `36f1ccc6c3029d536364dce94aa7665029ad359a`, inspected 2026-10-15, is a GPLv2-only independent reference tool. Copyright (c) 2007-2022,2025 Thierry Leconte, (c) 2024-2026 Thibaut VARENE. The repository LICENSE.md is retained for reference data where applicable. No upstream decoder implementation is incorporated into BrowserSDR. BrowserSDR's MSK detector uses independent real-sinusoid prediction residuals and five clock hypotheses. Protocol framing, parity and CRC assignments were checked against upstream.

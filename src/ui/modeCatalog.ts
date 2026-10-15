@@ -20,6 +20,10 @@ interface ModeDescription {
 
 /** Presentation metadata only. Persisted modes and DSP routing keep their existing IDs. */
 export const MODE_DESCRIPTIONS: Record<ReceiverMode, ModeDescription> = {
+  RTTY: { label: "RTTY", description: "DWD weather & amateur text", categories: ["Amateur", "Weather & satellite"], aliases: "baudot ita2 fsk radioteletype 50 baud 450 hz" },
+  PSK31: { label: "BPSK31", description: "Amateur phase-shift text", categories: ["Amateur"], aliases: "psk31 bpsk varicode 31.25" },
+  NAVTEX: { label: "NAVTEX / SITOR-B", description: "Marine weather & safety text", categories: ["Marine", "Weather & satellite"], aliases: "ccir476 fec 518 490 sitorb" },
+  ACARS: { label: "ACARS", description: "Single-channel VHF aviation messages", categories: ["Aviation"], aliases: "aircraft aviation vhf am msk 2400" },
   DAB: {
     label: "DAB / DAB+",
     description: "Digital broadcast radio",

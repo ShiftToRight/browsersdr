@@ -1,3 +1,5 @@
+import { isTextMode } from "../textmodem/settings";
+import type { TextModemSnapshot } from "../textmodem/types";
 import { captureOrigin } from "./receptionEvidence";
 import { classifyReceiverIssue, type ReceiverIssue } from "./receiverRecovery";
 import type { RecordingOptions } from "./channelRecording";
@@ -67,6 +69,7 @@ export interface ReceiverBackendEvents {
   dabChanged?(state: DabSnapshot): void;
   adsbChanged?(state: AdsbSnapshot): void;
   aisChanged?(state: AisSnapshot): void;
+  textModemChanged?(state: TextModemSnapshot, diagnostics: DigitalWorkerAdapterDiagnostics): void;
   aprsChanged?(state: AprsSnapshot, diagnostics: DigitalWorkerAdapterDiagnostics): void;
   rs41Changed?(state: Rs41Snapshot, diagnostics: DigitalWorkerAdapterDiagnostics): void;
   srdChanged?(
@@ -158,6 +161,8 @@ export interface ReceiverSnapshot {
   dab?: DabSnapshot;
   adsb?: AdsbSnapshot;
   ais?: AisSnapshot;
+  textModem?: TextModemSnapshot;
+  textModemWorker?: DigitalWorkerAdapterDiagnostics;
   aprs?: AprsSnapshot;
   aprsWorker?: DigitalWorkerAdapterDiagnostics;
   rs41?: Rs41Snapshot;
@@ -505,7 +510,7 @@ export class ReceiverController {
       throw new Error("Wait for active reception before checking a channel move.");
     const modeSettings = settings ?? {
       mode: session.mode, bandwidthHz: session.channelBandwidthHz,
-      squelch: session.squelch, beatToneHz: session.beatToneHz, srd: session.srd,
+      squelch: session.squelch, beatToneHz: session.beatToneHz, srd: session.srd, textModem: session.textModem,
     };
     const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
     validateSourceRoute(session.source, modeSettings, session.actualSampleRateHz, channelFrequencyHz, session.hackrf?.capabilities.identity);
@@ -551,6 +556,7 @@ export class ReceiverController {
     const generation = ++this.generation;
     const backend = this.backend;
     this.publish({
+      textModem: undefined, textModemWorker: undefined,
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
       message: options.centerFrequencyHz !== undefined
@@ -607,6 +613,7 @@ export class ReceiverController {
     this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
     const generation = ++this.generation;
     this.publish({
+      textModem: undefined, textModemWorker: undefined,
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
       message: `Switching ${session.source === "hackrf" ? "HackRF" : "RTL-SDR"} to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
@@ -665,6 +672,7 @@ export class ReceiverController {
     const generation = ++this.generation;
     this.publish({
       ...this.snapshot,
+      textModem: undefined, textModemWorker: undefined,
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
       message: `Scanning ${(centerFrequencyHz / 1_000_000).toFixed(3)} MHz…`,
@@ -728,6 +736,7 @@ export class ReceiverController {
     const backend = this.backend;
     this.publish({
       ...this.snapshot,
+      textModem: undefined, textModemWorker: undefined,
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
       message: `Applying ${normalized.mode} channel settings…`,
@@ -739,7 +748,7 @@ export class ReceiverController {
         channelBandwidthHz: normalized.bandwidthHz,
         squelch: normalized.squelch,
         beatToneHz: normalized.beatToneHz,
-        srd: normalized.srd,
+        srd: normalized.srd, textModem: normalized.textModem,
       },
     });
     try {
@@ -764,7 +773,7 @@ export class ReceiverController {
       normalized = normalizeModeSettings(settings);
       if (normalized.mode !== this.snapshot.session.mode)
         throw new Error("Live analog settings cannot change receiver mode.");
-      if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41"].includes(normalized.mode))
+      if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes(normalized.mode))
         throw new Error(
           `${normalized.mode} does not use the analog audio path.`,
         );
@@ -914,6 +923,7 @@ export class ReceiverController {
     const generation = ++this.generation;
     this.publish({
       ...this.snapshot,
+      textModem: undefined, textModemWorker: undefined,
       aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
       sessionGeneration: generation,
@@ -1076,6 +1086,8 @@ export class ReceiverController {
       dab: metadata.mode === "DAB" ? this.snapshot.dab : undefined,
       adsb: metadata.mode === "ADS-B" ? this.snapshot.adsb : undefined,
       ais: metadata.mode === "AIS" ? this.snapshot.ais : undefined,
+      textModem: isTextMode(metadata.mode) && this.snapshot.textModemWorker?.generation === generation ? this.snapshot.textModem : undefined,
+      textModemWorker: isTextMode(metadata.mode) && this.snapshot.textModemWorker?.generation === generation ? this.snapshot.textModemWorker : undefined,
       aprs: metadata.mode === "APRS" && this.snapshot.aprsWorker?.generation === generation ? this.snapshot.aprs : undefined,
       aprsWorker: metadata.mode === "APRS" && this.snapshot.aprsWorker?.generation === generation ? this.snapshot.aprsWorker : undefined,
       rs41: metadata.mode === "RS41" && this.snapshot.rs41Worker?.generation === generation ? this.snapshot.rs41 : undefined,
@@ -1175,6 +1187,10 @@ export class ReceiverController {
           )
             return;
           this.publish({ ...this.snapshot, ais });
+        },
+        textModemChanged: (textModem, textModemWorker) => {
+          if (this.backend !== backend || this.snapshot.session?.mode !== textModem.mode || textModemWorker.generation !== this.snapshot.sessionGeneration || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;
+          this.publish({ ...this.snapshot, textModem, textModemWorker });
         },
         aprsChanged: (aprs, aprsWorker) => {
           if (this.backend !== backend || this.snapshot.session?.mode !== "APRS" || aprsWorker.generation !== this.snapshot.sessionGeneration || ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)) return;

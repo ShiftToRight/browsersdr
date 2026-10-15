@@ -1,3 +1,4 @@
+import { textModemRecordingFixture } from "../testing/textModemRecordingFixture";
 import { Rs41DigitalReceiver } from "../rs41/rs41DigitalReceiver";
 import { packetRecordingFixture } from "../testing/packetRecordingFixture";
 import { createDabEnsembleFixture } from "../testing/dabEnsembleFixture";
@@ -51,7 +52,7 @@ function setupRecording(recording: IqRecording, compiledChannel?: (rate: number)
   };
   const events: ReceiverBackendEvents = {
     permissionGranted: vi.fn(), runtimeError: vi.fn(), audioStateChanged: vi.fn(), sourceEnded: vi.fn(), rdsChanged: vi.fn(),
-    dabChanged: vi.fn(), adsbChanged: vi.fn(), aisChanged: vi.fn(), aprsChanged: vi.fn(), rs41Changed: vi.fn(),
+    dabChanged: vi.fn(), adsbChanged: vi.fn(), aisChanged: vi.fn(), aprsChanged: vi.fn(), rs41Changed: vi.fn(), textModemChanged: vi.fn(),
   };
   const backend = new ReplayBackend(events, analysis as unknown as AnalysisPipeline, recording, 1, compiledChannel ?? (async rate => {
     const { instance } = await WebAssembly.instantiate(await readFile(new URL("../wasm/pkg/spectrum_analysis.wasm", import.meta.url)), {});
@@ -590,4 +591,33 @@ it("waits for a saturated packet decoder without advancing or losing file sample
     expect(vi.mocked(f.events.rs41Changed!).mock.calls.at(-1)?.[0].sondes[0]?.sondeId).toBe("K1930293");
     expect(f.events.runtimeError).not.toHaveBeenCalled();
   } finally { queue.mockRestore(); await f.backend.stop(); }
+});
+
+
+describe("text modem product replay", () => {
+  it.each(["RTTY", "PSK31", "NAVTEX", "ACARS"] as const)("decodes %s through the backend and flushes before EOF", async mode => {
+    const fixture = textModemRecordingFixture(mode);
+    const f = setupRecording(fixture);
+    await f.backend.start(f.options);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    const state = vi.mocked(f.events.textModemChanged!).mock.calls.at(-1)?.[0];
+    expect(state?.text).toContain(fixture.expectedText);
+    expect(state?.messages.length).toBeGreaterThan(0);
+    if (mode === "ACARS") expect(state?.messages).toHaveLength(1);
+    await f.backend.stop();
+  }, 20_000);
+  it.each([9_600_000, 19_200_000])("decodes ACARS from native %s CI8 replay through the wideband channel", async rate => {
+    const fixture = textModemRecordingFixture("ACARS", rate);
+    const f = setupRecording(fixture);
+    await f.backend.start(f.options);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    const state = vi.mocked(f.events.textModemChanged!).mock.calls.at(-1)?.[0];
+    expect(state?.text).toContain(fixture.expectedText);
+    expect(state?.messages[0]?.provenance.actualInputSampleRateHz).toBe(2_400_000);
+    await f.backend.stop();
+  }, 20_000);
 });

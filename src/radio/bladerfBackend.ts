@@ -295,7 +295,7 @@ export class BladeRfBackend implements ReceiverBackend {
       channelBandwidthHz: selection.mode.bandwidthHz,
       squelch: selection.mode.squelch,
       beatToneHz: selection.mode.beatToneHz,
-      srd: selection.mode.srd,
+      srd: selection.mode.srd, textModem: selection.mode.textModem,
       gainDb: session.details.acceptedGainDb ?? null,
       sampleFormat: "planar-f32-iq-normalized",
       bladerf: structuredClone(session.details),
@@ -468,7 +468,7 @@ export class BladeRfBackend implements ReceiverBackend {
       if (!hardware) {
         this.selection = selection;
         this.publish(this.configured!, selection);
-        if (["APRS", "RS41"].includes((this.metadata!).mode)) {
+        if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS"].includes((this.metadata!).mode)) {
           await this.pipeline.prepare(this.metadata!);
         }
         this.pipeline.retune(this.metadata!);

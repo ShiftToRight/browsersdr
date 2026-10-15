@@ -1,3 +1,4 @@
+import { isTextMode } from "../textmodem/settings";
 import type { ReceiverSnapshot } from "../radio/receiverController";
 import type { ReceiverMode } from "../radio/receiverConfig";
 import type { Ax25Address } from "../aprs/types";
@@ -21,6 +22,10 @@ export interface DecoderRecord {
   map?: TargetMapPresentation;
 }
 export const DECODER_FORMATS = [
+  { mode: "RTTY", label: "RTTY · Text", title: "Radioteletype text" },
+  { mode: "PSK31", label: "BPSK31 · Text", title: "Amateur text" },
+  { mode: "NAVTEX", label: "NAVTEX / SITOR-B", title: "Marine weather & safety messages" },
+  { mode: "ACARS", label: "ACARS · Aviation", title: "VHF aviation messages" },
   { mode: "WBFM", label: "FM / RDS", title: "Broadcast metadata" },
   {
     mode: "DAB",
@@ -53,6 +58,7 @@ export function decoderAcceptedCount(
   receiver: ReceiverSnapshot,
   mode: ReceiverMode,
 ): number {
+  if (isTextMode(mode)) return receiver.textModem?.counters.accepted ?? 0;
   switch (mode) {
     case "ADS-B":
       return receiver.adsb?.validFrames ?? 0;
@@ -82,6 +88,11 @@ export function decoderRecords(
   mode: ReceiverMode,
   messages = false,
 ): DecoderRecord[] {
+  if (isTextMode(mode)) return (receiver.textModem?.messages ?? []).slice(-16).map((message): DecoderRecord => ({
+    key: `${mode}:${receiver.sessionGeneration}:${message.sequence}`, label: message.address || message.header || `${mode} text ${message.sequence}`,
+    summary: message.text, integrity: message.integrity, clock: clock(message.provenance),
+    fields: [["Complete message", message.complete ? "Yes" : "Text segment / incomplete"], ["Header", message.header || "None"], ["Reported address", message.address || "None"], ["Label", message.label || "None"]], raw: message,
+  })).reverse();
   const generation = receiver.sessionGeneration;
   const key = (id: string | number) => `${mode}:${generation}:${id}`;
   if (mode === "ADS-B")
@@ -379,7 +390,7 @@ export const DECODER_EXPORT_MAX_BYTES = 256 * 1024;
 export function decoderRetention(mode: ReceiverMode) {
   return {
     maximumResults:
-      mode === "DAB"
+      isTextMode(mode) ? 16 : mode === "DAB"
         ? 64
         : mode === "WBFM"
           ? 1
@@ -387,7 +398,7 @@ export function decoderRetention(mode: ReceiverMode) {
             ? 50
             : 32,
     maximumMessages:
-      mode === "SRD" ? 4 : mode === "APRS" || mode === "RS41" ? 32 : 0,
+      isTextMode(mode) ? 16 : mode === "SRD" ? 4 : mode === "APRS" || mode === "RS41" ? 32 : 0,
     policy:
       "Bounded current published state, not durable history; protocol fields may have been retained from earlier accepted records.",
   };

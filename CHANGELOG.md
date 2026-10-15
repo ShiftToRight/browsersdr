@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add receive-only RTTY, BPSK31, NAVTEX/SITOR-B and single-channel VHF ACARS to the mode chooser, Search guides, Decoder and compatibility report catalog.
+- Add DWD/amateur RTTY presets, fine tuning, polarity/framing controls, bounded live/replay workers, integrity diagnostics and text/JSON exports. Preserve modem settings in recordings, favorites and settings links.
+- Add generated I/Q and independent ACARS audio checks. Physical off-air acceptance and independent HF reference captures remain pending.
+
 ## 1.6.1 — 2026-10-15
 
 - Enable mouse-wheel map zoom in both directions while preserving page scrolling outside the map, browser pinch zoom and Fit reset.
