@@ -74,6 +74,33 @@ export function registerCommunityRelease(
         results.push({ feature, status: "no-matching-original" });
         continue;
       }
+      // Coverage must not hide a known issue on another relevant original.
+      // Unknown historical inputs require review; known changed inputs are separate.
+      const issueBuilds = database
+        .prepare(
+          `SELECT DISTINCT v.build_id
+        FROM community_votes v JOIN community_builds b ON b.id=v.build_id
+        LEFT JOIN community_fingerprints f ON f.build_id=v.build_id AND f.feature=v.feature
+        WHERE v.feature=? AND v.build_id!=? AND julianday(b.built_at)<julianday(?)
+          AND julianday(v.expires_at)>julianday(?) AND v.review!='excluded' AND v.has_issue=1
+          AND (f.fingerprint IS NULL OR f.fingerprint=?) ORDER BY v.build_id`,
+        )
+        .all(
+          feature,
+          source.build_id,
+          metadata.builtAt,
+          new Date().toISOString(),
+          metadata.evidenceFingerprints[feature],
+        )
+        .map((row) => row.build_id);
+      if (issueBuilds.length) {
+        results.push({
+          feature,
+          status: "review-required-issues",
+          issueBuilds,
+        });
+        continue;
+      }
       if (
         !store.registerEquivalence({
           sourceBuildId: source.build_id,

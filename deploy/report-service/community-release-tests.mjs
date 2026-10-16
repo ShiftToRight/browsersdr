@@ -211,3 +211,76 @@ test("source selection uses one original with the most setup coverage, never sta
     db.close();
   }
 });
+
+test("automatic selection cannot hide unresolved issues from another relevant original", () => {
+  for (const state of [
+    "matching",
+    "unknown",
+    "changed",
+    "excluded",
+    "expired",
+    "resolved",
+  ]) {
+    const { db, store, source, target, report } = fixture();
+    try {
+      // Two old setups would otherwise beat the newer single setup with an issue.
+      assert.equal(
+        store.accept({
+          ...report,
+          reportId: "BC-33333333-3333-4333-a333-333333333333",
+          participantToken: "c".repeat(64),
+          setup: { ...report.setup, rateHz: 1024000, nativeRateHz: 1024000 },
+        }).status,
+        202,
+      );
+      const newer = {
+        ...source,
+        id: "release-with-newer-issue",
+        builtAt: new Date(Date.now() - 90000).toISOString(),
+        evidenceFingerprints:
+          state === "unknown"
+            ? {}
+            : { access: state === "changed" ? "b".repeat(64) : hash },
+      };
+      assert.equal(store.registerBuild(newer), true);
+      assert.equal(
+        store.accept({
+          ...report,
+          build: newer,
+          reportId: "BC-22222222-2222-4222-a222-222222222222",
+          participantToken: "b".repeat(64),
+          observations: [{ feature: "access", result: "degraded" }],
+        }).status,
+        202,
+      );
+      if (state === "excluded")
+        db.prepare(
+          "UPDATE community_votes SET review='excluded' WHERE build_id=?",
+        ).run(newer.id);
+      if (state === "expired")
+        db.prepare(
+          "UPDATE community_votes SET expires_at=? WHERE build_id=?",
+        ).run(new Date(Date.now() - 1000).toISOString(), newer.id);
+      if (state === "resolved")
+        db.prepare(
+          "UPDATE community_votes SET result='working',has_issue=0 WHERE build_id=?",
+        ).run(newer.id);
+      const before = db.prepare("SELECT * FROM community_votes").all();
+      const result = registerCommunityRelease(db, target).results[0];
+      if (["matching", "unknown"].includes(state)) {
+        assert.equal(result.status, "review-required-issues", state);
+        assert.deepEqual(result.issueBuilds, [newer.id]);
+        assert.equal(store.matrix(target.id).cells.length, 0);
+      } else {
+        assert.equal(result.status, "registered", state);
+        assert.equal(result.sourceBuildId, source.id);
+      }
+      assert.deepEqual(
+        db.prepare("SELECT * FROM community_votes").all(),
+        before,
+      );
+    } finally {
+      db.close();
+    }
+  }
+});
