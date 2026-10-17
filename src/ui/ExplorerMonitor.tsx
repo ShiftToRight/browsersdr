@@ -1,3 +1,4 @@
+import { MonitorGroupDetails } from "./MonitorGroupDetails";
 import "./explorerWorkbench.css";
 import type { ReactNode } from "react";
 import {
@@ -140,7 +141,7 @@ export function ExplorerMonitor({
     (draft: CustomTargetDraft) => setCustomDraft(draft),
     [],
   );
-  const analysis = { version: 1 as const, preset };
+  const analysis = { version: 2 as const, preset };
   const custom = targetMode === "frequencies" || targetMode === "range";
   let effectiveProfile = profile;
   let planError = custom
@@ -271,7 +272,9 @@ export function ExplorerMonitor({
         effectiveProfile,
         receiver.session,
         custom ? customDraft.targets : undefined,
-        session.analysis ? analysis : undefined,
+        session.analysis
+          ? { ...analysis, version: session.analysis.version }
+          : undefined,
       ) === session.context
     );
   } catch {
@@ -484,7 +487,7 @@ export function ExplorerMonitor({
           <p>
             Detector:{" "}
             {session.analysis
-              ? `${MONITOR_PRESETS[session.analysis.preset].label} · region detector v${session.analysis.version} · linear power averaging`
+              ? `${MONITOR_PRESETS[session.analysis.preset].label} · region detector v${session.analysis.version} · linear power averaging${session.analysis.version === 1 ? ". Original grouping retained; start a new session for adaptive groups" : ""}`
               : "Legacy detector · original history semantics retained"}
             . Relative levels; no modulation or transmitter identity
             established.
@@ -1068,7 +1071,11 @@ export function ExplorerMonitor({
               <tbody>
                 {signals.map((s) => (
                   <tr key={s.id} aria-selected={selected === s.id}>
-                    <td>
+                    <td
+                      className={
+                        s.group ? "monitor-adaptive-frequency" : undefined
+                      }
+                    >
                       <button
                         type="button"
                         className="monitor-frequency"
@@ -1085,6 +1092,7 @@ export function ExplorerMonitor({
                           ? " · edge clipped"
                           : ""}
                       </small>
+                      <MonitorGroupDetails signal={s} />
                     </td>
                     <td>
                       <span>
@@ -1334,6 +1342,19 @@ export function ExplorerMonitor({
             </span>
             <span>{detail.change} since baseline</span>
           </div>
+          {detail.group && (
+            <p>
+              {detail.centerEvidence?.length
+                ? "Stable middle"
+                : "Provisional middle"}
+              : {frequency(detail.frequencyHz)} ·
+              {detail.centerEvidence?.length ?? 0} complete center observations
+              · observed spread{" "}
+              {Math.round(detail.centerSpreadHz ?? 0).toLocaleString()} Hz. Open
+              Expand group in the table to inspect supported components and
+              grouping evidence.
+            </p>
+          )}
           <p>
             First seen {new Date(detail.firstSeen).toLocaleString()} · Last seen{" "}
             {new Date(detail.lastSeen).toLocaleString()} · {detail.detections}{" "}

@@ -83,8 +83,8 @@ test("custom targets share windows, retain quiet targets and export their defini
   const saved = JSON.parse(
     await readFile((await (await downloading).path())!, "utf8"),
   );
-  expect(saved.version).toBe(3);
-  expect(saved.analysis).toEqual({ version: 1, preset: "general" });
+  expect(saved.version).toBe(4);
+  expect(saved.analysis).toEqual({ version: 2, preset: "general" });
   expect(saved.targets).toHaveLength(2);
   expect(
     saved.signals.some((s: { targetIds: string[] }) => s.targetIds.length > 0),

@@ -22,6 +22,7 @@ export interface SpectrumPoint {
 }
 
 export interface SignalCandidate {
+  group?: import("./adaptiveGrouping").AdaptiveGroup;
   /** Versioned monitor detections retain actual edges separately from their peak. */
   lowerFrequencyHz?: number;
   upperFrequencyHz?: number;
@@ -38,6 +39,8 @@ export interface SignalCandidate {
 }
 
 export interface ScanWindowResult {
+  /** Actual acquisition FFT spacing for adaptive tracking. */
+  binSpacingHz?: number;
   plan: ScanWindowPlan;
   points: SpectrumPoint[];
   candidates: SignalCandidate[];

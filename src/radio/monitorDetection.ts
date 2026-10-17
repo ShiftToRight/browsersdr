@@ -1,3 +1,4 @@
+import { adaptiveCandidates } from "./adaptiveGrouping";
 import type { SurveyDetectorMode } from "./fieldSurvey";
 import type {
   ScanWindowPlan,
@@ -93,14 +94,18 @@ export const MONITOR_PRESETS = {
 } as const;
 export type MonitorPreset = keyof typeof MONITOR_PRESETS;
 export interface MonitorAnalysis {
-  version: 1;
+  version: 1 | 2;
   preset: MonitorPreset;
 }
 export function validateMonitorAnalysis(value: unknown): MonitorAnalysis {
   const v = value as MonitorAnalysis;
-  if (!v || v.version !== 1 || !Object.hasOwn(MONITOR_PRESETS, v.preset))
+  if (
+    !v ||
+    ![1, 2].includes(v.version) ||
+    !Object.hasOwn(MONITOR_PRESETS, v.preset)
+  )
     throw new Error("Unsupported monitoring detector configuration.");
-  return { version: 1, preset: v.preset };
+  return { version: v.version, preset: v.preset };
 }
 const quantile = (values: number[], fraction: number) => {
   values.sort((a, b) => a - b);
@@ -207,6 +212,44 @@ export function analyzeMonitorWindow(
       (plan.upperFrequencyHz - first.centerFrequencyHz) / resolution + n / 2,
     ),
   );
+  if (analysis.version === 2) {
+    const compatibleFrames = measurement.frames.filter(
+      (f) =>
+        f.bins.length === n &&
+        f.sampleRateHz === first.sampleRateHz &&
+        f.centerFrequencyHz === first.centerFrequencyHz,
+    );
+    return {
+      plan,
+      binSpacingHz: resolution,
+      points: Array.from(
+        { length: Math.max(0, upper - lower + 1) },
+        (_, j) => ({ frequencyHz: hz(lower + j), powerDb: powers[lower + j]! }),
+      ),
+      candidates:
+        measurement.status === "complete"
+          ? adaptiveCandidates({
+              powers,
+              floor,
+              frames: compatibleFrames,
+              lower,
+              upper,
+              hz,
+              resolution,
+              thresholdDb,
+              narrow: analysis.preset === "narrow",
+              detector,
+              planLower: plan.lowerFrequencyHz,
+              planUpper: plan.upperFrequencyHz,
+            })
+          : [],
+      noiseFloorDb: globalFloor,
+      frameCount: frames,
+      coverage: measurement.coverage,
+      missingSamples: measurement.missingSamples,
+      status: measurement.status,
+    };
+  }
   const above = (i: number) => smoothed[i]! >= floor(i) + thresholdDb;
   const ranges: { start: number; end: number }[] = [];
   let start = -1;

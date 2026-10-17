@@ -747,3 +747,53 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.monitor-group-details {
+  margin-top: 3px;
+  max-width: 340px;
+  font-size: 0.72rem;
+}
+.monitor-group-details > summary {
+  cursor: pointer;
+  color: var(--cyan-soft);
+  padding: 2px 0;
+}
+.monitor-group-details[open] {
+  min-width: min(260px, 40vw);
+}
+.monitor-group-details > div {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.monitor-group-details ul {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 5px;
+}
+@media (max-width: 700px) {
+  .monitor-group-details[open] {
+    min-width: 180px;
+  }
+}
+
+.monitor-adaptive-frequency > .monitor-frequency {
+  display: block;
+}
+.monitor-shell .monitor-signal-table td.monitor-adaptive-frequency > small {
+  display: inline;
+}
+.monitor-adaptive-frequency .monitor-group-details {
+  display: inline;
+  margin-left: 8px;
+}
+.monitor-adaptive-frequency .monitor-group-details > summary {
+  display: inline;
+  white-space: nowrap;
+}
+.monitor-adaptive-frequency .monitor-group-details > div {
+  max-width: 340px;
+}

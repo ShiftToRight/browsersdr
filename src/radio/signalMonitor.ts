@@ -1,4 +1,12 @@
 import {
+  associateAdaptive,
+  stableCenter,
+  CENTER_EVIDENCE_LIMIT,
+  MAX_GROUP_COMPONENTS,
+  type CenterEvidence,
+  type AdaptiveGroup,
+} from "./adaptiveGrouping";
+import {
   MONITOR_PRESETS,
   validateMonitorAnalysis,
   type MonitorAnalysis,
@@ -46,6 +54,9 @@ export interface MonitorObservation {
   snrDb?: number;
 }
 export interface MonitorSignal {
+  group?: AdaptiveGroup;
+  centerEvidence?: CenterEvidence[];
+  centerSpreadHz?: number;
   id: string;
   bandId: string;
   targetIds?: string[];
@@ -74,7 +85,7 @@ export interface MonitorSignal {
   history: MonitorObservation[];
 }
 export interface MonitorSession {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   analysis?: MonitorAnalysis;
   discardedCandidates?: number;
   targets?: MonitorTarget[];
@@ -259,7 +270,7 @@ export function createMonitorSession(
     }
   const snapshot = createSurveyRunSnapshot(valid, valid.bands, receiver, now);
   return {
-    version: analysis ? 3 : validTargets ? 2 : 1,
+    version: analysis ? (analysis.version === 2 ? 4 : 3) : validTargets ? 2 : 1,
     ...(analysis
       ? { analysis: validateMonitorAnalysis(analysis), discardedCandidates: 0 }
       : {}),
@@ -369,10 +380,46 @@ export function recordMonitorVisit(
   const touched = new Set<string>();
   let omittedSignals = session.omittedSignals;
   let discardedCandidates = session.discardedCandidates ?? 0;
-  const resolutionHz = session.snapshot.receiver.actualSampleRateHz / 4096;
+  const adaptive = session.analysis?.version === 2;
+  const resolutionHz = adaptive
+    ? result.binSpacingHz!
+    : session.snapshot.receiver.actualSampleRateHz / 4096;
+  if (
+    adaptive &&
+    valid &&
+    (!Number.isFinite(resolutionHz) ||
+      resolutionHz <= 0 ||
+      result.candidates.some(
+        (c) => !c.group || c.group.binSpacingHz !== resolutionHz,
+      ))
+  )
+    throw new Error(
+      "Adaptive monitoring requires actual FFT spacing and component evidence.",
+    );
+  const candidates = adaptive
+    ? [...result.candidates]
+        .filter(
+          (c) =>
+            c.frequencyHz >= region.plan.lowerFrequencyHz &&
+            c.frequencyHz <= region.plan.upperFrequencyHz &&
+            (!session.targets || !!signalTargets(session, c)?.length),
+        )
+        .sort(
+          (a, b) =>
+            a.frequencyHz - b.frequencyHz || a.bandwidthHz - b.bandwidthHz,
+        )
+    : result.candidates;
+  const associations =
+    adaptive && valid
+      ? associateAdaptive(
+          signals.filter((s) => s.bandId === region.bandId),
+          candidates,
+          resolutionHz,
+        )
+      : undefined;
   if (valid) {
     // Nearest one-to-one association prevents a broad overlap from consuming neighboring entries.
-    for (const candidate of result.candidates) {
+    for (const candidate of candidates) {
       if (
         candidate.frequencyHz < region.plan.lowerFrequencyHz ||
         candidate.frequencyHz > region.plan.upperFrequencyHz
@@ -381,24 +428,26 @@ export function recordMonitorVisit(
       const targetIds = signalTargets(session, candidate);
       if (targetIds && !targetIds.length) continue;
       const snrDb = candidate.peakDb - candidate.noiseFloorDb;
-      let entry = signals
-        .filter(
-          (s) =>
-            s.bandId === region.bandId &&
-            !touched.has(s.id) &&
-            (session.analysis
-              ? regionMatch(s, candidate, resolutionHz)
-              : Math.abs(s.frequencyHz - candidate.frequencyHz) <=
-                Math.max(
-                  2 * resolutionHz,
-                  Math.min(s.bandwidthHz, candidate.bandwidthHz) * 0.25,
-                )),
-        )
-        .sort(
-          (a, b) =>
-            Math.abs(a.frequencyHz - candidate.frequencyHz) -
-            Math.abs(b.frequencyHz - candidate.frequencyHz),
-        )[0];
+      let entry = adaptive
+        ? signals.find((s) => s.id === associations?.assigned.get(candidate))
+        : signals
+            .filter(
+              (s) =>
+                s.bandId === region.bandId &&
+                !touched.has(s.id) &&
+                (session.analysis
+                  ? regionMatch(s, candidate, resolutionHz)
+                  : Math.abs(s.frequencyHz - candidate.frequencyHz) <=
+                    Math.max(
+                      2 * resolutionHz,
+                      Math.min(s.bandwidthHz, candidate.bandwidthHz) * 0.25,
+                    )),
+            )
+            .sort(
+              (a, b) =>
+                Math.abs(a.frequencyHz - candidate.frequencyHz) -
+                Math.abs(b.frequencyHz - candidate.frequencyHz),
+            )[0];
       const caution =
         Math.abs(candidate.frequencyHz - region.plan.centerFrequencyHz) <=
           resolutionHz * 2 && candidate.bandwidthHz <= resolutionHz * 4
@@ -458,9 +507,29 @@ export function recordMonitorVisit(
         signals.push(entry);
       }
       const priorMisses = entry.misses;
+      const centerEvidence = adaptive
+        ? [
+            ...(entry.centerEvidence ?? []),
+            ...(!candidate.lowerEdgeClipped && !candidate.upperEdgeClipped
+              ? [
+                  {
+                    at,
+                    lowerHz: candidate.lowerFrequencyHz!,
+                    upperHz: candidate.upperFrequencyHz!,
+                    binSpacingHz: resolutionHz,
+                  },
+                ]
+              : []),
+          ].slice(-CENTER_EVIDENCE_LIMIT)
+        : [];
+      const stable = stableCenter(centerEvidence);
+      const comparisonCenter =
+        adaptive && centerEvidence.length
+          ? stable.centerHz
+          : candidate.frequencyHz;
       const changed =
         Math.abs(snrDb - entry.baseline.snrDb) >= 6 ||
-        Math.abs(candidate.frequencyHz - entry.baseline.frequencyHz) >
+        Math.abs(comparisonCenter - entry.baseline.frequencyHz) >
           (session.analysis
             ? Math.max(resolutionHz * 2, entry.baseline.bandwidthHz * 0.15)
             : resolutionHz * 2) ||
@@ -512,7 +581,20 @@ export function recordMonitorVisit(
         entry.lowerFrequencyHz = lower;
         entry.upperFrequencyHz = upper;
         entry.peakFrequencyHz = candidate.peakFrequencyHz;
-        entry.frequencyHz = (lower + upper) / 2;
+        entry.frequencyHz =
+          adaptive && centerEvidence.length
+            ? stable.centerHz
+            : (lower + upper) / 2;
+        if (adaptive) {
+          entry.group = {
+            ...structuredClone(candidate.group!),
+            ...(associations?.uncertain.has(candidate)
+              ? { associationUncertain: true }
+              : {}),
+          };
+          entry.centerEvidence = centerEvidence;
+          entry.centerSpreadHz = stable.spreadHz;
+        }
         entry.bandwidthHz = upper - lower;
         entry.targetIds = signalTargets(session, entry);
         entry.confirmed =
@@ -600,7 +682,12 @@ export function validateMonitorSession(value: unknown): MonitorSession {
       "Saved monitoring history is invalid or unsupported. Export any in-memory history and start a new session.",
     );
   };
-  if (!value || JSON.stringify(value).length > 2_000_000) invalid();
+  if (
+    !value ||
+    JSON.stringify(value).length >
+      ((value as MonitorSession).version === 4 ? 8_000_000 : 2_000_000)
+  )
+    invalid();
   const s = value as MonitorSession;
   const number = (v: unknown) => typeof v === "number" && Number.isFinite(v);
   const count = (v: unknown) =>
@@ -610,8 +697,8 @@ export function validateMonitorSession(value: unknown): MonitorSession {
   const text = (v: unknown) =>
     typeof v === "string" && v.length > 0 && v.length <= 500;
   if (
-    ![1, 2, 3].includes(s.version) ||
-    (s.version === 3
+    ![1, 2, 3, 4].includes(s.version) ||
+    (s.version >= 3
       ? !s.analysis || !count(s.discardedCandidates)
       : s.analysis !== undefined) ||
     (s.version === 1 && s.targets !== undefined) ||
@@ -636,6 +723,7 @@ export function validateMonitorSession(value: unknown): MonitorSession {
     s.signals.length > MONITOR_MAX_SIGNALS
   )
     invalid();
+  if ((s.version === 4) !== (s.analysis?.version === 2)) invalid();
   const r = s.snapshot.receiver;
   if (
     !r ||
@@ -708,10 +796,11 @@ export function validateMonitorSession(value: unknown): MonitorSession {
             signal.bandwidthHz -
               (signal.upperFrequencyHz! - signal.lowerFrequencyHz!),
           ) > 0.01 ||
-          Math.abs(
-            signal.frequencyHz -
-              (signal.upperFrequencyHz! + signal.lowerFrequencyHz!) / 2,
-          ) > 0.01 ||
+          (s.version !== 4 &&
+            Math.abs(
+              signal.frequencyHz -
+                (signal.upperFrequencyHz! + signal.lowerFrequencyHz!) / 2,
+            ) > 0.01) ||
           signal.peakFrequencyHz! < signal.lowerFrequencyHz! ||
           signal.peakFrequencyHz! > signal.upperFrequencyHz! ||
           typeof signal.confirmed !== "boolean" ||
@@ -745,6 +834,71 @@ export function validateMonitorSession(value: unknown): MonitorSession {
       (signal.caution !== undefined && !text(signal.caution)) ||
       !Array.isArray(signal.history) ||
       signal.history.length > MONITOR_HISTORY_LENGTH
+    )
+      invalid();
+    if (s.version === 4) {
+      const group = signal.group;
+      const evidence = signal.centerEvidence;
+      if (
+        !group ||
+        !number(group.binSpacingHz) ||
+        group.binSpacingHz <= 0 ||
+        !count(group.componentCount) ||
+        group.componentCount < 1 ||
+        group.componentCount > 4096 ||
+        !["contiguous-support", "supported-notch"].includes(group.reason) ||
+        (group.associationUncertain !== undefined &&
+          typeof group.associationUncertain !== "boolean") ||
+        !Array.isArray(group.components) ||
+        group.components.length !==
+          Math.min(group.componentCount, MAX_GROUP_COMPONENTS) ||
+        !Array.isArray(evidence) ||
+        evidence.length > CENTER_EVIDENCE_LIMIT ||
+        !number(signal.centerSpreadHz) ||
+        signal.centerSpreadHz! < 0
+      )
+        invalid();
+      group!.components.forEach((c, i) => {
+        if (
+          !number(c.lowerHz) ||
+          !number(c.upperHz) ||
+          c.lowerHz < signal.lowerFrequencyHz! ||
+          c.upperHz > signal.upperFrequencyHz! ||
+          c.upperHz <= c.lowerHz ||
+          !number(c.peakHz) ||
+          c.peakHz < c.lowerHz ||
+          c.peakHz > c.upperHz ||
+          !number(c.peakDb) ||
+          (i > 0 && group!.components[i - 1]!.upperHz >= c.lowerHz)
+        )
+          invalid();
+      });
+      evidence!.forEach((e) => {
+        if (
+          !date(e.at) ||
+          !number(e.lowerHz) ||
+          !number(e.upperHz) ||
+          e.lowerHz < band!.startFrequencyHz ||
+          e.upperHz > band!.endFrequencyHz ||
+          e.upperHz <= e.lowerHz ||
+          !number(e.binSpacingHz) ||
+          e.binSpacingHz <= 0
+        )
+          invalid();
+      });
+      const stable = stableCenter(evidence!);
+      const center = evidence!.length
+        ? stable.centerHz
+        : (signal.lowerFrequencyHz! + signal.upperFrequencyHz!) / 2;
+      if (
+        Math.abs(center - signal.frequencyHz) > 0.01 ||
+        Math.abs(stable.spreadHz - signal.centerSpreadHz!) > 0.01
+      )
+        invalid();
+    } else if (
+      signal.group !== undefined ||
+      signal.centerEvidence !== undefined ||
+      signal.centerSpreadHz !== undefined
     )
       invalid();
     ids.add(signal.id);
@@ -783,6 +937,13 @@ export function monitorCsv(session: MonitorSession): string {
       "upper_hz",
       "peak_hz",
       "confirmed",
+      "center_spread_hz",
+      "reliable_center_visits",
+      "component_count",
+      "components_json",
+      "grouping_reason",
+      "bin_spacing_hz",
+      "association_uncertain",
     ]),
     ...session.signals.map((s) =>
       row([
@@ -809,6 +970,13 @@ export function monitorCsv(session: MonitorSession): string {
         s.upperFrequencyHz,
         s.peakFrequencyHz,
         s.confirmed,
+        s.centerSpreadHz,
+        s.centerEvidence?.length,
+        s.group?.componentCount,
+        s.group ? JSON.stringify(s.group.components) : "",
+        s.group?.reason,
+        s.group?.binSpacingHz,
+        s.group?.associationUncertain,
       ]),
     ),
   ].join("\n");
