@@ -7,9 +7,9 @@ import {
   mkdirSync,
 } from "node:fs";
 import { resolve, join, extname, relative } from "node:path";
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fingerprintCommunityEvidence } from "./community-evidence-fingerprint.mjs";
+import { runBrowserChecks } from "./run-browser-checks.mjs";
 
 // Run against the actual stamped payload using the exact frozen source's tests.
 const [siteArgument, sourceArgument, mode = "full"] = process.argv.slice(2);
@@ -106,36 +106,24 @@ const grep =
     : undefined;
 writeFileSync(
   config,
-  `const config = ${JSON.stringify({ testDir: join(source, "e2e"), testMatch: files ?? "**/*.e2e.ts", fullyParallel: false, workers: 1, retries: 0, timeout: 20000, expect: { timeout: 7000 }, reporter: [["list"], ["json", { outputFile: join(work, "results.json") }]], outputDir: join(work, "test-results"), use: { baseURL: url, browserName: "chromium", acceptDownloads: true, viewport: { width: 1440, height: 1000 }, screenshot: "only-on-failure", trace: "retain-on-failure" } })}; config.grep = new RegExp(${JSON.stringify(grep ?? ".*")}); export default config;\n`,
+  `const config = ${JSON.stringify({ testDir: join(source, "e2e"), testMatch: files ?? "**/*.e2e.ts", fullyParallel: false, workers: 1, retries: 0, forbidOnly: true, failOnFlakyTests: true, timeout: 20000, expect: { timeout: 7000 }, use: { baseURL: url, browserName: "chromium", acceptDownloads: true, viewport: { width: 1440, height: 1000 }, screenshot: "only-on-failure", trace: "retain-on-failure" } })}; config.grep = new RegExp(${JSON.stringify(grep ?? ".*")}); export default config;\n`,
 );
 try {
-  const result = await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        join(source, "node_modules/@playwright/test/cli.js"),
-        "test",
-        "--config",
-        config,
-      ],
-      {
-        cwd: source,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          VITE_BUILD_ID: metadata.release,
-          VITE_BUILD_TIMESTAMP: metadata.builtAt,
-        },
-      },
-    );
-    child.once("error", reject);
-    child.once("exit", resolve);
+  await runBrowserChecks({
+    root: source,
+    config,
+    output: join(work, "guarded"),
+    env: {
+      ...process.env,
+      VITE_BUILD_ID: metadata.release,
+      VITE_BUILD_TIMESTAMP: metadata.builtAt,
+    },
   });
-  if (result !== 0)
-    throw new Error(
-      "Stamped community integration failed; no attestation or registration permitted",
-    );
-  const results = JSON.parse(readFileSync(join(work, "results.json")));
+  // Preserve the established summary path for private operator/review tooling.
+  const resultBytes = readFileSync(join(work, "guarded", "results.json"));
+  writeFileSync(join(work, "results.json"), resultBytes);
+  const results = JSON.parse(resultBytes);
+  // Retain the original coarse backstop in addition to exact discovered coverage.
   if (
     results.stats.unexpected ||
     results.stats.flaky ||

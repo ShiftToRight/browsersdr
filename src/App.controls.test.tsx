@@ -279,15 +279,17 @@ it("applies a complete VGA edit once and cancels deferred updates on Stop", asyn
   await change(control("Source"), "hackrf");
   await click("Connect");
   await click("Start receiving");
+  // Keystrokes share one debounce window regardless of host scheduling delays.
+  vi.useFakeTimers();
   await change(control("RX VGA gain"), "6");
   await change(control("RX VGA gain"), "62");
   expect(hardwareCalls).toBe(0);
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(180); });
   expect(hardwareCalls).toBe(1);
   expect(controller.getSnapshot().session?.hackrf?.captureSettings.rxVgaGainDb).toBe(62);
   await change(control("RX VGA gain"), "30");
   await click("Stop receiving");
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(180); });
   expect(hardwareCalls).toBe(1);
   expect(controller.getSnapshot().lifecycle).toBe("connected");
 });

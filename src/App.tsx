@@ -49,7 +49,7 @@ import { usePageVisible } from "./ui/usePageVisible";
 import { SetupFileRow } from "./ui/SetupFileRow";
 import { DabStationControl, FmStationSummary } from "./ui/ChannelProgramme";
 import { ReceiverHealth } from "./ui/ReceiverHealth";
-import { AppIcon } from "./ui/AppIcon";
+import { AppIcon, type AppIconName } from "./ui/AppIcon";
 import { ReceiverStatus } from "./ui/ReceiverStatus";
 import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
 import {
@@ -841,6 +841,134 @@ function DiagnosticsPanel({
   );
 }
 
+const RecordingModeOptions = memo(function RecordingModeOptions() {
+  return (
+    <>
+      {RECEIVER_MODES.map((candidate) => (
+        <option key={candidate} value={candidate}>
+          {candidate}
+        </option>
+      ))}
+    </>
+  );
+});
+const ReceiverSignalFlow = memo(function ReceiverSignalFlow() {
+  return (
+    <div className="signal-map" aria-label="Receiver signal flow">
+      <span>Acquire</span>
+      <i aria-hidden="true">→</i>
+      <span>Tune & demodulate</span>
+      <i aria-hidden="true">→</i>
+      <span>Listen & decode</span>
+      <small>Analysis and capture tap the I/Q stream in parallel.</small>
+    </div>
+  );
+});
+const StageTitle = memo(function StageTitle({
+  number,
+  label,
+  id,
+  icon,
+  title,
+}: {
+  number: string;
+  label: string;
+  id: string;
+  icon: AppIconName;
+  title: string;
+}) {
+  return (
+    <>
+      <span aria-hidden="true">{number}</span>
+      <div>
+        <p>{label}</p>
+        <h3 id={id} className="icon-label">
+          <AppIcon name={icon} />
+          {title}
+        </h3>
+      </div>
+    </>
+  );
+});
+
+const ApplicationBrand = memo(function ApplicationBrand() {
+  return (
+    <header className="app-header">
+      <div className="brand-lockup">
+        <img
+          className="brand-logo"
+          src={`${import.meta.env.BASE_URL}brand/logo-observatory-dish-v3-theme-aligned.png`}
+          alt=""
+          width="1254"
+          height="1254"
+        />
+        <div className="brand-copy">
+          <div className="brand-heading">
+            <h1 className="brand-name">BrowserSDR</h1>
+            <p className="brand-tagline">Listen closer.</p>
+          </div>
+          <p className="subtitle">
+            A local software-defined radio workspace, built for the browser.
+          </p>
+        </div>
+      </div>
+    </header>
+  );
+});
+
+// Receiver transitions do not change environment availability. Keep this
+// diagnostic tree out of the hot receiver render, including development JSX work.
+const BrowserCapabilities = memo(function BrowserCapabilities({
+  dabPlusAudioAvailable,
+}: {
+  dabPlusAudioAvailable: boolean | null;
+}) {
+  const detectedCapabilities = capabilities(dabPlusAudioAvailable);
+  return (
+    <section
+      className="capabilities-panel"
+      aria-labelledby="capabilities-heading"
+    >
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Environment</p>
+          <h2 id="capabilities-heading">Browser API availability</h2>
+        </div>
+      </div>
+      <p className="display-note">
+        These checks detect browser APIs. They do not establish that a receiver,
+        audio output, or GPU display is working; see session health above.
+      </p>
+      <ul className="capability-list">
+        {detectedCapabilities.map((capability) => (
+          <li key={capability.label}>
+            <span
+              className={
+                capability.available === null
+                  ? "check pending"
+                  : capability.available
+                    ? "check available"
+                    : "check no"
+              }
+              aria-hidden="true"
+            >
+              {capability.available === null
+                ? "…"
+                : capability.available
+                  ? "i"
+                  : "!"}
+            </span>
+            <span>
+              <strong>{capability.label}</strong>
+              <small>{capability.detail}</small>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+});
+
 export function ReceiverApp({
   analysis,
   controller,
@@ -1271,7 +1399,6 @@ export function ReceiverApp({
       current = false;
     };
   }, []);
-  const detectedCapabilities = capabilities(dabPlusAudioAvailable);
   const busy =
     Boolean(receiver.cleanupRequired) ||
     [
@@ -2428,26 +2555,7 @@ export function ReceiverApp({
       className={`app-shell${(activeView === "receiver" || activeView === "remote") ? " receiver-workspace" : ""}${layout.compact ? " density-compact" : ""}${layout.sourceCollapsed ? " source-collapsed" : ""}${layout.channelCollapsed ? " channel-collapsed" : ""}`}
     >
       <div className="app-topbar">
-        <header className="app-header">
-          <div className="brand-lockup">
-            <img
-              className="brand-logo"
-              src={`${import.meta.env.BASE_URL}brand/logo-observatory-dish-v3-theme-aligned.png`}
-              alt=""
-              width="1254"
-              height="1254"
-            />
-            <div className="brand-copy">
-              <div className="brand-heading">
-                <h1 className="brand-name">BrowserSDR</h1>
-                <p className="brand-tagline">Listen closer.</p>
-              </div>
-              <p className="subtitle">
-                A local software-defined radio workspace, built for the browser.
-              </p>
-            </div>
-          </div>
-        </header>
+        <ApplicationBrand />
 
         <nav className="view-tabs" aria-label="Application views">
           <div role="tablist" aria-label="BrowserSDR views">
@@ -2579,14 +2687,7 @@ export function ReceiverApp({
             Receive and demodulate
           </h2>
 
-          <div className="signal-map" aria-label="Receiver signal flow">
-            <span>Acquire</span>
-            <i aria-hidden="true">→</i>
-            <span>Tune & demodulate</span>
-            <i aria-hidden="true">→</i>
-            <span>Listen & decode</span>
-            <small>Analysis and capture tap the I/Q stream in parallel.</small>
-          </div>
+          <ReceiverSignalFlow />
 
           <div className="signal-stage-grid">
             <section
@@ -2594,11 +2695,7 @@ export function ReceiverApp({
               aria-labelledby="acquire-heading"
             >
               <div className="stage-heading">
-                <span aria-hidden="true">01</span>
-                <div>
-                  <p>Acquire</p>
-                  <h3 id="acquire-heading" className="icon-label"><AppIcon name="radio" />Signal source</h3>
-                </div>
+                <StageTitle number="01" label="Acquire" id="acquire-heading" icon="radio" title="Signal source" />
                 <button type="button" className="stage-collapse secondary" aria-label={layout.sourceCollapsed ? "Expand source panel" : "Collapse source panel"} aria-expanded={!layout.sourceCollapsed} aria-controls="source-stage-body" onClick={() => setLayout((old) => ({ ...old, sourceCollapsed: !old.sourceCollapsed }))}>{layout.sourceCollapsed ? "+" : "−"}</button>
               </div>
               <div id="source-stage-body" className="stage-body" hidden={layout.sourceCollapsed}>
@@ -3184,11 +3281,7 @@ export function ReceiverApp({
               aria-labelledby="demodulate-heading"
             >
               <div className="stage-heading">
-                <span aria-hidden="true">03</span>
-                <div>
-                  <p>Tune & demodulate</p>
-                  <h3 id="demodulate-heading" className="icon-label"><AppIcon name="sliders" />Channel settings</h3>
-                </div>
+                <StageTitle number="03" label="Tune & demodulate" id="demodulate-heading" icon="sliders" title="Channel settings" />
                 <button type="button" className="stage-collapse secondary" aria-label={layout.channelCollapsed ? "Expand channel panel" : "Collapse channel panel"} aria-expanded={!layout.channelCollapsed} aria-controls="channel-stage-body" onClick={() => setLayout((old) => ({ ...old, channelCollapsed: !old.channelCollapsed }))}>{layout.channelCollapsed ? "+" : "−"}</button>
               </div>
               <div id="channel-stage-body" className="stage-body" hidden={layout.channelCollapsed}>
@@ -4109,11 +4202,7 @@ export function ReceiverApp({
                         }
                       >
                         <option value="">Choose mode…</option>
-                        {RECEIVER_MODES.map((candidate) => (
-                          <option key={candidate} value={candidate}>
-                            {candidate}
-                          </option>
-                        ))}
+                        <RecordingModeOptions />
                       </select>
                     </label>
                     <label className="recording-format">
@@ -4515,48 +4604,7 @@ export function ReceiverApp({
           controller={controller}
         />
 
-        <section
-          className="capabilities-panel"
-          aria-labelledby="capabilities-heading"
-        >
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Environment</p>
-              <h2 id="capabilities-heading">Browser API availability</h2>
-            </div>
-          </div>
-          <p className="display-note">
-            These checks detect browser APIs. They do not establish that a
-            receiver, audio output, or GPU display is working; see session
-            health above.
-          </p>
-          <ul className="capability-list">
-            {detectedCapabilities.map((capability) => (
-              <li key={capability.label}>
-                <span
-                  className={
-                    capability.available === null
-                      ? "check pending"
-                      : capability.available
-                        ? "check available"
-                        : "check no"
-                  }
-                  aria-hidden="true"
-                >
-                  {capability.available === null
-                    ? "…"
-                    : capability.available
-                      ? "i"
-                      : "!"}
-                </span>
-                <span>
-                  <strong>{capability.label}</strong>
-                  <small>{capability.detail}</small>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <BrowserCapabilities dabPlusAudioAvailable={dabPlusAudioAvailable} />
       </div>
 
       <DeferredWorkspace active={utilityView !== null}><UtilityOverlay view={utilityView}

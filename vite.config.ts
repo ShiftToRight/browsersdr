@@ -18,6 +18,8 @@ function staticSiteDocuments(): Record<string, string> {
     ...seoAssets(),
     "LICENSE.txt": readFileSync(new URL("./LICENSE", import.meta.url), "utf8"),
     "SIGNALS-LICENSE.txt": readFileSync(new URL("./src/dsp/signals-APACHE-LICENSE.txt", import.meta.url), "utf8"),
+    "MANROPE-OFL.txt": readFileSync(new URL("./src/assets/fonts/manrope-OFL.txt", import.meta.url), "utf8"),
+    "IBM-PLEX-MONO-OFL.txt": readFileSync(new URL("./src/assets/fonts/ibmplexmono-OFL.txt", import.meta.url), "utf8"),
     "NOTICE.txt": readFileSync(new URL("./NOTICE", import.meta.url), "utf8"),
     "THIRD_PARTY_NOTICES.txt": readFileSync(
       new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8",

@@ -10,6 +10,10 @@ export default defineConfig({
   // Bound simultaneous real DSP/audio/browser pipelines on local hosts too.
   workers: process.env.CI ? 1 : 2,
   retries: process.env.CI ? 1 : 0,
+  forbidOnly: true,
+  failOnFlakyTests: true,
+  // Leave time for reporters and artifact upload before the 30-minute job cap.
+  globalTimeout: process.env.CI ? 25 * 60_000 : undefined,
   timeout: 20_000,
   expect: { timeout: 7_000 },
   reporter: process.env.CI

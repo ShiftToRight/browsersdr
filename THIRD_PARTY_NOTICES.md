@@ -270,3 +270,8 @@ incorporated. Source: <https://github.com/f00b4r0/acarsdec>.
 ## Independent SSTV encoder test reference
 
 The test-only Martin M2 audio and analytic derivative in `src/textmodem/fixtures/` were generated using [PySSTV](https://github.com/dnet/pysstv) at `d998fad154d3e6ad2d73af5add49beec0d2ab59f`, Copyright (c) 2013 Andras Veres-Szentkiralyi, MIT license. The original license is retained in `third_party/pysstv/LICENSE.txt`. The source color bars are original BrowserSDR test artwork. Exact generated/derived file hashes, generation steps and reception limitations are retained beside the fixtures. No PySSTV implementation is included in runtime bundles.
+
+
+## Bundled user-interface fonts
+
+Manrope (Copyright 2018 The Manrope Project Authors) and IBM Plex Mono (Copyright © 2017 IBM Corp.; Reserved Font Name “Plex”) are distributed unmodified under the SIL Open Font License 1.1. The existing font families, weights and supplied Unicode subsets are hosted locally. Exact Google Fonts URLs, hashes and pinned license sources are retained in `src/assets/fonts/sources.json`; the source notices are `src/assets/fonts/manrope-OFL.txt` and `src/assets/fonts/ibmplexmono-OFL.txt`. Every static build supplies the full notices at `MANROPE-OFL.txt` and `IBM-PLEX-MONO-OFL.txt` alongside this file. Upstream: <https://github.com/google/fonts/tree/main/ofl/manrope> and <https://github.com/google/fonts/tree/main/ofl/ibmplexmono>.

@@ -90,6 +90,41 @@ describe("favorite recall receiver guards", () => {
     expect(backend.start).toHaveBeenCalledOnce();
     await controller.stop();
   });
+  it("keeps an already recalled profile and generation without repeating hardware work", async () => {
+    const { controller, backend } = peer();
+    await controller.start({ source: "rtl-sdr", channelFrequencyHz: 100e6, volume: 0 });
+    await applyBookmark(controller, item, { source: "rtl-sdr", channelFrequencyHz: 100e6 });
+    const before = controller.getSnapshot();
+    const validate = vi.spyOn(controller, "validateTune");
+    await applyBookmark(controller, item, { source: "rtl-sdr", channelFrequencyHz: 101e6 });
+    expect(controller.getSnapshot()).toEqual(before);
+    expect(validate).toHaveBeenCalledWith(item.frequencyHz, {}, item.settings);
+    expect(backend.configureMode).toHaveBeenCalledOnce();
+    expect(backend.tune).toHaveBeenCalledOnce();
+    expect(backend.start).toHaveBeenCalledOnce();
+    const snapshot = vi.spyOn(controller, "getSnapshot").mockReturnValueOnce({ ...before, hardwareSettingsPending: true });
+    await expect(applyBookmark(controller, item, { source: "rtl-sdr", channelFrequencyHz: 101e6 })).rejects.toThrow(/operation/);
+    snapshot.mockRestore();
+    vi.spyOn(controller, "getRecordingStatus").mockReturnValue({} as NonNullable<ReturnType<ReceiverController["getRecordingStatus"]>>);
+    await expect(applyBookmark(controller, item, { source: "rtl-sdr", channelFrequencyHz: 101e6 })).rejects.toThrow(/recording/);
+    expect(controller.getSnapshot()).toEqual(before);
+    vi.mocked(controller.getRecordingStatus).mockRestore();
+    await controller.stop();
+  });
+  it("still applies changed CW settings and tunes a changed frequency", async () => {
+    const { controller, backend } = peer();
+    await controller.start({ source: "rtl-sdr", channelFrequencyHz: 100e6, volume: 0 });
+    await applyBookmark(controller, item, { source: "rtl-sdr", channelFrequencyHz: 100e6 });
+    const changed = { ...item, settings: { ...item.settings, beatToneHz: 800 } };
+    await applyBookmark(controller, changed, { source: "rtl-sdr", channelFrequencyHz: 101e6 });
+    expect(backend.configureMode).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().session?.beatToneHz).toBe(800);
+    await applyBookmark(controller, { ...changed, frequencyHz: 102e6 }, { source: "rtl-sdr", channelFrequencyHz: 101e6 });
+    expect(backend.configureMode).toHaveBeenCalledTimes(2);
+    expect(backend.tune).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().session).toMatchObject({ selectedChannelFrequencyHz: 102e6, beatToneHz: 800, actualSampleRateHz: 1024000 });
+    await controller.stop();
+  });
   it("rejects replay, incompatible RF and active recording before receiver mutation", async () => {
     const { controller, backend } = peer();
     await expect(
