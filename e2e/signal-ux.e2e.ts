@@ -42,6 +42,11 @@ test("19.2 MS/s channel capture completes five seconds while Search opens", asyn
   await page
     .getByRole("button", { name: "Start I/Q recording", exact: true })
     .click();
+  // Open Search during actual capture, after asynchronous storage preparation
+  // has committed its controls, rather than clicking through that transition.
+  await expect(
+    page.getByRole("button", { name: "Stop recording", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page
     .getByRole("searchbox", { name: "Search text, frequency or DAB block" })
