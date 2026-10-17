@@ -764,7 +764,7 @@ export function DecodedResults({
                 </dl>
               )}
               {mode === "WBFM" && (
-                <p className="display-note" aria-label="FM stereo reception">
+                <p className="display-note fm-reception-summary" aria-label="FM stereo reception">
                   FM stereo reception: {fmStereoReceptionLabel(receiver)}
                 </p>
               )}

@@ -4668,6 +4668,10 @@ button:has(> .app-icon) {
 .receiver-dock-panel .audio-summary > .status-pill { margin-left: auto; }
 .receiver-dock-panel .rds-content { padding: 8px 10px; }
 .decode-panel[data-mode="WBFM"] .rds-content { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 14px; align-items: start; }
+@media (min-width: 1181px) {
+  .decode-panel[data-mode="WBFM"] .rds-content { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+}
+.decode-panel[data-mode="WBFM"] .fm-reception-summary { margin: 0; }
 .decode-panel[data-mode="WBFM"] .rds-content h3 { line-height: 1.55; }
 .decode-panel[data-mode="WBFM"] .rds-empty { margin: 0; }
 .decode-panel[data-mode="WBFM"] .rds-content > .rds-grid { margin: 0; grid-template-columns: auto minmax(0, 1fr); border: 0; background: transparent; gap: 4px 16px; border-radius: 0; }

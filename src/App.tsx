@@ -4002,7 +4002,7 @@ export function ReceiverApp({
                     : "The recording is available in this tab. Download before reloading or closing the page."}
                 </p>
               )}
-              {preparedCaptureAvailable && <p className="display-note">Changing decoder keeps this recording and its original capture settings.</p>}
+              {preparedCaptureAvailable && <p className="display-note capture-guidance">Changing decoder keeps this recording and its original capture settings.</p>}
               {preparedCaptureAvailable && retainedCapture.status !== "download-requested" && (
                 <p className="display-note capture-retention-warning">{retainedCapture.libraryId ? "Retained in the local recording library. Download an external backup." : "Kept in this tab only. Download before reloading or closing."}</p>
               )}
