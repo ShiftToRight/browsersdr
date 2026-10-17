@@ -5090,3 +5090,100 @@ input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offs
 @media (min-width: 1000px) { .explorer-layout { grid-template-columns: minmax(300px, .85fr) minmax(0, 1.7fr); } }
 
 .signal-stage .hackrf-gain-control { grid-template-columns: minmax(0, 1fr); }
+
+/* Explorer monitoring shares the existing receiver and theme surfaces. */
+.monitor-workspace { min-width: 0; padding: 20px; display: grid; gap: 14px; align-content: start; }
+.monitor-workspace[hidden] { display: none; }
+.monitor-workspace p, .monitor-workspace h3, .monitor-workspace h4 { margin: 0; }
+.monitor-toolbar, .monitor-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.monitor-toolbar { justify-content: space-between; }
+.monitor-actions label { min-width: 170px; }
+.monitor-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; }
+.monitor-metrics div { display: grid; gap: 6px; }
+.monitor-metrics span, .monitor-workspace small { color: var(--muted); font-size: .8rem; }
+.monitor-table-wrap { max-width: 100%; overflow: auto; }
+.monitor-workspace table { width: 100%; border-collapse: collapse; text-align: left; font-size: .85rem; }
+.monitor-workspace caption { text-align: left; font-weight: 650; padding: 6px 0 12px; }
+.monitor-workspace th, .monitor-workspace td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.monitor-workspace th { color: var(--muted); font-size: .78rem; font-weight: 600; }
+.monitor-workspace td small { display: block; margin-top: 5px; }
+.monitor-workspace tr[aria-selected="true"] { background: color-mix(in srgb,var(--cyan) 9%,transparent); }
+.monitor-workspace .monitor-warning { color: var(--amber, #e7b75a); }
+.monitor-inspector { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
+.monitor-history { display: flex; flex-wrap: wrap; gap: 7px; }
+.monitor-seen { color: var(--cyan); }
+.monitor-missed { color: var(--muted); }
+.monitor-coverage summary { cursor: pointer; }
+@media (max-width: 600px) { .monitor-workspace { padding: 12px; } .monitor-actions > button { min-height: 44px; } }
+.monitor-workspace .monitor-table-wrap:has(> .monitor-signal-table) { max-height: 420px; }
+.monitor-signal-table thead { position: sticky; top: 0; background: var(--theme-surface, #071326); z-index: 1; }
+
+.custom-monitor-editor { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; min-width: 0; }
+.custom-monitor-editor h4 { margin: 0 0 8px; }
+.custom-monitor-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.custom-monitor-editor legend { font-weight: 700; margin-bottom: 10px; }
+.custom-monitor-fields, .custom-monitor-entry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.custom-monitor-entry { grid-template-columns: 1fr 1fr 1fr auto; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.custom-monitor-editor label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.custom-monitor-editor input, .custom-monitor-editor select, .custom-monitor-editor textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.custom-monitor-editor details { margin-top: 12px; }
+.custom-monitor-editor details > label, .custom-monitor-editor details > button { margin-top: 10px; }
+.custom-monitor-editor .custom-monitor-favorite { flex-direction: row; align-items: center; }
+.custom-monitor-editor .custom-monitor-favorite input { width: auto; }
+.monitor-target-table { width: 100%; }
+.monitor-target-table small { display: block; }
+.monitor-plan { padding: 10px 12px; background: var(--secondary-background); border-radius: 8px; }
+@media (max-width: 700px) {
+  .custom-monitor-fields, .custom-monitor-entry { grid-template-columns: minmax(0, 1fr); }
+  .custom-monitor-editor { padding: 10px; }
+}
+
+/* Result-first Explorer; source controls keep Receiver's compact rail proportions. */
+.explorer-workspace[data-activity="monitor"] .explorer-results { overflow: visible; }
+@media (min-width: 1000px) {
+  .explorer-layout { grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
+  .explorer-controls { position: sticky; top: 84px; max-height: calc(100dvh - 115px); overflow-y: auto; scrollbar-gutter: stable; }
+  .explorer-workspace[data-activity="monitor"] .explorer-results { min-width: 0; }
+}
+.explorer-controls { padding: 14px; gap: 12px; }
+.explorer-controls .custom-monitor-editor { margin: 0; padding: 0; border: 0; border-radius: 0; }
+.explorer-controls .custom-monitor-editor > h4, .explorer-controls .custom-monitor-editor > h4 + p { display: none; }
+.explorer-controls .custom-monitor-fields, .explorer-controls .custom-monitor-entry { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.explorer-controls .custom-monitor-entry { position: relative; }
+.explorer-controls .monitor-plan { padding: 8px; font-size: .75rem; margin: 8px 0 0; }
+.explorer-controls label > small { color: var(--muted); font-size: .75rem; line-height: 1.45; }
+.explorer-controls .explorer-settings { padding-top: 10px; }
+.explorer-controls .custom-monitor-editor legend { font-size: .82rem; }
+.monitor-workspace { gap: 5px; padding: 14px; }
+.monitor-workspace > .monitor-toolbar { gap: 8px 16px; position: sticky; top: 84px; z-index: 16; background: var(--theme-surface, #071326); }
+.monitor-workspace h3 { font-size: 1.05rem; }
+.monitor-transport { margin-left: auto; }
+.monitor-transport button { padding: 8px 12px; }
+.monitor-gain-note, .monitor-message { font-size: .78rem; }
+.monitor-workspace .monitor-metrics { display: flex; flex-wrap: wrap; gap: 7px 18px; padding: 8px 10px; }
+.monitor-workspace .monitor-metrics > div { display: flex; align-items: baseline; gap: 7px; }
+.monitor-workspace .monitor-metrics strong { font-size: .78rem; }
+.monitor-result-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
+.monitor-result-controls label { display: grid; gap: 4px; font-size: .75rem; }
+.monitor-result-controls select { padding: 6px 9px; min-height: 34px; }
+.monitor-result-count { color: var(--muted); font-size: .75rem; padding-bottom: 8px; }
+.monitor-tools { position: relative; margin-left: auto; align-self: center; }
+.monitor-tools[open] { flex-basis: 100%; margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 10px; }
+.monitor-tools summary, .monitor-target-coverage > summary { cursor: pointer; font-size: .8rem; color: var(--cyan-soft); }
+.monitor-workspace .monitor-table-wrap.monitor-results-scroll { min-height: 180px; height: max(260px, calc(100dvh - 375px)); max-height: none; scrollbar-gutter: stable; }
+.monitor-workspace .monitor-signal-table caption { padding: 4px 6px 8px; font-size: .8rem; }
+.monitor-workspace .monitor-signal-table td { padding: 7px 8px; font-size: .78rem; }
+.monitor-workspace .monitor-signal-table td small { margin-top: 2px; font-size: .7rem; }
+.monitor-workspace .monitor-signal-table th { padding: 8px; white-space: nowrap; }
+.monitor-frequency { min-height: 22px; padding: 0; border: 0; box-shadow: none; background: transparent; color: var(--cyan-soft); font-family: "IBM Plex Mono", monospace; font-size: .8rem; font-weight: 500; white-space: nowrap; }
+.monitor-workspace .monitor-table-note { font-size: .7rem; }
+.monitor-inspector { position: fixed; inset: 330px 20px 20px auto; width: min(420px, calc(100vw - 40px)); max-height: calc(100dvh - 350px); overflow-y: auto; box-sizing: border-box; background: var(--theme-surface, #071326); box-shadow: 0 14px 60px #0009; z-index: 15; }
+.monitor-target-coverage[open] { display: grid; gap: 12px; }
+@media (max-width: 999px) {
+  .explorer-workspace[data-activity="monitor"] .explorer-controls { max-height: 320px; overflow-y: auto; }
+  .monitor-transport { margin-left: 0; }
+  .monitor-inspector { top: 88px; max-height: calc(100dvh - 108px); }
+  .monitor-workspace > .monitor-toolbar { z-index: 2; }
+  .monitor-workspace .monitor-table-wrap.monitor-results-scroll { height: min(65dvh, 600px); }
+}
+@media (pointer: coarse) { .monitor-frequency { min-height: 44px; } }

@@ -22,6 +22,12 @@ export interface SpectrumPoint {
 }
 
 export interface SignalCandidate {
+  /** Versioned monitor detections retain actual edges separately from their peak. */
+  lowerFrequencyHz?: number;
+  upperFrequencyHz?: number;
+  peakFrequencyHz?: number;
+  lowerEdgeClipped?: boolean;
+  upperEdgeClipped?: boolean;
   frequencyHz: number;
   peakDb: number;
   noiseFloorDb: number;
@@ -193,6 +199,7 @@ export function analyzeScanWindow(
   thresholdAboveNoiseDb: number,
   detector: SurveyDetectorMode = "average",
   measurement?: Pick<SpectrumMeasurement, "coverage" | "missingSamples" | "status">,
+  noiseFloorScope: "window" | "capture" = "window",
 ): ScanWindowResult {
   if (frames.length === 0) throw new Error("No spectrum frames arrived for this tuning window.");
   const first = frames[0]!;
@@ -238,6 +245,8 @@ export function analyzeScanWindow(
     ? median(frameFloors)
     : detector === "wideband" && guardPowers.length > 0
       ? median(guardPowers)
+      : noiseFloorScope === "capture"
+      ? median(Array.from(powerSum, power => power / acceptedFrames))
       : median(points.map((point) => point.powerDb));
   const thresholdDb = noiseFloorDb + Math.max(1, thresholdAboveNoiseDb);
   const candidates: SignalCandidate[] = [];

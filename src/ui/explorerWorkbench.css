@@ -1,0 +1,749 @@
+/* Explorer presentation only; existing receiver/monitor ownership remains unchanged. */
+.explorer-workspace[data-activity="monitor"] > .explorer-heading {
+  display: none;
+}
+.explorer-workspace[data-activity="monitor"] .explorer-layout {
+  display: block;
+}
+.explorer-controls[hidden],
+.monitor-shell[hidden],
+.monitor-signals-panel[hidden] {
+  display: none;
+}
+.monitor-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  align-items: start;
+  min-width: 0;
+}
+.monitor-shell > .monitor-setup {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100dvh - 100px);
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  display: grid;
+  gap: 20px;
+  overflow-y: auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.monitor-setup-heading {
+  display: grid;
+  gap: 12px;
+}
+.monitor-setup-heading .eyebrow {
+  margin: 0 0 5px;
+}
+.monitor-setup-heading strong {
+  font-size: 0.82rem;
+}
+.monitor-setup label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+.monitor-setup input,
+.monitor-setup select,
+.monitor-setup textarea {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+}
+.monitor-setup input[type="checkbox"] {
+  width: auto;
+}
+.monitor-setup small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.monitor-setup-step {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  align-content: start;
+}
+.monitor-setup-step > h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.9rem;
+  margin: 0;
+}
+.monitor-setup-step > h3 > span {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--cyan-soft);
+  font:
+    500 0.75rem "IBM Plex Mono",
+    monospace;
+}
+.monitor-number-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.monitor-setup .custom-monitor-editor {
+  margin: 0;
+}
+.monitor-setup .custom-monitor-editor legend {
+  font-size: 0.78rem;
+}
+.monitor-setup .monitor-advanced {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.monitor-setup .monitor-advanced > summary {
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.monitor-setup .monitor-plan {
+  margin: 0;
+}
+.monitor-shell[data-guided="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.monitor-shell[data-guided="true"] > .monitor-setup {
+  position: static;
+  max-height: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(240px, 0.9fr);
+  border-bottom: 1px solid var(--line);
+  border-right: 0;
+  padding: 18px 20px;
+  gap: 18px;
+}
+.monitor-shell[data-guided="true"] .monitor-setup-heading {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.monitor-shell[data-guided="true"] .monitor-setup-heading label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.monitor-shell[data-guided="true"] .monitor-setup-step + .monitor-setup-step {
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+}
+.monitor-shell[data-guided="true"] .monitor-transport {
+  margin: 0;
+  flex-direction: column;
+  align-items: stretch;
+}
+.monitor-shell[data-guided="true"] .monitor-transport .action-hint,
+.monitor-shell[data-guided="true"] .monitor-transport button {
+  width: 100%;
+}
+.monitor-shell > .monitor-workspace {
+  min-width: 0;
+  padding: 16px 18px;
+  gap: 9px;
+}
+.monitor-shell .monitor-workspace > .monitor-toolbar {
+  top: 84px;
+}
+.monitor-shell .monitor-toolbar > div:first-child {
+  margin-right: auto;
+}
+.monitor-shell .monitor-toolbar h3 {
+  font-size: 1.3rem;
+}
+.monitor-shell .monitor-transport {
+  margin-left: 0;
+}
+.monitor-shell .monitor-session-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.monitor-session-summary strong {
+  color: var(--theme-ink);
+}
+.monitor-shell .monitor-metrics {
+  border: 0;
+  border-radius: 0;
+  padding: 3px 0;
+  gap: 5px 16px;
+}
+.monitor-shell .monitor-metrics div {
+  gap: 6px;
+}
+.monitor-shell .monitor-metrics span,
+.monitor-shell .monitor-metrics strong {
+  font-size: 0.74rem;
+}
+.monitor-view-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.monitor-view-tabs > button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 9px 14px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.monitor-view-tabs > button[aria-selected="true"] {
+  border-bottom-color: var(--cyan);
+  color: var(--cyan-soft);
+}
+.monitor-view-tabs span {
+  font-size: 0.7rem;
+  margin-left: 5px;
+}
+.monitor-signals-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.monitor-filter-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  flex: 1 0 100%;
+}
+.monitor-filter-chips button {
+  padding: 5px 10px;
+  font-size: 0.72rem;
+}
+.monitor-filter-chips button[aria-pressed="true"] {
+  color: var(--cyan-soft);
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+}
+.monitor-shell .monitor-result-controls {
+  gap: 6px 10px;
+}
+.monitor-shell .monitor-workspace .monitor-results-scroll {
+  height: max(290px, calc(100dvh - 440px));
+  min-height: 200px;
+}
+.monitor-shell .monitor-signal-table td {
+  padding: 4px 8px;
+}
+.monitor-shell .monitor-signal-table tr[aria-selected="true"] td:first-child {
+  box-shadow: inset 3px 0 var(--cyan);
+}
+.monitor-shell .monitor-overview {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.monitor-overview summary {
+  color: var(--cyan-soft);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.monitor-overview summary span {
+  color: var(--muted);
+  margin-left: 8px;
+  font-size: 0.68rem;
+}
+.monitor-overview svg {
+  width: 100%;
+  display: block;
+  max-height: 145px;
+}
+.monitor-overview text {
+  fill: var(--muted);
+  font-size: 12px;
+}
+.monitor-overview-window {
+  stroke: var(--line);
+}
+.monitor-overview-hatch {
+  stroke: var(--muted);
+  opacity: 0.4;
+}
+.monitor-overview-span {
+  fill: var(--cyan);
+  opacity: 0.6;
+  cursor: pointer;
+}
+.monitor-overview-span.is-selected,
+.monitor-overview-span:focus {
+  opacity: 1;
+  stroke: var(--theme-ink);
+  stroke-width: 2;
+  outline: none;
+}
+.monitor-overview > small {
+  display: block;
+  padding-top: 6px;
+}
+.monitor-shell .monitor-inspector {
+  inset: 155px 16px 16px auto;
+  max-height: calc(100dvh - 171px);
+  width: 320px;
+  padding: 18px;
+  gap: 16px;
+  align-content: start;
+  z-index: 15;
+}
+.monitor-shell .monitor-inspector .monitor-toolbar {
+  align-items: start;
+}
+.monitor-shell .monitor-inspector h4 {
+  font:
+    500 0.95rem "IBM Plex Mono",
+    monospace;
+}
+.monitor-shell .monitor-inspector .eyebrow {
+  font-size: 0.63rem;
+  margin: 0 0 7px;
+}
+.monitor-shell .monitor-inspector button {
+  padding: 8px 10px;
+}
+.monitor-shell .monitor-inspector p {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.monitor-detail-stats {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-block: 1px solid var(--line);
+  font-size: 0.78rem;
+}
+.monitor-confirmation {
+  color: var(--cyan-soft);
+}
+.monitor-inspector h5 {
+  font-size: 0.8rem;
+  margin: 0;
+}
+.monitor-shell .monitor-history {
+  gap: 4px;
+}
+.monitor-shell .monitor-target-coverage {
+  padding: 8px 0;
+}
+.monitor-shell .monitor-target-table td {
+  font-size: 0.78rem;
+}
+@media (min-width: 1500px) {
+  .monitor-shell[data-detail="true"][data-guided="false"] {
+    grid-template-columns: 280px minmax(0, 1fr) 310px;
+  }
+  .monitor-shell[data-detail="true"][data-guided="false"] > .monitor-inspector {
+    position: sticky;
+    inset: auto;
+    top: 84px;
+    max-height: calc(100dvh - 100px);
+    width: auto;
+    box-shadow: none;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+  }
+}
+@media (max-width: 999px) {
+  .monitor-shell,
+  .monitor-shell[data-guided="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .monitor-shell > .monitor-setup {
+    position: static;
+    max-height: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .monitor-shell[data-guided="false"] > .monitor-setup {
+    display: none;
+  }
+  .monitor-shell[data-guided="true"] > .monitor-setup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .monitor-shell[data-guided="true"] .monitor-setup-step + .monitor-setup-step {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+  .monitor-shell[data-guided="true"] .monitor-setup-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .monitor-shell .monitor-inspector {
+    top: 88px;
+    width: min(420px, calc(100vw - 24px));
+    right: 12px;
+    bottom: 12px;
+    max-height: calc(100dvh - 100px);
+  }
+  .monitor-shell .monitor-workspace > .monitor-toolbar {
+    z-index: 16;
+    position: static;
+  }
+  .monitor-shell > .monitor-workspace {
+    padding: 12px;
+  }
+  .monitor-shell .monitor-toolbar {
+    gap: 8px;
+  }
+  .monitor-shell .monitor-result-controls select {
+    max-width: 190px;
+  }
+}
+@media (pointer: coarse) {
+  .monitor-shell button,
+  .monitor-shell summary,
+  .monitor-shell input,
+  .monitor-shell select {
+    min-height: 44px;
+  }
+}
+
+/* Compact running/review state keeps the editable detector and results in sight. */
+.monitor-target-summary {
+  list-style: none;
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+}
+.monitor-target-summary li {
+  display: grid;
+  gap: 3px;
+}
+.monitor-target-summary strong {
+  font-size: 0.76rem;
+}
+.monitor-target-summary span {
+  font-size: 0.68rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.monitor-target-summary button {
+  font-size: 0.74rem;
+  padding: 7px 10px;
+}
+.explorer-workspace .monitor-shell .monitor-routine-message {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.explorer-workspace .monitor-shell .monitor-review-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.explorer-workspace .monitor-shell .monitor-review-tools > .monitor-overview {
+  order: 0;
+  flex: 1;
+  min-width: 0;
+}
+.explorer-workspace .monitor-shell .monitor-review-tools > .monitor-tools {
+  order: 1;
+  margin: 0;
+}
+.explorer-workspace
+  .monitor-shell
+  .monitor-review-tools
+  > .monitor-tools[open] {
+  order: 2;
+  flex: 1 0 100%;
+}
+.explorer-workspace .monitor-shell .monitor-filter-chips {
+  flex: 0 1 auto;
+  align-self: end;
+}
+.explorer-workspace .monitor-shell .monitor-filter-chips button {
+  min-height: 34px;
+}
+.explorer-workspace .monitor-shell .monitor-result-controls {
+  align-items: end;
+}
+.explorer-workspace .monitor-shell .monitor-result-count {
+  margin-left: auto;
+}
+.explorer-workspace .monitor-shell[data-detail="true"] .monitor-filter-chips {
+  display: none;
+}
+.explorer-workspace
+  .monitor-shell[data-guided="false"]
+  .monitor-setup-review
+  h3,
+.explorer-workspace
+  .monitor-shell[data-guided="false"]
+  .monitor-setup-review
+  > small {
+  display: none;
+}
+@media (max-width: 600px) {
+  .explorer-workspace .monitor-shell .monitor-filter-chips {
+    display: none;
+  }
+  .explorer-workspace .monitor-shell .monitor-review-tools {
+    align-items: start;
+  }
+}
+.monitor-target-status[data-observation="Activity detected"] {
+  color: var(--cyan-soft);
+}
+.monitor-target-status[data-observation="Observation stale"],
+.monitor-target-status[data-observation="Observation failed / incomplete"] {
+  color: var(--amber, #e7b75a);
+}
+.monitor-target-status[data-observation="Not yet observed"],
+.monitor-target-status[data-observation="No activity during last valid visit"] {
+  color: var(--muted);
+}
+
+/* Monitoring uses the app frame directly; there is no second heading to reserve space for. */
+.explorer-workspace[data-activity="monitor"] {
+  padding: 0;
+}
+.explorer-workspace[data-activity="monitor"] .explorer-layout {
+  margin-top: 0;
+  gap: 0;
+}
+
+/* The guided editor overlays the workbench without replacing its results. */
+.monitor-setup-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  box-sizing: border-box;
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  color: var(--theme-ink, #edf5ff);
+  background: var(--theme-surface, #071222);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 24px 100px #0008;
+}
+.monitor-setup-dialog::backdrop {
+  background: rgb(2 6 17 / 72%);
+  backdrop-filter: blur(4px);
+}
+.monitor-popup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.monitor-popup-heading .eyebrow {
+  margin: 0 0 6px;
+}
+.monitor-popup-heading h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.monitor-setup-popup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+  align-items: start;
+  gap: 22px;
+  padding: 24px;
+}
+.monitor-setup-popup .monitor-setup-step + .monitor-setup-step {
+  border-left: 1px solid var(--line);
+  padding-left: 22px;
+}
+.monitor-setup-popup .monitor-transport {
+  margin: 0;
+  flex-direction: column;
+  align-items: stretch;
+}
+.monitor-setup-popup .monitor-transport > * {
+  width: 100%;
+  box-sizing: border-box;
+}
+.monitor-setup-popup .monitor-plan {
+  line-height: 1.55;
+}
+.monitor-popup-review > small {
+  line-height: 1.65;
+}
+.monitor-setup-popup .custom-monitor-editor {
+  display: grid;
+  min-width: 0;
+}
+
+/* Real measured power, with separate paths and explicit unobserved gaps. */
+.monitor-shell .monitor-band-spectrum {
+  padding: 10px 12px;
+}
+.monitor-spectrum-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.monitor-spectrum-heading > div:first-child {
+  margin-right: auto;
+}
+.monitor-spectrum-heading h4 {
+  margin: 0 0 4px;
+  font-size: 0.84rem;
+}
+.monitor-spectrum-heading span,
+.monitor-spectrum-heading > strong {
+  font-size: 0.69rem;
+  color: var(--muted);
+}
+.monitor-spectrum-heading > .monitor-spectrum-live {
+  color: var(--cyan-soft);
+}
+.monitor-spectrum-heading button {
+  font-size: 0.7rem;
+  padding: 6px 9px;
+}
+.monitor-spectrum-heading .monitor-tools {
+  margin: 0;
+}
+.monitor-spectrum-heading .monitor-tools[open] {
+  order: 2;
+  flex-basis: 100%;
+}
+.monitor-band-spectrum svg {
+  max-height: 210px;
+  min-height: 140px;
+  margin-top: 6px;
+}
+.monitor-spectrum-measured {
+  fill: var(--theme-surface, #071222);
+}
+.monitor-spectrum-grid {
+  stroke: var(--line);
+  stroke-dasharray: 3 5;
+}
+.monitor-spectrum-trace {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.monitor-spectrum-trace.previous-sweep {
+  opacity: 0.45;
+}
+.monitor-spectrum-active {
+  fill: color-mix(in srgb, var(--cyan) 12%, transparent);
+  stroke: var(--cyan);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.monitor-spectrum-active.tuning {
+  stroke-dasharray: 5 4;
+}
+.monitor-spectrum-active.paused {
+  fill: none;
+  stroke: var(--muted);
+  stroke-dasharray: 5 5;
+}
+.monitor-spectrum-selected {
+  fill: #a28bfa22;
+  stroke: #a28bfa;
+  pointer-events: none;
+}
+.monitor-band-spectrum .monitor-spectrum-empty {
+  fill: var(--theme-ink, #edf5ff);
+  font-size: 15px;
+}
+.monitor-band-spectrum .monitor-spectrum-unit {
+  font-size: 10px;
+}
+.monitor-spectrum-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 12px;
+  font-size: 0.67rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+@media (max-width: 850px) {
+  .monitor-setup-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .monitor-popup-heading {
+    padding: 16px;
+  }
+  .monitor-setup-popup {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+    gap: 18px;
+  }
+  .monitor-setup-popup .monitor-setup-step + .monitor-setup-step {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+  }
+  .monitor-band-spectrum svg {
+    min-height: 110px;
+  }
+  .monitor-band-spectrum text {
+    font-size: 17px;
+  }
+  .monitor-band-spectrum .monitor-spectrum-empty {
+    font-size: 24px;
+  }
+}
+
+.monitor-shell .monitor-band-spectrum[data-expanded="false"] {
+  padding: 0 10px;
+}
+.monitor-band-spectrum[data-expanded="false"]
+  .monitor-spectrum-heading
+  > div:first-child {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.monitor-band-spectrum[data-expanded="false"] .monitor-spectrum-heading h4 {
+  margin: 0;
+}
+
+.monitor-setup-popup .custom-monitor-editor {
+  border: 0;
+  padding: 0;
+}
+.monitor-setup-popup .custom-monitor-editor > h4,
+.monitor-setup-popup .custom-monitor-editor > h4 + p {
+  display: none;
+}
+.monitor-setup-popup .custom-monitor-fields,
+.monitor-setup-popup .custom-monitor-entry {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.monitor-setup-popup .custom-monitor-fields > label:nth-child(3) {
+  grid-column: 1 / -1;
+}
+.monitor-setup-popup .custom-monitor-entry > button {
+  justify-self: end;
+}
+@media (max-width: 600px) {
+  .monitor-setup-popup .custom-monitor-fields,
+  .monitor-setup-popup .custom-monitor-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
