@@ -91,6 +91,16 @@ test("desktop keeps expanded tools reachable and utilities in their own scroll l
   await record.scrollIntoViewIfNeeded();
   await expect(record).toBeInViewport();
   await page.locator(".display-settings > summary").click();
+  expect(
+    (await page.locator(".graphics-panel canvas").boundingBox())!.height,
+  ).toBeGreaterThanOrEqual(120);
+  for (const toggle of await page
+    .locator('.display-settings input[type="checkbox"]')
+    .all()) {
+    const box = (await toggle.boundingBox())!;
+    expect(box.width).toBeLessThanOrEqual(24);
+    expect(box.height).toBeLessThanOrEqual(24);
+  }
   await page
     .getByRole("button", { name: "FFT & display details", exact: true })
     .click();

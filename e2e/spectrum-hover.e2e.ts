@@ -44,13 +44,13 @@ test("hover inspects the frozen trace without tuning and waterfall names latest 
   const center = page.getByLabel("Receiver center frequency", { exact: true });
   const accepted = Number(await center.inputValue());
   await expect(readout.locator("strong")).toHaveText(
-    `${(accepted + 0.2048).toFixed(3)} MHz · Paused`,
+    `${(accepted + 0.2048).toFixed(4)} MHz · Paused`,
   );
   await center.fill("145");
   await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7);
   await expect(readout).toContainText("Latest spectrum level");
   await expect(readout.locator("strong")).toHaveText(
-    `${(accepted + 0.2048).toFixed(3)} MHz · Paused`,
+    `${(accepted + 0.2048).toFixed(4)} MHz · Paused`,
   );
   await expect(channel).toHaveValue(before);
   await center.press("Escape");

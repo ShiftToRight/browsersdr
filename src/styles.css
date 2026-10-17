@@ -4024,6 +4024,8 @@ label output {
   box-shadow: none;
 }
 .display-settings .display-controls { margin-bottom: 10px; }
+.display-settings label:has(> input[type="checkbox"]) { display: flex; align-items: center; gap: 6px; }
+.display-settings input[type="checkbox"] { width: auto; min-height: 0; flex: 0 0 auto; margin: 0; }
 .display-settings small { color: var(--theme-ink, #a9bdd5); }
 .plot-state { position: absolute; z-index: 5; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; background: var(--theme-surface, #030a18); text-align: center; }
 .plot-state strong { font-size: 0.95rem; }
@@ -4161,12 +4163,12 @@ label output {
   .receiver-workspace .spectrum-display {
     display: flex;
     flex-direction: column;
-    flex: 1 1 200px;
+    flex: 1 0 200px;
     min-height: 0;
   }
   .receiver-workspace .receiver-layout > .graphics-panel .canvas-frame {
     flex: 1;
-    min-height: 0;
+    min-height: 120px;
   }
   .receiver-workspace .receiver-layout > .graphics-panel canvas {
     position: absolute;
