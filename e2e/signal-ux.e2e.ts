@@ -13,6 +13,20 @@ test("19.2 MS/s channel capture completes five seconds while Search opens", asyn
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
   await chooseReceiverMode(page, "DAB");
+  if (testInfo.project.name === "chromium-dev") {
+    // Compile Vite's lazy Search modules before measuring RF throughput.
+    // Built/stamped projects still exercise the first Search open during capture.
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(
+      page.getByRole("searchbox", {
+        name: "Search text, frequency or DAB block",
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Close Search", exact: true })
+      .first()
+      .click();
+  }
   await page.getByText("Device details & settings", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "Sample rate", exact: true })
