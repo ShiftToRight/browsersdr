@@ -98,7 +98,7 @@ export function validateBookmark(value: unknown): Bookmark {
     srd = shape(raw.srd, defaultSrdModeSettings()) as NonNullable<typeof srd>;
     if (
       !["ook", "2fsk"].includes(srd.modulation) ||
-      !["none", "acurite-592txr", "fineoffset-wh51"].includes(srd.protocol) ||
+      !["none", "acurite-592txr", "fineoffset-wh51", "fineoffset-wh2"].includes(srd.protocol) ||
       !["adaptive", "manual"].includes(srd.threshold.mode) ||
       !["nrz", "manchester"].includes(srd.bitSlice.encoding) ||
       !["normal", "inverted"].includes(srd.bitSlice.polarity)

@@ -10,14 +10,17 @@ export function BandGuideFeature({
   width,
   selectedHz,
   onHeightChange,
+  onPlanChange,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
   coordinates?: { center: number; rate: number; generation: number };
   width: number;
   selectedHz: number;
   onHeightChange: (height: number) => void;
+  onPlanChange?: (plan: string) => void;
 }) {
   const guide = useBandGuide();
+  useEffect(() => { onPlanChange?.(guide.plan); }, [guide.plan, onPlanChange]);
   const [target, setTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setTarget(canvas.current?.parentElement ?? null);

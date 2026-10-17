@@ -34,6 +34,7 @@ let backendEvents: ReceiverBackendEvents;
 let connectionWait: Promise<void> | undefined;
 let connectionError: Error | undefined;
 let tuningWait: Promise<void> | undefined;
+let rateWait: Promise<void> | undefined;
 let tuneFails = false;
 let bladeRfModel: BladeRfMicroModel = "xA4";
 beforeEach(async () => {
@@ -45,6 +46,7 @@ beforeEach(async () => {
   connectionWait = undefined;
   connectionError = undefined;
   tuningWait = undefined;
+  rateWait = undefined;
   tuneFails = false;
   bladeRfModel = "xA4";
   closes = 0;
@@ -124,6 +126,11 @@ beforeEach(async () => {
     setVolume: () => undefined,
     setGain: async () => null,
     configureMode: async () => metadata,
+    configureSampleRate: async rate => {
+      await rateWait;
+      metadata = {...metadata, requestedSampleRateHz: rate, actualSampleRateHz: rate};
+      return metadata;
+    },
     updateAnalogMode: (settings) => {
       analogCalls.push({
         bandwidthHz: settings.bandwidthHz,
@@ -861,7 +868,7 @@ it("retains the requested frequency after a receiver tuning failure", async () =
   await change(control("Channel frequency"), String(nextMhz));
   tuneFails = true;
   await click("Tune");
-  expect(control("Channel frequency").value).toBe(nextMhz.toFixed(3));
+  expect(control("Channel frequency").value).toBe(nextMhz.toFixed(6));
   expect(document.body.textContent).toContain("Tune rejected by receiver");
   expect(document.querySelector("#frequency-state")?.textContent).not.toBe(
     "✓ Tuned",
@@ -946,7 +953,7 @@ it("centers the running channel once and keeps frequency input and Undo correct 
   expect(document.body.textContent).toContain("Applying measured correction");
   await act(async () => resolveTune());
   expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).toBe(100_121_500);
-  expect(control("Channel frequency").value).toBe("100.122");
+  expect(control("Channel frequency").value).toBe("100.1215");
   await act(async () => control("Channel frequency").focus());
   expect(control("Channel frequency").value).toBe("100.121500");
   expect(document.querySelector("#frequency-state")?.textContent).toBe("✓ Tuned");
@@ -997,4 +1004,33 @@ it("keeps replay paused through an asynchronous tuning transition", async () => 
   }
   await click("Resume replay");
   expect(pause).toHaveBeenLastCalledWith(false);
+});
+
+it("keeps a new channel draft through a delayed sample-rate transition and tunes only on explicit apply", async () => {
+  await change(control("Source"), "hackrf");
+  await click("Connect"); await click("Start receiving");
+  let release!: () => void;
+  rateWait = new Promise<void>(resolve => { release = resolve; });
+  await change(control("Sample rate"), "9600000");
+  expect(controller.getSnapshot().lifecycle).toBe("tuning");
+  const channel = control("Channel frequency");
+  expect(channel.disabled).toBe(false);
+  await change(channel, "100.1234");
+  await act(async () => channel.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", bubbles:true})));
+  expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).not.toBe(100123400);
+  expect(document.querySelector("#frequency-state")!.textContent).toContain("edit is kept");
+  await act(async () => release());
+  expect(channel.value).toBe("100.1234");
+  expect(document.querySelector("#frequency-state")!.textContent).toContain("Change pending");
+  await click("Tune");
+  expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).toBe(100123400);
+});
+it("does not overwrite a newer draft when an older asynchronous tune acknowledges", async () => {
+  await change(control("Source"), "hackrf"); await click("Connect"); await click("Start receiving");
+  let release!: () => void; tuningWait = new Promise<void>(resolve => {release=resolve;});
+  await change(control("Channel frequency"), "100.1"); await click("Tune");
+  await change(control("Channel frequency"), "100.2");
+  await act(async () => release());
+  expect(control("Channel frequency").value).toBe("100.2");
+  expect(controller.getSnapshot().session?.selectedChannelFrequencyHz).toBe(100100000);
 });

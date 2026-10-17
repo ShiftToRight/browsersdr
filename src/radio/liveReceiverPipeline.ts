@@ -115,6 +115,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
         this.player,
         (samples) => this.rds.receiveMultiplex(samples),
         (state) => this.events.squelchChanged?.(state),
+        (stereo) => this.events.fmStereoReceptionChanged?.(stereo),
       );
     this.adsb = new AdsbReceiver((value) => events.adsbChanged?.(value));
     this.ais = new AisReceiver((value) => events.aisChanged?.(value));

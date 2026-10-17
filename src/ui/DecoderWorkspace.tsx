@@ -13,6 +13,7 @@ import type {
 } from "../radio/receiverController";
 import type { ReceiverMode } from "../radio/receiverConfig";
 import type { SourceKind } from "../radio/types";
+import type { ReceiverLocation } from "../radio/receiverLocation";
 import { DecodedResults } from "./DecodedResults";
 import { PositionMap } from "./PositionMap";
 import { DabMetadata } from "./DabMetadata";
@@ -56,6 +57,7 @@ export interface DecoderWorkspaceProps {
   onOpenRecording: () => void;
   onVolumeChange: (volume: number) => void;
   serviceControl?: ReactNode;
+  receiverLocation?: ReceiverLocation;
 }
 
 /** Another view of the existing controller; no acquisition or decoder is started here. */
@@ -288,7 +290,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
           </div>
         )}
         <div>
-          <dt>Receive clock</dt>
+          <dt>{reviewMode === "DAB" ? "Service format" : "Receive clock"}</dt>
           <dd>{selected.clock}</dd>
         </div>
         <div>
@@ -705,6 +707,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                             </button>
                           </div>
                           <PositionMap
+                            receiverLocation={props.receiverLocation}
                             pannable
                             label={`${reviewMode} decoded positions`}
                             showTracks={traffic && showTracks}

@@ -1,5 +1,6 @@
 import type {
   Acurite592Reading,
+  FineOffsetWh2Reading,
   FineOffsetWh51Reading,
   SrdBurst,
   SrdSensorReading,
@@ -120,7 +121,7 @@ export function decodeFineOffsetWh51Burst(
   burst: SrdBurst,
 ): SrdProtocolDecodeResult {
   const nominalSymbolUs = 58;
-  const pulses = suppressFskGlitches(burst.pulses, nominalSymbolUs * 0.45);
+  const pulses = suppressPulseGlitches(burst.pulses, nominalSymbolUs * 0.45);
   let rejectedFrames = 0;
   for (const inverted of [false, true]) {
     let bits = "";
@@ -149,7 +150,7 @@ export function decodeFineOffsetWh51Burst(
   return { rejectedFrames };
 }
 
-function suppressFskGlitches(
+function suppressPulseGlitches(
   source: readonly SrdBurst["pulses"][number][],
   maximumGlitchUs: number,
 ): { level: 0 | 1; durationUs: number }[] {
@@ -198,4 +199,61 @@ function popcount(value: number): number {
 
 function hex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** WH2's 48-bit OOK frame: eight one bits followed by five payload bytes.
+ * Protocol facts checked against rtl_433 fineoffset.c; independently written.
+ * Deliberately excludes ambiguous WH5 and different WH2A/Telldus variants. */
+export function decodeFineOffsetWh2Bytes(
+  bytes: Uint8Array,
+  burst: Pick<SrdBurst, "provenance">,
+): FineOffsetWh2Reading | undefined {
+  if (
+    bytes.length !== 5 ||
+    bytes[0]! >> 4 !== 4 ||
+    crc8(bytes.subarray(0, 4)) !== bytes[4]
+  )
+    return undefined;
+  const raw = ((bytes[1]! & 0x0f) << 8) | bytes[2]!;
+  const temperatureC = (raw & 0x800 ? -(raw & 0x7ff) : raw) / 10;
+  const humidity = bytes[3]!;
+  if (
+    temperatureC < -40 ||
+    temperatureC > 65 ||
+    (humidity > 100 && humidity !== 255)
+  )
+    return undefined;
+  return {
+    protocol: "fineoffset-wh2",
+    deviceId: (((bytes[0]! & 15) << 4) | (bytes[1]! >> 4))
+      .toString(16)
+      .padStart(2, "0"),
+    temperatureC,
+    ...(humidity === 255 ? {} : { humidityPercent: humidity }),
+    integrity: "crc8",
+    provenance: burst.provenance,
+  };
+}
+export function decodeFineOffsetWh2Burst(
+  burst: SrdBurst,
+): SrdProtocolDecodeResult {
+  if (burst.modulation !== "ook" || burst.truncated || burst.pulseOverflow)
+    return { rejectedFrames: 0 };
+  const highs = suppressPulseGlitches(burst.pulses, 100).filter(
+    (p) => p.level === 1,
+  );
+  // Exact frame length prevents shorter ambiguous variants being reinterpreted.
+  if (highs.length !== 48) return { rejectedFrames: 0 };
+  let bits = "";
+  for (const pulse of highs) {
+    if (pulse.durationUs >= 350 && pulse.durationUs <= 750) bits += "1";
+    else if (pulse.durationUs >= 1250 && pulse.durationUs <= 1750) bits += "0";
+    else return { rejectedFrames: 0 };
+  }
+  if (!bits.startsWith("11111111")) return { rejectedFrames: 0 };
+  const bytes = bitsToBytes(bits.slice(8));
+  const reading = decodeFineOffsetWh2Bytes(bytes, burst);
+  return reading
+    ? { reading, rawSignature: hex(bytes), rejectedFrames: 0 }
+    : { rejectedFrames: 1 };
 }

@@ -234,7 +234,7 @@ const setup = (v: unknown) =>
   COMMUNITY_HARDWARE.some(
     (h) => h.id === v.hardwareId && h.source === v.source,
   ) &&
-  [null, "none", "acurite-592txr", "fineoffset-wh51"].includes(
+  [null, "none", "acurite-592txr", "fineoffset-wh51", "fineoffset-wh2"].includes(
     v.srdProtocol as null | string,
   ) &&
   shortString(v.mode, 20) &&

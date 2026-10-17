@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0 — 2026-10-17
+
+- Improve tuning drafts, whole-Hz readouts, explicit recentering and regional click-to-tune channel snapping, with an Alt-click free-tuning override.
+- Enable FM stereo with mono fallback and a stable Stereo/Mono/Intermittent pilot reception summary. Add raw input-clipping guidance.
+- Accelerate high-rate channel filtering with bounded WASM processing while preserving channel response, rates and recording guards.
+- Improve recording/replay prerequisites, retained-capture mode changes, replay bounds, newest-first recordings and deletion confirmation.
+- Add cooperating same-origin USB tab ownership and guarded RTL tuner-family information.
+- Refine Search and Explorer suggestions, spectrum scaling/ticks, responsive controls, decoder summaries, DAB format/protection details and map context/retry.
+- Add explicit Fine Offset WH2 / TFA 30.3157 OOK temperature/humidity decoding with CRC validation. Physical reception remains separate acceptance work.
+- The reported RTL DAB EEP 2-B reception issue remains under investigation; this release does not claim a fix.
+
 ## 1.7.1 — 2026-10-16
 
 - Align trailing SDR icons across community hardware rows.

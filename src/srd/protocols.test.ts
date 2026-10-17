@@ -3,12 +3,16 @@ import type { DigitalProvenance } from "../digital";
 import {
   ACURITE_592_VECTOR,
   FINEOFFSET_WH51_VECTOR,
+  FINEOFFSET_WH2_VECTOR,
 } from "./fixtures/rtl433Vectors";
 import {
   decodeAcurite592Burst,
   decodeAcurite592Bytes,
   decodeFineOffsetWh51Burst,
   decodeFineOffsetWh51Bytes,
+  decodeFineOffsetWh2Bytes,
+  decodeFineOffsetWh2Burst,
+  crc8,
 } from "./protocols";
 import type { SrdBurst, SrdPulse } from "./types";
 
@@ -124,4 +128,65 @@ describe("selected SRD protocols", () => {
       }),
     ).toBeUndefined();
   });
+});
+
+it("validates WH2/TFA exact frames, signed temperatures, absent humidity and corruption", () => {
+  const bytes = FINEOFFSET_WH2_VECTOR.bytes;
+  const pulses = [...Uint8Array.from([255, ...bytes])].flatMap((byte) =>
+    Array.from({ length: 8 }, (_, n) => [
+      {
+        level: 1 as const,
+        durationUs: byte & (128 >> n) ? 544 : 1524,
+        firstInputSampleIndex: 0,
+        lastInputSampleIndex: 0,
+      },
+      {
+        level: 0 as const,
+        durationUs: 1036,
+        firstInputSampleIndex: 0,
+        lastInputSampleIndex: 0,
+      },
+    ]).flat(),
+  );
+  const signal = burst(pulses, "ook");
+  expect(decodeFineOffsetWh2Bytes(bytes, { provenance })).toMatchObject(
+    FINEOFFSET_WH2_VECTOR.expected,
+  );
+  expect(decodeFineOffsetWh2Burst(signal).reading).toMatchObject(
+    FINEOFFSET_WH2_VECTOR.expected,
+  );
+  const noisy = pulses.slice();
+  noisy.splice(
+    5,
+    1,
+    { ...pulses[5]!, durationUs: 500 },
+    { ...pulses[4]!, durationUs: 8 },
+    { ...pulses[5]!, durationUs: 528 },
+  );
+  expect(
+    decodeFineOffsetWh2Burst({ ...signal, pulses: noisy }).reading,
+  ).toMatchObject(FINEOFFSET_WH2_VECTOR.expected);
+  expect(
+    decodeFineOffsetWh2Burst({ ...signal, truncated: true }).reading,
+  ).toBeUndefined();
+  expect(
+    decodeFineOffsetWh2Burst({ ...signal, modulation: "2fsk" }).reading,
+  ).toBeUndefined();
+  expect(
+    decodeFineOffsetWh2Burst({ ...signal, pulses: pulses.slice(2) }).reading,
+  ).toBeUndefined();
+  for (let bit = 0; bit < 40; bit++) {
+    const corrupt = bytes.slice();
+    corrupt[bit >> 3] = corrupt[bit >> 3]! ^ (128 >> (bit & 7));
+    expect(decodeFineOffsetWh2Bytes(corrupt, { provenance })).toBeUndefined();
+  }
+  const cold = Uint8Array.from([0x41, 0x28, 0x25, 255, 0]);
+  cold[4] = crc8(cold.subarray(0, 4));
+  expect(decodeFineOffsetWh2Bytes(cold, { provenance })).toMatchObject({
+    temperatureC: -3.7,
+    deviceId: "12",
+  });
+  expect(decodeFineOffsetWh2Bytes(cold, { provenance })).not.toHaveProperty(
+    "humidityPercent",
+  );
 });

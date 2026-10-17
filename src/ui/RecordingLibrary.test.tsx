@@ -6,6 +6,7 @@ import { RecordingLibrary } from "./RecordingLibrary";
 import {
   listRecordings,
   openRecording,
+  deleteRecording,
   type LibraryEntry,
 } from "../radio/recordingLibrary";
 import { createDeterministicRecordingFixture } from "../testing/recordingFixture";
@@ -21,6 +22,25 @@ const entry: LibraryEntry = {
   state: "interrupted",
   bytes: 1024,
 };
+
+it("sorts newest first deterministically and requires explicit, cancellable deletion", async () => {
+  vi.mocked(listRecordings).mockResolvedValue([{ ...entry, id: "2026-10-15-old" }, { ...entry, id: "2026-10-16-new" }]);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<RecordingLibrary blocked={false} revision="initial" onOpen={async () => undefined} />));
+    const rows = host.querySelectorAll<HTMLElement>(".recording-library-entry");
+    expect(rows[0]!.textContent).toContain("2026-10-16-new");
+    const button = (name: string) => [...rows[0]!.querySelectorAll("button")].find(b => b.textContent === name)!;
+    await act(async () => button("Delete retained recording").click());
+    expect(deleteRecording).not.toHaveBeenCalled();
+    await act(async () => button("Keep recording").click());
+    expect(host.querySelector(".library-delete-confirm")).toBeNull();
+    await act(async () => button("Delete retained recording").click());
+    await act(async () => button("Confirm delete recording").click());
+    expect(deleteRecording).toHaveBeenCalledExactlyOnceWith("2026-10-16-new");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -98,4 +118,14 @@ it("coalesces overlapping revision refreshes and presents the latest listing bef
     await act(async () => root.unmount());
     host.remove();
   }
+});
+it("explains the live receiver prerequisite beside retained replay", async () => {
+  vi.mocked(listRecordings).mockResolvedValue([entry]);
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<RecordingLibrary blocked blockedReason="Stop reception before replaying a library recording." revision="reason" onOpen={async () => undefined} />));
+    const replay = [...host.querySelectorAll("button")].find(button => button.textContent === "Replay retained recording")!;
+    expect(replay.disabled).toBe(true);
+    expect(host.querySelector(`#${replay.getAttribute("aria-describedby")}`)!.textContent).toContain("Stop reception");
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });

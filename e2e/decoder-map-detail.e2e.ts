@@ -22,6 +22,14 @@ for (const mode of ["ADS-B", "AIS"] as const) {
       .getByRole("tab", { name: "Capture & replay", exact: true })
       .click();
     const fixture = targetRecordingFixture(mode);
+    if (mode === "ADS-B")
+      fixture.metadata.receiverLocation = {
+        version: 1,
+        source: "manual",
+        latitude: 52.2,
+        longitude: 3.9,
+        label: "Recorded antenna",
+      };
     await page
       .locator(".file-picker-input")
       .nth(0)
@@ -51,6 +59,16 @@ for (const mode of ["ADS-B", "AIS"] as const) {
       "Retained / idle",
     );
     await expect(background).toHaveAttribute("data-state", "ready");
+    await expect(workspace.locator(".map-receiver")).toHaveCount(
+      mode === "ADS-B" ? 1 : 0,
+    );
+    await expect(workspace.locator(".map-range-ring")).toHaveCount(
+      mode === "ADS-B" ? 3 : 0,
+    );
+    if (mode === "ADS-B")
+      await expect(
+        workspace.getByRole("img", { name: "Receiver site: Recorded antenna" }),
+      ).toBeVisible();
     await expect(
       workspace.getByRole("button", { name: "Detailed map" }),
     ).toHaveCount(0);

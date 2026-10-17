@@ -109,7 +109,7 @@ export function validateSrdConfiguration(
 ): void {
   validateDigitalChannelConfiguration(configuration);
   if (
-    (configuration.protocol === "acurite-592txr" &&
+    (["acurite-592txr", "fineoffset-wh2"].includes(configuration.protocol) &&
       configuration.modulation !== "ook") ||
     (configuration.protocol === "fineoffset-wh51" &&
       configuration.modulation !== "2fsk")

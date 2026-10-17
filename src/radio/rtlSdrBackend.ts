@@ -12,6 +12,8 @@ import type {
 } from "@jtarrio/webrtlsdr/rtlsdr/rtldevice.js";
 import { RadioError, RadioErrorType } from "@jtarrio/webrtlsdr/errors.js";
 import { AcknowledgedRtlSource } from "./acknowledgedRtlSource";
+import { rtlTunerIdentity } from "./rtlTunerIdentity";
+import { browserOwnedRtlDevice, closeBrowserUsbDevice } from "./browserUsbOwnership";
 import {
   RTL_SAMPLE_RATE_HZ,
   type ReceiverBackend,
@@ -102,6 +104,7 @@ export interface RtlSdrBackendDependencies extends LiveReceiverDependencies {
 
 class TrackedRtlProvider {
   private readonly deviceProvider: RTL2832U_Provider;
+  private usbDevice?: USBDevice;
   constructor(
     private readonly permissionGranted: () => void,
     private readonly capture: (data: ArrayBuffer) => void,
@@ -110,23 +113,27 @@ class TrackedRtlProvider {
     const nativeUsb = navigator.usb;
     const trackedUsb = {
       requestDevice: async (options: USBDeviceRequestOptions) => {
-        if (grantedDevice) return grantedDevice;
-        if (!nativeUsb)
+        if (!grantedDevice && !nativeUsb)
           throw new DOMException("WebUSB is unavailable", "NotSupportedError");
-        return nativeUsb.requestDevice(options);
+        this.usbDevice = grantedDevice ?? await nativeUsb!.requestDevice(options);
+        return browserOwnedRtlDevice(this.usbDevice);
       },
     } as USB;
     this.deviceProvider = new RTL2832U_Provider({ webusb: trackedUsb });
   }
 
   async get(): Promise<SignalSource> {
+    const probed = await this.deviceProvider.get().catch(async error => {
+      if (this.usbDevice) await closeBrowserUsbDevice(this.usbDevice);
+      throw error;
+    });
     const device = new RecordingRtlDevice(
-      await this.deviceProvider.get(),
+      probed,
       this.capture,
     );
     const source = new AcknowledgedRtlSource(device);
     this.permissionGranted();
-    return source;
+    return Object.assign(source, { rtlTuner: rtlTunerIdentity(probed) });
   }
 }
 
@@ -180,6 +187,7 @@ class RecordingRtlDevice implements RtlDevice {
 
 /** RTL backend whose USB source remains open while reception is stopped. */
 export class RtlSdrBackend implements ReceiverBackend {
+  private rtlTuner?: SourceSessionMetadata["rtlTuner"];
   private readonly pipeline: LiveReceiverPipeline;
   private provider: RtlSourceProvider;
   private source?: IdempotentSource;
@@ -652,6 +660,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.metadata = {
       source: "rtl-sdr",
       requestedSampleRateHz,
+      rtlTuner: this.rtlTuner,
       actualSampleRateHz,
       hardwareCenterFrequencyHz,
       selectedChannelFrequencyHz: options.channelFrequencyHz,
@@ -669,7 +678,10 @@ export class RtlSdrBackend implements ReceiverBackend {
   private async acquireAndConfigure(
     options: ReceiverStartOptions,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
-    const source = new IdempotentSource(await this.provider.get());
+    const provided = await this.provider.get();
+    const tuner = (provided as SignalSource & { rtlTuner?: SourceSessionMetadata["rtlTuner"] }).rtlTuner;
+    this.rtlTuner = tuner === "R820T-family" || tuner === "R828D" ? tuner : undefined;
+    const source = new IdempotentSource(provided);
     this.source = source;
     this.throwIfDisconnectRequested();
     const metadata = await this.configureConnectedSource(options);

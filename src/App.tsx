@@ -8,7 +8,9 @@ export { selectAuthorizedUsbDevice, usbDeviceMatchesSource } from "./radio/sourc
 import { AppResourceOwner, type AppRuntime } from "./ui/AppResourceOwner";
 export { AppResourceOwner } from "./ui/AppResourceOwner";
 import { ReplayActivation, readReplayMetadata } from "./radio/replayActivation";
-import { RecordingLibrary } from "./ui/RecordingLibrary";
+const RecordingLibrary = lazy(() => import("./ui/RecordingLibrary").then(module => ({ default: module.RecordingLibrary })));
+const ReceiverMetadataSummary = lazy(() => import("./ui/DecodedResults").then(module => ({ default: module.ReceiverMetadataSummary })));
+const ModeFrequencyHint = lazy(() => import("./ui/ModeFrequencyHint").then(module => ({ default: module.ModeFrequencyHint })));
 const ReceiverDecodePanel = lazy(() => import("./ui/DecodedResults").then(module => ({ default: module.ReceiverDecodePanel })));
 const DecoderWorkspace = lazy(() => import("./ui/DecoderWorkspace").then(module => ({ default: module.DecoderWorkspace })));
 const CommunityCompatibility = lazy(() => import("./ui/CommunityCompatibility").then(module => ({ default: module.CommunityCompatibility })));
@@ -35,6 +37,7 @@ import { editableFrequencyMHz, formatFrequencyMHz, formatSampleRate } from "./ui
 import { ThemeDecoration } from "./ui/ThemeDecoration";
 import { ActionButton } from "./ui/ActionButton";
 import { flushSync } from "react-dom";
+import { InputClippingWarning } from "./ui/InputClippingWarning";
 import { CenterSignalControl } from "./ui/CenterSignalControl";
 import { operatingSystem, usbAvailability, type OperatingSystem } from "./platform/browserEnvironment";
 import { ConnectionReadiness, ReceiverRecovery } from "./ui/ReceiverConnectionHelp";
@@ -891,6 +894,7 @@ export function ReceiverApp({
     (receptionCandidate?.frequency_hz ?? initialPreferences.frequencyHz) / 1_000_000,
   );
   const [channelFrequencyDraft, setChannelFrequencyDraft] = useState<string>();
+  const channelEditRevision = useRef(0);
   const [volume, setVolume] = useState(() =>
     loadNumber(VOLUME_KEY, DEFAULT_VOLUME, 0, 1),
   );
@@ -1312,6 +1316,10 @@ export function ReceiverApp({
       return false;
     }
   })();
+  const replayRf = source === "replay" && loadedReplay ? {
+    low: Math.max(1, loadedReplay.metadata.centerFrequencyHz - loadedReplay.metadata.sampleRateHz / 2),
+    high: loadedReplay.metadata.centerFrequencyHz + loadedReplay.metadata.sampleRateHz / 2,
+  } : undefined;
   const encoding =
     captureCurrentChannel && source !== "usrp-b205" && source !== "bladerf" && !(source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? "ci8" : source === "usrp-b205" || source === "bladerf"
       ? "ci16_le"
@@ -1698,6 +1706,7 @@ export function ReceiverApp({
       setChannelFrequencyDraft(undefined);
       setFrequencyMhz(nextMhz);
       const previousGeneration = controller.getSnapshot().sessionGeneration;
+      const editRevision = channelEditRevision.current;
       void controller.tune(frequencyHz).then(() => {
         const snapshot = controller.getSnapshot();
         const accepted = snapshot.session;
@@ -1706,7 +1715,8 @@ export function ReceiverApp({
         if (
           accepted &&
           snapshot.lifecycle === "running" &&
-          snapshot.sessionGeneration !== previousGeneration
+          snapshot.sessionGeneration !== previousGeneration &&
+          editRevision === channelEditRevision.current
         )
           setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
         if (accepted?.bladerf?.rxSettings) setBladeRfSettings({ ...accepted.bladerf.rxSettings });
@@ -1718,15 +1728,25 @@ export function ReceiverApp({
   );
 
   const tuneReceiverCenter = async (frequencyHz: number): Promise<string | undefined> => {
+    if (frequencyPending && !frequencyValid) return "Enter a supported channel frequency first.";
     analysis.cancelSignalCenter();
     const before = controller.getSnapshot().sessionGeneration;
-    await controller.tuneCenter(frequencyHz);
+    const editRevision = channelEditRevision.current;
+    if (frequencyPending && frequencyValid)
+      await controller.tune(Math.round(frequencyMhz * 1_000_000), { centerFrequencyHz: frequencyHz });
+    else
+      await controller.tuneCenter(frequencyHz);
     const snapshot = controller.getSnapshot();
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
     if (snapshot.session?.bladerf?.rxSettings) setBladeRfSettings({ ...snapshot.session.bladerf.rxSettings });
     if (snapshot.lifecycle !== "running" || snapshot.sessionGeneration === before)
       return snapshot.message;
+    setChannelTuneIssue(undefined);
+    if (editRevision === channelEditRevision.current) {
+      setChannelFrequencyDraft(undefined);
+      setFrequencyMhz(snapshot.session!.selectedChannelFrequencyHz / 1_000_000);
+    }
     return undefined;
   };
 
@@ -1745,9 +1765,10 @@ export function ReceiverApp({
         return;
       }
       const hadFrequencyEdit = frequencyPending;
+      const editRevision = channelEditRevision.current;
       void controller.configureMode(settings).then(() => {
         const accepted = controller.getSnapshot().session;
-        if (accepted && !hadFrequencyEdit)
+        if (accepted && !hadFrequencyEdit && editRevision === channelEditRevision.current)
           setFrequencyMhz(accepted.selectedChannelFrequencyHz / 1_000_000);
         if (accepted?.bladerf?.rxSettings) setBladeRfSettings({ ...accepted.bladerf.rxSettings });
         const completed = controller.takeCompletedRecording();
@@ -1885,8 +1906,8 @@ export function ReceiverApp({
 
   const modeChangeBlockedReason = transitioning || receiver.cleanupRequired || (running && frequencyPending)
     ? "Wait for the current receiver operation or frequency edit to finish."
-    : recordingStatus || recordingStartPending.current || exportingRecording || atlasTransferActive || retainedCapturePresent
-      ? "Finish the recording or retained capture workflow before changing decoder configuration."
+    : recordingStatus || recordingStartPending.current || exportingRecording || atlasTransferActive
+      ? "Finish the recording or active export before changing decoder configuration."
       : undefined;
   const stationUseBlockedReason = remoteSelected ? "Return to the local receiver before applying local station settings or favorites." : stationSelectionBusy ? "Applying station settings…"
     : importingReplay ? "Wait for replay import to finish before applying search settings."
@@ -2334,7 +2355,7 @@ export function ReceiverApp({
     srdProtocol: activeSession?.srd?.protocol ?? currentModeSettings.srd?.protocol ?? null,
     lifecycle: receiver.lifecycle,
     source: activeSession?.source ?? source,
-    deviceProfile: caps.label,
+    deviceProfile: activeSession?.rtlTuner ? `${caps.label} · ${activeSession.rtlTuner} tuner (board unknown)` : caps.label,
     mode: activeSession?.mode ?? mode,
     sampleRateHz: activeSession?.actualSampleRateHz ?? sampleRateHz,
     nativeSampleRateHz:
@@ -2384,6 +2405,7 @@ export function ReceiverApp({
     usbApiVersion:
       activeSession?.hackrf?.capabilities.identity.usbApiVersion ?? null,
     protocolProfile:
+      (activeSession?.rtlTuner ? `rtl-${activeSession.rtlTuner.toLowerCase()}-v1` : null) ??
       activeSession?.hackrf?.capabilities.protocolProfile ??
       activeSession?.usrpB205?.capabilities.protocolProfile ??
       activeSession?.bladerf?.protocolProfile ??
@@ -2871,6 +2893,8 @@ export function ReceiverApp({
                 )}
                 <ReceiverLocationPanel key={`antenna:${source}`} value={antennaSite} />
                 {source === "replay" && <small>Replay uses the original acquisition site; the current site applies to future live recordings.</small>}
+                {source === "rtl-sdr" && <small className="rtl-tuner">Tuner: {liveSession?.rtlTuner ?? receiver.session?.rtlTuner ?? "Unknown · connect a supported device"}. Board model is not inferred.</small>}
+                <InputClippingWarning pipeline={analysis} session={liveSession} running={running && !remoteSelected} />
                 {caps.requiresUsb && (
                   <details
                     className="advanced-settings"
@@ -3219,8 +3243,8 @@ export function ReceiverApp({
                   <span className="unit-input">
                     <input
                       type="number"
-                      min={Math.max(1, caps.frequency.minimumHz) / 1_000_000}
-                      max={caps.frequency.maximumHz / 1_000_000}
+                      min={(replayRf?.low ?? Math.max(1, caps.frequency.minimumHz)) / 1_000_000}
+                      max={(replayRf?.high ?? caps.frequency.maximumHz) / 1_000_000}
                       step="0.000001"
                       value={
                         channelFrequencyDraft !== undefined &&
@@ -3229,7 +3253,7 @@ export function ReceiverApp({
                           : formatFrequencyMHz(frequencyMhz * 1_000_000)
                       }
                       title={`${(frequencyMhz * 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 3 })} Hz`}
-                      disabled={transitioning}
+                      aria-busy={transitioning}
                       onFocus={(event) => {
                         flushSync(() => setChannelFrequencyDraft(editableFrequencyMHz(frequencyMhz * 1_000_000)));
                         event.currentTarget.select();
@@ -3237,16 +3261,18 @@ export function ReceiverApp({
                       onBlur={() => setChannelFrequencyDraft(undefined)}
                       onChange={(event) => {
                         setChannelTuneIssue(undefined);
+                        channelEditRevision.current++;
                         setChannelFrequencyDraft(event.currentTarget.value);
                         setFrequencyMhz(event.currentTarget.valueAsNumber);
                       }}
                       onKeyDown={(event) => {
                         if (event.key === "Escape" && liveSession) {
+                          channelEditRevision.current++;
                           setChannelTuneIssue(undefined);
                           setChannelFrequencyDraft(undefined);
                           setFrequencyMhz(liveSession.selectedChannelFrequencyHz / 1_000_000);
                         }
-                        if (event.key === "Enter" && running && frequencyValid)
+                        if (event.key === "Enter" && running && !transitioning && frequencyValid)
                           tune(frequencyMhz * 1_000_000);
                       }}
                       aria-label="Channel frequency"
@@ -3255,7 +3281,7 @@ export function ReceiverApp({
                     <span>MHz</span>
                   </span>
                   <small id="frequency-help">
-                    {source === "synthetic"
+                    {source === "replay" ? replayRf ? `Recorded RF: ${formatFrequencyMHz(replayRf.low)}–${formatFrequencyMHz(replayRf.high)} MHz` : "Load a recording to see its captured RF range." : source === "synthetic"
                       ? "Demo channel frequency in MHz"
                       : caps.frequency.limitsDiscoveredAtTune
                         ? "Checked by the connected tuner"
@@ -3266,7 +3292,9 @@ export function ReceiverApp({
                     className={frequencyPending ? "pending-change" : ""}
                     role="status"
                   >
-                    {channelTuneIssue ?? (!frequencyValid
+                    {channelTuneIssue ?? (transitioning
+                      ? "Applying frequency / receiver settings… Your frequency edit is kept; press Tune when ready."
+                      : !frequencyValid
                       ? "Enter a frequency within the supported range"
                       : frequencyPending
                         ? receiver.lifecycle === "tuning"
@@ -3307,6 +3335,7 @@ export function ReceiverApp({
                   }}
                 />}
                 </div>
+                {source !== "replay" && source !== "synthetic" && ["DAB", "AIS", "ADS-B", "ACARS", "NAVTEX"].includes(mode) && <Suspense fallback={null}><ModeFrequencyHint mode={mode} frequencyHz={frequencyMhz * 1e6} disabled={transitioning || Boolean(recordingStatus) || exportingRecording || atlasTransferActive} onChoose={hz => { setChannelFrequencyDraft(undefined); setFrequencyMhz(hz / 1e6); if (running) tune(hz); }} /></Suspense>}
                 <SearchOverlay favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
                   contextKey={`${source}:${remoteSelected}:${receiver.sessionGeneration}:${mode}:${sampleRateHz}:${frequencyMhz}`}
                   blockedReason={stationUseBlockedReason} onRecall={recallFavorite} onUseStation={useAtlasStation} onFavorite={saveAtlasFavorite}
@@ -3399,13 +3428,14 @@ export function ReceiverApp({
                         >
                           <option value="none">Inspector only</option>
                           {srdSettings.modulation === "ook" && (
-                            <option value="acurite-592txr">
-                              Acurite 592TXR
-                            </option>
+                            <>
+                              <option value="fineoffset-wh2">Fine Offset WH2 / TFA 30.3157 · 433 MHz</option>
+                              <option value="acurite-592txr">Acurite 592TXR</option>
+                            </>
                           )}
                           {srdSettings.modulation === "2fsk" && (
                             <option value="fineoffset-wh51">
-                              Fine Offset WH51
+                              Fine Offset / Ecowitt WH51 · 433 / 868 MHz variants
                             </option>
                           )}
                         </select>
@@ -3708,6 +3738,7 @@ export function ReceiverApp({
             </div>
           </div>
 
+          {!receiverDockExpanded && ["WBFM", "DAB"].includes(liveMode) && <Suspense fallback={null}><ReceiverMetadataSummary controller={controller} source={source} mode={liveMode} active={activeView === "receiver"} /></Suspense>}
           {receiverDockExpanded && receiverDockView === "decode" && <Suspense fallback={<p role="status">Loading audio &amp; decode…</p>}><ReceiverDecodePanel
             controller={controller}
             source={source}
@@ -3971,6 +4002,7 @@ export function ReceiverApp({
                     : "The recording is available in this tab. Download before reloading or closing the page."}
                 </p>
               )}
+              {preparedCaptureAvailable && <p className="display-note">Changing decoder keeps this recording and its original capture settings.</p>}
               {preparedCaptureAvailable && retainedCapture.status !== "download-requested" && (
                 <p className="display-note capture-retention-warning">{retainedCapture.libraryId ? "Retained in the local recording library. Download an external backup." : "Kept in this tab only. Download before reloading or closing."}</p>
               )}
@@ -4211,13 +4243,13 @@ export function ReceiverApp({
               {loadedReplay && <div className="replay-range-controls">
                 <p>File-backed replay up to 2 GiB. Choose the playback range while stopped; Stop then change Start to seek.</p>
                 <label>Replay start (seconds)<input aria-label="Replay start seconds" type="number" min={0} max={loadedReplay.metadata.durationSeconds} step="any" disabled={running || busy}
-                  value={replayStartSeconds} onChange={event => {
+                  value={Number(replayStartSeconds.toFixed(6))} onChange={event => {
                     const value = Number(event.currentTarget.value); setReplayStartSeconds(value);
                     const startSample = Math.round(value * loadedReplay.metadata.sampleRateHz);
                     loadedReplay.replayRange = { startSample, endSample: Math.round(replayEndSeconds * loadedReplay.metadata.sampleRateHz) };
                   }} /></label>
                 <label>Replay end (seconds)<input aria-label="Replay end seconds" type="number" min={0} max={loadedReplay.metadata.durationSeconds} step="any" disabled={running || busy}
-                  value={replayEndSeconds} onChange={event => {
+                  value={Number(replayEndSeconds.toFixed(6))} onChange={event => {
                     const value = Number(event.currentTarget.value); setReplayEndSeconds(value);
                     loadedReplay.replayRange = { startSample: Math.round(replayStartSeconds * loadedReplay.metadata.sampleRateHz), endSample: Math.round(value * loadedReplay.metadata.sampleRateHz) };
                   }} /></label>
@@ -4231,7 +4263,8 @@ export function ReceiverApp({
 
             </div>
             <div id="library-panel" role="tabpanel" aria-labelledby="library-tab" hidden={captureView !== "library"}>
-            <RecordingLibrary blocked={busy || running || importingReplay || exportingRecording || atlasTransferActive || Boolean(recordingStatus) || retainedCapturePresent}
+            <DeferredWorkspace active={receiverDockExpanded && receiverDockView === "capture" && captureView === "library"}><RecordingLibrary blocked={busy || running || importingReplay || exportingRecording || atlasTransferActive || Boolean(recordingStatus) || retainedCapturePresent}
+              blockedReason={running ? "Stop reception before replaying or preparing a library recording. Your saved recordings stay in the library." : retainedCapturePresent ? "Close the prepared capture before opening another library recording. Download it first to keep a copy." : "Wait for the current recording, import or transfer to finish before opening a library recording."}
               revision={retainedCapture.status}
               onOpen={async (recording, replay) => {
                 try {
@@ -4245,7 +4278,7 @@ export function ReceiverApp({
                     else if (result.status === "blocked" || result.status === "busy") { await recording.releaseData?.(); throw new Error("Close the prepared capture first."); }
                   }
                 } catch (error) { await recording.releaseData?.(); throw error; }
-              }} />
+              }} /></DeferredWorkspace>
             </div>
           </section>
 
@@ -4359,6 +4392,7 @@ export function ReceiverApp({
           return `Channel ${((receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000) / 1e6).toLocaleString()} → ${(nextFrequency / 1e6).toLocaleString()} MHz; input ${(receiver.session?.actualSampleRateHz ?? sampleRateHz).toLocaleString()} → ${nextRate.toLocaleString()} samples/s; bandwidth ${defaultModeSettings(candidate).bandwidthHz.toLocaleString()} Hz. Applying does not connect or start reception.`;
         }}
         blockedReason={modeChangeBlockedReason}
+        receiverLocation={source === "replay" ? loadedReplay?.metadata.receiverLocation : antennaSite.site}
         onApply={chooseMode} onVolumeChange={updateVolume}
         onOpenReceiver={() => setActiveView("receiver")}
         onOpenRecording={() => {
@@ -4402,18 +4436,27 @@ export function ReceiverApp({
           }}
           onScanningChange={setScanActive}
           onCaptureCandidates={captureSurveyCandidates}
-          onInvestigate={(frequencyHz) => {
+          investigationBlockedReason={modeChangeBlockedReason}
+          onInvestigate={(frequencyHz, investigationMode) => {
+            if (modeChangeBlockedReason || modeUnavailable(investigationMode)) return;
             setActiveView("receiver");
-            const settings = defaultModeSettings("SRD");
-            setMode("SRD");
+            const settings = defaultModeSettings(investigationMode);
+            setMode(investigationMode);
             setBandwidthHz(settings.bandwidthHz);
             setSquelch(settings.squelch);
+            setBeatToneHz(settings.beatToneHz ?? 600);
             setSrdSettings(settings.srd ?? defaultSrdModeSettings());
             setTextModemSettings(settings.textModem ?? defaultTextModemSettings());
+            if (sourceConfigurationEditable)
+              setSampleRateHz(compatibleSourceRate(source, investigationMode, sampleRateHz) ?? sampleRateHz);
             if (receiver.lifecycle === "running")
               void controller
                 .configureMode(settings)
-                .then(() => tune(frequencyHz));
+                .then(() => {
+                  const accepted = controller.getSnapshot();
+                  if (accepted.lifecycle === "running" && accepted.session?.mode === investigationMode) tune(frequencyHz);
+                  else setChannelTuneIssue(accepted.message);
+                });
             else tune(frequencyHz);
           }}
         /></DeferredWorkspace>

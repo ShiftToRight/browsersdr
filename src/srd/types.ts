@@ -8,7 +8,8 @@ export const SRD_MAX_DEVICES = 32;
 export const SRD_MAX_EVENTS = 64;
 
 export type SrdModulation = "ook" | "2fsk";
-export type SrdProtocol = "none" | "acurite-592txr" | "fineoffset-wh51";
+export type SrdProtocol =
+  "none" | "acurite-592txr" | "fineoffset-wh51" | "fineoffset-wh2";
 
 export interface SrdThresholdSettings {
   mode: "adaptive" | "manual";
@@ -92,7 +93,7 @@ export interface SrdTracePoint {
 interface SrdReadingBase {
   protocol: Exclude<SrdProtocol, "none">;
   deviceId: string;
-  integrity: "checksum+parity" | "crc8+checksum";
+  integrity: "checksum+parity" | "crc8+checksum" | "crc8";
   provenance: DigitalProvenance;
 }
 
@@ -113,7 +114,13 @@ export interface FineOffsetWh51Reading extends SrdReadingBase {
   adRaw: number;
 }
 
-export type SrdSensorReading = Acurite592Reading | FineOffsetWh51Reading;
+export interface FineOffsetWh2Reading extends SrdReadingBase {
+  protocol: "fineoffset-wh2";
+  temperatureC: number;
+  humidityPercent?: number;
+}
+export type SrdSensorReading =
+  Acurite592Reading | FineOffsetWh51Reading | FineOffsetWh2Reading;
 
 export interface SrdDeviceState {
   key: string;

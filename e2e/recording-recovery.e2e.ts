@@ -107,6 +107,10 @@ test("a completed capture survives reload and can be downloaded and explicitly d
   await entry
     .getByRole("button", { name: "Delete retained recording" })
     .click();
+  await expect(entry).toHaveCount(1);
+  await entry
+    .getByRole("button", { name: "Confirm delete recording", exact: true })
+    .click();
   await expect(entry).toHaveCount(0);
 });
 
@@ -156,6 +160,9 @@ test("renderer interruption recovers a committed prefix and another tab cannot d
   await other.getByRole("button", { name: "Refresh library" }).click();
   await other
     .getByRole("button", { name: "Delete retained recording" })
+    .click();
+  await other
+    .getByRole("button", { name: "Confirm delete recording", exact: true })
     .click();
   await expect(other.locator(".recording-library-entry")).toHaveCount(0);
 });

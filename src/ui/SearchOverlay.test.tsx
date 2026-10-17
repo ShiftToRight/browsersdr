@@ -234,3 +234,19 @@ it("keeps long plans collapsed until expanded and separates spacing from modem p
   expect(ble.textContent).not.toContain("SF");
   expect(ble.textContent).not.toContain("CR ");
 });
+
+it("keeps search dormant initially and supplies honest ATIS guidance after opening", async () => {
+  await render();
+  expect(document.querySelector("dialog")).toBeNull();
+  expect(calls).toEqual([]);
+  await click("Search");
+  const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,"ATIS");
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+  });
+  expect(document.body.textContent).toContain("ATIS / aviation voice");
+  expect(document.body.textContent).toContain("No local ATIS station or frequency");
+  expect([...document.querySelectorAll("button")].some(button => button.textContent?.trim() === "Preview ATIS / aviation voice")).toBe(false);
+  expect(calls).toEqual([]);
+});

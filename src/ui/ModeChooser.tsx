@@ -58,6 +58,7 @@ export function ModeChooser(
   const [selection, setSelection] = useState({
     mode: props.value,
     context: props.contextKey,
+    chosen: false,
   });
   const [replacement, setReplacement] = useState<ReceiverMode>();
   const [replaceMode, setReplaceMode] = useState(props.pins[0] ?? "WBFM");
@@ -231,7 +232,11 @@ export function ModeChooser(
                     aria-label={`Select ${info.label}`}
                     aria-pressed={selectedMode === mode}
                     onClick={() =>
-                      setSelection({ mode, context: props.contextKey })
+                      setSelection({
+                        mode,
+                        context: props.contextKey,
+                        chosen: true,
+                      })
                     }
                   >
                     <Icon size={28} strokeWidth={1.5} aria-hidden="true" />
@@ -332,7 +337,10 @@ export function ModeChooser(
             </div>
           )}
         <div className="mode-chooser-pin-settings">
-          <span>Quick list is saved in this browser.</span>
+          <span>
+            Pin adds a mode to the quick list; unpin removes it. Saved in this
+            browser.
+          </span>
           <button
             type="button"
             className="secondary"
@@ -348,7 +356,11 @@ export function ModeChooser(
       </div>
       <footer className="mode-chooser-footer">
         <div>
-          <strong>{selected.label} selected</strong>
+          <strong>
+            {selection.chosen && !contextChanged
+              ? `${selected.label} selected`
+              : `Current mode: ${selected.label}`}
+          </strong>
           <p id={`${id}-summary`}>{props.configurationPreview(selectedMode)}</p>
           {blocked && (
             <p role="status" className="mode-chooser-blocked">

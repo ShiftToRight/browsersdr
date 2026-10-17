@@ -486,7 +486,7 @@ export function validateCommunityReport(value) {
       ...Object.values(COMMUNITY_FEATURE_MODES).filter(Boolean),
     ].includes(s.mode) ||
     !(s.mode === "SRD"
-      ? ["none", "acurite-592txr", "fineoffset-wh51"].includes(s.srdProtocol)
+      ? ["none", "acurite-592txr", "fineoffset-wh51", "fineoffset-wh2"].includes(s.srdProtocol)
       : s.srdProtocol === null) ||
     !Number.isFinite(s.rateHz) ||
     s.rateHz <= 0 ||

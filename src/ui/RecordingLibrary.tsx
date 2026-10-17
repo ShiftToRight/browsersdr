@@ -9,10 +9,12 @@ import type { IqRecording } from "../radio/iqRecording";
 
 export function RecordingLibrary({
   blocked,
+  blockedReason = "Finish the current receiver operation or close the prepared capture before opening a library recording.",
   revision,
   onOpen,
 }: {
   blocked: boolean;
+  blockedReason?: string;
   revision: string;
   onOpen: (recording: IqRecording, replay: boolean) => Promise<void>;
 }) {
@@ -21,6 +23,7 @@ export function RecordingLibrary({
   const [working, setWorking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quota, setQuota] = useState("");
+  const [deleteId, setDeleteId] = useState<string>();
   const refreshInFlight = useRef<Promise<void> | undefined>(undefined);
   const refreshRequested = useRef(false);
   const refresh = () => {
@@ -34,7 +37,14 @@ export function RecordingLibrary({
           try {
             // Listing probes own the same locks as open/delete. Keep stale
             // row actions blocked until every coalesced refresh releases them.
-            setEntries(await listRecordings());
+            setEntries(
+              (await listRecordings()).sort(
+                (a, b) =>
+                  (b.metadata?.captureStartedAt ?? b.id).localeCompare(
+                    a.metadata?.captureStartedAt ?? a.id,
+                  ) || a.id.localeCompare(b.id),
+              ),
+            );
             const estimate = await navigator.storage?.estimate?.();
             if (estimate)
               setQuota(
@@ -81,6 +91,8 @@ export function RecordingLibrary({
         tab-local.
       </p>
       <p>{quota}</p>
+      <p className="display-note">Newest recordings first.</p>
+      {blocked && <p id="library-open-help" role="status">{blockedReason}</p>}
       <button
         className="secondary"
         type="button"
@@ -126,6 +138,7 @@ export function RecordingLibrary({
                 className="secondary"
                 type="button"
                 disabled={blocked || working || refreshing}
+                aria-describedby={blocked ? "library-open-help" : undefined}
                 onClick={() =>
                   void run(async () =>
                     onOpen(await openRecording(entry.id), true),
@@ -149,15 +162,47 @@ export function RecordingLibrary({
             </>
           )}
           <button
-            className="secondary"
+            className="secondary destructive library-delete"
             type="button"
             disabled={
               blocked || working || refreshing || entry.state === "in-use"
             }
-            onClick={() => void run(async () => deleteRecording(entry.id))}
+            onClick={() => setDeleteId(entry.id)}
           >
             Delete retained recording
           </button>
+          {deleteId === entry.id && (
+            <div
+              className="library-delete-confirm"
+              role="group"
+              aria-label="Confirm recording deletion"
+            >
+              <p>
+                Delete this recording from browser storage? Download a backup
+                first. This cannot be undone.
+              </p>
+              <button
+                className="secondary destructive"
+                disabled={
+                  blocked || working || refreshing || entry.state === "in-use"
+                }
+                onClick={() =>
+                  void run(async () => {
+                    await deleteRecording(entry.id);
+                    setDeleteId(undefined);
+                  })
+                }
+              >
+                Confirm delete recording
+              </button>
+              <button
+                className="secondary"
+                onClick={() => setDeleteId(undefined)}
+              >
+                Keep recording
+              </button>
+            </div>
+          )}
         </div>
       ))}
       <p role="status">{message}</p>

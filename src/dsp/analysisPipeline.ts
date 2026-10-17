@@ -1,4 +1,5 @@
 import type { SignalCenterResult } from "./signalCenter";
+import { InputClippingMonitor } from "./inputClipping";
 import type { IngressTimings } from "../radio/ingressTimings";
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
@@ -94,6 +95,8 @@ export const analysisInputSlots = (
 };
 export const ANALYSIS_MAX_BLOCK_SAMPLES = 262_144;
 export class AnalysisPipeline {
+  private readonly inputClipping = new InputClippingMonitor();
+  getInputClipping = () => this.inputClipping.getSnapshot();
   private worker: Worker;
   private recoveryAttempts = 0;
   private disposed = false;
@@ -279,6 +282,7 @@ export class AnalysisPipeline {
 
   stop(sessionGeneration = this.generation): void {
     if (sessionGeneration !== this.generation) return;
+    this.inputClipping.reset();
     this.cancelSignalCenter();
     this.post({ type: "stop", sessionGeneration });
     this.generation = 0;
@@ -364,6 +368,7 @@ export class AnalysisPipeline {
     const length = bytes.byteLength / 2;
     if (!Number.isInteger(length) || length < 1 || length > 32768)
       throw new Error("Invalid native analysis block.");
+    if (this.diagnostics.source === "hackrf") this.inputClipping.observeCi8(bytes);
     const tapStart = performance.now();
     const context = {
       sampleIndex: this.gpuSourceSamples,
@@ -574,6 +579,7 @@ export class AnalysisPipeline {
 
   private receiveSamples(block: SampleBlock, generation: number): void {
     if (generation !== this.generation) return;
+    this.inputClipping.observePlanar(block.I, block.Q, this.diagnostics.source ?? "");
     const length = Math.min(block.I.length, block.Q.length);
     const gpuSampleIndex = this.gpuSourceSamples;
     this.gpuSourceSamples += length;
@@ -740,6 +746,7 @@ export class AnalysisPipeline {
   }
 
   private resetDiagnostics(metadata: SourceSessionMetadata): void {
+    this.inputClipping.reset();
     this.totalProcessingTimeMs = 0;
     this.gpuSourceSamples = 0;
     this.gpuMissingSamples = 0;

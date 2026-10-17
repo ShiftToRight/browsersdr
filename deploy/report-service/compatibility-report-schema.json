@@ -238,7 +238,7 @@
               "enum": ["live", "replay", "synthetic"]
             },
             "srdProtocol": {
-              "enum": [null, "none", "acurite-592txr", "fineoffset-wh51"]
+              "enum": [null, "none", "acurite-592txr", "fineoffset-wh51", "fineoffset-wh2"]
             }
           }
         },

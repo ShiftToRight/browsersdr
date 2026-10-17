@@ -1,3 +1,4 @@
+import { openBrowserUsbDevice, closeBrowserUsbDevice } from "./browserUsbOwnership";
 import {
   BLADERF_USB_ALT_IDLE,
   BLADERF_USB_ALT_RF_LINK,
@@ -185,7 +186,7 @@ export class BladeRfTransport {
       if (!device.opened) {
         // open() may succeed in the browser before its promise rejects/cancels.
         owned = true;
-        await current(() => device.open());
+        await current(() => openBrowserUsbDevice(device));
       }
       if (device.configuration?.configurationValue !== 1)
         await current(() => device.selectConfiguration(1));
@@ -223,7 +224,7 @@ export class BladeRfTransport {
           )?.claimed
         )
           await device.releaseInterface?.(0).catch(() => undefined);
-        await device.close().catch(() => undefined);
+        await closeBrowserUsbDevice(device).catch(() => undefined);
         if (device.opened) this.cleanupOwners.set(device, owner);
       }
       throw error;
@@ -416,7 +417,7 @@ export class BladeRfTransport {
       if (device) {
         if (protocol) await protocol.setRxEnabled(false).catch(() => undefined);
         try {
-          await device.close();
+          await closeBrowserUsbDevice(device);
           if (device.opened)
             throw new DOMException(
               "bladeRF USB device is still open after close.",

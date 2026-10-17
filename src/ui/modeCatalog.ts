@@ -113,14 +113,16 @@ export function matchingModes(
   query: string,
   category: ModeCategory,
 ): ReceiverMode[] {
-  const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  return CATALOG_MODES.filter((mode) => {
+  const tokens = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const words = tokens(query);
+  const compact = words.join("");
+  return CATALOG_MODES.map((mode, index) => {
     const info = MODE_DESCRIPTIONS[mode];
-    const text =
-      `${mode} ${info.label} ${info.description} ${info.aliases}`.toLowerCase();
-    return (
-      (category === "All modes" || info.categories.includes(category)) &&
-      words.every((word) => text.includes(word))
-    );
-  });
+    const names = [mode, info.label].map(value => tokens(value).join(""));
+    const searchable = tokens(`${mode} ${info.label} ${info.description} ${info.aliases}`);
+    const matches = words.every(word => searchable.some(token => token.startsWith(word))) ||
+      (compact.length > 0 && names.includes(compact));
+    return {mode, index, score: compact && names.includes(compact) ? 0 : 1, matches};
+  }).filter(({mode, matches}) => matches && (category === "All modes" || MODE_DESCRIPTIONS[mode].categories.includes(category)))
+    .sort((a,b) => a.score - b.score || a.index - b.index).map(row => row.mode);
 }

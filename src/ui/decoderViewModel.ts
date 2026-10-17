@@ -338,7 +338,7 @@ export function decoderRecords(
         key: key(d.key),
         label: String(d.reading.deviceId),
         summary:
-          d.reading.protocol === "acurite-592txr"
+          "temperatureC" in d.reading
             ? `${d.reading.temperatureC} °C`
             : `${d.reading.moisturePercent}% moisture`,
         integrity: d.reading.integrity,
@@ -377,10 +377,12 @@ export function decoderRecords(
           ? "Playable service"
           : "Not playable with current configuration",
         integrity: "Decoded ensemble/service information",
-        clock: "Service receive times are not published by this decoder",
+        clock: [s.dabPlus ? "HE-AAC · DAB+" : "MPEG Layer II · DAB", s.bitrateKbps ? `${s.bitrateKbps} kbit/s` : "Bitrate unavailable", s.protection || "Protection unavailable"].join(" · "),
         fields: [
           ["Service ID", `0x${s.serviceId.toString(16).toUpperCase()}`],
           ["Subchannel", String(s.subchannelId)],
+          ["Bitrate", s.bitrateKbps ? `${s.bitrateKbps} kbit/s` : "Unavailable"],
+          ["Protection", s.protection || "Unavailable"],
           ["Format", s.dabPlus ? "DAB+" : "DAB · audio unsupported"],
         ],
         raw: {
@@ -390,6 +392,8 @@ export function decoderRecords(
           subchannelId: s.subchannelId,
           playable: s.playable,
           dabPlus: s.dabPlus,
+          bitrateKbps: s.bitrateKbps,
+          protection: s.protection,
         },
       }));
   return [];

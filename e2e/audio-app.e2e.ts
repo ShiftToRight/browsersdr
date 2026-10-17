@@ -62,6 +62,12 @@ for (const deviceRate of [48_000, 44_100]) {
     await expect(
       panel.getByRole("button", { name: "Download audio WAV" }),
     ).toBeEnabled();
+    await expect(
+      panel.getByRole("button", { name: "Record audio", exact: true }),
+    ).toBeDisabled();
+    await expect(panel.locator("#retained-audio-help")).toContainText(
+      "Download audio WAV",
+    );
     const downloading = page.waitForEvent("download");
     await panel.getByRole("button", { name: "Download audio WAV" }).click();
     const bytes = await readFile((await (await downloading).path())!);

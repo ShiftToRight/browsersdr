@@ -10,6 +10,7 @@ import { SrdPulseInspector } from "./inspector";
 import {
   decodeAcurite592Burst,
   decodeFineOffsetWh51Burst,
+  decodeFineOffsetWh2Burst,
   type SrdProtocolDecodeResult,
 } from "./protocols";
 import { type SrdConfiguration, validateSrdConfiguration } from "./settings";
@@ -153,7 +154,9 @@ export class SrdReceiver implements StreamingDigitalDecoder<
   private decode(burst: SrdBurst): SrdProtocolDecodeResult {
     return this.configuration!.protocol === "acurite-592txr"
       ? decodeAcurite592Burst(burst)
-      : decodeFineOffsetWh51Burst(burst);
+      : this.configuration!.protocol === "fineoffset-wh2"
+        ? decodeFineOffsetWh2Burst(burst)
+        : decodeFineOffsetWh51Burst(burst);
   }
 
   private recordReading(reading: SrdSensorReading): void {

@@ -41,6 +41,26 @@ const METADATA = {
   sampleFormat: "planar-f32-iq-normalized" as const,
 };
 
+it("measures current raw input before worker backpressure, rejects stale generations and clears clipping on retune/stop", () => {
+  const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker);
+  pipeline.begin({ ...METADATA, source: "hackrf" });
+  const bytes = new Uint8Array(512).fill(127);
+  pipeline.receiveCi8(bytes, 100e6, 6);
+  expect(pipeline.getInputClipping()).toBeUndefined();
+  for (let n = 0; n < 5; n++) pipeline.receiveCi8(bytes, 100e6, 7);
+  expect(pipeline.getInputClipping()?.clippedFraction).toBe(1);
+  expect(pipeline.getDiagnostics().skippedInputBlocks).toBe(1);
+  pipeline.retune({ ...METADATA, source: "rtl-sdr", sessionGeneration: 8 });
+  expect(pipeline.getInputClipping()).toBeUndefined();
+  pipeline.receiveCi8(bytes, 100e6, 7);
+  expect(pipeline.getInputClipping()).toBeUndefined();
+  const receiver = pipeline.begin({ ...METADATA, source: "rtl-sdr", sessionGeneration: 9 });
+  receiver.receiveSamples({ I: new Float32Array(128).fill(127.5 / 128), Q: new Float32Array(128), frequency: 100e6 });
+  expect(pipeline.getInputClipping()?.clippedFraction).toBe(0.5);
+  pipeline.stop();
+  expect(pipeline.getInputClipping()).toBeUndefined();
+});
+
 afterEach(() => vi.unstubAllGlobals());
 
 const RECEIVER_RATE_BURSTS = [

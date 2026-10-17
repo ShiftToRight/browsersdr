@@ -229,6 +229,22 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   expect(pause.getAttribute("aria-pressed")).toBe("true");
   await act(async () => pause.click());
   expect(pause.textContent).toContain("Pause display");
+  const floor = host.querySelector<HTMLInputElement>('[aria-label="Spectrum floor"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(floor, "-110");
+    floor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const automatic = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(input => input.parentElement?.textContent?.includes("Auto scale on tune or rate change"))!;
+  expect(host.textContent).toContain("Auto scale on tune or rate change");
+  const sendChanged = async (center: number) => {
+    const f = { ...frame(9), centerFrequencyHz: center, bins: new Float32Array(4096).fill(-60) };
+    await act(async () => listener(f, [f]));
+  };
+  await sendChanged(119_000_000);
+  expect(floor.value).toBe("-110");
+  await act(async () => automatic.click());
+  await sendChanged(120_000_000);
+  expect(floor.value).toBe("-68");
   await act(async () => root.unmount());
   expect(unsubscribe).toHaveBeenCalledOnce();
 });

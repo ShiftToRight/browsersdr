@@ -50,6 +50,25 @@ test("receiver window and channel tune independently, with guarded automatic re-
   );
   await expect(center).toHaveValue("100.100");
   await expect(auto).toBeEnabled();
+  await page.getByRole("button", { name: "To channel", exact: true }).click();
+  await expect(center).toHaveValue("101.000");
+  await expect(channel).toHaveValue("101.000");
+  await expect(auto).not.toBeChecked();
+  await channel.fill("102.2");
+  await channel.press("Enter");
+  await expect(page.locator("#frequency-state")).toContainText(
+    "complete channel does not fit",
+  );
+  await center.fill("102.1");
+  await center.press("Enter");
+  await expect(center).toHaveValue("102.100");
+  await expect(channel).toHaveValue("102.200");
+  await expect(auto).not.toBeChecked();
+  await channel.fill("103");
+  await channel.press("Enter");
+  await channel.press("Escape");
+  await expect(channel).toHaveValue("102.200");
+  await channel.fill("101");
   await auto.check();
   await channel.press("Enter");
   await expect(center).toHaveValue("101.000");

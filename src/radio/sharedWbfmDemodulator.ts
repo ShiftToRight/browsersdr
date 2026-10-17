@@ -1,4 +1,8 @@
 import {
+  FmStereoReceptionTracker,
+  type FmStereoReception,
+} from "./fmStereoReception";
+import {
   DemodWBFMStage1,
   DemodWBFMStage2,
   type ModeWBFM,
@@ -44,14 +48,21 @@ export class SharedWbfmDemodulator {
   private peakAt = 0;
   private meterAt = 0;
   private reportedSquelchOpen?: boolean;
+  private readonly stereoReception = new FmStereoReceptionTracker();
+  private reportedStereo?: FmStereoReception;
+  private stereoReportedAt = 0;
   constructor(
     private readonly player: Player,
     private readonly multiplex: (samples: Float32Array) => void,
     private readonly reportSquelch?: (state: SquelchMeterState) => void,
+    private readonly reportStereo?: (
+      stereo: FmStereoReception | undefined,
+    ) => void,
   ) {
     this.reset();
   }
   private reset(): void {
+    this.resetStereoReception();
     if (this.mode) {
       const intermediate = Math.min(this.rate, 336_000);
       this.first = new DemodWBFMStage1(this.rate, intermediate, this.mode);
@@ -68,6 +79,13 @@ export class SharedWbfmDemodulator {
     if (this.otherMode)
       this.other = getDemod(this.rate, this.player.sampleRate, this.otherMode);
     this.resetSquelch();
+  }
+
+  private resetStereoReception(): void {
+    this.stereoReception.reset();
+    this.reportedStereo = undefined;
+    this.stereoReportedAt = 0;
+    this.reportStereo?.(undefined);
   }
 
   private resetSquelch(): void {
@@ -91,6 +109,7 @@ export class SharedWbfmDemodulator {
       this.cwMode = mode as ModeCW;
       this.reset();
     } else {
+      this.resetStereoReception();
       this.mode = undefined;
       this.cwMode = undefined;
       this.cw = undefined;
@@ -139,6 +158,19 @@ export class SharedWbfmDemodulator {
     const raw = this.first.demodulate(block.I, block.Q, this.offset);
     this.multiplex(raw.left);
     const audio = this.second.demodulate(raw.left);
+    const reception = this.stereoReception.receive(
+      audio.stereo,
+      block.I.length / this.rate,
+    );
+    const now = performance.now();
+    if (
+      reception !== this.reportedStereo ||
+      now - this.stereoReportedAt >= 1000
+    ) {
+      this.stereoReportedAt = now;
+      this.reportedStereo = reception;
+      this.reportStereo?.(reception);
+    }
     this.player.play(audio.left, audio.right);
   }
 

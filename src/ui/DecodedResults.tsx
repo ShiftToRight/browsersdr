@@ -13,6 +13,19 @@ const PacketDecodePanel = lazy(() => import("./PacketDecodePanel").then(module =
 const DabMetadata = lazy(() => import("./DabMetadata").then(module => ({ default: module.DabMetadata })));
 import { AppIcon } from "./AppIcon";
 import { AudioCapturePanel } from "./AudioCaptureSection";
+const FM_STEREO_LABELS = {
+  stereo: "Stereo · stable pilot",
+  mono: "Mono · no stable stereo pilot",
+  intermittent: "Intermittent pilot",
+  checking: "Checking stereo pilot…",
+};
+
+function fmStereoReceptionLabel(receiver: ReceiverSnapshot): string {
+  return receiver.lifecycle === "running" || receiver.lifecycle === "tuning"
+    ? FM_STEREO_LABELS[receiver.fmStereoReception ?? "checking"]
+    : "Not receiving";
+}
+
 function downloadDecodedTargets(mode: string, targets: unknown[]): void {
   const url = URL.createObjectURL(
     new Blob(
@@ -69,6 +82,16 @@ function downloadSrdSnapshot(receiver: ReceiverSnapshot): void {
   ]);
 }
 
+export function dataAcquisitionSummary(receiver: ReceiverSnapshot, mode: ReceiverMode): string {
+  const worker = mode === "APRS" ? receiver.aprsWorker : mode === "RS41" ? receiver.rs41Worker : receiver.srdWorker;
+  const current = !worker || worker.generation === receiver.sessionGeneration;
+  const accepted = !current ? 0 : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames ?? 0
+    : mode === "RS41" ? (receiver.rs41?.counters.correctedFrames ?? 0) + (receiver.rs41?.counters.uncorrectedFrames ?? 0)
+    : receiver.srd?.counters.validatedReadings ?? 0;
+  const count = accepted === 0 ? 0 : mode === "APRS" ? receiver.aprs?.stations.length ?? 0 : mode === "RS41" ? receiver.rs41?.sondes.length ?? 0 : receiver.srd?.devices.length ?? 0;
+  return `${accepted} accepted ${mode === "APRS" ? "packets" : mode === "RS41" ? "frames" : "readings"} this session · ${count} retained ${mode === "APRS" ? "stations" : mode === "RS41" ? "sondes" : "devices"}`;
+}
+
 export function DecodedResults({
   receiver,
   source,
@@ -123,19 +146,13 @@ export function DecodedResults({
                 ? "No audio or decoder output"
                 : mode === "DAB"
                   ? (receiver.dab?.message ?? "Not active")
-                  : isTextMode(mode) ? `${receiver.textModem?.counters.characters ?? 0} decoded characters` : mode === "APRS"
-                    ? `${receiver.aprs?.stations.length ?? 0} validated station(s)`
-                    : mode === "RS41"
-                      ? `${receiver.rs41?.sondes.length ?? 0} validated sonde(s)`
-                      : mode === "ADS-B"
+                  : isTextMode(mode) ? `${receiver.textModem?.counters.characters ?? 0} decoded characters`
+                  : ["APRS", "RS41", "SRD"].includes(mode) ? dataAcquisitionSummary(receiver, mode)
+                    : mode === "ADS-B"
                         ? (receiver.adsb?.message ?? "Not active")
                         : mode === "AIS"
                           ? (receiver.ais?.message ?? "Not active")
-                          : mode === "SRD"
-                            ? receiver.srd
-                              ? `${receiver.srd.devices.length} validated device(s)`
-                              : "Not active"
-                            : source === "synthetic"
+                          : source === "synthetic"
                               ? "Not available in demo"
                               : (receiver.audioState ?? "Not active")}
           </strong>
@@ -255,7 +272,7 @@ export function DecodedResults({
                                   <small>{reading.integrity}</small>
                                 </td>
                                 <td>
-                                  {reading.protocol === "acurite-592txr"
+                                  {"temperatureC" in reading
                                     ? `${reading.temperatureC.toFixed(1)} °C${reading.humidityPercent == null ? "" : ` · ${reading.humidityPercent}% RH`}`
                                     : `${reading.moisturePercent}% moisture · ${reading.batteryMillivolts} mV`}
                                 </td>
@@ -747,6 +764,11 @@ export function DecodedResults({
                 </dl>
               )}
               {mode === "WBFM" && (
+                <p className="display-note" aria-label="FM stereo reception">
+                  FM stereo reception: {fmStereoReceptionLabel(receiver)}
+                </p>
+              )}
+              {mode === "WBFM" && (
                 <details className="decoder-details">
                   <summary>Decoder details</summary>
                   <p className="display-note">
@@ -773,4 +795,14 @@ export function ReceiverDecodePanel(props: {
 }) {
   const { receiver, presenting } = useVisibleReceiver(props.controller, props.active);
   return presenting ? <DecodedResults {...props} receiver={receiver} /> : null;
+}
+
+export function ReceiverMetadataSummary(props: { controller: ReceiverController; source: SourceKind; mode: ReceiverMode; active: boolean }) {
+  const { receiver, presenting } = useVisibleReceiver(props.controller, props.active);
+  if (!presenting || receiver.session?.source !== props.source || receiver.session?.mode !== props.mode) return null;
+  const dab = receiver.dab;
+  const station = dab?.stations?.find(s => s.serviceId === dab.serviceId && s.subchannelId === dab.subchannelId);
+  const summary = props.mode === "WBFM" ? [`FM stereo reception: ${fmStereoReceptionLabel(receiver)}`, receiver.rds?.programmeService || receiver.rds?.pi, receiver.rds?.radioText].filter(Boolean).join(" · ")
+    : [station?.label || dab?.ensemble?.label, dab?.programmeMetadata?.text].filter(Boolean).join(" · ");
+  return summary ? <p className="collapsed-metadata" role="status" title={summary}>{summary}</p> : null;
 }

@@ -74,6 +74,8 @@ export function classifyReceiverIssue(
     source,
     operation,
   });
+  if (/BrowserSdrTabBusy/.test(name))
+    return issue("usb-busy", "This receiver is connected in another BrowserSDR tab or window. Disconnect it there, then retry here.");
   // RTL wraps rejected chooser requests as NoDeviceSelected, including denials.
   // Preserve the underlying permission failure so it remains actionable.
   if (

@@ -34,22 +34,21 @@ export function ReceiverTuningControl({
   useEffect(() => {
     setDraft(undefined);
     setMessage(undefined);
-  }, [centerHz, session?.source]);
+  }, [session?.source]);
   const value = draft ?? formatFrequencyMHz(centerHz);
   let requestedHz = value.trim() ? Number(value) * 1_000_000 : NaN;
   if (session && sourceCapabilities(session.source).frequency.integerHz)
     requestedHz = Math.round(requestedHz);
   const replay = session?.source === "replay";
-  const busy = disabled || applying || channelPending || !session || replay;
+  const channelHz = channelPending ? configuredFrequencyHz : session?.selectedChannelFrequencyHz;
+  const busy = disabled || applying || !session || replay;
   const busyReason = replay
     ? "The receiver center is fixed in a recording."
     : !session
       ? "Start reception to adjust the receiver center."
       : applying || disabled
         ? "Wait for reception to resume and any tuning or scan to finish."
-        : channelPending
-          ? "Apply or cancel the channel frequency edit first."
-          : undefined;
+        : undefined;
   const requiresCenter =
     session &&
     ["hackrf", "bladerf", "usrp-b205"].includes(session.source) &&
@@ -68,12 +67,12 @@ export function ReceiverTuningControl({
       );
       planChannelTune(
         centerHz,
-        session.selectedChannelFrequencyHz,
+        channelHz!,
         session.actualSampleRateHz,
         session.channelBandwidthHz,
         { centerFrequencyHz: requestedHz },
       );
-      if (requiresCenter && requestedHz !== session.selectedChannelFrequencyHz)
+      if (requiresCenter && requestedHz !== channelHz)
         throw new Error(
           `${session.mode} requires the receiver center to match the channel at this sample rate.`,
         );
@@ -85,7 +84,19 @@ export function ReceiverTuningControl({
     }
   }
   const pending =
-    draft !== undefined && Math.round(requestedHz) !== Math.round(centerHz);
+    draft !== undefined && (channelPending || Math.round(requestedHz) !== Math.round(centerHz));
+  let channelInvalid: string | undefined;
+  if (session && channelHz !== undefined) {
+    try {
+      validateSourceFrequency(session.source, channelHz,
+        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0,
+        session.hackrf?.capabilities.identity);
+      planChannelTune(centerHz, channelHz, session.actualSampleRateHz, session.channelBandwidthHz,
+        { centerFrequencyHz: channelHz });
+    } catch (error) {
+      channelInvalid = error instanceof Error ? error.message : "Enter a valid channel frequency.";
+    }
+  }
   const apply = async (frequencyHz: number) => {
     if (busy) return;
     setApplying(true);
@@ -116,7 +127,7 @@ export function ReceiverTuningControl({
                   : "receiver-center-state"
               }
               aria-invalid={Boolean(invalid)}
-              disabled={busy}
+              disabled={!session || replay || applying}
               onFocus={(event) => {
                 flushSync(() =>
                   setDraft(
@@ -184,13 +195,13 @@ export function ReceiverTuningControl({
           type="button"
           className="secondary toolbar-action"
           icon="crosshair"
-          title="Set the receiver frequency to the current channel once"
-          disabled={busy || session?.selectedChannelFrequencyHz === centerHz}
+          title={channelPending ? "Apply the pending channel and recenter the receiver once" : "Set the receiver frequency to the current channel once"}
+          disabled={busy || Boolean(channelInvalid) || (!channelPending && channelHz === centerHz)}
           disabledReason={
-            busyReason ?? "The receiver is already centered on the channel."
+            busyReason ?? channelInvalid ?? "The receiver is already centered on the channel."
           }
           onClick={() =>
-            session && void apply(session.selectedChannelFrequencyHz)
+            channelHz !== undefined && void apply(channelHz)
           }
         >
           To channel
@@ -201,6 +212,7 @@ export function ReceiverTuningControl({
           Capture center is fixed during replay
         </small>
       )}
+      {channelPending && !replay && <small>To channel applies the pending channel and recenters once. Follow channel stays {autoRecenter ? "on" : "off"}.</small>}
       <small
         id="receiver-center-state"
         role="status"

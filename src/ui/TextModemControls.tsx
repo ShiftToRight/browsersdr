@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   RTTY_PRESETS,
   DEFAULT_CW_SETTINGS, DEFAULT_IMAGE_SETTINGS,
@@ -17,6 +18,17 @@ export function TextModemControls({
 }) {
   const image = settings.image ?? DEFAULT_IMAGE_SETTINGS;
   const cw = settings.cw ?? DEFAULT_CW_SETTINGS;
+  const [offsetDraft, setOffsetDraft] = useState<{ mode: TextMode; accepted: number; value: string }>();
+  const offsetValue = offsetDraft?.mode === mode && offsetDraft.accepted === settings.tuningOffsetHz
+    ? offsetDraft.value : String(settings.tuningOffsetHz);
+  const offsetLimit = mode === "WEFAX" || mode === "SSTV" ? 1500 : 3000;
+  const offsetHz = offsetValue.trim() ? Number(offsetValue) : NaN;
+  const offsetValid = Number.isInteger(offsetHz) && Math.abs(offsetHz) <= offsetLimit;
+  const commitOffset = () => {
+    if (disabled || !offsetValid) return;
+    if (offsetHz !== settings.tuningOffsetHz) onChange({ ...settings, tuningOffsetHz: offsetHz });
+    setOffsetDraft(undefined);
+  };
   return (
     <fieldset className="text-modem-controls" disabled={disabled}>
       <legend>{mode === "PSK31" ? "BPSK31" : mode === "CW-TEXT" ? "CW + text assistant" : mode} reception settings</legend>
@@ -38,16 +50,20 @@ export function TextModemControls({
           <input
             aria-label="Text modem fine tuning offset"
             type="number"
-            min={mode === "WEFAX" || mode === "SSTV" ? -1500 : -3000}
-            max={mode === "WEFAX" || mode === "SSTV" ? 1500 : 3000}
+            min={-offsetLimit}
+            max={offsetLimit}
             step={1}
-            value={settings.tuningOffsetHz}
-            onChange={(e) => {
-              const value = Number(e.target.value);
-              if (Number.isFinite(value) && Math.abs(value) <= (mode === "WEFAX" || mode === "SSTV" ? 1500 : 3000))
-                onChange({ ...settings, tuningOffsetHz: value });
+            value={offsetValue}
+            aria-invalid={!offsetValid}
+            aria-describedby="text-modem-offset-help"
+            onChange={(e) => setOffsetDraft({ mode, accepted: settings.tuningOffsetHz, value: e.currentTarget.value })}
+            onBlur={commitOffset}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitOffset(); }
+              if (e.key === "Escape") { e.preventDefault(); setOffsetDraft(undefined); }
             }}
           />
+          <small id="text-modem-offset-help">{offsetValid ? "Apply with Enter or leave the field; Escape cancels." : `Enter a whole-Hz offset from −${offsetLimit} to ${offsetLimit}.`}</small>
         </label>
       )}
       {mode === "WEFAX" && <>

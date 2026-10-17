@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { unzipSync } from "fflate";
 import {
   chooseReceiverMode,
   openApplicationView,
@@ -137,7 +139,7 @@ test("incompatible demo modes are inspectable and chooser browsing retains activ
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
 
-test("recording and retained capture block mode changes while browsing stays available", async ({
+test("active recording blocks mode changes and completed captures survive decoder changes unchanged", async ({
   page,
 }) => {
   await page.goto("/");
@@ -153,6 +155,7 @@ test("recording and retained capture block mode changes while browsing stays ava
     .click();
   const quick = page.getByRole("combobox", { name: "Mode", exact: true });
   await expect(quick).toBeDisabled();
+  const captureMode = await quick.inputValue();
   await page.getByRole("button", { name: "More modes…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a decoder" });
   await dialog.getByRole("button", { name: "Select AM", exact: true }).click();
@@ -166,7 +169,41 @@ test("recording and retained capture block mode changes while browsing stays ava
   await page
     .getByRole("button", { name: "Stop recording", exact: true })
     .click();
-  await expect(quick).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Download ZIP", exact: true }),
+  ).toBeEnabled();
+  await expect(quick).toBeEnabled();
+  await quick.selectOption("AM");
+  await expect(quick).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+  ).toHaveCount(0);
+  const firstDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
+  const before = unzipSync(
+    await readFile((await (await firstDownload).path())!),
+  );
+  const sidecar = Object.entries(before).find(
+    ([name]) => name.endsWith(".sigmf-meta") || name.endsWith(".json"),
+  )!;
+  const metadata = JSON.parse(new TextDecoder().decode(sidecar[1]));
+  expect(metadata.mode ?? metadata.annotations?.[0]?.["core:label"]).toBe(
+    captureMode,
+  );
+  await quick.selectOption("NBFM");
+  await expect(quick).toHaveValue("NBFM");
+  await expect(quick).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Start I/Q recording", exact: true }),
+  ).toHaveCount(0);
+  const secondDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
+  const after = unzipSync(
+    await readFile((await (await secondDownload).path())!),
+  );
+  expect(Object.keys(after)).toEqual(Object.keys(before));
+  for (const name of Object.keys(before))
+    expect(after[name]).toEqual(before[name]);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
 

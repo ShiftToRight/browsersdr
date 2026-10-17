@@ -1039,6 +1039,11 @@ test("runtime rates and actual display renderers stay separate; SRD cannot claim
     assert.notEqual(validateCommunityReport(srd), null);
     srd.observations = [{ feature: "srd-wh51", result: "working" }];
     assert.equal(validateCommunityReport(srd), null);
+    srd.setup.srdProtocol = "fineoffset-wh2";
+    assert.notEqual(validateCommunityReport(srd), null);
+    // A newly supported OOK protocol cannot claim WH51/Acurite evidence.
+    srd.observations = [{ feature: "srd-acurite", result: "working" }];
+    assert.notEqual(validateCommunityReport(srd), null);
   } finally {
     s.database.close();
   }

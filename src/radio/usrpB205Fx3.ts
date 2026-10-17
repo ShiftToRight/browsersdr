@@ -1,3 +1,4 @@
+import { openBrowserUsbDevice, closeBrowserUsbDevice } from "./browserUsbOwnership";
 import {
   USRP_B205_IMAGE,
   verifyUsrpB205Member,
@@ -475,7 +476,7 @@ export class UsrpB205Fx3Connection {
       firmwareDisposition: "loaded-volatile",
     };
     try {
-      await bootloader.close();
+      await closeBrowserUsbDevice(bootloader);
     } catch {
       /* Re-enumeration commonly invalidates the old handle. */
     }
@@ -800,7 +801,7 @@ export class UsrpB205Fx3Connection {
       );
     }
     if (!device.opened) {
-      this.openPromise = device.open();
+      this.openPromise = openBrowserUsbDevice(device);
       await this.deadline(
         this.openPromise,
         this.options.ep0TimeoutMs ?? 1_000,
@@ -826,7 +827,7 @@ export class UsrpB205Fx3Connection {
         );
       device = await this.loadRuntimeFirmware(token, device, firmware, usb);
       if (!device.opened) {
-        this.openPromise = device.open();
+        this.openPromise = openBrowserUsbDevice(device);
         await this.deadline(
           this.openPromise,
           this.options.ep0TimeoutMs ?? 1_000,
@@ -934,7 +935,7 @@ export class UsrpB205Fx3Connection {
         }
       }
       try {
-        if (device?.opened) await device.close();
+        if (device?.opened) await closeBrowserUsbDevice(device);
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
         this.diagnosticsValue = {

@@ -1,4 +1,6 @@
-import { HalfBandStage, CHANNEL_MAX_SAMPLES } from "./widebandChannel";
+import { WasmHalfBandStage } from "./wasmHalfBand";
+import { IqFIRFilter } from "@jtarrio/signals/dsp/filters.js";
+import { CHANNEL_MAX_SAMPLES } from "./widebandChannel";
 import { channelSampleRate } from "./sourceCapabilities";
 import { planChannelTune, validateModeSampleRate } from "./receiverConfig";
 import type { SourceKind, SourceSessionMetadata } from "./types";
@@ -67,13 +69,39 @@ export function planChannelCapture(
   const minRate = Math.max(
     48_000,
     session.channelBandwidthHz / (session.mode === "ADS-B" ? 0.9 : 0.7),
-    ["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(session.mode) ? channelSampleRate(nominalRate) : 0,
+    [
+      "SRD",
+      "APRS",
+      "RS41",
+      "RTTY",
+      "PSK31",
+      "NAVTEX",
+      "ACARS",
+      "WEFAX",
+      "SSTV",
+      "CW-TEXT",
+    ].includes(session.mode)
+      ? channelSampleRate(nominalRate)
+      : 0,
   );
   let decimation = 1;
   while (decimation < 512 && nominalRate / (decimation * 2) >= minRate) {
     const candidate = nominalRate / (decimation * 2);
     try {
-      if (!["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(session.mode))
+      if (
+        ![
+          "SRD",
+          "APRS",
+          "RS41",
+          "RTTY",
+          "PSK31",
+          "NAVTEX",
+          "ACARS",
+          "WEFAX",
+          "SSTV",
+          "CW-TEXT",
+        ].includes(session.mode)
+      )
         validateModeSampleRate(session.mode, candidate);
     } catch {
       break;
@@ -94,11 +122,9 @@ export function planChannelCapture(
 /** Stateful mixer and cascaded anti-alias filters followed by a channel FIR.
  * Input blocks are copied: recording must never mutate live audio/analysis input. */
 export class ChannelCaptureFilter {
-  private readonly stages: HalfBandStage[] = [];
+  private readonly stages: WasmHalfBandStage[] = [];
   private readonly taps = new Float64Array(95);
-  private readonly historyI = new Float64Array(190);
-  private readonly historyQ = new Float64Array(190);
-  private cursor = 0;
+  private channelFilter: IqFIRFilter;
   private oscillatorI = 1;
   private oscillatorQ = 0;
   private oscillatorCount = 0;
@@ -114,7 +140,7 @@ export class ChannelCaptureFilter {
       const rate = plan.inputSampleRateHz / divisor;
       const last = divisor * 2 === plan.decimation;
       this.stages.push(
-        new HalfBandStage(
+        new WasmHalfBandStage(
           divisor === 1
             ? plan.channelFrequencyHz - plan.inputCenterFrequencyHz
             : 0,
@@ -144,18 +170,11 @@ export class ChannelCaptureFilter {
       sum += this.taps[n]!;
     }
     for (let n = 0; n < 95; n++) this.taps[n] = this.taps[n]! / sum;
+    this.channelFilter = new IqFIRFilter(Float32Array.from(this.taps));
   }
   reset(): void {
-    this.stages.forEach((stage, index) =>
-      stage.reset(
-        index === 0
-          ? this.plan.channelFrequencyHz - this.plan.inputCenterFrequencyHz
-          : 0,
-      ),
-    );
-    this.historyI.fill(0);
-    this.historyQ.fill(0);
-    this.cursor = 0;
+    this.stages.forEach((stage) => stage.reset());
+    this.channelFilter = this.channelFilter.clone();
     this.oscillatorI = 1;
     this.oscillatorQ = 0;
     this.oscillatorCount = 0;
@@ -189,18 +208,13 @@ export class ChannelCaptureFilter {
           this.oscillatorCount = 0;
         }
       }
-      this.historyI[this.cursor] = this.historyI[this.cursor + 95] = i;
-      this.historyQ[this.cursor] = this.historyQ[this.cursor + 95] = q;
-      this.cursor = (this.cursor + 1) % 95;
-      let sumI = 0,
-        sumQ = 0;
-      for (let t = 0; t < 95; t++) {
-        sumI += this.taps[t]! * this.historyI[this.cursor + t]!;
-        sumQ += this.taps[t]! * this.historyQ[this.cursor + t]!;
-      }
-      I[n] = sumI;
-      Q[n] = sumQ;
+      I[n] = i;
+      Q[n] = q;
     }
+    // Keep the same 95-tap response and delay. The pinned Signals WASM
+    // convolver avoids a JavaScript 95-MAC loop per I/Q output sample.
+    if (count)
+      this.channelFilter.inPlace(I.subarray(0, count), Q.subarray(0, count));
     return { I: I.subarray(0, count), Q: Q.subarray(0, count) };
   }
 }

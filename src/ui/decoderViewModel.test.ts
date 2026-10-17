@@ -9,6 +9,18 @@ import {
   decoderViewExport,
 } from "./decoderViewModel";
 
+it("shows transmitted DAB service format/bitrate/protection without repeated missing-clock prose", () => {
+  const snapshot: ReceiverSnapshot = { lifecycle: "idle", message: "Retained", sessionGeneration: 1,
+    dab: { state: "synchronized", message: "Found", frameCount: 1, nullSymbolCount: 1, estimatedSnrDb: null, coarseFrequencyOffsetHz: null,
+      stations: [{ key: "1:0", serviceId: 1, subchannelId: 0, primary: true, dabPlus: true, playable: true, bitrateKbps: 72, protection: "EEP 2-B" }] } };
+  const record = decoderRecords(snapshot, "DAB")[0]!;
+  expect(record.clock).toContain("HE-AAC · DAB+");
+  expect(record.clock).toContain("72 kbit/s");
+  expect(record.clock).toContain("EEP 2-B");
+  expect(record.clock).not.toContain("receive times");
+  expect(record.fields).toContainEqual(["Protection", "EEP 2-B"]);
+});
+
 const provenance: DigitalProvenance = {
   generation: 3,
   firstInputSampleIndex: 10,

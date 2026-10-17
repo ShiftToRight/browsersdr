@@ -34,3 +34,10 @@ export const FINEOFFSET_WH51_VECTOR = {
     adRaw: 25,
   },
 };
+
+export const FINEOFFSET_WH2_VECTOR = {
+  source: "tests/fineoffset/fineoffset_wh2/01/gfile001.cu8 and .json",
+  // Original OOK capture: FF preamble, then these five bytes.
+  bytes: Uint8Array.from([0x4d, 0x10, 0xf6, 0x21, 0x38]),
+  expected: { deviceId: "d1", temperatureC: 24.6, humidityPercent: 33 },
+};

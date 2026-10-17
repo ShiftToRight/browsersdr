@@ -30,11 +30,12 @@ export function AudioCaptureControls() {
   return <div className="audio-capture-body">
       <p>Save decoded audio as stereo WAV, before the volume control. Data-only modes such as ADS-B produce no audio. Recordings stay in memory; download before closing.</p>
       <div className="audio-capture-actions">
-        <button type="button" disabled={!audioArchive.recording && audioArchive.hasRecording} onClick={() => attempt(() => audioArchive.recording ? audioArchive.stopRecording() : audioArchive.startRecording())}>{audioArchive.recording ? "Stop audio recording" : "Record audio"}</button>
+        <button type="button" aria-describedby={!audioArchive.recording && audioArchive.hasRecording ? "retained-audio-help" : undefined} disabled={!audioArchive.recording && audioArchive.hasRecording} onClick={() => attempt(() => audioArchive.recording ? audioArchive.stopRecording() : audioArchive.startRecording())}>{audioArchive.recording ? "Stop audio recording" : "Record audio"}</button>
         <button type="button" className="secondary" disabled={audioArchive.recording || !audioArchive.hasRecording} onClick={() => attempt(() => download(audioArchive.recordingWav(), "recording"))}>Download audio WAV</button>
         <button type="button" className="secondary" disabled={audioArchive.recording || !audioArchive.hasRecording} onClick={() => attempt(() => audioArchive.discard())}>Discard audio</button>
         <span>{audioArchive.recordedSeconds.toFixed(1)} / {AUDIO_RECORD_SECONDS} s</span>
       </div>
+      {!audioArchive.recording && audioArchive.hasRecording && <p id="retained-audio-help">A previous audio recording is retained. Download audio WAV to keep a copy, then Discard audio to record again.</p>}
       <label className="audio-rewind-toggle"><input type="checkbox" checked={audioArchive.rewindEnabled} onChange={event => attempt(() => audioArchive.setRewind(event.target.checked))} />Keep last {AUDIO_REWIND_SECONDS} seconds for rewind</label>
       <div className="audio-capture-actions">
         <label>Rewind window <select value={seconds} onChange={event => setSeconds(Number(event.target.value))}>{[5, 15, 30, 60].map(value => <option key={value} value={value}>{value} seconds</option>)}</select></label>

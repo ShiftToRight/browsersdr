@@ -41,7 +41,7 @@ export function ReceiverHealth({
     {
       label: "Receiver",
       text: running
-        ? "● Receiving"
+        ? receiver.session?.source === "replay" ? "● Replaying" : "● Receiving"
         : receiver.lifecycle === "connected"
           ? "✓ Connected"
           : receiver.issue?.code === "selection-cancelled"

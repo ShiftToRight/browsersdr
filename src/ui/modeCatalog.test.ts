@@ -51,3 +51,8 @@ it("preserves explicit custom and empty pins and retains an unpinned current mod
   ]);
   expect(quickModesWithCurrent(["AM", "OFF"], "AM")).toEqual(["AM", "OFF"]);
 });
+it("ranks exact mode IDs and matches token prefixes without internal alias substrings", () => {
+  expect(matchingModes("AIS", "All modes")).toEqual(["AIS"]);
+  expect(matchingModes("vais", "All modes")).toEqual(["RS41"]);
+  expect(matchingModes("ADS-B", "All modes")[0]).toBe("ADS-B");
+});

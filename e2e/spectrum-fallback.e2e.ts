@@ -68,6 +68,19 @@ for (const unavailable of [
       page.locator(".graphics-panel .diagnostic-message"),
     ).toContainText("Canvas2D live");
     await page.keyboard.press("Escape");
+    // Automatic fitting can already be exact. Deliberately choose manual
+    // bounds so paused Auto scale has a meaningful correction to perform.
+    await page.getByText("Display settings", { exact: true }).click();
+    await page
+      .getByRole("slider", { name: "Spectrum floor", exact: true })
+      .fill("-50");
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Auto scale on tune or rate change",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await page.getByText("Display settings", { exact: true }).click();
     await page
       .getByRole("button", { name: "Pause display", exact: true })
       .click();

@@ -66,7 +66,9 @@ test("header layout controls and condensed docks keep primary actions fully visi
   }
   const small = (await dock.boundingBox())!.height;
   await page.getByRole("button", { name: "More space", exact: true }).click();
-  expect((await dock.boundingBox())!.height).toBeGreaterThan(small);
+  // More space raises the cap; fitting content must not acquire blank padding.
+  expect((await dock.boundingBox())!.height).toBeGreaterThanOrEqual(small);
+  expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(small + 20);
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Less space", exact: true }),

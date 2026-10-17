@@ -74,6 +74,8 @@ export interface SourceSessionMetadata {
   textModem?: TextModemSettings;
   /** Legacy RTL scalar. HackRF keeps null for compatibility; this is NOT AGC. */
   gainDb: number | null;
+  /** Probed chip family; this does not identify a commercial RTL board. */
+  rtlTuner?: "R820T-family" | "R828D";
   /** Required by the HackRF backend; legacy constructors need no new fields. */
   hackrf?: HackrfSessionDetails;
   /** Present only for the receive-only bladeRF 2.0 Micro backend. */

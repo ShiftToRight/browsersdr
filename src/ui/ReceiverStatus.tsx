@@ -27,6 +27,7 @@ export function ReceiverStatus({
     return () => document.removeEventListener("pointerdown", dismiss);
   }, []);
   const { receiver, spectrum, recording, retained } = health;
+  const receivingLabel = receiver.session?.source === "replay" ? "Replaying" : "Receiving";
   const cancelled = receiver.issue?.code === "selection-cancelled";
   const receiverIssue =
     !cancelled &&
@@ -53,15 +54,15 @@ export function ReceiverStatus({
     ) +
     Number(Boolean(retained.error));
   const label = issues
-    ? `${recording ? "Recording · " : receiver.lifecycle === "running" ? "Receiving · " : ""}${issues} ${issues === 1 ? "issue" : "issues"}`
+    ? `${recording ? "Recording · " : receiver.lifecycle === "running" ? `${receivingLabel} · ` : ""}${issues} ${issues === 1 ? "issue" : "issues"}`
     : recording
       ? "Recording"
       : receiver.lifecycle === "running"
-        ? "Receiving"
+        ? receivingLabel
         : receiver.lifecycle === "connected"
           ? "Connected"
           : receiver.lifecycle === "idle" || cancelled
-            ? "Not connected"
+            ? receiver.session?.source === "replay" ? "Replay finished" : "Not connected"
             : receiver.lifecycle.replaceAll("-", " ");
   return (
     <div

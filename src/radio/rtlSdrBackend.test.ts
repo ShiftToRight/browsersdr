@@ -86,6 +86,17 @@ function dependencies(
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("preserves a verified tuner family through connection and rate reconfiguration without inferring the board", async () => {
+  vi.stubGlobal("navigator", { usb: {} });
+  const source = Object.assign(sourceWith(async () => undefined), { rtlTuner: "R828D" });
+  const backend = new RtlSdrBackend(events(), undefined, 1, 100_000_000,
+    dependencies(source, audioContextWith(async () => undefined)));
+  try {
+    expect(await backend.connect(OPTIONS)).toMatchObject({ source: "rtl-sdr", rtlTuner: "R828D" });
+    expect(await backend.connect({ ...OPTIONS, sampleRateHz: 2_400_000 })).toMatchObject({ rtlTuner: "R828D", actualSampleRateHz: 2_400_000 });
+  } finally { await backend.disconnect(); }
+});
+
 describe("RTL sample-rate transitions", () => {
   type Block = import("@jtarrio/signals/radio/sample_block.js").SampleBlock;
   const block = (value = 0.25): Block => ({

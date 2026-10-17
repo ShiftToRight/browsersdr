@@ -27,6 +27,7 @@ export interface DabStation extends DabAudioService {
   label?: string;
   shortLabel?: string;
   bitrateKbps?: number;
+  protection?: string;
   playable: boolean;
 }
 
@@ -262,6 +263,7 @@ export class DabFicDatabase {
           bitrateKbps: subchannel
             ? dabSubchannelBitrate(subchannel)
             : undefined,
+          protection: subchannel ? `EEP ${subchannel.protectionLevel + 1}-${subchannel.eepType}` : undefined,
           playable: service.dabPlus && subchannel !== undefined,
         };
       })

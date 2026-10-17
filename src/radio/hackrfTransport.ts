@@ -1,3 +1,4 @@
+import { openBrowserUsbDevice, closeBrowserUsbDevice } from "./browserUsbOwnership";
 import type { HackrfProtocol } from "./hackrfProtocolDriver";
 import { IngressTimings, type IngressDiagnostics } from "./ingressTimings";
 import {
@@ -278,7 +279,7 @@ export class HackrfTransport {
       throw new Error("Device is not in the verified HackRF USB filter.");
     this.needsClose = true;
     // Track open separately: a late success must be closed after it actually opens.
-    if (!device.opened) await this.deadline(this.track(device.open(), true));
+    if (!device.opened) await this.deadline(this.track(openBrowserUsbDevice(device), true));
     this.guard(token);
     if (device.configuration?.configurationValue !== 1)
       await this.deadline(this.track(device.selectConfiguration(1)));
@@ -797,7 +798,7 @@ export class HackrfTransport {
             }
             // OFF failure still proceeds to actual close, which owns cancellation.
           }
-          await this.track(device.close());
+          await this.track(closeBrowserUsbDevice(device));
           this.needsClose = false;
         }
         await Promise.allSettled([...this.operations]);

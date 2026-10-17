@@ -54,6 +54,7 @@ it("opens passively with seven quick modes and applies only the selected mode de
   await render();
   expect(host.querySelectorAll("option")).toHaveLength(7);
   await open();
+  expect(document.querySelector(".mode-chooser-footer")?.textContent).toContain("Current mode: WBFM");
   expect(document.activeElement?.getAttribute("aria-label")).toBe(
     "Search modes or decoders",
   );

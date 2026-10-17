@@ -85,14 +85,14 @@ it("keeps receiver center read-only for replay", async () => {
   expect(ui.button("To channel").disabled).toBe(true);
   expect(ui.host.textContent).toContain("fixed during replay");
 });
-it("keeps accepted hardware precision while displaying rounded MHz and editing at whole-Hz precision", async () => {
+it("keeps accepted whole-Hz hardware precision visible while editing", async () => {
   const ui = await setup(false, false, 100e6 - 17);
-  expect(ui.input.value).toBe("100.000");
+  expect(ui.input.value).toBe("99.999983");
   await act(async () => ui.input.focus());
   expect(ui.input.value).toBe("99.999983");
   expect(ui.button("Set").disabled).toBe(true);
   await act(async () => ui.input.blur());
-  expect(ui.input.value).toBe("100.000");
+  expect(ui.input.value).toBe("99.999983");
   expect(ui.tune).not.toHaveBeenCalled();
   await ui.edit("100.123456");
   await act(async () => ui.button("Set").click());
@@ -100,11 +100,21 @@ it("keeps accepted hardware precision while displaying rounded MHz and editing a
 });
 it("lets users enable auto re-center while a channel edit is pending", async () => {
   const ui = await setup(false, true);
-  expect(ui.input.disabled).toBe(true);
+  expect(ui.input.disabled).toBe(false);
   const checkbox = ui.host.querySelector(
     'input[type="checkbox"]',
   ) as HTMLInputElement;
   expect(checkbox.disabled).toBe(false);
   await act(async () => checkbox.click());
   expect(ui.auto).toHaveBeenCalledWith(false);
+});
+it("applies the pending channel with an explicit center instead of locking both controls", async () => {
+  const ui = await setup(false, true, 101e6);
+  expect(ui.button("To channel").disabled).toBe(false);
+  await act(async () => ui.button("To channel").click());
+  expect(ui.tune).toHaveBeenLastCalledWith(100e6);
+  await ui.edit("100.05");
+  expect(ui.button("Set").disabled).toBe(false);
+  await act(async () => ui.button("Set").click());
+  expect(ui.tune).toHaveBeenLastCalledWith(100.05e6);
 });

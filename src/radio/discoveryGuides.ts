@@ -109,6 +109,12 @@ const local = {
 };
 export const DISCOVERY_GUIDES: readonly DiscoveryGuide[] = [
   {
+    id: "atis", name: "ATIS / aviation voice", aliases: ["atis", "airband", "airport information"], mode: "AM",
+    context: "Airport-specific channel; enter a published local frequency before applying.",
+    status: "AM listening guide only. No local ATIS station or frequency is supplied by this guide. An incidental catalog text match is not an ATIS recommendation.",
+    ...local,
+  },
+  {
     id: "adsb",
     name: "ADS-B / 1090ES",
     aliases: ["ads", "adsb", "ads-b", "1090", "1090es", "aircraft"],

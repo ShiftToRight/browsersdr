@@ -89,10 +89,24 @@ describe("live RTL rate changes", () => {
     const stop = vi.fn(async () => {});
     const disconnect = vi.fn(async () => {});
     const controller = new ReceiverController((events) => ({
-      ...fakeBackend(events, async () => metadata, () => {}),
-      stop, disconnect, stopRecording, configureSampleRate,
+      ...fakeBackend(
+        events,
+        async () => metadata,
+        () => {},
+      ),
+      stop,
+      disconnect,
+      stopRecording,
+      configureSampleRate,
     }));
-    return { controller, changed, configureSampleRate, stopRecording, stop, disconnect };
+    return {
+      controller,
+      changed,
+      configureSampleRate,
+      stopRecording,
+      stop,
+      disconnect,
+    };
   }
 
   it("validates before capture completion and preserves invalid/no-op sessions", async () => {
@@ -103,12 +117,19 @@ describe("live RTL rate changes", () => {
     await f.controller.configureSampleRate(1_024_000);
     expect(f.configureSampleRate).not.toHaveBeenCalled();
     expect(f.stopRecording).not.toHaveBeenCalled();
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: generation });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      sessionGeneration: generation,
+    });
   });
 
   it("rejects a shrinking passband with Follow channel off before changing generation", async () => {
-    const f = fixture({ ...METADATA, requestedSampleRateHz: 2_400_000,
-      actualSampleRateHz: 2_400_000, selectedChannelFrequencyHz: 100_800_000 });
+    const f = fixture({
+      ...METADATA,
+      requestedSampleRateHz: 2_400_000,
+      actualSampleRateHz: 2_400_000,
+      selectedChannelFrequencyHz: 100_800_000,
+    });
     await f.controller.start(OPTIONS);
     f.controller.setAutoRecenter(false);
     await f.controller.configureSampleRate(1_024_000);
@@ -121,17 +142,32 @@ describe("live RTL rate changes", () => {
     const configureSampleRate = vi.fn();
     const stopRecording = vi.fn();
     const controller = new ReceiverController((events) => ({
-      ...fakeBackend(events, async () => ({ ...METADATA, mode: "DAB",
-        channelBandwidthHz: 1_536_000, requestedSampleRateHz: 2_400_000,
-        actualSampleRateHz: 2_400_000 }), () => {}),
-      configureSampleRate, stopRecording,
+      ...fakeBackend(
+        events,
+        async () => ({
+          ...METADATA,
+          mode: "DAB",
+          channelBandwidthHz: 1_536_000,
+          requestedSampleRateHz: 2_400_000,
+          actualSampleRateHz: 2_400_000,
+        }),
+        () => {},
+      ),
+      configureSampleRate,
+      stopRecording,
     }));
-    await controller.start({ ...OPTIONS, sampleRateHz: 2_400_000,
-      modeSettings: { mode: "DAB", bandwidthHz: 1_536_000, squelch: 0 } });
+    await controller.start({
+      ...OPTIONS,
+      sampleRateHz: 2_400_000,
+      modeSettings: { mode: "DAB", bandwidthHz: 1_536_000, squelch: 0 },
+    });
     await controller.configureSampleRate(1_024_000);
     expect(configureSampleRate).not.toHaveBeenCalled();
     expect(stopRecording).not.toHaveBeenCalled();
-    expect(controller.getSnapshot()).toMatchObject({ lifecycle: "running", session: { mode: "DAB", actualSampleRateHz: 2_400_000 } });
+    expect(controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      session: { mode: "DAB", actualSampleRateHz: 2_400_000 },
+    });
   });
 
   it("retains the old recording, serializes commands and publishes only acknowledged metadata", async () => {
@@ -141,12 +177,22 @@ describe("live RTL rate changes", () => {
     f.stopRecording.mockReturnValue(recording);
     const switching = f.controller.configureSampleRate(2_400_000);
     expect(f.stopRecording).toHaveBeenCalledWith("metadata-change");
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "tuning", session: { actualSampleRateHz: 1_024_000 } });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "tuning",
+      session: { actualSampleRateHz: 1_024_000 },
+    });
     await f.controller.configureSampleRate(1_024_000);
     expect(f.configureSampleRate).toHaveBeenCalledTimes(1);
-    f.changed.resolve({ ...METADATA, requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_002 });
+    f.changed.resolve({
+      ...METADATA,
+      requestedSampleRateHz: 2_400_000,
+      actualSampleRateHz: 2_400_002,
+    });
     await switching;
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", session: { actualSampleRateHz: 2_400_002 } });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      session: { actualSampleRateHz: 2_400_002 },
+    });
     expect(f.controller.takeCompletedRecording()).toBe(recording);
     expect(f.disconnect).not.toHaveBeenCalled();
   });
@@ -156,9 +202,16 @@ describe("live RTL rate changes", () => {
     await f.controller.start(OPTIONS);
     const switching = f.controller.configureSampleRate(2_400_000);
     const stopping = f.controller.stop();
-    f.changed.resolve({ ...METADATA, requestedSampleRateHz: 2_400_000, actualSampleRateHz: 2_400_000 });
+    f.changed.resolve({
+      ...METADATA,
+      requestedSampleRateHz: 2_400_000,
+      actualSampleRateHz: 2_400_000,
+    });
     await Promise.all([switching, stopping]);
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "connected", session: { actualSampleRateHz: 2_400_000 } });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "connected",
+      session: { actualSampleRateHz: 2_400_000 },
+    });
     expect(f.disconnect).not.toHaveBeenCalled();
   });
 
@@ -552,61 +605,71 @@ describe("ReceiverController", () => {
     expect(controller.getSnapshot().session?.gainDb).toBe(24.7);
   });
 
-  it.each([false, true])("updates same-mode analog settings and ends only channel captures (channel = %s)", async (channel) => {
-    const analog = {
-      ...METADATA,
-      mode: "AM" as const,
-      channelBandwidthHz: 10_000,
-    };
-    const updateAnalogMode = vi.fn((settings: ReceiverModeSettings) => ({
-      ...analog,
-      channelBandwidthHz: settings.bandwidthHz,
-      squelch: settings.squelch,
-    }));
-    const configureMode = vi.fn(async () => analog);
-    const stopRecording = vi.fn(() => undefined);
-    const controller = new ReceiverController((events) => ({
-      ...fakeBackend(
-        events,
-        async () => analog,
-        () => undefined,
-      ),
-      updateAnalogMode,
-      configureMode,
-      stopRecording,
-      getRecordingStatus: () => ({ state: "recording", sampleCount: 0, bytes: 0, maxBytes: 1024, captureCurrentChannel: channel }),
-    }));
-    await controller.start({
-      ...OPTIONS,
-      modeSettings: { mode: "AM", bandwidthHz: 10_000, squelch: 0 },
-    });
-    const generation = controller.getSnapshot().sessionGeneration;
+  it.each([false, true])(
+    "updates same-mode analog settings and ends only channel captures (channel = %s)",
+    async (channel) => {
+      const analog = {
+        ...METADATA,
+        mode: "AM" as const,
+        channelBandwidthHz: 10_000,
+      };
+      const updateAnalogMode = vi.fn((settings: ReceiverModeSettings) => ({
+        ...analog,
+        channelBandwidthHz: settings.bandwidthHz,
+        squelch: settings.squelch,
+      }));
+      const configureMode = vi.fn(async () => analog);
+      const stopRecording = vi.fn(() => undefined);
+      const controller = new ReceiverController((events) => ({
+        ...fakeBackend(
+          events,
+          async () => analog,
+          () => undefined,
+        ),
+        updateAnalogMode,
+        configureMode,
+        stopRecording,
+        getRecordingStatus: () => ({
+          state: "recording",
+          sampleCount: 0,
+          bytes: 0,
+          maxBytes: 1024,
+          captureCurrentChannel: channel,
+        }),
+      }));
+      await controller.start({
+        ...OPTIONS,
+        modeSettings: { mode: "AM", bandwidthHz: 10_000, squelch: 0 },
+      });
+      const generation = controller.getSnapshot().sessionGeneration;
 
-    controller.updateAnalogMode({
-      mode: "AM",
-      bandwidthHz: 4_000,
-      squelch: 2.2,
-    });
-
-    expect(updateAnalogMode).toHaveBeenCalledWith({
-      mode: "AM",
-      bandwidthHz: 4_000,
-      squelch: 2.2,
-    });
-    expect(configureMode).not.toHaveBeenCalled();
-    if (channel) expect(stopRecording).toHaveBeenCalledWith("metadata-change");
-    else expect(stopRecording).not.toHaveBeenCalled();
-    expect(controller.getSnapshot()).toMatchObject({
-      lifecycle: "running",
-      sessionGeneration: generation,
-      session: {
-        sessionGeneration: generation,
+      controller.updateAnalogMode({
         mode: "AM",
-        channelBandwidthHz: 4_000,
+        bandwidthHz: 4_000,
         squelch: 2.2,
-      },
-    });
-  });
+      });
+
+      expect(updateAnalogMode).toHaveBeenCalledWith({
+        mode: "AM",
+        bandwidthHz: 4_000,
+        squelch: 2.2,
+      });
+      expect(configureMode).not.toHaveBeenCalled();
+      if (channel)
+        expect(stopRecording).toHaveBeenCalledWith("metadata-change");
+      else expect(stopRecording).not.toHaveBeenCalled();
+      expect(controller.getSnapshot()).toMatchObject({
+        lifecycle: "running",
+        sessionGeneration: generation,
+        session: {
+          sessionGeneration: generation,
+          mode: "AM",
+          channelBandwidthHz: 4_000,
+          squelch: 2.2,
+        },
+      });
+    },
+  );
 
   it("completes ten start/stop cycles without duplicate backend cleanup", async () => {
     let creations = 0;
@@ -932,20 +995,35 @@ it("selects only playable discovered DAB stations without an RF tune", async () 
   expect(select).toHaveBeenCalledTimes(1);
 });
 
-
 describe("receiver center and channel policy", () => {
   function tuningFixture(source: "rtl-sdr" | "replay" = "rtl-sdr") {
     let metadata = { ...METADATA, source };
     const stopRecording = vi.fn(() => undefined);
-    const tune = vi.fn<ReceiverBackend["tune"]>(async (channel, _generation, options) => {
-      const plan = planChannelTune(metadata.hardwareCenterFrequencyHz, channel,
-        metadata.actualSampleRateHz, metadata.channelBandwidthHz, options);
-      metadata = { ...metadata, hardwareCenterFrequencyHz: plan.hardwareCenterFrequencyHz,
-        selectedChannelFrequencyHz: channel };
-      return metadata;
-    });
+    const tune = vi.fn<ReceiverBackend["tune"]>(
+      async (channel, _generation, options) => {
+        const plan = planChannelTune(
+          metadata.hardwareCenterFrequencyHz,
+          channel,
+          metadata.actualSampleRateHz,
+          metadata.channelBandwidthHz,
+          options,
+        );
+        metadata = {
+          ...metadata,
+          hardwareCenterFrequencyHz: plan.hardwareCenterFrequencyHz,
+          selectedChannelFrequencyHz: channel,
+        };
+        return metadata;
+      },
+    );
     const controller = new ReceiverController((events) => ({
-      ...fakeBackend(events, async () => metadata, () => undefined), tune, stopRecording,
+      ...fakeBackend(
+        events,
+        async () => metadata,
+        () => undefined,
+      ),
+      tune,
+      stopRecording,
     }));
     return { controller, tune, stopRecording };
   }
@@ -955,11 +1033,13 @@ describe("receiver center and channel policy", () => {
     await f.controller.tune(100.1e6);
     await f.controller.tuneCenter(100.2e6);
     expect(f.controller.getSnapshot().session).toMatchObject({
-      hardwareCenterFrequencyHz: 100.2e6, selectedChannelFrequencyHz: 100.1e6,
+      hardwareCenterFrequencyHz: 100.2e6,
+      selectedChannelFrequencyHz: 100.1e6,
     });
     await f.controller.tuneCenter(100.1e6);
     expect(f.controller.getSnapshot().session).toMatchObject({
-      hardwareCenterFrequencyHz: 100.1e6, selectedChannelFrequencyHz: 100.1e6,
+      hardwareCenterFrequencyHz: 100.1e6,
+      selectedChannelFrequencyHz: 100.1e6,
     });
   });
   it("rejects invalid receiver moves without ending reception or a recording", async () => {
@@ -969,22 +1049,36 @@ describe("receiver center and channel policy", () => {
     for (const center of [0, NaN, 101e6]) await f.controller.tuneCenter(center);
     expect(f.tune).not.toHaveBeenCalled();
     expect(f.stopRecording).not.toHaveBeenCalled();
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", sessionGeneration: before,
-      session: { hardwareCenterFrequencyHz: 100e6, selectedChannelFrequencyHz: 100e6 } });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      sessionGeneration: before,
+      session: {
+        hardwareCenterFrequencyHz: 100e6,
+        selectedChannelFrequencyHz: 100e6,
+      },
+    });
   });
   it("moves the receiver only when the complete channel no longer fits, and honors the lock", async () => {
     const f = tuningFixture();
     await f.controller.start(OPTIONS);
     f.controller.setAutoRecenter(false);
     await f.controller.tune(100.1e6);
-    expect(f.controller.getSnapshot().session?.hardwareCenterFrequencyHz).toBe(100e6);
+    expect(f.controller.getSnapshot().session?.hardwareCenterFrequencyHz).toBe(
+      100e6,
+    );
     const calls = f.tune.mock.calls.length;
     await f.controller.tune(101e6);
     expect(f.tune).toHaveBeenCalledTimes(calls);
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("Follow channel") });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      message: expect.stringContaining("Follow channel"),
+    });
     f.controller.setAutoRecenter(true);
     await f.controller.tune(101e6);
-    expect(f.controller.getSnapshot().session).toMatchObject({ hardwareCenterFrequencyHz: 101e6, selectedChannelFrequencyHz: 101e6 });
+    expect(f.controller.getSnapshot().session).toMatchObject({
+      hardwareCenterFrequencyHz: 101e6,
+      selectedChannelFrequencyHz: 101e6,
+    });
   });
   it("keeps replay running when a requested tune is outside the recording", async () => {
     const f = tuningFixture("replay");
@@ -992,6 +1086,39 @@ describe("receiver center and channel policy", () => {
     await f.controller.tuneCenter(100.1e6);
     await f.controller.tune(101e6);
     expect(f.tune).not.toHaveBeenCalled();
-    expect(f.controller.getSnapshot()).toMatchObject({ lifecycle: "running", message: expect.stringContaining("fixed during replay") });
+    expect(f.controller.getSnapshot()).toMatchObject({
+      lifecycle: "running",
+      message: expect.stringContaining("fixed during replay"),
+    });
   });
+});
+
+it("clears stabilized FM reception on retune/stop and rejects stopped backend updates", async () => {
+  let events!: ReceiverBackendEvents;
+  const controller = new ReceiverController((e) => {
+    events = e;
+    return fakeBackend(
+      e,
+      async () => METADATA,
+      () => {},
+    );
+  });
+  await controller.start(OPTIONS);
+  const listener = vi.fn();
+  controller.subscribe(listener);
+  events.fmStereoReceptionChanged?.("stereo");
+  events.fmStereoReceptionChanged?.("stereo");
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(controller.getSnapshot().fmStereoReception).toBe("stereo");
+  await controller.tune(100_100_000);
+  expect(controller.getSnapshot().fmStereoReception).toBeUndefined();
+  events.fmStereoReceptionChanged?.("mono");
+  expect(controller.getSnapshot().fmStereoReception).toBe("mono");
+  events.fmStereoReceptionChanged?.("intermittent");
+  expect(controller.getSnapshot().fmStereoReception).toBe("intermittent");
+  events.fmStereoReceptionChanged?.(undefined);
+  expect(controller.getSnapshot().fmStereoReception).toBeUndefined();
+  await controller.stop();
+  events.fmStereoReceptionChanged?.("stereo");
+  expect(controller.getSnapshot().fmStereoReception).toBeUndefined();
 });

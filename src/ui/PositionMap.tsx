@@ -33,6 +33,8 @@ import {
   TARGET_SYMBOL_PATHS,
   type TargetMapPresentation,
 } from "./targetMapPresentation";
+import type { ReceiverLocation } from "../radio/receiverLocation";
+import { mapRangeRings } from "./mapRangeRings";
 
 export interface PositionMapPoint {
   latitude: number | null;
@@ -333,7 +335,7 @@ const MapBackground = memo(function MapBackground({
         width={front.width}
         height={front.height}
         aria-hidden="true"
-        data-state={ready ? (raster.error ? "error" : "ready") : "loading"}
+        data-state={raster?.error ? "error" : ready ? "ready" : "loading"}
         data-raster-width={raster?.bitmap?.width}
         data-raster-height={raster?.bitmap?.height}
         data-raster-viewbox={
@@ -344,7 +346,7 @@ const MapBackground = memo(function MapBackground({
       />
       {(!ready || raster.error) && (
         <small className="map-background-status" role="status">
-          {ready ? (
+          {raster?.error ? (
             <>
               {raster.error}{" "}
               <button
@@ -372,6 +374,7 @@ export function PositionMap({
   showTracks = false,
   framingKey,
   pannable = false,
+  receiverLocation,
 }: {
   points: readonly PositionMapPoint[];
   label: string;
@@ -381,7 +384,10 @@ export function PositionMap({
   /** When supplied, hold framing until this identity or the explicit Fit request changes. */
   framingKey?: string;
   pannable?: boolean;
+  receiverLocation?: ReceiverLocation;
 }) {
+  const site = receiverLocation && Number.isFinite(receiverLocation.latitude) && Number.isFinite(receiverLocation.longitude)
+    && Math.abs(receiverLocation.latitude) <= 90 && Math.abs(receiverLocation.longitude) <= 180 ? receiverLocation : undefined;
   const positioned = useMemo(
     () =>
       points.filter(
@@ -402,8 +408,8 @@ export function PositionMap({
   );
   const automaticViewport = useMemo(
     () =>
-      computeMapViewport(
-        showTracks
+      computeMapViewport([
+        ...(showTracks
           ? positioned.flatMap((point) => [
               point,
               ...(point.map?.track ?? [])
@@ -416,9 +422,10 @@ export function PositionMap({
                 )
                 .map((fix) => ({ ...fix, label: point.label })),
             ])
-          : positioned,
-      ),
-    [positioned, showTracks],
+          : positioned),
+        ...(site ? [{ latitude: site.latitude, longitude: site.longitude, label: "Receiver" }] : []),
+      ]),
+    [positioned, showTracks, site],
   );
   const [framing, setFraming] = useState<{
     key: string;
@@ -540,7 +547,8 @@ export function PositionMap({
       surfaceSize.height / viewport.height,
     );
   const markerRadius = unitsPerPixel * 3;
-  const fontSize = unitsPerPixel * 12;
+  const fontSize = unitsPerPixel * 14;
+  const rings = useMemo(() => site ? mapRangeRings(site, viewport) : [], [site, viewport]);
   const dragging = gestureFrame === baseViewport;
   function commitPan(next: Pan) {
     setPan(next);
@@ -805,6 +813,18 @@ export function PositionMap({
               </g>
             ))}
           </g>
+          {site && <g className="map-receiver" role="img" aria-label={`Receiver site: ${site.label || `${site.latitude}, ${site.longitude}`}`}>
+            <title>Receiver site ({site.source}){site.stale ? " · stale fix" : ""}. Distance rings are geographic context, not reception coverage.</title>
+            {rings.map(ring => <g key={ring.km} className="map-range-ring">
+              <path d={ring.path} fill="none" vectorEffect="non-scaling-stroke" />
+              <text x={ring.labelX} y={ring.labelY} fontSize={fontSize} strokeWidth={fontSize * 0.22}>{ring.km} km</text>
+            </g>)}
+            <g transform={`translate(${xForViewport(site.longitude, viewport)} ${latitudeToY(site.latitude)})`}>
+              <circle r={markerRadius * 1.5} />
+              <path d={`M ${-markerRadius * 3} 0 H ${markerRadius * 3} M 0 ${-markerRadius * 3} V ${markerRadius * 3}`} vectorEffect="non-scaling-stroke" />
+              <text x={markerRadius * 3} y={-markerRadius * 2} fontSize={fontSize} strokeWidth={fontSize * 0.22}>Receiver</text>
+            </g>
+          </g>}
           {showTracks &&
             positioned.map(
               (point) =>

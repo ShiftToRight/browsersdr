@@ -1,5 +1,9 @@
 import { snapshotReceiverLocation, type ReceiverLocation } from "../radio/receiverLocation";
 import { ActionButton } from "./ActionButton";
+import { RECEIVER_MODES, type ReceiverMode } from "../radio/receiverConfig";
+import { MODE_DESCRIPTIONS } from "./modeCatalog";
+import { surveyInvestigationMode } from "./surveyInvestigation";
+import { sourceModeUnavailableReason } from "../radio/sourcePreferences";
 import { sourceCapabilities } from "../radio/sourceCapabilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
@@ -428,6 +432,7 @@ export function SpectrumExplorer({
   startReceptionForScan,
   onOpenReceiver,
   onInvestigate,
+  investigationBlockedReason,
   onScanningChange,
   onCaptureCandidates,
 }: {
@@ -440,7 +445,8 @@ export function SpectrumExplorer({
   recordingBlocked: boolean;
   startReceptionForScan: () => Promise<ReceiverSnapshot>;
   onOpenReceiver?: () => void;
-  onInvestigate: (frequencyHz: number) => void;
+  onInvestigate: (frequencyHz: number, mode: ReceiverMode) => void;
+  investigationBlockedReason?: string;
   onScanningChange: (active: boolean) => void;
   onCaptureCandidates: (
     candidates: SurveyCandidateRecord[],
@@ -489,6 +495,9 @@ export function SpectrumExplorer({
   const [storageReady, setStorageReady] = useState(false);
   const [storageMessage, setStorageMessage] = useState("Checking saved survey…");
   const [highlightedRecordKey, setHighlightedRecordKey] = useState<string>();
+  const [investigationModes, setInvestigationModes] = useState<Record<string, ReceiverMode>>({});
+  const investigationMode = (record: SurveyCandidateRecord) => investigationModes[recordKey(record)] ?? surveyInvestigationMode(record, runSnapshot?.profile);
+  const investigationIssue = (record: SurveyCandidateRecord) => investigationBlockedReason ?? (receiver.session ? sourceModeUnavailableReason(receiver.session.source, investigationMode(record), receiver.session.actualSampleRateHz, receiver.lifecycle === "running") : undefined);
   const recordElements = useRef(new Map<string, HTMLElement>());
   const profileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1591,9 +1600,10 @@ export function SpectrumExplorer({
             {message}
           </p>
           <p className="survey-storage-status" role="status">{storageMessage}</p>
-          <button type="button" className="secondary" disabled={!runSnapshot} onClick={() => {
+          <ActionButton type="button" className="secondary" disabled={!runSnapshot} disabledReason="Run a survey or restore saved results before exporting recovery JSON." aria-describedby={!runSnapshot ? "survey-recovery-help" : undefined} onClick={() => {
             if (runSnapshot) downloadText(`${sessionId}.recovery.json`, JSON.stringify({ version: 1, key: "latest", savedAt: new Date().toISOString(), scope, status: runStatus, snapshot: runSnapshot, manifest: runManifest, windows, records, progress }), "application/json");
-          }}>Export recovery JSON</button>
+          }}>Export recovery JSON</ActionButton>
+          {!runSnapshot && <small id="survey-recovery-help">No survey results to export yet. Run a survey or restore saved results first.</small>}
           <div className="candidate-list-wrap">
             <div className="candidate-list-heading">
               <h3>Candidate review</h3>{" "}
@@ -1788,14 +1798,25 @@ export function SpectrumExplorer({
                         </label>
                       </div>
                     </details>
-                    <button
+                    <label>
+                      Investigation mode
+                      <select aria-label={`Investigation mode at ${record.frequencyHz / 1e6} MHz`}
+                        disabled={scanning || capturing}
+                        value={investigationMode(record)}
+                        onChange={event => setInvestigationModes(current => ({...current, [recordKey(record)]: event.target.value as ReceiverMode}))}>
+                        {RECEIVER_MODES.map(mode => <option key={mode} value={mode}>{MODE_DESCRIPTIONS[mode].label}</option>)}
+                      </select>
+                      <small>Suggested from the saved survey band; signal type is unverified. Choose a mode for custom bands.</small>
+                    </label>
+                    <ActionButton
                       type="button"
                       className="secondary candidate-action"
-                      disabled={scanning || capturing}
-                      onClick={() => onInvestigate(record.frequencyHz)}
+                      disabled={scanning || capturing || Boolean(investigationIssue(record))}
+                      disabledReason={investigationIssue(record) ?? "Finish the scan or capture before investigating a candidate."}
+                      onClick={() => onInvestigate(record.frequencyHz, investigationMode(record))}
                     >
                       Investigate
-                    </button>
+                    </ActionButton>
                   </article>
                 ))}
               </div>

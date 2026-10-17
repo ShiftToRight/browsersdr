@@ -13,7 +13,8 @@ export interface CommunitySetup {
   source: string;
   hardwareId: CommunityHardwareId;
   mode: string;
-  srdProtocol: "none" | "acurite-592txr" | "fineoffset-wh51" | null;
+  srdProtocol:
+    "none" | "acurite-592txr" | "fineoffset-wh51" | "fineoffset-wh2" | null;
   rateHz: number;
   nativeRateHz: number | null;
   protocolProfile: string | null;

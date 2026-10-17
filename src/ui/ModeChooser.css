@@ -2,6 +2,7 @@
   width: min(980px, calc(100vw - 40px));
   max-width: none;
   max-height: min(780px, calc(100dvh - 40px));
+  height: min(780px, calc(100dvh - 40px));
   padding: 0;
   border: 1px solid var(--line-bright);
   border-radius: 14px;
@@ -56,6 +57,7 @@
   min-height: 44px;
 }
 .mode-chooser-body {
+  flex: 1;
   display: grid;
   grid-template-columns: 186px minmax(0, 1fr);
   min-height: 0;

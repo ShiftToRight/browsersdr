@@ -65,3 +65,8 @@ describe("local discovery interpretation", () => {
     expect(matchingGuides("978")[0]!.mode).toBeUndefined();
   });
 });
+it("offers ATIS listening guidance without inventing an airport frequency or station", () => {
+  expect(matchingGuides("ATIS")[0]).toMatchObject({id:"atis", mode:"AM"});
+  expect(matchingGuides("ATIS")[0]!.frequencyHz).toBeUndefined();
+  expect(matchingGuides("ATIS")[0]!.status).toContain("No local ATIS");
+});

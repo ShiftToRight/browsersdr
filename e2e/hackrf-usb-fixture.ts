@@ -6,6 +6,7 @@ export async function installHackrfUsb(
   page: Page,
   failure = false,
   one = false,
+  nativeRateHz = 0,
 ) {
   // Inject the same scriptable USB fixture into dev and built pages. The app still
   // runs its actual protocol, transport, backend, DSP and recording pipeline.
@@ -38,7 +39,7 @@ export async function installHackrfUsb(
     content: `${fixture}\n${oneFixture}\nwindow.__makeHackrfUsb = () => new ${one ? "FakeHackrfOneUsb" : "FakeHackrfUsb"}(0x0110);`,
   });
   await page.addInitScript(
-    ({ unsupported, one }) => {
+    ({ unsupported, one, nativeRateHz }) => {
       const device = (
         window as unknown as {
           __makeHackrfUsb(): {
@@ -74,9 +75,26 @@ export async function installHackrfUsb(
         bytes[n * 2] = Math.round(60 * Math.cos(2 * Math.PI * n * 0.125));
         bytes[n * 2 + 1] = Math.round(60 * Math.sin(2 * Math.PI * n * 0.125));
       }
+      let generatedSamples = 0;
+      let generationAt = performance.now();
       window.setInterval(
         () => {
-          if (device.radio.get(0) === 1n && device.pendingReads.length)
+          if (nativeRateHz) {
+            if (device.radio.get(0) !== 1n) {
+              generationAt = performance.now();
+              generatedSamples = 0;
+            } else {
+              const target =
+                ((performance.now() - generationAt) * nativeRateHz) / 1000;
+              while (
+                device.pendingReads.length &&
+                generatedSamples + bytes.length / 2 <= target
+              ) {
+                device.deliver(bytes);
+                generatedSamples += bytes.length / 2;
+              }
+            }
+          } else if (device.radio.get(0) === 1n && device.pendingReads.length)
             if (one) {
               device.deliver(bytes);
               device.deliver(bytes);
@@ -89,6 +107,6 @@ export async function installHackrfUsb(
         one ? 10 : 20,
       );
     },
-    { unsupported: failure, one },
+    { unsupported: failure, one, nativeRateHz },
   );
 }

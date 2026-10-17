@@ -3,6 +3,7 @@ import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReceiverStatus } from "./ReceiverStatus";
+import { SYNTHETIC_DEMO_SESSION } from "../testing/syntheticTone";
 
 let root: Root;
 beforeEach(() => {
@@ -44,6 +45,13 @@ async function render(
     ),
   );
 }
+
+it("names replay as replay in the status and health disclosure", async () => {
+  await render({ receiver: { lifecycle: "running", message: "Replaying", sessionGeneration: 1,
+    session: { ...SYNTHETIC_DEMO_SESSION, source: "replay", sessionGeneration: 1 } } });
+  expect(document.querySelector("summary")?.textContent).toContain("Replaying");
+  expect(document.querySelector(".receiver-health-summary")?.textContent).toContain("Replaying");
+});
 
 it("keeps receiving details behind one disclosure and dismisses it with Escape or an outside pointer", async () => {
   await render();

@@ -130,7 +130,7 @@ export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   const parameters = modeParameters(getMode(normalized.mode === "CW-TEXT" ? "CW" : normalized.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(normalized.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);
-  if (normalized.mode === "WBFM" && parameters.hasStereo()) parameters.setStereo(false);
+  if (normalized.mode === "WBFM" && parameters.hasStereo()) parameters.setStereo(true);
   return parameters.mode;
 }
 

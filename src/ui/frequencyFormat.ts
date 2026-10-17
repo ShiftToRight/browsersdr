@@ -1,7 +1,7 @@
-/** Compact MHz readouts share 1 kHz display precision without rounding tuning state. */
+/** Show at least three decimals, retaining every significant whole-Hz digit. */
 export function formatFrequencyMHz(frequencyHz: number): string {
   return Number.isFinite(frequencyHz)
-    ? (Math.round(frequencyHz / 1_000) / 1_000).toFixed(3)
+    ? (frequencyHz / 1_000_000).toFixed(6).replace(/(\.\d{3}\d*?)0+$/, "$1")
     : "";
 }
 

@@ -1,3 +1,4 @@
+import { snapChannelFrequency } from "./channelRaster";
 import type { HoverSpectrumFrame } from "./spectrumHoverMath";
 import { ActionButton } from "../ui/ActionButton";
 import type { CanvasSpectrum } from "./canvasSpectrum";
@@ -8,7 +9,7 @@ import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
-import { frequencyForPixel, spectrumEdges } from "../dsp/frequencyScale";
+import { frequencyForPixel } from "../dsp/frequencyScale";
 import { FFT_SIZE } from "../dsp/spectrumMath";
 import type { SourceSessionMetadata, SpectrumFrame } from "../radio/types";
 import { GpuSpectrum, gpuFftSize } from "../dsp/gpuSpectrum";
@@ -18,6 +19,7 @@ import { HISTORY_ROWS, spectrumShader } from "./spectrumShader";
 import { defaultDiagnosticRecorder } from "../diagnostics/diagnosticRecorder";
 import { channelPassbands, formatPassbandWidth } from "./channelPassband";
 import { formatFrequencyMHz } from "../ui/frequencyFormat";
+import { spectrumFrequencyTicks } from "./spectrumFrequencyTicks";
 import { lazy, Suspense, type CSSProperties } from "react";
 const SpectrumHover = lazy(() => import("./SpectrumHover").then(module => ({ default: module.SpectrumHover })));
 const BandGuideFeature = lazy(() => import("./BandGuideFeature").then(module => ({default:module.BandGuideFeature})));
@@ -77,6 +79,10 @@ export function WebGpuSpectrum({
   session?: SourceSessionMetadata;
   onTune?: (frequencyHz: number) => void;
 }) {
+  const [rasterRegion, setRasterRegion] = useState("general");
+  const [snapChannels, setSnapChannels] = useState(() => {
+    try { return localStorage.getItem("browsersdr.channel-snap.v1") !== "off"; } catch { return true; }
+  });
   const theme = useTheme();
   const paletteRef = useRef(SPECTRUM_PALETTES[theme]);
   paletteRef.current = SPECTRUM_PALETTES[theme];
@@ -99,11 +105,15 @@ export function WebGpuSpectrum({
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const renderRef = useRef<() => void>(() => undefined);
+  const scaleCallback = useRef(onDisplaySettingsChange);
+  scaleCallback.current = onDisplaySettingsChange;
   const [guideGap, setGuideGap] = useState(0);
   const [guideCoordinates, setGuideCoordinates] = useState<{center:number;rate:number;generation:number}>();
   const guideCoordinatesRef = useRef(guideCoordinates);
   const [displayWidth, setDisplayWidth] = useState(0);
   const rememberGuideCoordinates = (frame: SpectrumFrame) => {
+    const context = `${frame.centerFrequencyHz}:${frame.sampleRateHz}`;
+    if (automaticScaleRef.current && scaledContext.current !== context && fitScaleRef.current(frame.bins)) scaledContext.current = context;
     const old = guideCoordinatesRef.current;
     if (old?.center === frame.centerFrequencyHz && old.rate === frame.sampleRateHz && old.generation === frame.sessionGeneration) return;
     const next = {center:frame.centerFrequencyHz,rate:frame.sampleRateHz,generation:frame.sessionGeneration};
@@ -116,6 +126,19 @@ export function WebGpuSpectrum({
   useEffect(() => { renderRef.current(); }, [theme]);
   const pausedRef = useRef(false);
   const floorRef = useRef(-105);
+  const [automaticScale, setAutomaticScale] = useState(() => {
+    try { return localStorage.getItem("browsersdr.spectrum-auto-scale") !== "off"; } catch { return true; }
+  });
+  const automaticScaleRef = useRef(automaticScale);
+  automaticScaleRef.current = automaticScale;
+  const scaledContext = useRef("");
+  const fitScaleRef = useRef<(bins: Float32Array) => boolean>(() => false);
+  const changeScaleMode = (enabled: boolean) => {
+    automaticScaleRef.current = enabled;
+    setAutomaticScale(enabled);
+    scaledContext.current = "";
+    try { localStorage.setItem("browsersdr.spectrum-auto-scale", enabled ? "on" : "off"); } catch { /* Optional display preference. */ }
+  };
   const rangeRef = useRef(90);
   const [paused, setPaused] = useState(false);
   const [floorDb, setFloorDb] = useState(-105);
@@ -153,33 +176,26 @@ export function WebGpuSpectrum({
     const timer = setInterval(() => setStalled(Boolean(session && hasFrame && !paused && performance.now() - lastFrameAt.current > 3_000)), 1_000);
     return () => clearInterval(timer);
   }, [session, hasFrame, paused]);
-  const autoScale = () => {
-    const bins = latestBinsRef.current;
-    const scale = bins && spectrumDisplayScale(bins);
-    if (!scale) return;
+  const fitScale = (bins: Float32Array) => {
+    const scale = spectrumDisplayScale(bins);
+    if (!scale) return false;
     floorRef.current = scale.floorDb;
     rangeRef.current = scale.rangeDb;
     setFloorDb(scale.floorDb);
     setRangeDb(scale.rangeDb);
-    onDisplaySettingsChange?.(scale);
+    scaleCallback.current?.(scale);
     renderRef.current();
+    return true;
   };
+  fitScaleRef.current = fitScale;
+  const autoScale = () => { if (latestBinsRef.current) fitScale(latestBinsRef.current); };
   const retryGraphics = () => {
     setState({ kind: "checking", message: "Recreating the spectrum display…" });
     setDisplayedGeneration(undefined);
     setFftSize(renderer === "canvas2d" ? FFT_SIZE : requestedFftSize ?? FFT_SIZE);
     setGpuAttempt((attempt) => attempt + 1);
   };
-  const labels = useMemo(
-    () =>
-      session
-        ? spectrumEdges(
-            session.hardwareCenterFrequencyHz,
-            session.actualSampleRateHz,
-          ).map(formatFrequency)
-        : undefined,
-    [session],
-  );
+  const labels = useMemo(() => session ? spectrumFrequencyTicks(session.hardwareCenterFrequencyHz, session.actualSampleRateHz, displayWidth) : [], [session, displayWidth]);
   const markerPositionPercent = session
     ? Math.max(
         0,
@@ -835,7 +851,11 @@ export function WebGpuSpectrum({
       session.actualSampleRateHz,
     );
     // Use exactly the keyboard-tuning path: source/backend validates the span.
-    onTune(frequency);
+    const snapped = snapChannels && !event.altKey
+      ? snapChannelFrequency(frequency, session.mode, rasterRegion) : frequency;
+    // Do not snap outside the visible usable channel window at an edge.
+    const margin = session.actualSampleRateHz / 2 - session.channelBandwidthHz / 2;
+    onTune(Math.abs(snapped - session.hardwareCenterFrequencyHz) <= margin ? snapped : frequency);
   };
   const updatePaused = () => {
     pausedRef.current = !paused;
@@ -856,7 +876,7 @@ export function WebGpuSpectrum({
         <span className={`status-pill status-${state.kind}`}>{state.kind}</span>
         <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
           coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
-          onHeightChange={setGuideGap} /></Suspense>
+          onPlanChange={setRasterRegion} onHeightChange={setGuideGap} /></Suspense>
       </div>
       <div className="spectrum-display">
         <div
@@ -998,9 +1018,7 @@ export function WebGpuSpectrum({
           ) : null}
           {labels ? (
             <div className="frequency-rule" aria-hidden="true">
-              <span>{labels[0]}</span>
-              <span>{labels[1]}</span>
-              <span>{labels[2]}</span>
+              {labels.map(tick => <span key={tick.fraction} style={{left: `${tick.fraction * 100}%`, transform: tick.fraction === 0 ? "none" : tick.fraction === 1 ? "translateX(-100%)" : "translateX(-50%)"}}>{tick.label}</span>)}
             </div>
           ) : null}
           {session ? (
@@ -1053,6 +1071,13 @@ export function WebGpuSpectrum({
           }} />
           Hover frequency guide
         </label>
+        <label className="display-note">
+          <input type="checkbox" checked={snapChannels} onChange={event => {
+            const enabled = event.currentTarget.checked; setSnapChannels(enabled);
+            try { localStorage.setItem("browsersdr.channel-snap.v1", enabled ? "on" : "off"); } catch { /* Keep in-tab preference. */ }
+          }} />
+          Snap spectrum clicks to broadcast channels · {rasterRegion} · Alt-click for free tuning
+        </label>
         <div className="display-controls">
           <label>
             Display renderer
@@ -1083,6 +1108,7 @@ export function WebGpuSpectrum({
               onChange={(event) => {
                 const value = event.currentTarget.valueAsNumber;
                 floorRef.current = value;
+                changeScaleMode(false);
                 setFloorDb(value);
                 onDisplaySettingsChange?.({ floorDb: value, rangeDb });
                 renderRef.current();
@@ -1101,6 +1127,7 @@ export function WebGpuSpectrum({
               onChange={(event) => {
                 const value = event.currentTarget.valueAsNumber;
                 rangeRef.current = value;
+                changeScaleMode(false);
                 setRangeDb(value);
                 onDisplaySettingsChange?.({ floorDb, rangeDb: value });
                 renderRef.current();
@@ -1109,6 +1136,7 @@ export function WebGpuSpectrum({
           </label>
         </div>
         <small>
+          <label className="checkbox-label"><input type="checkbox" checked={automaticScale} onChange={event => changeScaleMode(event.currentTarget.checked)} />Auto scale on tune or rate change</label>
           Auto scale fits the current spectrum. Display changes do not affect
           receiver gain.
         </small>

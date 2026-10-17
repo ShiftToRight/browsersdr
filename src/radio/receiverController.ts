@@ -1,3 +1,4 @@
+import type { FmStereoReception } from "./fmStereoReception";
 import { isTextMode } from "../textmodem/settings";
 import type { TextModemSnapshot } from "../textmodem/types";
 import { captureOrigin } from "./receptionEvidence";
@@ -77,6 +78,7 @@ export interface ReceiverBackendEvents {
     diagnostics: DigitalWorkerAdapterDiagnostics,
   ): void;
   squelchChanged?(state: SquelchMeterState): void;
+  fmStereoReceptionChanged?(reception: FmStereoReception | undefined): void;
 }
 
 export interface ReceiverBackend {
@@ -152,6 +154,8 @@ export type ReceiverBackendFactory = (
 ) => ReceiverBackend;
 
 export interface ReceiverSnapshot {
+  /** Stabilized recent WBFM reception; undefined while acquiring or outside WBFM. */
+  fmStereoReception?: FmStereoReception;
   lifecycle: ReceiverLifecycle;
   message: string;
   sessionGeneration: number;
@@ -1094,8 +1098,8 @@ export class ReceiverController {
       aprsWorker: metadata.mode === "APRS" && this.snapshot.aprsWorker?.generation === generation ? this.snapshot.aprsWorker : undefined,
       rs41: metadata.mode === "RS41" && this.snapshot.rs41Worker?.generation === generation ? this.snapshot.rs41 : undefined,
       rs41Worker: metadata.mode === "RS41" && this.snapshot.rs41Worker?.generation === generation ? this.snapshot.rs41Worker : undefined,
-      srd: metadata.mode === "SRD" ? this.snapshot.srd : undefined,
-      srdWorker: metadata.mode === "SRD" ? this.snapshot.srdWorker : undefined,
+      srd: metadata.mode === "SRD" && this.snapshot.srdWorker?.generation === generation ? this.snapshot.srd : undefined,
+      srdWorker: metadata.mode === "SRD" && this.snapshot.srdWorker?.generation === generation ? this.snapshot.srdWorker : undefined,
     });
   }
 
@@ -1166,6 +1170,10 @@ export class ReceiverController {
             return;
           this.publish({ ...this.snapshot, rds });
         },
+        fmStereoReceptionChanged: (fmStereoReception) => {
+          if (this.backend !== backend || this.snapshot.lifecycle !== "running" || this.snapshot.session?.mode !== "WBFM" || this.snapshot.fmStereoReception === fmStereoReception) return;
+          this.publish({ ...this.snapshot, fmStereoReception });
+        },
         dabChanged: (dab) => {
           if (
             this.backend !== backend ||
@@ -1206,6 +1214,7 @@ export class ReceiverController {
           if (
             this.backend !== backend ||
             this.snapshot.session?.mode !== "SRD" ||
+            srdWorker.generation !== this.snapshot.sessionGeneration ||
             ["stopping", "disconnecting"].includes(this.snapshot.lifecycle)
           )
             return;
@@ -1292,6 +1301,8 @@ export class ReceiverController {
 
   private publish(snapshot: ReceiverSnapshot): void {
     const previous = this.snapshot;
+    if (snapshot.lifecycle !== "running" || snapshot.session?.mode !== "WBFM" || snapshot.sessionGeneration !== previous.sessionGeneration)
+      snapshot = { ...snapshot, fmStereoReception: undefined };
     // Spreading a snapshot for telemetry must retain a failure; a new status must clear it.
     if (
       snapshot.issue === previous.issue &&
