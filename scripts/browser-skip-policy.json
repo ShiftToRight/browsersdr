@@ -1,0 +1,74 @@
+[
+  {
+    "file": "atlas-integration.real.e2e.ts",
+    "titles": [
+      "real Atlas proxy preserves station identity, synthetic originals and CSRF across search and upload"
+    ],
+    "requiredEnvironment": "BSD04_CONTEXT",
+    "reason": "Requires isolated Atlas/proxy services; see VALIDATION.md"
+  },
+  {
+    "file": "atlas-integration.real.e2e.ts",
+    "titles": [
+      "real revoked viewer access and failed logout preserve local downloads and synchronize token replacement"
+    ],
+    "requiredEnvironment": "BSD04_CONTEXT",
+    "reason": "Requires isolated Atlas/proxy services; see VALIDATION.md"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA4 firmware 2.4 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA4 firmware 2.5 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA5 firmware 2.4 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA5 firmware 2.5 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA9 firmware 2.4 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "official stored xA9 firmware 2.5 imports, survives reload, and loads verified bytes"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifacts"
+  },
+  {
+    "file": "bladerf.e2e.ts",
+    "titles": [
+      "corrupt origin-local stored image rejects before programming with native SHA-256"
+    ],
+    "requiredEnvironment": "BLADERF_OFFICIAL_ARTIFACT_DIR",
+    "reason": "Requires ephemeral official RBF artifact"
+  }
+]

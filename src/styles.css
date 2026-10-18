@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap");
+@import "./assets/fonts/fonts.css";
 
 :root {
   font-family: "Manrope", system-ui, sans-serif;
@@ -4874,6 +4874,8 @@ button:has(> .app-icon) {
 
 /* Settings sharing stays in Session; previews use a bounded native modal. */
 .session-share-actions { display: flex; gap: .5rem; margin-bottom: .6rem; }
+.session-panel > #live-share-trigger { margin: 0 .5rem .6rem 0; }
+.session-panel > .session-share-actions { display: inline-flex; vertical-align: middle; }
 .settings-share-dialog { color: var(--ink); background: var(--theme-surface, #111d2b); border: 1px solid #354a60; border-radius: 12px; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 1rem; overflow: auto; box-sizing: border-box; }
 .settings-share-dialog::backdrop { background: rgb(3 10 18 / 65%); }
 .settings-share-header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }

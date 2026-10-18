@@ -20,6 +20,7 @@ export async function applyBookmark(
     throw new Error("Choose a live source or the demo to recall a favorite.");
   if (
     before.cleanupRequired ||
+    before.hardwareSettingsPending ||
     !["idle", "connected", "running", "error"].includes(before.lifecycle) ||
     controller.getRecordingStatus()
   )
@@ -69,11 +70,20 @@ export async function applyBookmark(
       modeSettings: bookmark.settings,
     });
   if (running) {
-    await controller.configureMode(bookmark.settings);
+    const sameProfile = before.session?.mode === bookmark.settings.mode &&
+      before.session.channelBandwidthHz === bookmark.settings.bandwidthHz &&
+      before.session.squelch === bookmark.settings.squelch &&
+      (!(bookmark.settings.mode === "CW" || bookmark.settings.mode === "CW-TEXT") ||
+        before.session.beatToneHz === bookmark.settings.beatToneHz) &&
+      (bookmark.settings.mode !== "SRD" ||
+        JSON.stringify(before.session.srd) === JSON.stringify(bookmark.settings.srd)) &&
+      (bookmark.settings.textModem === undefined ||
+        JSON.stringify(before.session.textModem) === JSON.stringify(bookmark.settings.textModem));
+    if (!sameProfile) await controller.configureMode(bookmark.settings);
     let accepted = controller.getSnapshot();
     if (
       accepted.lifecycle !== "running" ||
-      accepted.sessionGeneration === before.sessionGeneration ||
+      (!sameProfile && accepted.sessionGeneration === before.sessionGeneration) ||
       accepted.session?.source !== source ||
       accepted.session.mode !== bookmark.settings.mode ||
       accepted.session.channelBandwidthHz !== bookmark.settings.bandwidthHz ||

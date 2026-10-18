@@ -53,3 +53,6 @@ dist
 coverage
 playwright-report
 test-results
+browser-artifacts
+browser-blobs
+merged-results.json

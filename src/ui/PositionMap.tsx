@@ -1,3 +1,4 @@
+import { rasterizeMapVectors, MAP_COLORS } from "./mapVectorRaster";
 import {
   memo,
   useCallback,
@@ -176,15 +177,7 @@ function mapSource(url: string) {
 }
 
 // Recolor source artwork at presentation time; geographic source bytes stay intact.
-const MAP_COLORS: Record<string, string> = {
-  "#07141b": "#091c28",
-  "#102c35": "#244a58",
-  "#315968": "#83b4c5",
-  "#294d5a": "#75a7bb",
-  "#266071": "#6eb0cb",
-  "#4a7180": "#c0d5df",
-  "#355966": "#8fb0c2",
-};
+
 function mapArtwork(source: string, strokeScale: number) {
   return source
     .replace(/#[0-9a-f]{6}/g, (color) => MAP_COLORS[color] ?? color)
@@ -261,6 +254,13 @@ const MapBackground = memo(function MapBackground({
       const strokeScale =
         (pixels.width * request.plan.visibleWidth) /
         (region.width * request.plan.cssWidth);
+      const vectorBitmap = rasterizeMapVectors(
+        layers, region, pixels, strokeScale, mapLayerOffsets(region),
+      );
+      if (vectorBitmap) {
+        if (active) setRaster({ request, bitmap: vectorBitmap, bitmapPlan: request.plan });
+        return;
+      }
       const artwork = mapArtwork(layers.join(""), strokeScale);
       const content = mapLayerOffsets(region)
         .map((offset) => `<g transform="translate(${offset} 0)">${artwork}</g>`)

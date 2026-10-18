@@ -5,6 +5,9 @@ wasm/spectrum-analysis/target/
 coverage/
 playwright-report/
 test-results/
+browser-artifacts/
+browser-blobs/
+merged-results.json
 .local
 *.local
 .agents

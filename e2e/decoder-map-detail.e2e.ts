@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { targetRecordingFixture } from "../src/testing/targetRecordingFixture";
 
@@ -30,22 +31,14 @@ for (const mode of ["ADS-B", "AIS"] as const) {
         longitude: 3.9,
         label: "Recorded antenna",
       };
-    await page
-      .locator(".file-picker-input")
-      .nth(0)
-      .setInputFiles({
-        name: "targets.cu8",
-        mimeType: "application/octet-stream",
-        buffer: Buffer.from(fixture.data),
-      });
-    await page
-      .locator(".file-picker-input")
-      .nth(1)
-      .setInputFiles({
-        name: "targets.json",
-        mimeType: "application/json",
-        buffer: Buffer.from(JSON.stringify(fixture.metadata)),
-      });
+    const dataPath = test.info().outputPath("targets.cu8");
+    const metadataPath = test.info().outputPath("targets.json");
+    await Promise.all([
+      writeFile(dataPath, fixture.data),
+      writeFile(metadataPath, JSON.stringify(fixture.metadata)),
+    ]);
+    await page.locator(".file-picker-input").nth(0).setInputFiles(dataPath);
+    await page.locator(".file-picker-input").nth(1).setInputFiles(metadataPath);
     await page.getByRole("button", { name: "Load files", exact: true }).click();
     await page
       .getByRole("button", { name: "Start replay", exact: true })

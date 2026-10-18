@@ -191,15 +191,23 @@ for (const mode of ["ADS-B", "AIS"] as const) {
       "data-state",
       "ready",
     );
-    const symbolBounds = await workspace
-      .locator(".map-target-symbol")
-      .boundingBox();
-    const hitBounds = await workspace.locator(".map-target-hit").boundingBox();
-    expect(Math.max(symbolBounds!.width, symbolBounds!.height)).toBeLessThan(
-      24,
-    );
-    expect(hitBounds!.width).toBeGreaterThanOrEqual(43);
-    expect(hitBounds!.height).toBeGreaterThanOrEqual(43);
+    // EOF advances generation and replaces keyed targets. Read both boxes in
+    // one retrying assertion so a detached old node cannot become a null read.
+    await expect(async () => {
+      const symbolBounds = await workspace
+        .locator(".map-target-symbol")
+        .boundingBox();
+      const hitBounds = await workspace
+        .locator(".map-target-hit")
+        .boundingBox();
+      expect(symbolBounds).not.toBeNull();
+      expect(hitBounds).not.toBeNull();
+      expect(Math.max(symbolBounds!.width, symbolBounds!.height)).toBeLessThan(
+        24,
+      );
+      expect(hitBounds!.width).toBeGreaterThanOrEqual(43);
+      expect(hitBounds!.height).toBeGreaterThanOrEqual(43);
+    }).toPass({ timeout: 7_000 });
     await expect(workspace.locator(".decoder-inspector")).toHaveCount(0);
     const footer = await workspace.locator(".decoder-footer").boundingBox();
     expect(footer!.y + footer!.height).toBeLessThanOrEqual(1000);

@@ -4,6 +4,8 @@ import "./styles.css";
 import "./ui/DecoderWorkspace.css";
 import "./ui/themes.css";
 import { initializeTheme } from "./ui/themes";
+// Capture install prompts before the receiver application finishes loading.
+import "./ui/appInstallation";
 initializeTheme();
 import { exposeBrowserTestUnmount } from "./testing/browserTestBridge";
 import { defaultDiagnosticRecorder, installGlobalDiagnosticHandlers } from "./diagnostics/diagnosticRecorder";
