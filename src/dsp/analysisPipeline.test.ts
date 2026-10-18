@@ -714,3 +714,28 @@ describe("on-demand signal centering", () => {
     expect(worker.sent.find(message => message.type === "samples-ci8")).toMatchObject({ sampleIndex: 0 }); pipeline.dispose();
   });
 });
+
+it("background sharing returns spectrum credits without animation and preserves the bounded local queue", () => {
+  const worker = new FakeWorker();
+  let animationCallback: FrameRequestCallback | undefined;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { animationCallback = callback; return 1; });
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const pipeline = new AnalysisPipeline(worker as unknown as Worker); pipeline.begin(METADATA);
+  const display = vi.fn(), measurement = vi.fn(); pipeline.subscribe(display);
+  const emit = (sequence: number) => worker.emit({ type: "spectrum", sessionGeneration: 7, sequence,
+    timestampMs: sequence * 40, centerFrequencyHz: 100e6, sampleRateHz: 1_024_000,
+    sampleIndex: (sequence + 1) * 40960, bins: new Float32Array(4096).buffer,
+    droppedFramesBefore: 0, skippedSpectrumFramesBefore: 0 });
+  for (let i = 0; i < 32; i++) emit(i);
+  const credits = () => worker.sent.reduce((sum, message) => sum + (message.type === "spectrum-credit" ? message.credits : 0), 0);
+  expect(credits()).toBe(0);
+  const unsubscribe = pipeline.subscribeMeasurements(measurement, true);
+  expect(credits()).toBe(32);
+  for (let i = 32; i < 96; i++) emit(i);
+  expect(credits()).toBe(96); expect(measurement).toHaveBeenCalledTimes(64); expect(display).not.toHaveBeenCalled();
+  animationCallback?.(0);
+  expect(display).toHaveBeenCalledOnce(); expect(display.mock.calls[0]![1]).toHaveLength(ANALYSIS_DISPLAY_QUEUE_CAPACITY);
+  expect(credits()).toBe(96);
+  unsubscribe(); unsubscribe(); emit(96); expect(credits()).toBe(96);
+  animationCallback?.(0); expect(credits()).toBe(97); pipeline.dispose();
+});

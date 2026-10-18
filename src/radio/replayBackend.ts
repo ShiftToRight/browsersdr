@@ -99,7 +99,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.audioContext = new AudioContext();
     this.audioContext.addEventListener("statechange", this.onAudioStateChange);
     this.audioResume = this.audioContext.resume();
-    this.player = new PcmBatchPlayer(new AudioPlayer({ newAudioContext: () => this.audioContext }), () => audioSourceDescription(this.metadata));
+    this.player = new PcmBatchPlayer(new AudioPlayer({ newAudioContext: () => this.audioContext }), () => audioSourceDescription(this.metadata), this.audioContext);
     this.rds = new RdsMultiplexReceiver((state) => this.events.rdsChanged(state));
     this.demodulator = new SharedWbfmDemodulator(
       this.player,

@@ -45,6 +45,7 @@ export class DabAudioPlayer implements Player {
     // latency without bound after a stalled or backgrounded tab.
     if (this.nextTime - now > 1) this.reset();
     const audioArchive = audioCaptureTap.archive;
+    audioCaptureTap.live?.push(this, left, right, this.sampleRate, this.context);
     if (audioArchive?.active) audioArchive.push(this, left, right, this.sampleRate, this.provenance(), muted => { if (this.gain) this.gain.gain.value = muted ? 0 : this.volume; });
     const buffer = this.context.createBuffer(2, left.length, this.sampleRate);
     buffer.copyToChannel(Float32Array.from(left), 0);
@@ -71,6 +72,7 @@ export class DabAudioPlayer implements Player {
     this.gain = undefined;
   }
   reset(): void {
+    audioCaptureTap.live?.boundary(this);
     audioCaptureTap.archive?.boundary(this);
     for (const source of this.sources) {
       source.stop();

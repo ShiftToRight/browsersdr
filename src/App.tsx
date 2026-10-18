@@ -21,6 +21,7 @@ const RemoteReceiver = lazy(() => import("./ui/RemoteReceiver").then(module => (
 import { RemotePresetSharePanel } from "./ui/RemotePresetSharePanel";
 import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
 import { SettingsSharePanel } from "./ui/SettingsSharePanel";
+const LiveSharePanel = lazy(() => import("./ui/LiveSharePanel").then(module => ({ default: module.LiveSharePanel })));
 import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
 import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
 import { useWorkspaceLayout, WorkspaceControls } from "./ui/WorkspaceLayout";
@@ -849,6 +850,7 @@ export function ReceiverApp({
   usrpFirmwareRef = { current: undefined },
 }: AppRuntime) {
   const antennaSite = useReceiverLocation("local");
+  const [liveShareOpen, setLiveShareOpen] = useState(false);
   const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
     controller.getSnapshot(),
   );
@@ -4290,6 +4292,7 @@ export function ReceiverApp({
             hidden={!receiverDockExpanded || receiverDockView !== "session"}
           >
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
+            <button id="live-share-trigger" type="button" className="secondary" disabled={remoteSelected} onClick={() => setLiveShareOpen(true)}>Share live audio &amp; spectrum</button>
             <SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
               applyBlockedReason={remoteSelected ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
@@ -4995,6 +4998,7 @@ export function ReceiverApp({
       <RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {
         if (!await openRemoteReceiver(preset)) throw new Error(remoteBlockedReason ?? "The receiver could not be released. Finish the current operation and try again.");
       }} />
+      <DeferredWorkspace active={liveShareOpen}><LiveSharePanel controller={controller} analysis={analysis} open={liveShareOpen} onClose={() => setLiveShareOpen(false)} /></DeferredWorkspace>
     </main>
   );
 }

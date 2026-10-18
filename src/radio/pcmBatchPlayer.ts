@@ -12,7 +12,7 @@ export class PcmBatchPlayer implements Player {
   private enabled = false;
   private volume?: number;
   readonly sampleRate: number;
-  constructor(private readonly output: Player, private readonly provenance = () => "Decoded receiver audio. Processed audio, not original I/Q.") {
+  constructor(private readonly output: Player, private readonly provenance = () => "Decoded receiver audio. Processed audio, not original I/Q.", private readonly context?: AudioContext) {
     // Signals starts with 48 kHz PCM and always queues 48 kHz buffers, but its
     // getter reveals the device rate after first play. Keep the established PCM
     // contract for demodulation and capture, independent of device resampling.
@@ -21,9 +21,10 @@ export class PcmBatchPlayer implements Player {
   setVolume(value: number): void { this.volume = value; this.output.setVolume(audioCaptureTap.archive?.reviewing ? 0 : value); }
   getVolume(): number { return this.output.getVolume(); }
   configure(enabled: boolean): void { this.enabled = enabled; this.reset(); }
-  reset(): void { this.count = 0; audioCaptureTap.archive?.boundary(this); }
+  reset(): void { this.count = 0; audioCaptureTap.archive?.boundary(this); audioCaptureTap.live?.boundary(this); }
   finishAudio(): void { audioCaptureTap.archive?.finish(this); }
   private capture(left: Float32Array, right: Float32Array): void {
+    if (this.context) audioCaptureTap.live?.push(this, left, right, this.sampleRate, this.context);
     const audioArchive = audioCaptureTap.archive;
     if (!audioArchive?.active) return;
     const volume = this.volume ?? this.output.getVolume();

@@ -102,6 +102,7 @@ export class AnalysisPipeline {
   private disposed = false;
   private readonly listeners = new Set<DisplayListener>();
   private readonly measurementListeners = new Set<FrameListener>();
+  private realtimeMeasurementConsumers = 0;
   private generation = 0;
   private centerRequestId = 0;
   private centerRequest?: { id: number; resolve: (result: SignalCenterResult) => void; timer: ReturnType<typeof setTimeout> };
@@ -323,6 +324,7 @@ export class AnalysisPipeline {
     this.worker.terminate();
     this.listeners.clear();
     this.measurementListeners.clear();
+    this.realtimeMeasurementConsumers = 0;
   }
 
   measureSignalCenter(metadata: SourceSessionMetadata): Promise<SignalCenterResult> {
@@ -352,9 +354,22 @@ export class AnalysisPipeline {
   }
 
   /** Receives every published worker measurement without waiting for display rendering. */
-  subscribeMeasurements(listener: FrameListener): () => void {
+  subscribeMeasurements(listener: FrameListener, realtime = false): () => void {
     this.measurementListeners.add(listener);
-    return () => this.measurementListeners.delete(listener);
+    if (realtime) {
+      this.realtimeMeasurementConsumers++;
+      // A background display may already be holding the entire worker window.
+      if (this.pendingFrameCredits) {
+        this.post({ type: "spectrum-credit", sessionGeneration: this.generation, credits: this.pendingFrameCredits });
+        this.pendingFrameCredits = 0;
+      }
+    }
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return; subscribed = false;
+      this.measurementListeners.delete(listener);
+      if (realtime) this.realtimeMeasurementConsumers = Math.max(0, this.realtimeMeasurementConsumers - 1);
+    };
   }
 
   /** Native HackRF path: copy compact bytes before the transport reuses them. */
@@ -703,7 +718,8 @@ export class AnalysisPipeline {
       ...(message.hopSamples ? { hopSamples: message.hopSamples } : {}),
     };
     for (const listener of this.measurementListeners) listener(frame);
-    this.pendingFrameCredits += 1;
+    if (this.realtimeMeasurementConsumers) this.post({ type: "spectrum-credit", sessionGeneration: this.generation, credits: 1 });
+    else this.pendingFrameCredits += 1;
     this.pendingFrames.push(frame);
     if (this.pendingFrames.length > ANALYSIS_DISPLAY_QUEUE_CAPACITY) {
       const discarded = this.pendingFrames.shift()!;
@@ -730,7 +746,7 @@ export class AnalysisPipeline {
     this.pendingFrameCredits = 0;
     const latest = frames.at(-1);
     if (!latest || latest.sessionGeneration !== this.generation) return;
-    this.post({ type: "spectrum-credit", sessionGeneration: this.generation, credits });
+    if (credits) this.post({ type: "spectrum-credit", sessionGeneration: this.generation, credits });
     // The trace needs only the latest bins; history needs every retained row.
     const frame = {
       ...latest,

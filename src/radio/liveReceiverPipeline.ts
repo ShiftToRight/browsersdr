@@ -107,6 +107,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.player = new PcmBatchPlayer(
       new AudioPlayer({ newAudioContext: () => this.audioContext }),
       () => audioSourceDescription(this.metadata),
+      this.audioContext,
     );
     this.rds = new RdsMultiplexReceiver((value) => events.rdsChanged(value));
     this.demodulator =
