@@ -182,9 +182,14 @@ export function ExplorerMonitor({
     }
   }
   const selectedTrigger = useRef<HTMLButtonElement | null>(null);
+  const signalButtons = useRef(new Map<string, HTMLButtonElement>());
+  const pendingSpectrumRow = useRef<string>(undefined);
   const closeDetails = () => {
     setSelected(undefined);
-    selectedTrigger.current?.focus();
+    const trigger = selectedTrigger.current;
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    else if (selected)
+      signalButtons.current.get(selected)?.focus({ preventScroll: true });
   };
   const [session, setSession] = useState<MonitorSession>();
   const sessionRef = useRef<MonitorSession>(undefined);
@@ -380,6 +385,21 @@ export function ExplorerMonitor({
           ? Date.parse(b.lastSeen) - Date.parse(a.lastSeen)
           : a.frequencyHz - b.frequencyHz,
     );
+  useLayoutEffect(() => {
+    const id = pendingSpectrumRow.current;
+    if (!id) return;
+    const button = signalButtons.current.get(id);
+    const row = button?.closest("tr"),
+      container = button?.closest(".monitor-results-scroll");
+    if (!row || !container) return;
+    const bounds = container.getBoundingClientRect(),
+      target = row.getBoundingClientRect();
+    const header =
+      container.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    if (target.top < bounds.top + header || target.bottom > bounds.bottom)
+      container.scrollTop += target.top - bounds.top - header - 4;
+    pendingSpectrumRow.current = undefined;
+  }, [signals, selected, resultView]);
   const draftTargets = custom
     ? (customDraft.targets ?? [])
     : targetMode === "window" && !receiver.session
@@ -925,6 +945,13 @@ export function ExplorerMonitor({
             now={now}
             selected={selected}
             tools={historyTools}
+            onSelect={(id, trigger) => {
+              selectedTrigger.current = trigger;
+              pendingSpectrumRow.current = id;
+              if (!signals.some((signal) => signal.id === id)) setFilter("all");
+              setResultView("signals");
+              setSelected(id);
+            }}
           />
         )}
         {!session && historyTools}
@@ -1070,7 +1097,11 @@ export function ExplorerMonitor({
               </thead>
               <tbody>
                 {signals.map((s) => (
-                  <tr key={s.id} aria-selected={selected === s.id}>
+                  <tr
+                    key={s.id}
+                    data-signal-id={s.id}
+                    aria-selected={selected === s.id}
+                  >
                     <td
                       className={
                         s.group ? "monitor-adaptive-frequency" : undefined
@@ -1079,6 +1110,10 @@ export function ExplorerMonitor({
                       <button
                         type="button"
                         className="monitor-frequency"
+                        ref={(element) => {
+                          if (element) signalButtons.current.set(s.id, element);
+                          else signalButtons.current.delete(s.id);
+                        }}
                         onClick={(e) => {
                           selectedTrigger.current = e.currentTarget;
                           setSelected(s.id);

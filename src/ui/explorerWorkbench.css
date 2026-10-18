@@ -797,3 +797,191 @@
 .monitor-adaptive-frequency .monitor-group-details > div {
   max-width: 340px;
 }
+
+/* Detection evidence overlays: separate from measured power and the active receiver window. */
+.monitor-spectrum-plot {
+  position: relative;
+  padding-top: 6px;
+}
+.monitor-spectrum-plot svg {
+  margin: 0;
+}
+.monitor-detection-support {
+  color: var(--amber, #e7b75a);
+}
+.monitor-detection-support rect {
+  fill: currentColor;
+  opacity: 0.07;
+}
+.monitor-detection-support line {
+  stroke: currentColor;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+.monitor-detection-support.is-tentative line {
+  stroke-dasharray: 4 4;
+}
+.monitor-detection-support.is-older {
+  opacity: 0.4;
+}
+.monitor-detection-support.is-selected {
+  color: #b7a3ff;
+  opacity: 1;
+}
+.monitor-detection-support.is-selected line {
+  stroke-width: 2;
+}
+.monitor-detection-support.is-selected rect {
+  opacity: 0.19;
+}
+.monitor-detection-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.monitor-detection-markers > button.monitor-detection-marker {
+  position: absolute;
+  display: flex;
+  align-items: start;
+  justify-content: center;
+  min-height: 44px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--amber, #e7b75a);
+  box-shadow: none;
+  pointer-events: auto;
+}
+.monitor-detection-markers > button.monitor-detection-marker:hover {
+  transform: none;
+  background: #e7b75a0a;
+}
+.monitor-marker-cap {
+  display: block;
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  transform: rotate(45deg);
+  margin-top: 3px;
+}
+.monitor-detection-marker.is-tentative .monitor-marker-cap {
+  background: var(--theme-surface, #071222);
+  border: 1px dashed currentColor;
+}
+.monitor-detection-marker.is-older {
+  opacity: 0.5;
+}
+.monitor-detection-marker.is-cluster .monitor-marker-cap {
+  width: auto;
+  height: auto;
+  min-width: 60px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  transform: none;
+  background: var(--theme-surface, #071222);
+  border: 1px solid currentColor;
+  font-size: 0.67rem;
+  white-space: nowrap;
+}
+.monitor-detection-markers > button.monitor-detection-marker.is-selected {
+  color: #b7a3ff;
+  opacity: 1;
+}
+.monitor-detection-marker:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+.monitor-marker-tooltip {
+  position: absolute;
+  z-index: 17;
+  width: 230px;
+  box-sizing: border-box;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  color: var(--theme-ink, #edf5ff);
+  background: var(--theme-surface, #071222);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px #0008;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+.monitor-marker-dialog {
+  width: min(480px, calc(100vw - 24px));
+  box-sizing: border-box;
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 18px;
+  color: var(--theme-ink, #edf5ff);
+  background: var(--theme-surface, #071222);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  pointer-events: auto;
+}
+.monitor-marker-dialog::backdrop {
+  background: #020611b8;
+  backdrop-filter: blur(3px);
+}
+.monitor-marker-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.monitor-marker-dialog h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.monitor-marker-dialog label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+}
+.monitor-marker-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+.monitor-marker-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 45dvh;
+  overflow: auto;
+}
+.monitor-marker-options > button {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  padding: 10px;
+  white-space: normal;
+}
+.monitor-marker-options span,
+.monitor-marker-options small {
+  font-size: 0.73rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.monitor-spectrum-legend > span:first-child {
+  flex-basis: 100%;
+}
+
+.monitor-spectrum-plot svg.monitor-marker-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 999px) {
+  .monitor-shell .monitor-inspector {
+    z-index: 21;
+  }
+}
+/* End selectable detection marker styles. */
