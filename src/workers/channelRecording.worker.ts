@@ -1,11 +1,15 @@
+import { decodeCi8Into } from "../radio/ci8Samples";
 import { ChannelCaptureFilter } from "../radio/channelRecording";
-import { decodeRecordingSamples, type RecordingSampleFormat } from "../radio/iqRecording";
+import { decodeRecordingSamples, validateSampleEncoding, type RecordingSampleFormat } from "../radio/iqRecording";
 import { CHANNEL_MAX_SAMPLES } from "../radio/widebandChannel";
 import type { ChannelRecordingInput, ChannelRecordingOutput } from "../radio/channelRecordingWorker";
 
 let filter: ChannelCaptureFilter;
 let encoding: RecordingSampleFormat;
 let stride: 2 | 4;
+// Private synchronous scratch; output is encoded before the next block reuses it.
+const scratchI = new Float32Array(CHANNEL_MAX_SAMPLES);
+const scratchQ = new Float32Array(CHANNEL_MAX_SAMPLES);
 function post(message: ChannelRecordingOutput, transfer: Transferable[] = []) {
   self.postMessage(message, { transfer });
 }
@@ -29,7 +33,7 @@ function process(I: Float32Array, Q: Float32Array, limit: number): number {
 self.onmessage = (event: MessageEvent<ChannelRecordingInput>) => {
   try {
     const message = event.data;
-    if (message.type === "configure") { filter = new ChannelCaptureFilter(message.plan); encoding = message.encoding; stride = message.stride; }
+    if (message.type === "configure") { validateSampleEncoding(message.encoding); filter = new ChannelCaptureFilter(message.plan); encoding = message.encoding; stride = message.stride; }
     else if (message.type === "reset") filter.reset();
     else if (message.type === "finish") post({ type: "finished" });
     else {
@@ -37,8 +41,14 @@ self.onmessage = (event: MessageEvent<ChannelRecordingInput>) => {
       if (message.type === "bytes") {
         const inputStride = encoding.bytesPerComplexSample;
         for (let offset = 0; offset < message.bytes.length; offset += CHANNEL_MAX_SAMPLES * inputStride) {
-          const decoded = decodeRecordingSamples(message.bytes.subarray(offset, offset + CHANNEL_MAX_SAMPLES * inputStride), encoding);
-          remaining -= process(decoded.I, decoded.Q, remaining);
+          const bytes = message.bytes.subarray(offset, offset + CHANNEL_MAX_SAMPLES * inputStride);
+          if (encoding.format === "browsersdr-ci8-v2") {
+            const count = decodeCi8Into(bytes, scratchI, scratchQ);
+            remaining -= process(scratchI.subarray(0, count), scratchQ.subarray(0, count), remaining);
+          } else {
+            const decoded = decodeRecordingSamples(bytes, encoding);
+            remaining -= process(decoded.I, decoded.Q, remaining);
+          }
         }
         post({ type: "consumed", inputBytes: message.bytes.byteLength });
       } else {

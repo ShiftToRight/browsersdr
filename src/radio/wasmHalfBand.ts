@@ -12,6 +12,9 @@ export class WasmHalfBandStage {
   private readonly qConvolver: Convolver = getConvolver();
   private readonly workI: Float32Array;
   private readonly workQ: Float32Array;
+  private readonly compactI: Float32Array;
+  private readonly compactQ: Float32Array;
+  private centerCoefficient = 0;
   private parity = 0;
   private oscillatorI = 1;
   private oscillatorQ = 0;
@@ -22,6 +25,7 @@ export class WasmHalfBandStage {
     private offsetHz: number,
     private readonly rate: number,
     private readonly tapCount: number,
+    private readonly compactHalfBand = false,
   ) {
     const taps = new Float32Array(tapCount);
     const middle = (tapCount - 1) / 2;
@@ -43,8 +47,20 @@ export class WasmHalfBandStage {
       sum += precise[n]!;
     }
     for (let n = 0; n < tapCount; n++) taps[n] = precise[n]! / sum;
-    this.iConvolver.setCoefs(taps);
-    this.qConvolver.setCoefs(taps);
+    // For N=4k-1 every other coefficient is zero except the middle tap.
+    // Recording can convolve the retained phase with only the nonzero taps.
+    if (compactHalfBand && tapCount % 4 !== 3)
+      throw new Error("Compact half-band filter requires 4k-1 taps.");
+    const coefficients = compactHalfBand
+      ? Float32Array.from(taps.filter((_, n) => n % 2 === 0))
+      : taps;
+    this.centerCoefficient = taps[middle]!;
+    this.iConvolver.setCoefs(coefficients);
+    this.qConvolver.setCoefs(coefficients);
+    this.compactI = new Float32Array(
+      compactHalfBand ? Math.ceil((CHANNEL_MAX_SAMPLES + tapCount) / 2) : 0,
+    );
+    this.compactQ = new Float32Array(this.compactI.length);
     this.workI = new Float32Array(CHANNEL_MAX_SAMPLES + tapCount - 1);
     this.workQ = new Float32Array(this.workI.length);
     this.reset(offsetHz);
@@ -91,22 +107,51 @@ export class WasmHalfBandStage {
     const skip = this.parity === 0 ? 1 : 0;
     this.parity = (this.parity + I.length) % 2;
     if (count) {
-      I.set(
-        this.iConvolver.convolveWithStride(
-          this.workI.subarray(0, history + I.length),
+      if (this.compactHalfBand) {
+        const compactLength = count + (this.tapCount + 1) / 2 - 1;
+        for (let n = 0; n < compactLength; n++) {
+          this.compactI[n] = this.workI[skip + n * 2]!;
+          this.compactQ[n] = this.workQ[skip + n * 2]!;
+        }
+        const outI = this.iConvolver.convolveWithStride(
+          this.compactI.subarray(0, compactLength),
           count,
-          2,
-          skip,
-        ),
-      );
-      Q.set(
-        this.qConvolver.convolveWithStride(
-          this.workQ.subarray(0, history + Q.length),
+          1,
+          0,
+        );
+        const outQ = this.qConvolver.convolveWithStride(
+          this.compactQ.subarray(0, compactLength),
           count,
-          2,
-          skip,
-        ),
-      );
+          1,
+          0,
+        );
+        const middle = (this.tapCount - 1) / 2;
+        for (let n = 0; n < count; n++) {
+          I[n] =
+            outI[n]! +
+            this.centerCoefficient * this.workI[skip + n * 2 + middle]!;
+          Q[n] =
+            outQ[n]! +
+            this.centerCoefficient * this.workQ[skip + n * 2 + middle]!;
+        }
+      } else {
+        I.set(
+          this.iConvolver.convolveWithStride(
+            this.workI.subarray(0, history + I.length),
+            count,
+            2,
+            skip,
+          ),
+        );
+        Q.set(
+          this.qConvolver.convolveWithStride(
+            this.workQ.subarray(0, history + Q.length),
+            count,
+            2,
+            skip,
+          ),
+        );
+      }
     }
     this.workI.copyWithin(0, I.length, I.length + history);
     this.workQ.copyWithin(0, Q.length, Q.length + history);

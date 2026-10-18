@@ -146,6 +146,7 @@ export class ChannelCaptureFilter {
             : 0,
           rate,
           last ? 95 : rate >= plan.outputSampleRateHz * 8 ? 15 : 31,
+          true,
         ),
       );
     }

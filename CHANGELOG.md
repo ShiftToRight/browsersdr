@@ -13,7 +13,7 @@
 - Preserve installation prompts during lazy receiver startup and keep Session tools compact.
 - Guard complete browser-test coverage and split CI checks across four development/production shards.
 - Preserve decoded-record selection and frozen review when a replay ends.
-- Reduce channel-recording worker allocation and copying while preserving borrowed live input and bounded overload protection.
+- Reduce channel-recording worker allocation, copying and zero-coefficient half-band filtering while preserving borrowed live input and bounded overload protection.
 
 ## 1.8.0 — 2026-10-17
 

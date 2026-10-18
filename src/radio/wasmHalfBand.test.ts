@@ -2,11 +2,15 @@ import { expect, it } from "vitest";
 import { WasmHalfBandStage } from "./wasmHalfBand";
 import { HalfBandStage } from "../testing/halfBandReference";
 
-it.each([15, 31, 95])(
-  "matches the original %i-tap channel filter across offsets, odd blocks and reset",
-  (taps) => {
+it.each(
+  [false, true].flatMap((compact) =>
+    [15, 31, 95].map((taps) => ({ taps, compact })),
+  ),
+)(
+  "matches the original $taps-tap filter (compact=$compact) across offsets, odd blocks and reset",
+  ({ taps, compact }) => {
     for (const offset of [0, 137_000, -500_000]) {
-      const fast = new WasmHalfBandStage(offset, 4_800_000, taps);
+      const fast = new WasmHalfBandStage(offset, 4_800_000, taps, compact);
       const reference = new HalfBandStage(offset, 4_800_000, taps);
       for (let pass = 0; pass < 2; pass++) {
         let at = 0;
@@ -33,6 +37,42 @@ it.each([15, 31, 95])(
         }
         fast.reset();
         reference.reset(offset);
+      }
+    }
+  },
+);
+
+it.each([15, 31, 95])(
+  "bounds compact %i-tap rounding for CI8 and CI16 output",
+  (taps) => {
+    const dense = new WasmHalfBandStage(137_000, 4_800_000, taps);
+    const compact = new WasmHalfBandStage(137_000, 4_800_000, taps, true);
+    let seed = 0x4badbeef;
+    const noise = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 31 - 1;
+    };
+    for (const length of [1, 4095, 32768, 137, 3]) {
+      const I = Float32Array.from({ length }, noise),
+        Q = Float32Array.from({ length }, noise);
+      const copyI = I.slice(),
+        copyQ = Q.slice();
+      const count = dense.process(I, Q);
+      expect(compact.process(copyI, copyQ)).toBe(count);
+      for (let n = 0; n < count; n++) {
+        for (const [before, after] of [
+          [I[n]!, copyI[n]!],
+          [Q[n]!, copyQ[n]!],
+        ] as const) {
+          expect(Math.abs(before - after)).toBeLessThan(1e-6);
+          for (const scale of [128, 32768]) {
+            const quantize = (x: number) =>
+              Math.max(-scale, Math.min(scale - 1, Math.round(x * scale)));
+            expect(
+              Math.abs(quantize(before) - quantize(after)),
+            ).toBeLessThanOrEqual(1);
+          }
+        }
       }
     }
   },
