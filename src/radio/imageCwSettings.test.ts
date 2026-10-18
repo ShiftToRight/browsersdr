@@ -18,7 +18,7 @@ it.each(["WEFAX", "SSTV", "CW-TEXT"] as const)("%s settings survive favorites, l
   const metadata = validateRecordingMetadata(JSON.parse(recordingMetadataJson(fixture)), fixture.data.length);
   expect(metadata.textModem).toEqual(textModem);
   expect(metadata.beatToneHz).toBe(settings.beatToneHz);
-  expect(() => validateModeSampleRate(mode, 192000)).toThrow(/1.024 or 2.4/);
+  expect(() => validateModeSampleRate(mode, 192000)).toThrow(/1\.024, 2\.4 or 3\.2/);
   expect(() => normalizeModeSettings({ ...settings, textModem: { ...textModem, cw: { ...textModem.cw, wpm: 0 } } })).toThrow(/5–60/);
   expect(() => normalizeModeSettings({ ...settings, textModem: { ...textModem, image: { ...textModem.image, lpm: 30 as 60 } } })).toThrow(/image decoder/);
   const session = { actualSampleRateHz: metadata.sampleRateHz, hardwareCenterFrequencyHz: metadata.centerFrequencyHz, selectedChannelFrequencyHz: metadata.selectedChannelFrequencyHz, channelBandwidthHz: metadata.channelBandwidthHz, mode };

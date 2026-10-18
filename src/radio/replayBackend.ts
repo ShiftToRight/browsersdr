@@ -1,3 +1,4 @@
+import type { DigitalInputSampleRateHz } from "../digital/inputRates";
 import { TextDigitalReceiver } from "../textmodem/digitalReceiver";
 import { isTextMode, textModemConfiguration } from "../textmodem/settings";
 import { ReplayReader } from "./replayReader";
@@ -316,7 +317,7 @@ export class ReplayBackend implements ReceiverBackend {
   }
 
   private prepareSrd(metadata: SourceSessionMetadata, offsetHz: number): void {
-    const rate = channelSampleRate(metadata.actualSampleRateHz) as 1_024_000 | 2_400_000;
+    const rate = channelSampleRate(metadata.actualSampleRateHz) as DigitalInputSampleRateHz;
     if (metadata.mode === "APRS") this.aprs.configureSession(defaultAprsConfiguration(rate, metadata.sessionGeneration, offsetHz));
     if (metadata.mode === "RS41") this.rs41.configureSession(defaultRs41Configuration(rate, metadata.sessionGeneration, offsetHz));
     if (isTextMode(metadata.mode)) this.textModem.configureSession(textModemConfiguration(metadata.mode, metadata.textModem, rate, metadata.sessionGeneration, offsetHz));
@@ -324,7 +325,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.srd.configureSession(
       srdConfigurationForRoute(
         metadata.srd!,
-        channelSampleRate(metadata.actualSampleRateHz) as 1_024_000 | 2_400_000,
+        channelSampleRate(metadata.actualSampleRateHz) as DigitalInputSampleRateHz,
         offsetHz,
         metadata.sessionGeneration,
       ),

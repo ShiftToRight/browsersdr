@@ -3,12 +3,12 @@ import type { ReceiverController } from "../radio/receiverController";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import type { SpectrumFrame } from "../radio/types";
 import { ShareAudioPublisher } from "./audioPublisher";
-import { createRoom, waitForAnswer, joinRoom, sendAnswer, leaveRoom } from "./roomClient";
+import { createRoom, joinRoom, readEvents, sendSignal, leaveRoom, RoomError, type RoomAccess, type RoomEvent } from "./roomClient";
 import { decodeSpectrum, encodeSpectrum, newPeerId, parseSignal, parseState, sharedState, SHARE_SCHEMA, stereoDescription,
   validPeerId, type SharedState } from "./protocol";
 
-export interface PeerStats { status: string; frames: number; skipped: number; audioSeconds: number; audioPackets: number; audioBytes: number; jitterMs: number; roundTripMs: number; spectrumFps: number; }
-export const initialPeerStats = (): PeerStats => ({ status: "Not connected", frames: 0, skipped: 0, audioSeconds: 0, audioPackets: 0, audioBytes: 0, jitterMs: 0, roundTripMs: 0, spectrumFps: 0 });
+export interface PeerStats { status: string; frames: number; skipped: number; audioSeconds: number; audioPackets: number; audioBytes: number; jitterMs: number; roundTripMs: number; spectrumFps: number; connectionPath: string; serviceMode: string; }
+export const initialPeerStats = (): PeerStats => ({ status: "Not connected", frames: 0, skipped: 0, audioSeconds: 0, audioPackets: 0, audioBytes: 0, jitterMs: 0, roundTripMs: 0, spectrumFps: 0, connectionPath: "Detecting", serviceMode: "" });
 const describe = (pc: RTCPeerConnection, id: string) => JSON.stringify({ schema: SHARE_SCHEMA, id, description: pc.localDescription?.toJSON() });
 const channelName = (id: string) => `browsersdr-peer-${id}`;
 
@@ -36,6 +36,14 @@ class PeerBase {
   protected deadline?: ReturnType<typeof setTimeout>;
   protected readonly roomAbort = new AbortController();
   protected roomToken?: string;
+  protected room?: RoomAccess;
+  private eventCursor = 0;
+  private receiving = false;
+  private descriptionSent = false;
+  private candidatesSent = 0;
+  private pendingCandidates: (RTCIceCandidateInit | null)[] = [];
+  private outbound = Promise.resolve();
+  private disconnectedTimer?: ReturnType<typeof setTimeout>;
   private previousFrames = 0;
   private previousTime = performance.now();
   constructor(protected readonly changed: (stats: PeerStats) => void, protected readonly ended: (reason: string) => void) {
@@ -44,13 +52,77 @@ class PeerBase {
       const state = this.pc.connectionState;
       this.stats.status = state === "connected" ? "Connected" : state === "connecting" ? "Connecting" : state;
       this.publish();
-      if (state === "connected") { clearTimeout(this.deadline); this.deadline = undefined; }
-      if (state === "failed" || state === "disconnected") this.end("Peer connection lost. Join a new session to reconnect.");
+      if (state === "connected") { clearTimeout(this.deadline); this.deadline = undefined; clearTimeout(this.disconnectedTimer); this.disconnectedTimer = undefined; }
+      if (state === "failed") this.end("Peer connection lost. Join a new session to reconnect.");
+      if (state === "disconnected" && !this.disconnectedTimer) this.disconnectedTimer = setTimeout(() => this.end("Peer connection lost. Join a new session to reconnect."), 8000);
     };
     this.interval = setInterval(() => void this.sampleStats(), 1000);
   }
   protected publish(): void { if (!this.closed) this.changed({ ...this.stats }); }
-  protected timeout(): void { this.deadline = setTimeout(() => this.end("Connection timed out. This local prototype has no internet relay."), 30_000); }
+  protected timeout(): void { if (this.pc.connectionState !== "connected") this.deadline = setTimeout(() => this.end("Connection timed out. Check the network and ask the host for a new key."), 30_000); }
+  protected configureRoom(room: RoomAccess): void {
+    if (this.closed) { leaveRoom(room.token); throw new Error("Sharing ended."); }
+    this.room = room; this.roomToken = room.token; this.stats.serviceMode = room.mode;
+    this.pc.setConfiguration({ iceServers: room.iceServers, iceTransportPolicy: room.iceTransportPolicy });
+    this.pc.onicecandidate = event => {
+      if (this.closed) return;
+      if (++this.candidatesSent > 128) { this.end("Too many connection candidates. Try a new session."); return; }
+      const candidate = event.candidate?.toJSON() ?? null;
+      if (!this.descriptionSent) {
+        if (this.pendingCandidates.length >= 128) { this.end("Too many connection candidates. Try a new session."); return; }
+        this.pendingCandidates.push(candidate);
+      } else void this.queueSignal("candidate", candidate).catch(() => this.end("Connection exchange failed. Try a new session."));
+    };
+  }
+  private queueSignal(kind: RoomEvent["kind"], value: RoomEvent["value"]): Promise<void> {
+    const token = this.roomToken;
+    const sent = this.outbound.then(async () => {
+      if (!this.closed && token) await sendSignal(token, kind, value, this.roomAbort.signal);
+    });
+    this.outbound = sent.catch(() => undefined);
+    return sent;
+  }
+  protected async publishDescription(kind: "offer" | "answer", text: string): Promise<void> {
+    await this.queueSignal(kind, text); this.descriptionSent = true;
+    for (const candidate of this.pendingCandidates.splice(0)) await this.queueSignal("candidate", candidate);
+  }
+  protected async setDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    if (this.roomToken) await this.pc.setLocalDescription(stereoDescription(description));
+    else await localDescription(this.pc, description);
+  }
+  protected async receiveSignal(event: RoomEvent): Promise<void> {
+    if (event.kind === "candidate") await this.pc.addIceCandidate(event.value as RTCIceCandidateInit | null);
+    else throw new Error("Unexpected connection description.");
+  }
+  protected receiveEvents(initial: RoomEvent[] = []): void {
+    if (this.receiving || !this.roomToken) return;
+    this.receiving = true;
+    void (async () => {
+      let batch = initial, failedAt: number | undefined;
+      while (!this.closed && this.roomToken) {
+        for (const event of batch) {
+          if (this.closed) return;
+          if (event.sequence <= this.eventCursor) continue;
+          if (event.sequence !== this.eventCursor + 1) throw new Error("Connection exchange lost its place.");
+          await this.receiveSignal(event); this.eventCursor = event.sequence;
+        }
+        try {
+          batch = await readEvents(this.roomToken, this.eventCursor, this.roomAbort.signal); failedAt = undefined;
+        } catch (error) {
+          if (this.closed) return;
+          if (error instanceof RoomError && error.terminal) throw error;
+          failedAt ??= performance.now();
+          if (performance.now() - failedAt >= 15_000) throw new Error("Session service is unavailable. Sharing ended; local reception continues.", { cause: error });
+          batch = [];
+          await new Promise<void>(resolve => {
+            const done = () => { clearTimeout(timer); this.roomAbort.signal.removeEventListener("abort", done); resolve(); };
+            const timer = setTimeout(done, 1000); this.roomAbort.signal.addEventListener("abort", done, { once: true });
+          });
+        }
+      }
+    })().catch(error => { if (!this.closed) this.signalingFailed(error); });
+  }
+  protected signalingFailed(error: unknown): void { this.end(error instanceof Error ? error.message : "Connection exchange failed."); }
   protected async sampleStats(): Promise<void> {
     if (this.closed) return;
     try {
@@ -64,7 +136,12 @@ class PeerBase {
           this.stats.audioPackets = report.packetsReceived ?? 0; this.stats.audioBytes = report.bytesReceived ?? 0;
           this.stats.jitterMs = (report.jitter ?? 0) * 1000;
         }
-        if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) this.stats.roundTripMs = (report.currentRoundTripTime ?? 0) * 1000;
+        if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+          this.stats.roundTripMs = (report.currentRoundTripTime ?? 0) * 1000;
+          const local = reports.get(String(report.localCandidateId)), remote = reports.get(String(report.remoteCandidateId));
+          const relay = local?.candidateType === "relay" || remote?.candidateType === "relay";
+          this.stats.connectionPath = relay ? `TURN relay${local?.relayProtocol ? ` (${String(local.relayProtocol)})` : ""}` : "Direct";
+        }
       });
       this.publish();
     } catch { /* Closing a connection can invalidate a pending stats read. */ }
@@ -72,9 +149,9 @@ class PeerBase {
   protected end(reason: string): void { if (!this.closed) { this.close(); this.ended(reason); } }
   close(): void {
     if (this.closed) return;
-    this.closed = true; clearInterval(this.interval); clearTimeout(this.deadline);
+    this.closed = true; clearInterval(this.interval); clearTimeout(this.deadline); clearTimeout(this.disconnectedTimer);
     this.roomAbort.abort(); if (this.roomToken) leaveRoom(this.roomToken);
-    this.channel?.close(); this.pc.onconnectionstatechange = null; this.pc.close();
+    this.channel?.close(); this.pc.onconnectionstatechange = null; this.pc.onicecandidate = null; this.pendingCandidates = []; this.pc.close();
   }
 }
 
@@ -84,6 +161,7 @@ export class ShareHost extends PeerBase {
   private readonly spectrumChannel = this.pc.createDataChannel("spectrum", { ordered: false, maxRetransmits: 0 });
   readonly audio: ShareAudioPublisher;
   offer = "";
+  private joinKey = "";
   private guestId?: string;
   private answering = false;
   private lastFrame = -Infinity;
@@ -143,8 +221,12 @@ export class ShareHost extends PeerBase {
       };
     }
   }
-  async prepare(): Promise<void> {
-    await localDescription(this.pc, await this.pc.createOffer());
+  async prepare(network = false): Promise<void> {
+    if (network) {
+      const room = await createRoom(this.roomAbort.signal);
+      this.configureRoom(room); this.joinKey = room.key;
+    }
+    await this.setDescription(await this.pc.createOffer());
     if (this.closed) throw new Error("Sharing ended.");
     this.offer = describe(this.pc, this.id); this.stats.status = "Waiting for guest"; this.publish();
     this.deadline = setTimeout(() => this.end("Unused invitation expired. Start sharing to create a new one."), 10 * 60_000);
@@ -158,14 +240,13 @@ export class ShareHost extends PeerBase {
     finally { this.answering = false; }
   }
   async createKey(): Promise<string> {
-    const room = await createRoom(this.offer, this.roomAbort.signal);
-    if (this.closed) { leaveRoom(room.token); throw new Error("Sharing ended."); }
-    this.roomToken = room.token;
-    void waitForAnswer(room.token, this.roomAbort.signal).then(async answer => {
-      this.roomToken = undefined;
-      if (!this.closed) await this.acceptAnswer(answer);
-    }).catch(() => { if (!this.closed) this.end("Session exchange ended. Start sharing to create a new key."); });
-    return room.key;
+    if (!this.roomToken || !this.joinKey) throw new Error("Prepare a network sharing session first.");
+    await this.publishDescription("offer", this.offer); this.receiveEvents();
+    return this.joinKey;
+  }
+  protected override async receiveSignal(event: RoomEvent): Promise<void> {
+    if (event.kind === "answer" && typeof event.value === "string") await this.acceptAnswer(event.value);
+    else await super.receiveSignal(event);
   }
   private sendState(): void {
     try {
@@ -221,6 +302,10 @@ export class ShareGuest extends PeerBase {
       } else channel.close();
     };
   }
+  protected override signalingFailed(error: unknown): void {
+    if (error instanceof RoomError && error.status === 410) this.end("Host ended sharing. Ask the host for a new session key.");
+    else super.signalingFailed(error);
+  }
   joinLocal(): void {
     if (!validPeerId(this.id) || typeof BroadcastChannel !== "function") throw new Error("Use manual connection exchange in this browser.");
     this.channel = new BroadcastChannel(channelName(this.id));
@@ -239,20 +324,26 @@ export class ShareGuest extends PeerBase {
   }
   async joinKey(key: string): Promise<void> {
     const room = await joinRoom(key, this.roomAbort.signal);
-    this.roomToken = room.token;
-    if (this.closed) { leaveRoom(room.token); return; }
-    this.id = parseSignal(room.offer, "offer").id;
-    const answer = await this.acceptOffer(room.offer);
-    if (answer && !this.closed) { await sendAnswer(room.token, answer, this.roomAbort.signal); this.roomToken = undefined; }
+    this.configureRoom(room);
+    const offer = room.events.find(event => event.kind === "offer");
+    if (!offer || typeof offer.value !== "string") throw new Error("The host has not prepared this session.");
+    this.id = parseSignal(offer.value, "offer").id;
+    this.timeout(); this.receiveEvents(room.events);
+  }
+  protected override async receiveSignal(event: RoomEvent): Promise<void> {
+    if (event.kind === "offer" && typeof event.value === "string") await this.acceptOffer(event.value);
+    else await super.receiveSignal(event);
   }
   async acceptOffer(text: string): Promise<string | undefined> {
     const offer = parseSignal(text, "offer");
     if (offer.id !== this.id || this.closed || this.processing) throw new Error("Use a new guest connection for this offer.");
     this.processing = true;
     await this.pc.setRemoteDescription(offer.description);
-    await localDescription(this.pc, await this.pc.createAnswer());
+    await this.setDescription(await this.pc.createAnswer());
     if (this.closed) return;
-    const answer = describe(this.pc, this.id); this.answerReady(answer);
+    const answer = describe(this.pc, this.id);
+    if (this.roomToken) await this.publishDescription("answer", answer);
+    else this.answerReady(answer);
     this.channel?.postMessage({ type: "answer", guestId: this.guestId, text: answer });
     clearTimeout(this.deadline); this.timeout();
     return answer;

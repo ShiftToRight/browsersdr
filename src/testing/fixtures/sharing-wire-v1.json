@@ -1,0 +1,84 @@
+{
+  "schema": "browsersdr-peer-prototype-v1",
+  "signals": [
+    {
+      "type": "offer",
+      "value": "{\"schema\": \"browsersdr-peer-prototype-v1\", \"id\": \"abababababababababababababababab\", \"description\": {\"type\": \"offer\", \"sdp\": \"v=0\\r\\na=independent-wire-vector\\r\\n\"}}",
+      "valid": true
+    },
+    {
+      "type": "answer",
+      "value": "null",
+      "valid": false
+    },
+    {
+      "type": "offer",
+      "value": "{}",
+      "valid": false
+    }
+  ],
+  "candidates": [
+    {
+      "value": {
+        "candidate": "candidate:1 1 UDP 1 192.0.2.1 1234 typ relay",
+        "sdpMid": "0",
+        "sdpMLineIndex": 0
+      },
+      "valid": true
+    },
+    {
+      "value": null,
+      "valid": true
+    },
+    {
+      "value": {
+        "candidate": "x",
+        "sdpMid": "0",
+        "sdpMLineIndex": 64
+      },
+      "valid": false
+    },
+    {
+      "value": {},
+      "valid": false
+    }
+  ],
+  "ice": [
+    {
+      "value": [
+        {
+          "urls": [
+            "turn:relay.example:3478?transport=udp",
+            "turns:relay.example:5349?transport=tcp"
+          ],
+          "username": "temporary",
+          "credential": "temporary"
+        }
+      ],
+      "relay": true,
+      "valid": true
+    },
+    {
+      "value": [],
+      "relay": false,
+      "valid": true
+    },
+    {
+      "value": [],
+      "relay": true,
+      "valid": false
+    },
+    {
+      "value": [
+        {
+          "urls": [
+            "turn:relay.example:3478?transport=udp",
+            "turns:relay.example:5349?transport=tcp"
+          ]
+        }
+      ],
+      "relay": true,
+      "valid": false
+    }
+  ]
+}

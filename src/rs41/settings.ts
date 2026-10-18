@@ -1,3 +1,4 @@
+import { digitalInputProfile, type DigitalInputSampleRateHz } from "../digital/inputRates";
 import {
   validateDigitalChannelConfiguration,
   type DigitalChannelConfiguration,
@@ -10,7 +11,7 @@ export interface Rs41Configuration extends DigitalChannelConfiguration {
 }
 
 export function defaultRs41Configuration(
-  actualInputSampleRateHz: 1_024_000 | 2_400_000,
+  actualInputSampleRateHz: DigitalInputSampleRateHz,
   generation: number,
   selectedChannelOffsetHz = 0,
 ): Rs41Configuration {
@@ -19,7 +20,7 @@ export function defaultRs41Configuration(
     selectedChannelOffsetHz,
     generation,
     channelBandwidthHz: 20_000,
-    outputSampleRateHz: actualInputSampleRateHz === 1_024_000 ? 64_000 : 60_000,
+    outputSampleRateHz: digitalInputProfile(actualInputSampleRateHz).narrowRateHz,
     syncBitErrors: 4,
     sondeExpiryInputSamples: actualInputSampleRateHz * 30 * 60,
     snapshotIntervalInputSamples: Math.floor(actualInputSampleRateHz / 10),

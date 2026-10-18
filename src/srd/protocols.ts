@@ -123,10 +123,12 @@ export function decodeFineOffsetWh51Burst(
   const nominalSymbolUs = 58;
   const pulses = suppressPulseGlitches(burst.pulses, nominalSymbolUs * 0.45);
   let rejectedFrames = 0;
-  for (const inverted of [false, true]) {
+  // Bounded timing hypotheses preserve CRC+checksum gating while accounting
+  // for sample quantization and the existing 59.5 us reference fixture.
+  for (const symbolUs of [58, 57, 59, 60]) for (const inverted of [false, true]) {
     let bits = "";
     for (const pulse of pulses) {
-      const count = Math.max(1, Math.round(pulse.durationUs / nominalSymbolUs));
+      const count = Math.max(1, Math.round(pulse.durationUs / symbolUs));
       if (count > 256 || bits.length + count > 8_192) break;
       const bit = (pulse.level === 1) !== inverted ? "1" : "0";
       bits += bit.repeat(count);

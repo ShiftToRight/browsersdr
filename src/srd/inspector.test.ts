@@ -26,6 +26,20 @@ function reduced(
 }
 
 describe("SrdPulseInspector", () => {
+  it("includes each decimated sample's full acquisition interval in pulse duration", () => {
+    const configuration = defaultSrdConfiguration(3_200_000, 1);
+    configuration.threshold.mode = "manual";
+    configuration.threshold.carrierLevel = 0.2;
+    configuration.burst.minimumDurationUs = 0;
+    configuration.burst.endGapUs = 20;
+    const inspector = new SrdPulseInspector(configuration);
+    const block = reduced([0, 1, 1, 1, 0, 0, 0, 0]);
+    block.inputSamplesPerOutput = 25;
+    block.outputSampleRateHz = 128_000;
+    block.provenance.actualInputSampleRateHz = 3_200_000;
+    const [burst] = inspector.process(block);
+    expect(burst?.pulses[0]).toMatchObject({ firstInputSampleIndex: 25, lastInputSampleIndex: 99, durationUs: 23.4375 });
+  });
   it("uses adaptive carrier thresholding and exposes explicit bit-slice assumptions", () => {
     const configuration = defaultSrdConfiguration(1_024_000, 1);
     configuration.actualInputSampleRateHz = 1_000_000;

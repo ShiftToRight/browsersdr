@@ -1,5 +1,8 @@
 export interface TimingDistribution { count: number; meanMs: number; p99Ms: number; maxMs: number; lifetimeMaxMs: number }
-export interface IngressDiagnostics { stages: Record<string, TimingDistribution>; debtMs: number; budgetMs: number }
+export interface IngressDiagnostics {
+  stages: Record<string, TimingDistribution>; debtMs: number; budgetMs: number;
+  rtl?: { sampleRateHz: number; deliveredSamples: number; deliveredBytes: number; deliveredBlocks: number; lastBlockSamples: number; sampleSeconds: number; elapsedSeconds: number; averageBytesPerSecond: number };
+}
 /** 256 recent measurements per named stage, no per-block allocation. Sorting is
  * restricted to the existing UI diagnostic poll. Maxima survive the recent window. */
 export class IngressTimings {

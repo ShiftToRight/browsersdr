@@ -38,7 +38,7 @@ export function LiveSharePanel({ controller, analysis, open, onClose }: {
         if (host.current === peer) finish(reason);
       });
       host.current = peer; activeRef.current = true; setActive(true);
-      await peer.prepare();
+      await peer.prepare(true);
       const joinKey = await peer.createKey();
       if (host.current !== peer || !activeRef.current) return;
       setKey(formatJoinKey(joinKey));
@@ -62,21 +62,21 @@ export function LiveSharePanel({ controller, analysis, open, onClose }: {
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }}>
-      <div className="live-share-heading"><div><p className="eyebrow">One host · one guest · local prototype</p><h2 id="live-share-heading">Share live audio &amp; spectrum</h2></div>
+      <div className="live-share-heading"><div><p className="eyebrow">One host · one guest</p><h2 id="live-share-heading">Share live audio &amp; spectrum</h2></div>
         <button className="secondary" type="button" aria-label="Close live sharing panel" onClick={onClose}>Close</button></div>
       <p>Your guest follows the selected channel. Only receiver audio and RF spectrum are shared. You keep control.</p>
       {!active ? <><button type="button" disabled={receiver.lifecycle !== "running" || busy || typeof RTCPeerConnection !== "function"} onClick={() => void start()}>Start sharing</button>
         {receiver.lifecycle !== "running" && <p>Start a local receiver or I/Q replay first. The synthetic source supplies spectrum only.</p>}</> : <>
         {key ? <><label>Session key<input className="live-share-key" ref={keyInput} aria-label="Host session key" readOnly value={key} onFocus={event => event.currentTarget.select()} /></label>
           <div className="live-share-actions"><button type="button" onClick={() => void copy()}>Copy session key</button><a className="live-share-link" href={guestUrl} target="_blank" rel="noopener noreferrer">Open guest preview ↗</a></div>
-          <p className="display-note">Give this key to your guest. It is valid for one join within 10 minutes. Both sides must open this local preview; no connection settings need copying.</p></> : <p role="status">Preparing session key…</p>}
+          <p className="display-note">Give this key to your guest. It is valid for one join within 10 minutes. Sessions last up to 2 hours. Your guest opens BrowserSDR and enters this key. No connection settings need copying.</p></> : <p role="status">Preparing session key…</p>}
         <div className="live-share-actions"><p role="status" className="live-share-status">{stats.status}</p><button type="button" className="secondary" onClick={stop}>Stop sharing</button></div>
         <dl className="live-share-stats"><div><dt>Spectrum rows sent</dt><dd data-testid="share-sent-frames">{stats.frames}</dd></div><div><dt>Spectrum rate</dt><dd>{stats.spectrumFps.toFixed(1)} rows/s</dd></div>
-          <div><dt>Audio published</dt><dd>{stats.audioSeconds.toFixed(1)} s</dd></div><div><dt>Display rows skipped</dt><dd>{stats.skipped}</dd></div><div><dt>Network round trip</dt><dd>{stats.roundTripMs.toFixed(1)} ms</dd></div></dl>
+          <div><dt>Audio published</dt><dd>{stats.audioSeconds.toFixed(1)} s</dd></div><div><dt>Display rows skipped</dt><dd>{stats.skipped}</dd></div><div><dt>Connection path</dt><dd>{stats.connectionPath}</dd></div><div><dt>Network round trip</dt><dd>{stats.roundTripMs.toFixed(1)} ms</dd></div></dl>
         <p className="display-note">Close keeps sharing active. Stop sharing disconnects the guest and leaves your receiver running.</p>
       </>}
       <p role="status">{message}</p>
-      <p className="display-note">The local service exchanges connection details only. Audio and spectrum travel directly. Internet relay and guest control are not enabled.</p>
+      <p className="display-note">{stats.serviceMode === "local" ? "This local preview has no public relay configured. You keep control." : "The session service exchanges connection details. Audio and spectrum use a direct connection when possible, with an encrypted TURN relay when needed. You keep control."}</p>
     </dialog>, document.body)}
   </>;
 }

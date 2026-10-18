@@ -1,3 +1,4 @@
+import { digitalInputProfile, type DigitalInputSampleRateHz } from "../digital/inputRates";
 import {
   validateDigitalChannelConfiguration,
   type DigitalChannelConfiguration,
@@ -18,7 +19,7 @@ export const APRS_FREQUENCY_PRESETS = [
 ] as const;
 
 export function defaultAprsConfiguration(
-  actualInputSampleRateHz: 1_024_000 | 2_400_000,
+  actualInputSampleRateHz: DigitalInputSampleRateHz,
   generation: number,
   selectedChannelOffsetHz = 0,
 ): AprsConfiguration {
@@ -27,7 +28,7 @@ export function defaultAprsConfiguration(
     selectedChannelOffsetHz,
     generation,
     channelBandwidthHz: 20_000,
-    outputSampleRateHz: actualInputSampleRateHz === 1_024_000 ? 64_000 : 60_000,
+    outputSampleRateHz: digitalInputProfile(actualInputSampleRateHz).narrowRateHz,
     stationExpiryInputSamples: actualInputSampleRateHz * 30 * 60,
     snapshotIntervalInputSamples: Math.floor(actualInputSampleRateHz / 10),
     duplicateWindowInputSamples: actualInputSampleRateHz * 2,

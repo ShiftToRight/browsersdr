@@ -130,8 +130,8 @@ describe("text modem protocol references", () => {
 });
 describe("generated selected-channel text RF", () => {
   for (const mode of ["RTTY", "PSK31", "NAVTEX", "ACARS"] as const)
-    it(`${mode} decodes at nonzero offset through I/Q reduction`, () => {
-      const { state, text } = receive(mode);
+    it.each([1_024_000, 3_200_000])(`${mode} decodes at nonzero offset at %i samples/s`, rate => {
+      const { state, text } = receive(mode, rate, { offsetHz: 37_000 }, 160_256);
       expect(state.text).toContain(text);
       expect(state.messages.length).toBeGreaterThan(0);
     }, 20000);

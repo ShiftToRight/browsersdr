@@ -136,7 +136,7 @@ describe("shared WBFM multiplex", () => {
       clock.mockRestore();
     }
   });
-  it.each([1_024_000, 2_400_000])(
+  it.each([1_024_000, 2_400_000, 3_200_000])(
     "matches independent audio/RDS stages at %i with offsets, irregular blocks and resets",
     (rate) => {
       const sink = player();

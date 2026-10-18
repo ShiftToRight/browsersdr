@@ -91,7 +91,7 @@ describe("receiver mode configuration", () => {
     });
     expect(() => createSignalsMode(settings)).toThrow(/digital receiver path/);
     expect(() => validateModeSampleRate("SRD", 192_000)).toThrow(
-      /1.024 or 2.4/,
+      /1.024, 2.4 or 3.2/,
     );
   });
 

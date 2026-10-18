@@ -1,4 +1,5 @@
 import type { TextModemSettings } from "../textmodem/settings";
+import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, RTL_EXPERIMENTAL_CAPTURE_PROVENANCE } from "./rtlSampleRate";
 import { DurableRecordingSpool } from "./recordingLibrary";
 import { snapshotReceiverLocation, validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { ChannelRecordingWorker } from "./channelRecordingWorker";
@@ -236,6 +237,8 @@ export class IqRecorder {
     storageMode: RecordingStorageMode = "memory",
     options: RecordingOptions = {},
   ) {
+    if (session.source === "rtl-sdr" && session.actualSampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ)
+      this.provenance = [provenance, RTL_EXPERIMENTAL_CAPTURE_PROVENANCE].filter(Boolean).join(" ");
     this.receiverLocation = session.source === "replay"
       ? (options.receiverLocation ? validateReceiverLocation(options.receiverLocation) : undefined)
       : snapshotReceiverLocation(options.receiverLocation ?? survey?.site?.location ?? (survey?.site?.latitude !== undefined && survey.site.longitude !== undefined ? { version: 1, source: "manual", latitude: survey.site.latitude, longitude: survey.site.longitude, label: survey.site.label } : undefined), captureStartedAt);

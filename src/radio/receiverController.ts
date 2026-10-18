@@ -32,7 +32,6 @@ import type { IqRecording, RecordingStatus } from "./iqRecording";
 import type { SurveyCaptureContext } from "./fieldSurvey";
 import { defaultDiagnosticRecorder } from "../diagnostics/diagnosticRecorder";
 import {
-  LIVE_SAMPLE_RATES_HZ,
   sourceCapabilities,
   validateSourceConfiguration,
   validateSourceRoute,
@@ -46,7 +45,7 @@ import type { UsrpB205RxSettings } from "./usrpB205Capabilities";
 export const FM_MIN_HZ = 87_500_000;
 export const FM_MAX_HZ = 108_000_000;
 export const RTL_SAMPLE_RATE_HZ = 1_024_000;
-export const RTL_SAMPLE_RATE_OPTIONS_HZ = LIVE_SAMPLE_RATES_HZ;
+export { RTL_SAMPLE_RATES_HZ as RTL_SAMPLE_RATE_OPTIONS_HZ } from "./rtlSampleRate";
 
 export interface ReceiverStartOptions {
   source?: SourceKind;
@@ -600,6 +599,7 @@ export class ReceiverController {
         modeSettings: {
           mode: session.mode, bandwidthHz: session.channelBandwidthHz,
           squelch: session.squelch, beatToneHz: session.beatToneHz,
+          srd: session.srd, textModem: session.textModem,
         },
         ...(session.source === "rtl-sdr" ? { gainDb: session.gainDb } : {}),
         hardwareSettings: session.hackrf?.captureSettings,

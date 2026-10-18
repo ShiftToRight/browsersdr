@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.9.0 — 2026-10-18
+
+- Add opt-in experimental RTL-SDR 3.2 MS/s acquisition, live rate switching, native/channel capture and replay, with explicit loss caveats and bounded delivered-input diagnostics. Preserve existing defaults and other receiver rate choices.
+- Extend narrow decoder profiles to 3.2 MS/s, qualify ADS-B sampling phases, and count complete reduced-sample intervals in sensor pulse durations while retaining CRC/checksum validation.
+
+- Add continuous Explorer monitoring with custom frequency targets, watchlists, repeated band sweeps, bounded signal history, coverage, pause/resume and exports.
+- Add the compact Explorer workbench, guided setup, measured band spectrum and selectable detection markers linked to results and inspection.
+- Group detections adaptively with supported bandwidths, stable middle frequencies and component evidence; alternate scan grids to revisit window boundaries.
+- Add invitation-key live audio and spectrum sharing for one guest, with independent volume, authenticated TURN fallback, connection-path status and cleanup that preserves host reception.
+- Improve Favorites recall and detailed-map responsiveness; bundle UI fonts locally for reliable startup.
+- Preserve installation prompts during lazy receiver startup and keep Session tools compact.
+- Guard complete browser-test coverage and split CI checks across four development/production shards.
+
 ## 1.8.0 — 2026-10-17
 
 - Improve tuning drafts, whole-Hz readouts, explicit recentering and regional click-to-tune channel snapping, with an Alt-click free-tuning override.

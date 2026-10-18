@@ -7,7 +7,8 @@ import {
   validateDigitalInputBlock,
 } from "./contracts";
 
-export const DIGITAL_SUPPORTED_INPUT_RATES_HZ = [1_024_000, 2_400_000] as const;
+import { digitalInputProfile } from "./inputRates";
+export { DIGITAL_SUPPORTED_INPUT_RATES_HZ } from "./inputRates";
 export const DIGITAL_MIN_OUTPUT_RATE_HZ = 24_000;
 export const DIGITAL_MAX_OUTPUT_RATE_HZ = 256_000;
 export const DIGITAL_MAX_DECIMATION = 64;
@@ -40,12 +41,7 @@ export function validateDigitalChannelConfiguration(
   configuration: DigitalChannelConfiguration,
 ): void {
   validateDigitalConfiguration(configuration);
-  if (
-    !DIGITAL_SUPPORTED_INPUT_RATES_HZ.includes(
-      configuration.actualInputSampleRateHz as (typeof DIGITAL_SUPPORTED_INPUT_RATES_HZ)[number],
-    )
-  )
-    throw new Error("Digital channel input rate must be 1.024 or 2.4 MS/s.");
+  digitalInputProfile(configuration.actualInputSampleRateHz);
   if (
     !Number.isFinite(configuration.outputSampleRateHz) ||
     configuration.outputSampleRateHz < DIGITAL_MIN_OUTPUT_RATE_HZ ||

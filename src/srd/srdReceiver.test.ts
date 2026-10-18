@@ -7,7 +7,7 @@ import {
 import { defaultSrdConfiguration, type SrdConfiguration } from "./settings";
 import { SrdReceiver } from "./srdReceiver";
 
-const INPUT_RATE = 1_024_000;
+describe.each([1_024_000, 3_200_000] as const)("SRD input %i samples/s", INPUT_RATE => {
 
 function appendTone(
   I: number[],
@@ -17,9 +17,9 @@ function appendTone(
   amplitude: number,
 ): void {
   const count = Math.round((durationUs * INPUT_RATE) / 1_000_000);
-  const start = I.length;
+  let angle = I.length ? Math.atan2(Q.at(-1)!, I.at(-1)!) : 0;
   for (let index = 0; index < count; index++) {
-    const angle = (2 * Math.PI * frequencyHz * (start + index)) / INPUT_RATE;
+    angle += (2 * Math.PI * frequencyHz) / INPUT_RATE;
     I.push(Math.cos(angle) * amplitude);
     Q.push(Math.sin(angle) * amplitude);
   }
@@ -235,4 +235,6 @@ describe("SrdReceiver RF paths", () => {
       }),
     ).toThrow(/generation/);
   });
+});
+
 });

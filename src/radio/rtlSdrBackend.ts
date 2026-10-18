@@ -1,4 +1,6 @@
 import { SavedCaptureRds } from "./savedCaptureRds";
+import { RtlIngress } from "./rtlIngress";
+import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, validateRtlAcceptedRate } from "./rtlSampleRate";
 import type { RecordingOptions } from "./channelRecording";
 import {
   LiveReceiverPipeline,
@@ -187,6 +189,8 @@ class RecordingRtlDevice implements RtlDevice {
 
 /** RTL backend whose USB source remains open while reception is stopped. */
 export class RtlSdrBackend implements ReceiverBackend {
+  private readonly ingress = new RtlIngress();
+  getIngressDiagnostics() { return this.ingress.snapshot(); }
   private rtlTuner?: SourceSessionMetadata["rtlTuner"];
   private readonly pipeline: LiveReceiverPipeline;
   private provider: RtlSourceProvider;
@@ -345,6 +349,7 @@ export class RtlSdrBackend implements ReceiverBackend {
   }
 
   private launchTransfers(sampleRateHz: number): void {
+    this.ingress.begin(sampleRateHz);
     const epoch = ++this.receptionEpoch;
     const samplesPerBuffer =
       512 * Math.ceil(sampleRateHz / BUFFERS_PER_SECOND / 512);
@@ -357,6 +362,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     if (this.stopTask) return this.stopTask;
     if (!this.receiving && !this.rateTask && this.streamTasks.length === 0) return Promise.resolve();
     this.receiving = false;
+    this.ingress.end();
     ++this.receptionEpoch;
     const pendingRate = this.rateTask;
     const task = (async () => {
@@ -393,6 +399,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     } catch (error) { return Promise.reject(error); }
     if (this.recorder) return Promise.reject(new Error("Finish the recording before changing rate."));
     this.receiving = false;
+    this.ingress.end();
     const epoch = ++this.receptionEpoch;
     const oldTransfers = this.streamTasks;
     const pendingGain = this.gainTask;
@@ -402,6 +409,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       await Promise.all([...oldTransfers, ...(pendingGain ? [pendingGain] : [])]);
       this.throwIfDisconnectRequested();
       const actualSampleRateHz = await source.setSampleRate(sampleRateHz);
+      this.validateAcceptedRate(sampleRateHz, actualSampleRateHz);
       this.throwIfDisconnectRequested();
       validateSourceRoute("rtl-sdr", this.modeSettings, actualSampleRateHz, previous.selectedChannelFrequencyHz);
       const plan = planChannelTune(previous.hardwareCenterFrequencyHz, previous.selectedChannelFrequencyHz,
@@ -647,6 +655,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     const actualSampleRateHz = await source.setSampleRate(
       requestedSampleRateHz,
     );
+    this.validateAcceptedRate(requestedSampleRateHz, actualSampleRateHz);
     const hardwareCenterFrequencyHz = await source.setCenterFrequency(
       options.channelFrequencyHz,
     );
@@ -668,6 +677,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       channelBandwidthHz: this.modeSettings.bandwidthHz,
       squelch: this.modeSettings.squelch,
       beatToneHz: this.modeSettings.beatToneHz,
+      srd: this.modeSettings.srd,
       textModem: this.modeSettings.textModem,
       gainDb,
       sampleFormat: "planar-f32-iq-normalized",
@@ -740,6 +750,7 @@ export class RtlSdrBackend implements ReceiverBackend {
 
   private async pump(samplesPerBuffer: number, epoch: number): Promise<void> {
     while (this.receiving && epoch === this.receptionEpoch) {
+      const readStartedAt = performance.now();
       let block: Awaited<ReturnType<SignalSource["readSamples"]>>;
       try {
         block = await this.source!.readSamples(samplesPerBuffer);
@@ -753,7 +764,16 @@ export class RtlSdrBackend implements ReceiverBackend {
         return;
       }
       try {
-        if (this.receiving && epoch === this.receptionEpoch) this.pipeline.receiveSamples(block);
+        if (this.receiving && epoch === this.receptionEpoch) {
+          const startedAt = performance.now();
+          if (block.frequency === this.metadata?.hardwareCenterFrequencyHz) {
+            if (block.I.length !== block.Q.length || block.I.length === 0)
+              throw new Error("RTL-SDR returned an empty or malformed sample block.");
+            this.ingress.accept(block.I.length, startedAt - readStartedAt);
+          }
+          this.pipeline.receiveSamples(block);
+          this.ingress.delivered(performance.now() - startedAt);
+        }
       } catch (error) {
         if (this.receiving && !this.streamFailureReported) {
           this.streamFailureReported = true;
@@ -762,6 +782,12 @@ export class RtlSdrBackend implements ReceiverBackend {
         return;
       }
     }
+  }
+
+  private validateAcceptedRate(requested: number, actual: number): void {
+    validateRtlAcceptedRate(requested, actual);
+    if (requested === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ)
+      this.pipeline.validateRateBudget(actual);
   }
 }
 

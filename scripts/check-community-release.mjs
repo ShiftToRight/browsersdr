@@ -10,6 +10,7 @@ import { resolve, join, extname, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { fingerprintCommunityEvidence } from "./community-evidence-fingerprint.mjs";
 import { runBrowserChecks } from "./run-browser-checks.mjs";
+import { sharingCheckProxy } from "./sharing-check-proxy.mjs";
 
 // Run against the actual stamped payload using the exact frozen source's tests.
 const [siteArgument, sourceArgument, mode = "full"] = process.argv.slice(2);
@@ -65,7 +66,9 @@ const mime = {
   ".webp": "image/webp",
   ".webmanifest": "application/manifest+json",
 };
+const sharingProxy = sharingCheckProxy(process.env, mode === "full");
 const server = createServer((request, response) => {
+  if (sharingProxy(request, response)) return;
   if (!["GET", "HEAD"].includes(request.method)) {
     response.writeHead(405);
     response.end();

@@ -49,7 +49,7 @@ jobs:
         run: npm run build
 
       - name: Check initial JavaScript and map byte budgets
-        run: npm run performance:check
+        run: npm run test:performance && npm run performance:check
 
       - name: Verify static SEO documents and discovery files
         run: node scripts/verify-seo.mjs dist

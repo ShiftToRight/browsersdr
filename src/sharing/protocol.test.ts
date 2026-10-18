@@ -40,3 +40,20 @@ it("publishes only allowlisted receiver state and negotiates stereo Opus without
   expect(description.sdp).toContain("stereo=1;sprop-stereo=1;maxaveragebitrate=128000;usedtx=0");
   expect(description.sdp).toContain("a=fmtp:12 unchanged=1"); expect(description.sdp).not.toContain("stereo=0");
 });
+
+import wire from "../testing/fixtures/sharing-wire-v1.json";
+import { parseCandidate, validateIceServers } from "./signalingProtocol";
+it("matches the versioned cross-repository signaling vectors", () => {
+  for (const v of wire.signals) {
+    const parse = () => parseSignal(v.value, v.type === "offer" ? "offer" : "answer");
+    if (v.valid) expect(parse).not.toThrow(); else expect(parse).toThrow();
+  }
+  for (const v of wire.candidates) {
+    const parse = () => parseCandidate(v.value);
+    if (v.valid) expect(parse).not.toThrow(); else expect(parse).toThrow();
+  }
+  for (const v of wire.ice) {
+    const parse = () => validateIceServers(v.value, v.relay);
+    if (v.valid) expect(parse).not.toThrow(); else expect(parse).toThrow();
+  }
+});

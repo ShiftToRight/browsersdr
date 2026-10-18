@@ -86,6 +86,8 @@ export class AdsbReceiver implements DigitalSampleReceiver {
   private resampleWeight = 0;
   private samples: number[] = [];
   private alternateSamples: number[] = [];
+  /** 3.2 MS/s has a different native/chip phase lattice from the 2.4 profile. */
+  private thirdPhaseSamples: number[] = [];
   private scanAt = 0;
   private chipBaseIndex = 0;
   private nativeSamples: number[] = [];
@@ -124,6 +126,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
     this.inputSamples = 0;
     this.resampleAccumulator = 0; this.resampleWeight = 0; this.samples = []; this.scanAt = 0;
     this.alternateSamples = [];
+    this.thirdPhaseSamples = [];
     this.chipBaseIndex = 0; this.nativeSamples = []; this.nativeBaseIndex = 0;
     this.frames = 0; this.validFrames = 0; this.crcValidFrames = 0; this.unsupportedFrames = 0;
     this.crcFailures = 0; this.ambiguousFrames = 0; this.rejectedFrames = 0; this.targets.clear();
@@ -158,9 +161,10 @@ export class AdsbReceiver implements DigitalSampleReceiver {
     while (this.scanAt + 240 <= this.samples.length) {
       const primaryPreamble = this.isPreamble(this.samples, this.scanAt);
       const alternatePreamble = this.isPreamble(this.alternateSamples, this.scanAt);
-      if (!primaryPreamble && !alternatePreamble) { this.scanAt += 1; continue; }
+      const thirdPreamble = this.sampleRateHz === 3_200_000 && this.isPreamble(this.thirdPhaseSamples, this.scanAt);
+      if (!primaryPreamble && !alternatePreamble && !thirdPreamble) { this.scanAt += 1; continue; }
       const bytes = this.candidateBytes;
-      const coarsePhase = primaryPreamble ? 0 : ALTERNATE_COARSE_PHASE;
+      const coarsePhase = primaryPreamble ? 0 : alternatePreamble ? ALTERNATE_COARSE_PHASE : 2 / 3;
       const bestTiming = this.scoreTimings(this.scanAt, coarsePhase);
       let selectedCode = -1;
       let selectedScore = Number.NEGATIVE_INFINITY;
@@ -207,6 +211,7 @@ export class AdsbReceiver implements DigitalSampleReceiver {
       const removedChips = this.scanAt;
       this.samples.splice(0, removedChips);
       this.alternateSamples.splice(0, removedChips);
+      this.thirdPhaseSamples.splice(0, removedChips);
       this.chipBaseIndex += removedChips;
       this.scanAt = 0;
       const retainNativeAt = Math.max(0, Math.floor(this.chipBaseIndex * this.resampleStep()) - 4);
@@ -236,6 +241,8 @@ export class AdsbReceiver implements DigitalSampleReceiver {
     const step = this.resampleStep();
     const targetLength = this.samples.length;
     this.populatePhaseSamples(this.alternateSamples, ALTERNATE_COARSE_PHASE, step, targetLength);
+    if (this.sampleRateHz === 3_200_000)
+      this.populatePhaseSamples(this.thirdPhaseSamples, 2 / 3, step, targetLength);
   }
 
   private populatePhaseSamples(samples: number[], phase: number, step: number, targetLength: number): void {

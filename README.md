@@ -29,6 +29,8 @@ You'll need **desktop Google Chrome**, a supported USB SDR and an antenna suited
 
 **RTL-SDR and HackRF Pro are the stable desktop receivers.** HackRF One is experimental; bladeRF and USRP profiles are available with additional validation limits. Other browsers and receiver/mode combinations need their own checks. See [compatibility and setup](https://browsersdr.com/supported-devices/) for details, including USB permissions and driver requirements.
 
+RTL-SDR also offers **3.2 MS/s (experimental)** in Device details & settings. It provides a wider spectrum window and native I/Q captures, but some dongles or USB hosts lose samples at this rate. Select 2.4 MS/s if audio or decoding breaks up. Existing defaults are unchanged; ordinary RTL I/Q cannot prove loss-free reception.
+
 ## Learn more and help improve BrowserSDR
 
 Browse the [wiki](https://github.com/cybearde/browsersdr/wiki), read [what's changed](CHANGELOG.md), or follow the [development guide](https://github.com/cybearde/browsersdr/wiki/Development). Found a problem? [Open an issue](https://github.com/cybearde/browsersdr/issues) with your receiver, browser and steps to reproduce it. You can also share results through **Compatibility & tests** in the app's help menu.

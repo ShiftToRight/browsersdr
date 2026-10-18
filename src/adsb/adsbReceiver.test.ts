@@ -65,17 +65,17 @@ describe("AdsbReceiver", () => {
     receiver.receiveSamples(pulseFrameAtRate(fromHex("8D4840D6202CC371C32CE0576098"), 2_400_000));
     expect(latest?.validFrames).toBe(1);
   });
-  it("recovers a 2.4 MS/s frame across representative fractional phases and odd chunks", () => {
+  it.each([{ rate: 2_400_000, chunk: 37 }, ...[1, 7, 29, 37, 61, 512].map(chunk => ({ rate: 3_200_000, chunk }))])("recovers $rate samples/s frames across phases and $chunk-sample chunks", ({ rate, chunk }) => {
     const bytes = fromHex("8D4840D6202CC371C32CE0576098");
     for (const phase of [0, 1 / 12, 2 / 12, 3 / 12, 4 / 12, 5 / 12, 6 / 12]) {
       let latest: AdsbSnapshot | undefined;
       const receiver = new AdsbReceiver((value) => { latest = value; }, () => 1_000);
-      receiver.setSampleRate(2_400_000);
-      const frame = pulseFrameAtRateAndPhase(bytes, 2_400_000, phase);
-      for (let start = 0; start < frame.I.length; start += 37) {
+      receiver.setSampleRate(rate);
+      const frame = pulseFrameAtRateAndPhase(bytes, rate, phase);
+      for (let start = 0; start < frame.I.length; start += chunk) {
         receiver.receiveSamples({
-          I: frame.I.subarray(start, start + 37),
-          Q: frame.Q.subarray(start, start + 37),
+          I: frame.I.subarray(start, start + chunk),
+          Q: frame.Q.subarray(start, start + chunk),
           frequency: frame.frequency,
         });
       }

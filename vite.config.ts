@@ -5,7 +5,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { signalsWasmCompatibility } from "./src/dsp/signalsWasmPlugin.ts";
 import { seoAssets } from "./scripts/seo-site.mjs";
-import { createRoomService } from "./src/sharing/roomServer.ts";
 
 const LOCAL_USRP_PREFIX = "/local/usrp-b205/";
 const LOCAL_USRP_ARTIFACTS = new Set(["ad9364-no-os.js", "ad9364-no-os.wasm"]);
@@ -39,7 +38,13 @@ function prepareLocalNoOsJavascript(bytes: Buffer): Buffer {
   ));
 }
 
+// Optional sharing backend. A normal app checkout/build needs no server files.
+const sharingTarget = process.env.BROWSERSDR_SHARING_PROXY;
+const sharingProxy = sharingTarget ? { "/api/v1/sharing": { target: sharingTarget, changeOrigin: false, timeout: 35_000, proxyTimeout: 35_000 } } : undefined;
+
 export default defineConfig({
+  server: { proxy: sharingProxy },
+  preview: { proxy: sharingProxy },
   // Keep the app, stylesheet and module worker relocatable as one static directory.
   base: "./",
   // A worktree must not rewrite another checkout's development dependency cache.
@@ -58,11 +63,6 @@ export default defineConfig({
   plugins: [
     react(),
     signalsWasmCompatibility(),
-    {
-      name: "local-sharing-rendezvous",
-      configureServer(server) { const service = createRoomService(); server.middlewares.use(service.middleware); server.httpServer?.once("close", service.close); },
-      configurePreviewServer(server) { const service = createRoomService(); server.middlewares.use(service.middleware); server.httpServer.once("close", service.close); },
-    },
     {
       name: "static-site-documents",
       generateBundle() {

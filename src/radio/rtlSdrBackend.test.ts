@@ -165,6 +165,41 @@ describe("RTL sample-rate transitions", () => {
     await f.close();
   });
 
+  it.each([[1_024_000, 3_200_000], [2_400_000, 3_200_000], [3_200_000, 1_024_000], [3_200_000, 2_400_000]])("switches %i → %i with correct read sizes, capture boundaries and admitted-input accounting", async (from, to) => {
+    const f = fixture();
+    await f.backend.start({ ...OPTIONS, sampleRateHz: from }, 1);
+    f.backend.startRecording(undefined, { storageMode: "memory" });
+    f.reads.shift()!.pending.resolve(block()); await flush();
+    const original = f.backend.stopRecording("metadata-change")!;
+    expect(original.metadata).toMatchObject({ sampleRateHz: from, sampleCount: 2 });
+    const switching = f.backend.configureSampleRate(to, 2);
+    f.drain();
+    expect(await switching).toMatchObject({ actualSampleRateHz: to, requestedSampleRateHz: to });
+    expect(f.backend.getIngressDiagnostics().rtl?.deliveredSamples).toBe(0);
+    expect(f.reads.map(r => r.length)).toEqual([512 * Math.ceil(to / 20 / 512), 512 * Math.ceil(to / 20 / 512)]);
+    f.backend.startRecording(undefined, { storageMode: "memory" });
+    f.reads.shift()!.pending.resolve(block()); await flush();
+    const next = f.backend.stopRecording("user")!;
+    expect(next.metadata).toMatchObject({ sampleRateHz: to, sampleCount: 2 });
+    expect(f.backend.getIngressDiagnostics().rtl?.deliveredBytes).toBe(4);
+    expect(f.providerGet).toHaveBeenCalledOnce();
+    expect(f.audio.resume).toHaveBeenCalledOnce();
+    await f.close();
+  });
+
+  it("rejects an inexact experimental readback before resetting FIFO or exposing samples", async () => {
+    const f = fixture();
+    await f.backend.start(OPTIONS, 1);
+    f.source.setSampleRate = vi.fn(async () => 3_200_001);
+    const switching = f.backend.configureSampleRate(3_200_000, 2);
+    f.drain();
+    await expect(switching).rejects.toThrow(/exact experimental/);
+    expect(f.source.startReceiving).toHaveBeenCalledTimes(1);
+    expect(f.receiveSamples).not.toHaveBeenCalled();
+    expect(f.reads).toHaveLength(0);
+    await f.close();
+  });
+
   it("retains the selected channel and recenters only when the smaller span requires it", async () => {
     const f = fixture();
     await f.backend.start({ ...OPTIONS, sampleRateHz: 2_400_000 }, 1);

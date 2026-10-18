@@ -39,8 +39,8 @@ function generateIq(
 }
 
 describe("RS41 selected-channel receiver", () => {
-  it("decodes a capture-derived frame through offset RF across chunks", () => {
-    const configuration = defaultRs41Configuration(1_024_000, 9, 71_000);
+  it.each([1_024_000, 3_200_000] as const)("decodes offset RF across chunks at %i samples/s", (rate) => {
+    const configuration = defaultRs41Configuration(rate, 9, 71_000);
     const receiver = new Rs41Receiver();
     receiver.configure(configuration);
     const onAir = xorRs41Whitening(bytesFromHex(RS41_REAL_FRAME_HEX));

@@ -1,5 +1,6 @@
 import { DEFAULT_BLADERF_RX_SETTINGS, validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
 import type { SourceKind } from "./types";
+import { RTL_SAMPLE_RATES_HZ, RTL_EXPERIMENTAL_SAMPLE_RATE_HZ } from "./rtlSampleRate";
 import {
   defaultModeSettings, normalizeGain, normalizeModeSettings, planChannelTune,
   RECEIVER_MODES, validateModeSampleRate, type ReceiverMode, type ReceiverModeSettings,
@@ -145,7 +146,7 @@ const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
   "rtl-sdr": {
     source: "rtl-sdr", label: "RTL-SDR", requiresUsb: true, persistentConnection: true,
     frequency: { ...legacyFrequency, limitsDiscoveredAtTune: true },
-    rates: { kind: "choices", valuesHz: LIVE_SAMPLE_RATES_HZ, defaultHz: 1_024_000 }, modes: RECEIVER_MODES,
+    rates: { kind: "choices", valuesHz: RTL_SAMPLE_RATES_HZ, defaultHz: 1_024_000, experimentalHz: [RTL_EXPERIMENTAL_SAMPLE_RATE_HZ] }, modes: RECEIVER_MODES,
     gain: { kind: "rtl-auto-manual", minimumDb: 0, maximumDb: 49.6 },
   },
   hackrf: {

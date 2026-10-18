@@ -78,7 +78,7 @@ describe("text mode portable settings and provenance", () => {
         ),
       ).toThrow(/text modem/);
       expect(() => validateModeSampleRate(mode, 48_000)).toThrow(
-        /1.024 or 2.4/,
+        /1\.024, 2\.4 or 3\.2/,
       );
       expect(
         planChannelCapture({

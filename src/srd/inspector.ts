@@ -10,6 +10,7 @@ import {
 } from "./types";
 
 interface ActiveBurst {
+  inputStep: number;
   id: number;
   firstInputSampleIndex: number;
   lastInputSampleIndex: number;
@@ -68,6 +69,7 @@ export class SrdPulseInspector {
       if (!this.active) {
         if (this.carrier)
           this.active = {
+            inputStep,
             id: this.nextBurstId++,
             firstInputSampleIndex: inputSampleIndex,
             lastInputSampleIndex: inputSampleIndex,
@@ -124,7 +126,7 @@ export class SrdPulseInspector {
       this.resetSignalState();
       return undefined;
     }
-    const burst = this.finish(provenance, 1, true, reason);
+    const burst = this.finish(provenance, this.active.inputStep, true, reason);
     this.resetSignalState();
     return burst;
   }
@@ -210,14 +212,17 @@ export class SrdPulseInspector {
       active.pulseOverflow++;
       return;
     }
+    // Each reduced sample covers a complete input-clock interval. Counting
+    // only its first input sample undercounts every run by decimation - 1.
+    const end = lastInputSampleIndex + active.inputStep - 1;
     active.pulses.push({
       level: active.level,
       durationUs:
-        ((lastInputSampleIndex - active.runFirstInputSampleIndex + 1) /
+        ((end - active.runFirstInputSampleIndex + 1) /
           this.configuration.actualInputSampleRateHz) *
         1_000_000,
       firstInputSampleIndex: active.runFirstInputSampleIndex,
-      lastInputSampleIndex,
+      lastInputSampleIndex: end,
     });
   }
 

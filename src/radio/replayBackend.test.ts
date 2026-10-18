@@ -471,9 +471,9 @@ it("retains audio ownership on close failure and retries the same context", asyn
 });
 
 
-it("decodes a complete DAB ensemble and programme through recorded I/Q replay", async () => {
-  const signal = createDabEnsembleFixture();
-  const recording = recordingAt(2_400_000, 220_352_000, signal.I, signal.Q);
+it.each([2_400_000, 3_200_000])("decodes a complete DAB ensemble and programme through %i samples/s recorded I/Q replay", async rate => {
+  const signal = createDabEnsembleFixture(rate);
+  const recording = recordingAt(rate, 220_352_000, signal.I, signal.Q);
   recording.metadata.mode = "DAB";
   recording.metadata.channelBandwidthHz = defaultModeSettings("DAB").bandwidthHz;
   const f = setupRecording(recording);
@@ -504,7 +504,7 @@ it("keeps the acquisition site when replay recording is offered a new listener s
 
 describe("packet decoder product replay", () => {
   it.each(["APRS", "RS41"] as const)("decodes %s at a nonzero offset, flushes EOF and rejects corrupt RF", async mode => {
-    for (const rate of [1_024_000, 2_400_000, 9_600_000]) {
+    for (const rate of [1_024_000, 2_400_000, 3_200_000, 9_600_000]) {
       const fixture = packetRecordingFixture(mode, rate);
       const { backend, options, events } = setupRecording(fixture);
       await backend.start(options);
@@ -608,7 +608,7 @@ describe("text modem product replay", () => {
     if (mode === "ACARS") expect(state?.messages).toHaveLength(1);
     await f.backend.stop();
   }, 20_000);
-  it.each([9_600_000, 19_200_000])("decodes ACARS from native %s CI8 replay through the wideband channel", async rate => {
+  it.each([3_200_000, 9_600_000, 19_200_000])("decodes ACARS from native %s replay through its selected-channel route", async rate => {
     const fixture = textModemRecordingFixture("ACARS", rate);
     const f = setupRecording(fixture);
     await f.backend.start(f.options);
@@ -617,7 +617,7 @@ describe("text modem product replay", () => {
     expect(f.events.sourceEnded).toHaveBeenCalledOnce();
     const state = vi.mocked(f.events.textModemChanged!).mock.calls.at(-1)?.[0];
     expect(state?.text).toContain(fixture.expectedText);
-    expect(state?.messages[0]?.provenance.actualInputSampleRateHz).toBe(2_400_000);
+    expect(state?.messages[0]?.provenance.actualInputSampleRateHz).toBe(rate === 3_200_000 ? rate : 2_400_000);
     await f.backend.stop();
   }, 20_000);
 });

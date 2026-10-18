@@ -1,4 +1,5 @@
 import { unknownCi8Format } from "../radio/ci8Recording";
+import { isWidebandRate } from "../radio/sourceCapabilities";
 import {
   buildUiFrame,
   encodedPacketBits,
@@ -71,14 +72,14 @@ export function packetRecordingFixture(
     sampleFormat: "planar-f32-iq-normalized",
   };
   const recorder = new IqRecorder(
-    { ...session, ...(rate > 2_400_000 ? { source: "replay" as const } : {}) },
+    { ...session, ...(isWidebandRate(rate) ? { source: "replay" as const } : {}) },
     "2026-10-09T00:00:00.000Z",
     I.length * 2 + 2,
     "BrowserSDR generated packet acceptance RF; not hardware or off-air evidence.",
     undefined,
-    rate > 2_400_000 ? unknownCi8Format(rate) : undefined,
+    isWidebandRate(rate) ? unknownCi8Format(rate) : undefined,
   );
-  if (rate > 2_400_000) {
+  if (isWidebandRate(rate)) {
     const bytes = new Uint8Array(I.length * 2);
     for (let n = 0; n < I.length; n++) {
       bytes[n * 2] = Math.round(I[n]! * 128) & 255;

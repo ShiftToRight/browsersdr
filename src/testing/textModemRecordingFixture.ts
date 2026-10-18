@@ -1,3 +1,4 @@
+import { isWidebandRate } from "../radio/sourceCapabilities";
 import { textModemSignal } from "./textModemSignal";
 import { IqRecorder } from "../radio/iqRecording";
 import { defaultModeSettings } from "../radio/receiverConfig";
@@ -19,7 +20,7 @@ export function textModemRecordingFixture(
   const defaults = defaultModeSettings(mode);
   const recorder = new IqRecorder(
     {
-      source: rate > 2_400_000 ? "replay" : "synthetic",
+      source: isWidebandRate(rate) ? "replay" : "synthetic",
       sessionGeneration: 1,
       requestedSampleRateHz: rate,
       actualSampleRateHz: rate,
@@ -36,9 +37,9 @@ export function textModemRecordingFixture(
     signal.I.length * 2 + 2,
     "Generated text-modem RF; not off-air reception.",
     undefined,
-    rate > 2_400_000 ? unknownCi8Format(rate) : undefined,
+    isWidebandRate(rate) ? unknownCi8Format(rate) : undefined,
   );
-  if (rate > 2_400_000) {
+  if (isWidebandRate(rate)) {
     const bytes = new Uint8Array(signal.I.length * 2);
     for (let n = 0; n < signal.I.length; n++) {
       bytes[2 * n] = Math.round(signal.I[n]! * 128) & 255;

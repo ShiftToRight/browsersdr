@@ -44,7 +44,7 @@ describe("DigitalChannelReducer", () => {
     reducer.configure(configuration());
     expect(() =>
       reducer.configure(configuration({ actualInputSampleRateHz: 2_000_000 })),
-    ).toThrow(/1\.024 or 2\.4/);
+    ).toThrow(/1\.024, 2\.4 or 3\.2/);
     expect(() =>
       reducer.configure(configuration({ outputSampleRateHz: 50_000 })),
     ).toThrow(/integer input-rate divisor/);

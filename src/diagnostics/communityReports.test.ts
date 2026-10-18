@@ -57,6 +57,14 @@ function report() {
 }
 
 describe("community wire and public evidence boundaries", () => {
+  it("retains an exact experimental RTL setup without borrowing the 2.4 MS/s context", () => {
+    const rtl: CompatibilityReportContext = { ...context, source: "rtl-sdr", deviceProfile: "RTL-SDR", sampleRateHz: 3_200_000, nativeSampleRateHz: null, protocolProfile: null, firmwareVersion: null, usbApiVersion: null, gainMode: "manual", gainDb: 25 };
+    const input = { ...buildCommunityReport(rtl, { hardwareId: "rtl-nesdr-smart-v5", participantToken: "a".repeat(64), durationMinutes: 1, observations: [{ feature: "rds", result: "degraded" }] }), build };
+    expect(input.setup).toMatchObject({ source: "rtl-sdr", rateHz: 3_200_000 });
+    expect(communityContextKey(rtl)).not.toBe(communityContextKey({ ...rtl, sampleRateHz: 2_400_000 }));
+    const ajv = new Ajv2020(); addFormats(ajv);
+    expect(ajv.compile(schema)(input)).toBe(true);
+  });
   it("separates processing/native rates, freezes provenance, and omits radio content, location and exact frequency", () => {
     const input = report();
     expect(input.setup).toMatchObject({

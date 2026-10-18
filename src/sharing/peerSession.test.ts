@@ -25,6 +25,9 @@ class Peer {
   addTransceiver() { return { sender: { replaceTrack: vi.fn(async () => {}) } }; }
   async createOffer() { return { type: "offer", sdp: "v=0\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10\r\n" }; }
   async setLocalDescription(description: unknown) { this.signalingState = "have-local-offer"; this.localDescription = { toJSON: () => description }; }
+  setConfiguration = vi.fn();
+  addIceCandidate = vi.fn(async () => {});
+  onicecandidate?: (event: { candidate: { toJSON(): unknown } | null }) => void;
   async setRemoteDescription() { this.signalingState = "stable"; }
   async getStats() { return new Map(); }
 }
@@ -86,4 +89,32 @@ it("guest rejects old, duplicate and wrong-window FFT and clears its plot on gen
   spectrum.onmessage!({ data: wire(3) }); spectrum.onmessage!({ data: wire(3) }); expect(frame).toHaveBeenCalledOnce();
   reliable.onmessage!({ data: JSON.stringify({ ...message, generation: 4 }) }); expect(frame).toHaveBeenLastCalledWith();
   reliable.onmessage!({ data: JSON.stringify(message) }); expect(state).toHaveBeenCalledTimes(2); guest.close();
+});
+
+it("configures temporary relay credentials before gathering and sends SDP before trickled candidates", async () => {
+  const sent: { action: string; kind?: string }[] = [];
+  const config = { token: "ab".repeat(24), key: "2345ABCDEFGH", expires: Date.now() + 7200000, mode: "internet", iceTransportPolicy: "all",
+    iceServers: [{ urls: ["turn:relay.example:3478?transport=udp", "turns:relay.example:5349?transport=tcp"], username: "temporary", credential: "temporary" }] };
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, options: RequestInit) => {
+    const body = JSON.parse(String(options.body)) as { action: string; kind?: string }; sent.push(body);
+    if (body.action === "create") return Response.json(config);
+    if (body.action === "events") return await new Promise<Response>((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(new DOMException("closed", "AbortError")), { once: true }));
+    return Response.json({ ok: true });
+  }));
+  const r = rig(), host = new ShareHost(r.controller, r.analysis, vi.fn(), r.ended), pc = Peer.latest;
+  pc.iceGatheringState = "gathering";
+  await host.prepare(true);
+  expect(pc.setConfiguration).toHaveBeenCalledWith({ iceServers: config.iceServers, iceTransportPolicy: "all" });
+  pc.onicecandidate!({ candidate: { toJSON: () => ({ candidate: "candidate:1 1 UDP 1 192.0.2.1 5000 typ relay", sdpMid: "0", sdpMLineIndex: 0 }) } });
+  expect(await host.createKey()).toBe(config.key);
+  expect(sent.filter(v => v.action === "signal").map(v => v.kind)).toEqual(["offer", "candidate"]);
+  host.close(); expect(r.stopped).not.toHaveBeenCalled();
+});
+it("allows brief peer disconnects to recover and closes once after sustained loss", async () => {
+  const r = rig(), host = new ShareHost(r.controller, r.analysis, vi.fn(), r.ended), pc = Peer.latest;
+  await host.prepare(); pc.connectionState = "disconnected"; pc.onconnectionstatechange!();
+  await vi.advanceTimersByTimeAsync(2000); pc.connectionState = "connected"; pc.onconnectionstatechange!();
+  await vi.advanceTimersByTimeAsync(10_000); expect(r.ended).not.toHaveBeenCalled();
+  pc.connectionState = "disconnected"; pc.onconnectionstatechange!(); await vi.advanceTimersByTimeAsync(8000);
+  expect(r.ended).toHaveBeenCalledOnce(); expect(r.stopped).not.toHaveBeenCalled();
 });

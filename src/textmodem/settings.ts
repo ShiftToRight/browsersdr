@@ -1,3 +1,4 @@
+import { digitalInputProfile } from "../digital/inputRates";
 import {
   validateDigitalChannelConfiguration,
   type DigitalChannelConfiguration,
@@ -89,7 +90,7 @@ export function textModemConfiguration(
     generation,
     selectedChannelOffsetHz,
     channelBandwidthHz: mode === "ACARS" ? 12_000 : 8_000,
-    outputSampleRateHz: actualInputSampleRateHz === 1_024_000 ? 64_000 : 60_000,
+    outputSampleRateHz: digitalInputProfile(actualInputSampleRateHz).narrowRateHz,
   };
   validateTextModemConfiguration(result);
   return result;

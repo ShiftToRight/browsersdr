@@ -1,3 +1,4 @@
+import type { DigitalInputSampleRateHz } from "../digital/inputRates";
 import { TextDigitalReceiver } from "../textmodem/digitalReceiver";
 import { isTextMode, textModemConfiguration } from "../textmodem/settings";
 import type { IngressTimings } from "./ingressTimings";
@@ -406,11 +407,11 @@ export class LiveReceiverPipeline implements SampleReceiver {
     }
     if (metadata.mode === "APRS") {
       this.aprs ??= new AprsDigitalReceiver(({ snapshot, diagnostics }) => this.events.aprsChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
-      this.aprs.configureSession(defaultAprsConfiguration(rate as 1_024_000 | 2_400_000, metadata.sessionGeneration, offset));
+      this.aprs.configureSession(defaultAprsConfiguration(rate as DigitalInputSampleRateHz, metadata.sessionGeneration, offset));
     }
     if (metadata.mode === "RS41") {
       this.rs41 ??= new Rs41DigitalReceiver(({ snapshot, diagnostics }) => this.events.rs41Changed?.(snapshot, diagnostics), error => this.events.runtimeError(error));
-      this.rs41.configureSession(defaultRs41Configuration(rate as 1_024_000 | 2_400_000, metadata.sessionGeneration, offset));
+      this.rs41.configureSession(defaultRs41Configuration(rate as DigitalInputSampleRateHz, metadata.sessionGeneration, offset));
     }
   }
 
@@ -440,7 +441,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       this.srd.configureSession(
         srdConfigurationForRoute(
           metadata.srd!,
-          rate as 1_024_000 | 2_400_000,
+          rate as DigitalInputSampleRateHz,
           offset,
           metadata.sessionGeneration,
         ),

@@ -1,5 +1,6 @@
 import { isTextMode, normalizeTextModemSettings, type TextModemSettings } from "../textmodem/settings";
 import "@jtarrio/signals/demod/demodulator.js";
+import { digitalInputProfile } from "../digital/inputRates";
 import { getMode, modeParameters, type Mode } from "@jtarrio/signals/demod/modes.js";
 import { DAB_OCCUPIED_BANDWIDTH_HZ, validateDabSampleRate } from "../dab/dabReceiver";
 import { ADSB_BANDWIDTH_HZ, validateAdsbSampleRate } from "../adsb/adsbReceiver";
@@ -139,8 +140,8 @@ export function validateModeSampleRate(mode: ReceiverMode, sampleRateHz: number)
   if (mode === "DAB") validateDabSampleRate(sampleRateHz);
   else if (mode === "ADS-B") validateAdsbSampleRate(sampleRateHz);
   else if (mode === "AIS") validateAisSampleRate(sampleRateHz);
-  else if (["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode) && sampleRateHz !== 1_024_000 && sampleRateHz !== 2_400_000)
-    throw new Error(`${mode} requires an effective channel rate of 1.024 or 2.4 MS/s.`);
+  else if (["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode))
+    digitalInputProfile(sampleRateHz);
 }
 
 export interface TuningPlan {

@@ -1,6 +1,6 @@
 {
   "name": "browsersdr",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings=0",
-    "format:check": "prettier --check eslint.config.js vitest.config.ts playwright.config.ts \"e2e/**/*.ts\" \"scripts/browser-*.mjs\" scripts/run-browser-checks.mjs scripts/verify-browser-shards.mjs scripts/browser-skip-policy.json scripts/check-community-release.mjs .github/workflows/ci.yml package.json .prettierrc.json",
+    "format:check": "prettier --check eslint.config.js vitest.config.ts playwright.config.ts \"e2e/**/*.ts\" \"scripts/browser-*.mjs\" scripts/run-browser-checks.mjs scripts/verify-browser-shards.mjs scripts/browser-skip-policy.json scripts/check-community-release.mjs .github/workflows/ci.yml package.json .prettierrc.json scripts/sharing-check-proxy.mjs scripts/sharing-check-proxy-tests.mjs scripts/check-performance.mjs scripts/performance-budget-tests.mjs",
     "wasm:build": "./scripts/build-wasm.sh",
     "usrp:driver:build": "./scripts/build-usrp-b205-no-os.sh",
     "test:wasm": "vitest run src/dsp/spectrumBackend.test.ts --reporter=verbose",
@@ -24,12 +24,13 @@
     "test:e2e:dev": "playwright test --project=chromium-dev",
     "test:e2e:production": "playwright test --project=chromium-production",
     "test:e2e:check": "node scripts/run-browser-checks.mjs",
-    "test:browser-guards": "node scripts/browser-coverage-tests.mjs",
+    "test:browser-guards": "node scripts/browser-coverage-tests.mjs && node --test scripts/sharing-check-proxy-tests.mjs",
     "test:report-service": "node --test deploy/report-service/report-service-tests.mjs scripts/community-evidence-fingerprint-tests.mjs",
     "typecheck": "tsc -b --pretty false",
-    "check": "npm run public:check && npm run lint && npm run format:check && npm run test:wasm && npm run test:report-service && npm run test:browser-guards && npm test && npm run build && npm run performance:check && node scripts/verify-seo.mjs dist && npm run test:e2e:check",
+    "check": "npm run public:check && npm run lint && npm run format:check && npm run test:wasm && npm run test:report-service && npm run test:browser-guards && npm test && npm run build && npm run test:performance && npm run performance:check && node scripts/verify-seo.mjs dist && npm run test:e2e:check",
     "public:check": "node scripts/check-public-source.mjs",
-    "performance:check": "node scripts/check-performance.mjs"
+    "performance:check": "node scripts/check-performance.mjs",
+    "test:performance": "node --test scripts/performance-budget-tests.mjs"
   },
   "dependencies": {
     "@jtarrio/signals": "0.10.1",

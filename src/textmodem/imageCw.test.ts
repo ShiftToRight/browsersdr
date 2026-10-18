@@ -86,7 +86,7 @@ it("CW timing decodes a fixed ITU vector at 12, 20 and 35 WPM", () => {
     modem.flush(); expect(text.trim()).toBe("SOS TEST 123");
   }
 });
-it.each([1_024_000, 2_400_000])("all three raw-I/Q routes preserve selected offset at %i samples/s and keep images partial at EOF", rate => {
+it.each([1_024_000, 2_400_000, 3_200_000])("all three raw-I/Q routes preserve selected offset at %i samples/s and keep images partial at EOF", rate => {
   for (const mode of ["WEFAX", "SSTV", "CW-TEXT"] as TextMode[]) {
     const settings = { ...defaultTextModemSettings(), image: { ...DEFAULT_IMAGE_SETTINGS, automatic: false } };
     const core = new TextModemCore(); core.configure(textModemConfiguration(mode, settings, rate, 7, 37000));

@@ -49,7 +49,7 @@ export default function LiveGuest() {
     catch { setMessage("Playback was blocked. Press Listen again."); }
   };
   return <main className="live-guest">
-    <header className="live-share-heading"><div><p className="eyebrow">BrowserSDR · guest preview</p><h1>Listen along</h1><p>One shared channel. Your host keeps control.</p></div><span className="live-share-tag">Local prototype</span></header>
+    <header className="live-share-heading"><div><p className="eyebrow">BrowserSDR · guest preview</p><h1>Listen along</h1><p>One shared channel. Your host keeps control.</p></div><span className="live-share-tag">{stats.serviceMode === "local" ? "Local preview" : "Private session"}</span></header>
     <section className="live-guest-card" aria-label="Guest connection">
       <form onSubmit={event => { event.preventDefault(); void connect(); }}>
         <label>Session key<input className="live-share-key" aria-label="Session key" autoComplete="off" spellCheck={false} maxLength={20} value={sessionKey} readOnly={active} onChange={event => setSessionKey(event.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" /></label>
@@ -58,7 +58,7 @@ export default function LiveGuest() {
           <span role="status" className="live-share-status">{active ? stats.status : "Disconnected"}</span></div>
       </form>
       <p>Enter the key shown by the host. Connection details are exchanged automatically; you choose when to listen.</p>
-      <p className="display-note">Both sides need this preview's session-key service. Direct media only; internet relay is not configured. No microphone, screen or USB access is needed.</p>
+      <p className="display-note">{stats.serviceMode === "local" ? "Local preview; public relay may be unavailable." : "Audio and spectrum connect directly when possible, with encrypted relay fallback."} No microphone, screen or USB access is needed.</p>
       <p role="status">{message}</p>
     </section>
     <section className="live-guest-card" aria-label="Shared receiver">
@@ -75,7 +75,7 @@ export default function LiveGuest() {
         <div><dt>Received spectrum rate</dt><dd data-testid="share-spectrum-fps">{stats.spectrumFps.toFixed(1)} rows/s</dd></div>
         <div><dt>Audio packets received</dt><dd data-testid="share-audio-packets">{stats.audioPackets}</dd></div>
         <div><dt>Audio received</dt><dd>{(stats.audioBytes / 1024).toFixed(1)} KiB</dd></div>
-        <div><dt>Network round trip</dt><dd>{stats.roundTripMs.toFixed(1)} ms</dd></div>
+        <div><dt>Connection path</dt><dd data-testid="share-connection-path">{stats.connectionPath}</dd></div><div><dt>Network round trip</dt><dd>{stats.roundTripMs.toFixed(1)} ms</dd></div>
         <div><dt>Audio network jitter</dt><dd>{stats.jitterMs.toFixed(1)} ms</dd></div></dl>
       <p className="display-note">Processed host audio, not original I/Q. Local volume does not change the host. Host sleep, source changes or closing its tab interrupt this session.</p>
     </section>

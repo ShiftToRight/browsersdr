@@ -38,9 +38,9 @@ function generateIq(
 }
 
 describe("APRS selected-channel receiver", () => {
-  it("decodes an end-to-end offset FM RF packet across block splits", () => {
-    const configuration = defaultAprsConfiguration(1_024_000, 4, 83_000);
-    configuration.stationExpiryInputSamples = 100_000;
+  it.each([1_024_000, 3_200_000] as const)("decodes offset RF across chunks at %i samples/s", (rate) => {
+    const configuration = defaultAprsConfiguration(rate, 4, 83_000);
+    configuration.stationExpiryInputSamples = Math.round(100_000 * rate / 1_024_000);
     const receiver = new AprsReceiver();
     receiver.configure(configuration);
     const expected = "!4903.50N/07201.75W-End to end";
@@ -72,6 +72,7 @@ describe("APRS selected-channel receiver", () => {
       });
       offset = end;
     }
+    receiver.flush();
     const snapshot = receiver.snapshot();
     expect(snapshot.value.counters.validAx25Frames).toBeGreaterThan(0);
     expect(snapshot.value.stations[0]?.key).toBe("N0CALL-1");
@@ -82,8 +83,8 @@ describe("APRS selected-channel receiver", () => {
     expect(snapshot.provenance.generation).toBe(4);
 
     receiver.receive({
-      I: new Float32Array(120_001),
-      Q: new Float32Array(120_001),
+      I: new Float32Array(Math.ceil(120_001 * rate / 1_024_000)),
+      Q: new Float32Array(Math.ceil(120_001 * rate / 1_024_000)),
       generation: 4,
       firstSampleIndex: offset,
     });

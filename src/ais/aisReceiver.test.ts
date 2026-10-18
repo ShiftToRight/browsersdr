@@ -29,7 +29,7 @@ describe("AisReceiver", () => {
     expect(latest?.targets[0]?.latitude).toBeCloseTo(48.14, 4);
     expect(latest?.targets[0]?.longitude).toBeCloseTo(11.58, 4);
   });
-  it("demodulates an HDLC frame from the AIS 1 RF channel", () => {
+  it.each([192_000, 3_200_000])("demodulates an HDLC frame from the AIS 1 RF channel at %i samples/s", sampleRate => {
     const frame = positionFrame();
     const flag = [0, 1, 1, 1, 1, 1, 1, 0];
     const payloadBits: number[] = [];
@@ -40,12 +40,13 @@ describe("AisReceiver", () => {
     }
     const training = Array.from({ length: 24 }, (_, index) => index & 1);
     const bits = [...training, ...flag, ...payloadBits, ...flag, 1, 1, 1];
-    const samplesPerSymbol = 20, sampleRate = 192_000, I = new Float32Array(bits.length * samplesPerSymbol), Q = new Float32Array(I.length);
-    let level = 1, phase = 0, position = 0;
-    for (const bit of bits) {
-      if (bit === 0) level ^= 1;
-      const frequency = -25_000 + (level ? 2_400 : -2_400);
-      for (let sample = 0; sample < samplesPerSymbol; sample += 1) { phase += 2 * Math.PI * frequency / sampleRate; I[position] = Math.cos(phase); Q[position] = Math.sin(phase); position += 1; }
+    const levels: number[] = []; let level = 1;
+    for (const bit of bits) { if (!bit) level = -level; levels.push(level); }
+    const I = new Float32Array(Math.ceil(bits.length * sampleRate / 9600)), Q = new Float32Array(I.length);
+    let phase = 0;
+    for (let n = 0; n < I.length; n++) {
+      phase += 2 * Math.PI * (-25_000 + levels[Math.min(bits.length - 1, Math.floor(n * 9600 / sampleRate))]! * 2400) / sampleRate;
+      I[n] = Math.cos(phase); Q[n] = Math.sin(phase);
     }
     const decodedBits: number[] = [];
     new AisChannelDemodulator(-25_000, () => undefined, (bit) => decodedBits.push(bit)).receive({ I, Q, frequency: 162_000_000 }, sampleRate, 0);

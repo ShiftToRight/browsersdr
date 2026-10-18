@@ -53,6 +53,7 @@ import { ReceiverHealth } from "./ui/ReceiverHealth";
 import { AppIcon, type AppIconName } from "./ui/AppIcon";
 import { ReceiverStatus } from "./ui/ReceiverStatus";
 import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
+import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, RTL_EXPERIMENTAL_RATE_WARNING, experimentalRtlRecording } from "./radio/rtlSampleRate";
 import {
   memo,
   lazy,
@@ -768,10 +769,14 @@ function DiagnosticsPanel({
           {ingress && (
             <>
               <div>
-                <dt>Transport lag budget</dt>
+                <dt>{ingress.rtl ? "RTL delivered input" : "Transport lag budget"}</dt>
                 <dd>
+                  {ingress.rtl ? <>
+                    {ingress.rtl.deliveredSamples.toLocaleString()} samples · {ingress.rtl.sampleSeconds.toFixed(3)} sample seconds / {ingress.rtl.elapsedSeconds.toFixed(3)} elapsed seconds · {(ingress.rtl.averageBytesPerSecond / 1_000_000).toFixed(2)} MB/s average · last block {ingress.rtl.lastBlockSamples.toLocaleString()} samples. Hardware loss is unknown.
+                  </> : <>
                   {ingress.debtMs.toFixed(2)} / {ingress.budgetMs.toFixed(2)} ms
                   · estimated callback debt
+                  </>}
                 </dd>
               </div>
               {Object.entries(ingress.stages).map(([name, value]) => (
@@ -2994,6 +2999,8 @@ export function ReceiverApp({
                 {source === "replay" && <small>Replay uses the original acquisition site; the current site applies to future live recordings.</small>}
                 {source === "rtl-sdr" && <small className="rtl-tuner">Tuner: {liveSession?.rtlTuner ?? receiver.session?.rtlTuner ?? "Unknown · connect a supported device"}. Board model is not inferred.</small>}
                 <InputClippingWarning pipeline={analysis} session={liveSession} running={running && !remoteSelected} />
+                {source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ && <p className="display-note">{RTL_EXPERIMENTAL_RATE_WARNING}</p>}
+                {source === "replay" && loadedReplay && experimentalRtlRecording(loadedReplay.metadata) && <p className="display-note">Recorded experimental RTL-SDR 3.2 MS/s input; hardware sample loss may be unreported.</p>}
                 {caps.requiresUsb && (
                   <details
                     className="advanced-settings"
@@ -3006,7 +3013,7 @@ export function ReceiverApp({
                     <summary>
                       <span className="icon-label"><AppIcon name="settings" />Device details &amp; settings</span>
                       <small>
-                        {(sampleRateHz / 1_000_000).toFixed(3)} MS/s ·{" "}
+                        {(sampleRateHz / 1_000_000).toFixed(3)} MS/s{source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ ? " (experimental)" : ""} ·{" "}
                         {caps.gain.kind === "rtl-auto-manual"
                           ? gainDb === null
                             ? "automatic gain"
@@ -4420,6 +4427,9 @@ export function ReceiverApp({
                 <dd>{receiver.audioState ?? "Not active"}</dd>
               </div>
             </dl>
+            {((source === "rtl-sdr" && (receiver.session?.actualSampleRateHz ?? sampleRateHz) === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ) ||
+              (source === "replay" && loadedReplay && experimentalRtlRecording(loadedReplay.metadata))) &&
+              <p className="display-note">{source === "replay" ? "Recorded experimental RTL-SDR 3.2 MS/s input; hardware sample loss may be unreported." : RTL_EXPERIMENTAL_RATE_WARNING}</p>}
             {(running || hardwareConnected) && receiver.session && (
                 <details className="receiver-session-details">
                   <summary>Hardware &amp; signal details</summary>

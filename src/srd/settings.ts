@@ -1,3 +1,4 @@
+import { digitalInputProfile, type DigitalInputSampleRateHz } from "../digital/inputRates";
 import {
   type DigitalChannelConfiguration,
   validateDigitalChannelConfiguration,
@@ -45,12 +46,12 @@ export function defaultSrdModeSettings(): SrdModeSettings {
 
 export function srdConfigurationForRoute(
   settings: SrdModeSettings,
-  actualInputSampleRateHz: 1_024_000 | 2_400_000,
+  actualInputSampleRateHz: DigitalInputSampleRateHz,
   selectedChannelOffsetHz: number,
   generation: number,
 ): SrdConfiguration {
   const outputSampleRateHz =
-    actualInputSampleRateHz === 1_024_000 ? 128_000 : 120_000;
+    digitalInputProfile(actualInputSampleRateHz).sensorRateHz;
   const configuration = {
     ...structuredClone(settings),
     actualInputSampleRateHz,
@@ -63,7 +64,7 @@ export function srdConfigurationForRoute(
 }
 
 export function defaultSrdConfiguration(
-  actualInputSampleRateHz: 1_024_000 | 2_400_000,
+  actualInputSampleRateHz: DigitalInputSampleRateHz,
   generation: number,
   selectedChannelOffsetHz = 0,
 ): SrdConfiguration {
@@ -73,7 +74,7 @@ export function defaultSrdConfiguration(
     generation,
     channelBandwidthHz: 32_000,
     outputSampleRateHz:
-      actualInputSampleRateHz === 1_024_000 ? 128_000 : 120_000,
+      digitalInputProfile(actualInputSampleRateHz).sensorRateHz,
     modulation: "ook",
     protocol: "none",
     threshold: {

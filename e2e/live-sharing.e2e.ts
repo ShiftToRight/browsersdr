@@ -1,5 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createDeterministicRecordingFixture } from "../src/testing/recordingFixture";
+import { sharingSignalingFixture } from "./helpers/sharingSignaling";
+let signaling: ReturnType<typeof sharingSignalingFixture>;
+test.beforeEach(async ({ context }) => {
+  signaling = sharingSignalingFixture();
+  await signaling.install(context);
+});
 
 async function share(page: Page) {
   await page.getByRole("tab", { name: "Session", exact: true }).click();
@@ -61,6 +67,10 @@ test("real WebRTC shares RF rows to one guest, refuses a second and ends on host
   await expect(guest.getByTestId("share-received-frames")).toHaveText("0");
   await guest.getByRole("button", { name: "Join host", exact: true }).click();
   await expect(guest.locator(".live-share-status")).toHaveText("Connected");
+  if (process.env.BSD_E2E_SHARING_RELAY === "1")
+    await expect(guest.getByTestId("share-connection-path")).toContainText(
+      "TURN relay",
+    );
   await expect
     .poll(async () =>
       Number(await guest.getByTestId("share-received-frames").textContent()),
@@ -159,6 +169,7 @@ test("a single session key joins isolated browsers and carries decoded AM audio 
   const guestContext = await browser.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
+  await signaling.install(guestContext);
   const guest = await guestContext.newPage();
   await guestGuards(guest);
   await guest.goto("/?live-guest=1");
@@ -167,6 +178,10 @@ test("a single session key joins isolated browsers and carries decoded AM audio 
     .fill(key.toLowerCase());
   await guest.getByRole("button", { name: "Join host", exact: true }).click();
   await expect(guest.locator(".live-share-status")).toHaveText("Connected");
+  if (process.env.BSD_E2E_SHARING_RELAY === "1")
+    await expect(guest.getByTestId("share-connection-path")).toContainText(
+      "TURN relay",
+    );
   await expect
     .poll(async () =>
       Number(await guest.getByTestId("share-audio-packets").textContent()),
@@ -294,6 +309,10 @@ test("sharing keeps receiving beyond the worker window when the host animation l
     await guest.goto(link!);
     await guest.getByRole("button", { name: "Join host", exact: true }).click();
     await expect(guest.locator(".live-share-status")).toHaveText("Connected");
+    if (process.env.BSD_E2E_SHARING_RELAY === "1")
+      await expect(guest.getByTestId("share-connection-path")).toContainText(
+        "TURN relay",
+      );
     await expect
       .poll(
         async () =>
@@ -326,5 +345,42 @@ test("sharing keeps receiving beyond the worker window when the host animation l
     await guest.close();
   }
   await panel.getByRole("button", { name: "Close live sharing panel" }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
+test("an unavailable optional sharing service leaves the local receiver running", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/sharing", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Sharing is temporarily unavailable." }),
+    }),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("combobox", { name: "Signal source", exact: true })
+    .selectOption("synthetic");
+  await page.getByRole("button", { name: "Start demo", exact: true }).click();
+  await page.getByRole("tab", { name: "Session", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Share live audio & spectrum", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start sharing", exact: true })
+    .click();
+  await expect(
+    page.getByText("Sharing is temporarily unavailable.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start sharing", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Close live sharing panel", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
