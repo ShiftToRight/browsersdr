@@ -711,7 +711,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                             pannable
                             label={`${reviewMode} decoded positions`}
                             showTracks={traffic && showTracks}
-                            framingKey={`${identity}:${fitRequest}`}
+                            framingKey={`${identity}:${display.receiver.sessionGeneration}:${fitRequest}`}
                             points={filtered.map((r) => ({
                               latitude: r.latitude ?? null,
                               longitude: r.longitude ?? null,
