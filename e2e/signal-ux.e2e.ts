@@ -1,8 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { unzipSync } from "fflate";
 import { installHackrfUsb } from "./hackrf-usb-fixture";
 import { chooseReceiverMode } from "./application-navigation";
+
+// Give the sustained high-rate check a fresh normal browser process instead of
+// inheriting resources from preceding UI cases. Keep one simultaneous worker,
+// the real paced pipeline, first built Search open, assertions and deadlines.
+const test = base.extend<object, { isolatedThroughputWorker: boolean }>({
+  isolatedThroughputWorker: [true, { scope: "worker", auto: true }],
+});
 
 test("19.2 MS/s channel capture completes five seconds while Search opens", async ({
   page,
