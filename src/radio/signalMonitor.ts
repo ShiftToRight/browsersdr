@@ -7,6 +7,11 @@ import {
   type AdaptiveGroup,
 } from "./adaptiveGrouping";
 import {
+  alternatingMonitorSession,
+  monitorCoverageWindows,
+  monitorSweepIndices,
+} from "./monitorSchedule";
+import {
   MONITOR_PRESETS,
   validateMonitorAnalysis,
   type MonitorAnalysis,
@@ -36,6 +41,8 @@ export const MONITOR_MAX_SIGNALS = 512;
 export const MONITOR_MAX_WINDOWS = 256;
 export const MONITOR_HISTORY_LENGTH = 24;
 export interface MonitorWindow {
+  lastSweep?: number;
+  sweepPhase?: 0 | 1;
   id: string;
   bandId: string;
   plan: ScanWindowPlan;
@@ -85,6 +92,7 @@ export interface MonitorSignal {
   history: MonitorObservation[];
 }
 export interface MonitorSession {
+  sweepPattern?: { version: 1; startedAtSweep: number };
   version: 1 | 2 | 3 | 4;
   analysis?: MonitorAnalysis;
   discardedCandidates?: number;
@@ -174,6 +182,7 @@ export function createMonitorSession(
   now = new Date().toISOString(),
   targets?: MonitorTarget[],
   analysis?: MonitorAnalysis,
+  alternateSweeps = true,
 ): MonitorSession {
   if (receiver.source === "replay")
     throw new Error("Replay cannot monitor a tunable band.");
@@ -269,7 +278,7 @@ export function createMonitorSession(
         );
     }
   const snapshot = createSurveyRunSnapshot(valid, valid.bands, receiver, now);
-  return {
+  const session: MonitorSession = {
     version: analysis ? (analysis.version === 2 ? 4 : 3) : validTargets ? 2 : 1,
     ...(analysis
       ? { analysis: validateMonitorAnalysis(analysis), discardedCandidates: 0 }
@@ -288,6 +297,7 @@ export function createMonitorSession(
     signals: [],
     message: "Ready to monitor.",
   };
+  return alternateSweeps ? alternatingMonitorSession(session) : session;
 }
 
 function regionMatch(
@@ -364,6 +374,7 @@ export function recordMonitorVisit(
   const elapsed = valid ? measuredMs : 0;
   const regionNext: MonitorWindow = {
     ...region,
+    lastSweep: session.sweeps,
     visits: region.visits + 1,
     status: result.status,
     coverage: result.coverage,
@@ -527,16 +538,20 @@ export function recordMonitorVisit(
         adaptive && centerEvidence.length
           ? stable.centerHz
           : candidate.frequencyHz;
+      const comparable =
+        !session.sweepPattern ||
+        (!candidate.lowerEdgeClipped && !candidate.upperEdgeClipped);
       const changed =
-        Math.abs(snrDb - entry.baseline.snrDb) >= 6 ||
-        Math.abs(comparisonCenter - entry.baseline.frequencyHz) >
-          (session.analysis
-            ? Math.max(resolutionHz * 2, entry.baseline.bandwidthHz * 0.15)
-            : resolutionHz * 2) ||
-        Math.max(
-          candidate.bandwidthHz / entry.baseline.bandwidthHz,
-          entry.baseline.bandwidthHz / candidate.bandwidthHz,
-        ) >= 2;
+        comparable &&
+        (Math.abs(snrDb - entry.baseline.snrDb) >= 6 ||
+          Math.abs(comparisonCenter - entry.baseline.frequencyHz) >
+            (session.analysis
+              ? Math.max(resolutionHz * 2, entry.baseline.bandwidthHz * 0.15)
+              : resolutionHz * 2) ||
+          Math.max(
+            candidate.bandwidthHz / entry.baseline.bandwidthHz,
+            entry.baseline.bandwidthHz / candidate.bandwidthHz,
+          ) >= 2);
       entry.change =
         entry.misses > 0
           ? "returning"
@@ -548,8 +563,11 @@ export function recordMonitorVisit(
                 ? "known"
                 : "new";
       if (session.analysis) {
-        entry.changeStreak =
-          entry.inBaseline && changed ? (entry.changeStreak ?? 0) + 1 : 0;
+        entry.changeStreak = !comparable
+          ? (entry.changeStreak ?? 0)
+          : entry.inBaseline && changed
+            ? (entry.changeStreak ?? 0) + 1
+            : 0;
         entry.change =
           priorMisses >= 3
             ? "returning"
@@ -641,7 +659,12 @@ export function recordMonitorVisit(
       );
     }
   }
-  const nextWindow = (index + 1) % session.windows.length;
+  const sweepIndices = monitorSweepIndices(session);
+  const position = sweepIndices.indexOf(index);
+  const sweepComplete = position === sweepIndices.length - 1;
+  const nextWindow = sweepComplete
+    ? monitorSweepIndices(session, session.sweeps + 1)[0]!
+    : sweepIndices[position + 1]!;
   return {
     ...session,
     updatedAt: at,
@@ -650,7 +673,7 @@ export function recordMonitorVisit(
     ...(session.analysis ? { discardedCandidates } : {}),
     windows: session.windows.map((w, i) => (i === index ? regionNext : w)),
     nextWindow,
-    sweeps: session.sweeps + (nextWindow === 0 ? 1 : 0),
+    sweeps: session.sweeps + (sweepComplete ? 1 : 0),
   };
 }
 export function setMonitorBaseline(
@@ -718,12 +741,20 @@ export function validateMonitorSession(value: unknown): MonitorSession {
     !text(s.message) ||
     !Array.isArray(s.windows) ||
     !s.windows.length ||
-    s.windows.length > MONITOR_MAX_WINDOWS ||
+    s.windows.length > MONITOR_MAX_WINDOWS * (s.sweepPattern ? 2 : 1) ||
     !Array.isArray(s.signals) ||
     s.signals.length > MONITOR_MAX_SIGNALS
   )
     invalid();
   if ((s.version === 4) !== (s.analysis?.version === 2)) invalid();
+  if (
+    s.sweepPattern &&
+    (s.analysis?.version !== 2 ||
+      s.sweepPattern.version !== 1 ||
+      !count(s.sweepPattern.startedAtSweep) ||
+      s.sweepPattern.startedAtSweep > s.sweeps)
+  )
+    invalid();
   const r = s.snapshot.receiver;
   if (
     !r ||
@@ -745,18 +776,28 @@ export function validateMonitorSession(value: unknown): MonitorSession {
     s.snapshot.startedAt,
     s.targets,
     s.analysis,
+    false,
   );
+  const scheduled = s.sweepPattern
+    ? alternatingMonitorSession({
+        ...canonical,
+        sweeps: s.sweepPattern.startedAtSweep,
+      })
+    : canonical;
   if (
     canonical.context !== s.context ||
     s.nextWindow >= s.windows.length ||
-    s.windows.length !== canonical.windows.length
+    s.windows.length !== scheduled.windows.length ||
+    JSON.stringify(s.sweepPattern) !== JSON.stringify(scheduled.sweepPattern) ||
+    !monitorSweepIndices(s).includes(s.nextWindow)
   )
     invalid();
   s.windows.forEach((w, i) => {
-    const plan = canonical.windows[i]!;
+    const plan = scheduled.windows[i]!;
     if (
       w.id !== plan.id ||
       w.bandId !== plan.bandId ||
+      w.sweepPhase !== plan.sweepPhase ||
       JSON.stringify(w.plan) !== JSON.stringify(plan.plan) ||
       !count(w.visits) ||
       !number(w.validMs) ||
@@ -771,6 +812,8 @@ export function validateMonitorSession(value: unknown): MonitorSession {
       (w.lastValidAt !== undefined && !date(w.lastValidAt)) ||
       (w.revisitMs !== undefined &&
         (!number(w.revisitMs) || w.revisitMs < 0)) ||
+      (w.lastSweep !== undefined &&
+        (!count(w.lastSweep) || w.lastSweep > s.sweeps)) ||
       (w.error !== undefined && !text(w.error))
     )
       invalid();
@@ -944,6 +987,8 @@ export function monitorCsv(session: MonitorSession): string {
       "grouping_reason",
       "bin_spacing_hz",
       "association_uncertain",
+      "sweep_pattern",
+      "pattern_started_at_sweep",
     ]),
     ...session.signals.map((s) =>
       row([
@@ -977,6 +1022,8 @@ export function monitorCsv(session: MonitorSession): string {
         s.group?.reason,
         s.group?.binSpacingHz,
         s.group?.associationUncertain,
+        session.sweepPattern ? "alternating-half-window-v1" : "fixed",
+        session.sweepPattern?.startedAtSweep,
       ]),
     ),
   ].join("\n");
@@ -988,10 +1035,10 @@ export function monitorTargetObservation(
   target: MonitorTarget,
   now = Date.now(),
 ) {
-  const windows = session.windows.filter(
-    (w) =>
-      w.plan.lowerFrequencyHz < target.endFrequencyHz &&
-      w.plan.upperFrequencyHz > target.startFrequencyHz,
+  const windows = monitorCoverageWindows(
+    session,
+    target.startFrequencyHz,
+    target.endFrequencyHz,
   );
   const allObserved = windows.length > 0 && windows.every((w) => w.lastValidAt);
   const lastValid = allObserved

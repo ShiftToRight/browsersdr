@@ -1,4 +1,8 @@
 import { MonitorDetectionMarkers } from "./MonitorDetectionMarkers";
+import {
+  monitorSweepIndices,
+  monitorSweepPhase,
+} from "../radio/monitorSchedule";
 import { useId, useRef, useState, type ReactNode } from "react";
 import type { MonitorSession } from "../radio/signalMonitor";
 import type { MonitorSpectrumView } from "../radio/monitorSpectrum";
@@ -44,6 +48,8 @@ export function MonitorFrequencyOverview({
       ),
     ) *
       1128;
+  const sweep = view ? view.sweep - 1 : session.sweeps;
+  const sweepIndices = monitorSweepIndices(session, sweep);
   const traces = session.windows.map((w, i) => ({
     window: w,
     index: i,
@@ -83,8 +89,11 @@ export function MonitorFrequencyOverview({
         <div>
           <h4>Band spectrum</h4>
           <span>
-            {format(lower)}–{format(upper)} · {measured}/
-            {session.windows.length} windows measured
+            {format(lower)}–{format(upper)} · {measured}/{traces.length} windows
+            measured
+            {session.sweepPattern
+              ? ` · ${monitorSweepPhase(session, sweep)}`
+              : ""}
           </span>
         </div>
         <strong
@@ -93,7 +102,7 @@ export function MonitorFrequencyOverview({
         >
           {phase}
           {activeWindow
-            ? ` · window ${windowIndex! + 1}/${session.windows.length}`
+            ? ` · window ${sweepIndices.indexOf(windowIndex!) + 1}/${sweepIndices.length}`
             : ""}
         </strong>
         {tools}

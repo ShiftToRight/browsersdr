@@ -1,4 +1,8 @@
 import { MonitorGroupDetails } from "./MonitorGroupDetails";
+import {
+  monitorSweepIndices,
+  monitorSweepPhase,
+} from "../radio/monitorSchedule";
 import "./explorerWorkbench.css";
 import type { ReactNode } from "react";
 import {
@@ -157,26 +161,28 @@ export function ExplorerMonitor({
         customDraft.targets,
         receiver.session,
       );
-      plannedWindows = createMonitorSession(
+      const planned = createMonitorSession(
         effectiveProfile,
         receiver.session,
         undefined,
         customDraft.targets,
         analysis,
-      ).windows.length;
+      );
+      plannedWindows = monitorSweepIndices(planned).length;
     } catch (e) {
       planError = e instanceof Error ? e.message : "Invalid custom plan.";
     }
   }
   if (!custom && receiver.session) {
     try {
-      plannedWindows = createMonitorSession(
+      const planned = createMonitorSession(
         effectiveProfile,
         receiver.session,
         undefined,
         undefined,
         analysis,
-      ).windows.length;
+      );
+      plannedWindows = monitorSweepIndices(planned).length;
     } catch (e) {
       planError = e instanceof Error ? e.message : "Invalid monitor plan.";
     }
@@ -326,7 +332,11 @@ export function ExplorerMonitor({
             (!abort.signal.aborted || event.phase === "idle")
           )
             setSpectrumView((previous) =>
-              updateMonitorSpectrum(previous, event, next.windows.length),
+              updateMonitorSpectrum(
+                previous,
+                event,
+                sessionRef.current?.windows.length ?? next.windows.length,
+              ),
             );
         },
         signal: abort.signal,
@@ -421,14 +431,16 @@ export function ExplorerMonitor({
         }
       : session;
   const detail = session?.signals.find((s) => s.id === selected);
-  const complete =
-    session?.windows.filter((w) => w.status === "complete").length ?? 0;
+  const sweepWindows = session
+    ? monitorSweepIndices(session).map((i) => session.windows[i]!)
+    : [];
+  const complete = sweepWindows.filter((w) => w.status === "complete").length;
   const fixed = session?.windows.length === 1;
   const revisit = session
     ? Math.max(0, ...session.windows.map((w) => w.revisitMs ?? 0))
     : 0;
   const plannedSeconds = session
-    ? session.windows.reduce(
+    ? sweepWindows.reduce(
         (sum, w) =>
           sum +
           (session.snapshot.profile.bands.find((b) => b.id === w.bandId)!
@@ -910,7 +922,14 @@ export function ExplorerMonitor({
               <strong>
                 {fixed
                   ? "Fixed window"
-                  : `${session.windows.length} sequential windows`}
+                  : `${sweepWindows.length} sequential windows`}
+                {session.sweepPattern && (
+                  <small data-testid="monitor-sweep-grid">
+                    {" · "}
+                    {monitorSweepPhase(session)} · alternating half-window
+                    sweeps
+                  </small>
+                )}
               </strong>
             </div>
             <div>
@@ -920,7 +939,7 @@ export function ExplorerMonitor({
             <div>
               <span>Valid windows</span>
               <strong>
-                {complete} / {session.windows.length}
+                {complete} / {sweepWindows.length}
               </strong>
             </div>
             <div>
@@ -1306,7 +1325,7 @@ export function ExplorerMonitor({
                 <table>
                   <thead>
                     <tr>
-                      <th>Region</th>
+                      <th>Region / grid</th>
                       <th>Last valid</th>
                       <th>Last revisit</th>
                       <th>Observed</th>
@@ -1319,6 +1338,13 @@ export function ExplorerMonitor({
                         <td>
                           {frequency(w.plan.lowerFrequencyHz)}–
                           {frequency(w.plan.upperFrequencyHz)}
+                          {w.sweepPhase !== undefined && (
+                            <small>
+                              {w.sweepPhase === 0
+                                ? "Original grid"
+                                : "Half-window grid"}
+                            </small>
+                          )}
                         </td>
                         <td>{age(w.lastValidAt, now)}</td>
                         <td>

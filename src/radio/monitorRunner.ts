@@ -1,4 +1,9 @@
 import { analyzeMonitorWindow } from "./monitorDetection";
+import {
+  alternatingMonitorSession,
+  monitorSweepIndices,
+  monitorSweepPhase,
+} from "./monitorSchedule";
 import type {
   MonitorSpectrumUpdate,
   MonitorSpectrumPhase,
@@ -114,8 +119,17 @@ export async function runMonitor(
         "Acquisition settings changed at Start; start a new monitoring session.",
       );
     controller.setVolume(0);
+    // Extend compatible adaptive history in place; old IDs, baseline and cursor survive.
+    session = alternatingMonitorSession(session);
     publish();
-    let validThisSweep = 0;
+    const sweepIndices = monitorSweepIndices(session);
+    let validThisSweep = sweepIndices
+      .slice(0, sweepIndices.indexOf(session.nextWindow))
+      .filter(
+        (i) =>
+          session.windows[i]!.lastSweep === session.sweeps &&
+          session.windows[i]!.status === "complete",
+      ).length;
     while (true) {
       checkAbort();
       const index = session.nextWindow;
@@ -142,7 +156,7 @@ export async function runMonitor(
         );
       session = {
         ...session,
-        message: `Monitoring ${band.name} · window ${index + 1}/${session.windows.length}`,
+        message: `Monitoring ${band.name} · ${monitorSweepPhase(session)} · window ${monitorSweepIndices(session).indexOf(index) + 1}/${monitorSweepIndices(session).length}`,
       };
       publish();
       let result;
@@ -217,6 +231,7 @@ export async function runMonitor(
           1000 *
           measurement.coverage
         : 0;
+      const previousSweep = session.sweeps;
       session = recordMonitorVisit(
         session,
         index,
@@ -225,7 +240,7 @@ export async function runMonitor(
         new Date(now()).toISOString(),
       );
       publish();
-      if (session.nextWindow === 0) {
+      if (session.sweeps !== previousSweep) {
         if (!validThisSweep)
           throw new Error(
             "No monitoring window had valid sample coverage in this sweep. Check input and Resume.",

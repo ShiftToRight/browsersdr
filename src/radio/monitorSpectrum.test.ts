@@ -41,26 +41,29 @@ describe("bounded monitor spectrum presentation", () => {
     expect(view.sweep).toBe(2);
     expect(view.phase).toBe("measuring");
   });
-  it("bounds all 256 window traces and preserves narrow peaks when decimating", () => {
-    const points = Array.from({ length: 4096 }, (_, i) => ({
-      frequencyHz: i,
-      powerDb: i === 123 ? -10 : -100,
-    }));
-    let view: MonitorSpectrumView | undefined;
-    for (let i = 0; i < 256; i++)
-      view = updateMonitorSpectrum(
-        view,
-        { ...event, windowIndex: i, points },
-        256,
-      );
-    expect(
-      Object.values(view!.windows).reduce((n, w) => n + w.points.length, 0),
-    ).toBeLessThanOrEqual(MONITOR_SPECTRUM_POINT_BUDGET);
-    expect(view!.windows[0]!.points).toContainEqual({
-      frequencyHz: 123,
-      powerDb: -10,
-    });
-  });
+  it.each([256, 512])(
+    "bounds all %i window traces and preserves narrow peaks when decimating",
+    (count) => {
+      const points = Array.from({ length: 4096 }, (_, i) => ({
+        frequencyHz: i,
+        powerDb: i === 123 ? -10 : -100,
+      }));
+      let view: MonitorSpectrumView | undefined;
+      for (let i = 0; i < count; i++)
+        view = updateMonitorSpectrum(
+          view,
+          { ...event, windowIndex: i, points },
+          count,
+        );
+      expect(
+        Object.values(view!.windows).reduce((n, w) => n + w.points.length, 0),
+      ).toBeLessThanOrEqual(MONITOR_SPECTRUM_POINT_BUDGET);
+      expect(view!.windows[0]!.points).toContainEqual({
+        frequencyHz: 123,
+        powerDb: -10,
+      });
+    },
+  );
   it("copies scalar points, clears failed windows and starts clean for a different session", () => {
     const points = [{ frequencyHz: 100, powerDb: -80 }];
     let view = updateMonitorSpectrum(undefined, { ...event, points }, 1);

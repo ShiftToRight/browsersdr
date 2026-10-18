@@ -265,6 +265,154 @@ describe("monitor receiver lifecycle", () => {
 });
 
 describe("monitor spectrum display events", () => {
+  it("retains valid coverage from before a mid-grid pause when the remaining visits fail", async () => {
+    const p = {
+      ...profile,
+      bands: [
+        {
+          ...profile.bands[0]!,
+          startFrequencyHz: 100_000_000,
+          endFrequencyHz: 101_536_000,
+        },
+      ],
+    };
+    const x = setup(p);
+    const initial = createMonitorSession(p, receiver, undefined, undefined, {
+      version: 2,
+      preset: "general",
+    });
+    x.options.onUpdate.mockImplementation((s) => {
+      if (s.sweeps === 1 && s.nextWindow === 3) x.abort.abort();
+    });
+    const paused = await runMonitor(initial, x.options);
+    const resumeAbort = new AbortController();
+    let remaining = 0;
+    const final = await runMonitor(validateMonitorSession(paused), {
+      ...x.options,
+      signal: resumeAbort.signal,
+      onUpdate: () => {},
+      measure: async () => {
+        if (++remaining === 3) resumeAbort.abort();
+        throw new Error("Remaining visits failed");
+      },
+    });
+    expect(remaining).toBe(3);
+    expect(final.sweeps).toBe(2);
+    expect(final.status).toBe("paused");
+    expect(final.windows[2]!.status).toBe("complete");
+  });
+  it("alternates complete grids, pauses inside the shifted grid and resumes the same history and cursor", async () => {
+    const p = {
+      ...profile,
+      bands: [
+        {
+          ...profile.bands[0]!,
+          startFrequencyHz: 100_000_000,
+          endFrequencyHz: 101_536_000,
+        },
+      ],
+    };
+    const x = setup(p);
+    const initial = createMonitorSession(p, receiver, undefined, undefined, {
+      version: 2,
+      preset: "general",
+    });
+    vi.mocked(x.measure).mockImplementation(async (_pipeline, options) => {
+      const bins = new Float32Array(4096).fill(-100);
+      for (let i = 0; i < bins.length; i++) {
+        const hz = options.centerFrequencyHz + (i - 2048) * 250;
+        if (hz >= 100_748_000 && hz <= 100_788_000) bins[i] = -40;
+      }
+      return {
+        frames: [
+          {
+            bins,
+            centerFrequencyHz: options.centerFrequencyHz,
+            sampleRateHz: options.sampleRateHz,
+          } as SpectrumFrame,
+        ],
+        targetSamples: 153600,
+        sourceSamples: 153600,
+        missingSamples: 0,
+        coverage: 1,
+        status: "complete",
+      };
+    });
+    const events: MonitorSpectrumUpdate[] = [];
+    x.options.onUpdate.mockImplementation((s) => {
+      if (s.sweeps === 1 && s.nextWindow === 3) x.abort.abort();
+    });
+    const paused = await runMonitor(initial, {
+      ...x.options,
+      onSpectrum: (e) => events.push(e),
+    });
+    expect(paused.status).toBe("paused");
+    expect(paused.sweeps).toBe(1);
+    expect(paused.nextWindow).toBe(3);
+    expect(validateMonitorSession(paused)).toEqual(paused);
+    const id = paused.signals[0]!.id;
+    const resumeAbort = new AbortController();
+    const final = await runMonitor(
+      validateMonitorSession(JSON.parse(JSON.stringify(paused))),
+      {
+        ...x.options,
+        signal: resumeAbort.signal,
+        onUpdate: (s) => {
+          if (s.sweeps === 2) resumeAbort.abort();
+        },
+        onSpectrum: (e) => events.push(e),
+      },
+    );
+    expect(final.status).toBe("paused");
+    expect(final.sweeps).toBe(2);
+    expect(final.nextWindow).toBe(0);
+    expect(final.id).toBe(initial.id);
+    expect(final.signals).toHaveLength(1);
+    expect(final.signals[0]!.id).toBe(id);
+    expect(final.signals[0]!.detections).toBe(3);
+    expect(
+      events
+        .filter((e) => e.phase === "complete")
+        .map((e) => [e.sweep, e.windowIndex]),
+    ).toEqual([
+      [1, 0],
+      [1, 1],
+      [2, 2],
+      [2, 3],
+      [2, 4],
+    ]);
+    expect(final.windows.every((w) => w.visits === 1)).toBe(true);
+    expect(x.controller.getSnapshot().session!.hardwareCenterFrequencyHz).toBe(
+      receiver.hardwareCenterFrequencyHz,
+    );
+    expect(validateMonitorSession(final)).toEqual(final);
+  });
+  it("stops when the shifted sweep has no valid coverage even after a successful original sweep", async () => {
+    const p = {
+      ...profile,
+      bands: [{ ...profile.bands[0]!, endFrequencyHz: 101_236_000 }],
+    };
+    const x = setup(p);
+    const initial = createMonitorSession(p, receiver, undefined, undefined, {
+      version: 2,
+      preset: "general",
+    });
+    const measure = x.measure;
+    let calls = 0;
+    const final = await runMonitor(initial, {
+      ...x.options,
+      measure: async (...args) => {
+        if (++calls > 2) throw new Error("Shifted sweep failed");
+        return measure(...args);
+      },
+    });
+    expect(final.status).toBe("failed");
+    expect(final.sweeps).toBe(2);
+    expect(calls).toBe(5);
+    expect(final.message).toContain(
+      "No monitoring window had valid sample coverage in this sweep",
+    );
+  });
   it("follows the current window rather than the next visit and clears active acquisition before cleanup", async () => {
     const x = setup({
       ...profile,

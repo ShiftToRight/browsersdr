@@ -125,12 +125,14 @@ test("monitor sweeps enabled bands with measured coverage and retains history ac
   // Verify the initial complete pass, then a repeated complete pass.
   await waitSweeps(page, 1);
   await waitSweeps(page, 2);
-  await expect(monitor(page)).toContainText("2 sequential windows");
+  await expect(page.getByTestId("monitor-sweep-grid")).toContainText(
+    "alternating half-window sweeps",
+  );
   await page
     .getByText("Targets & observation coverage", { exact: true })
     .click();
   await page.getByText("Coverage & revisit times", { exact: true }).click();
-  await expect(page.locator(".monitor-coverage tbody tr")).toHaveCount(2);
+  await expect(page.locator(".monitor-coverage tbody tr")).toHaveCount(5);
   await page.getByRole("button", { name: "Pause monitoring" }).click();
   await expect(
     page.getByRole("button", { name: "Resume monitoring" }),
