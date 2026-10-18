@@ -111,11 +111,12 @@ function HeaderMenu({ label, icon, active, children, onOpen }: {
   );
 }
 
-export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onCompatibility, onAbout, activeView }: {
+export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onAntenna, onCompatibility, onAbout, activeView }: {
   layout: WorkspaceLayout;
   onChange: Dispatch<SetStateAction<WorkspaceLayout>>;
   onSettings: () => void;
   onHelp: () => void;
+  onAntenna?: () => void;
   onCompatibility: () => void;
   onAbout: () => void;
   activeView: string;
@@ -142,7 +143,8 @@ export function WorkspaceControls({ layout, onChange, onSettings, onHelp, onComp
           compactButton.current?.focus();
         }}><AppIcon name="retry" />Reset view</button>
       </HeaderMenu>
-      <HeaderMenu label="Help" icon="help" active={activeView === "help" || activeView === "compatibility" || activeView === "about"}>
+      <HeaderMenu label="Help" icon="help" active={activeView === "help" || activeView === "antenna" || activeView === "compatibility" || activeView === "about"}>
+        {onAntenna && <button id="antenna-help-trigger" type="button" className="secondary" onClick={onAntenna}><AppIcon name="radio" />Antenna guide</button>}
         <button type="button" className="secondary" aria-controls="compatibility-view" onClick={onCompatibility}>
           <AppIcon name="activity" />Compatibility &amp; tests
         </button>

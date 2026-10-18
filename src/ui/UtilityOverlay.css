@@ -18,6 +18,8 @@
 }
 .utility-overlay[open] { display: flex; flex-direction: column; }
 .utility-overlay[hidden] { display: none; }
+.utility-overlay-antenna { max-width: 1240px; }
+.utility-overlay-navigation[hidden] { display: none; }
 .utility-overlay::backdrop { background: #02071166; backdrop-filter: blur(5px); }
 .utility-overlay-header { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); flex: none; }
 .utility-overlay-header > div { min-width: 0; }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.0 — 2026-10-19
+
+- Add an integrated antenna guide with reception tips, selectable antenna diagrams and frequency-based element lengths.
+- Add telescopic monopole and dipole presets, including ANT500, ANT700, RTL-SDR Blog and RaTLSnake profiles, physical length limits and optional eighth-wave guidance.
+- Save named custom antenna presets locally with editing, duplication and delete/undo controls.
+
 ## 1.9.0 — 2026-10-18
 
 - Add opt-in experimental RTL-SDR 3.2 MS/s acquisition, live rate switching, native/channel capture and replay, with explicit loss caveats and bounded delivered-input diagnostics. Preserve existing defaults and other receiver rate choices.

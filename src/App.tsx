@@ -30,6 +30,8 @@ const UtilityOverlay = lazy(() => import("./ui/UtilityOverlay").then(module => (
 import { bookmarkFromCandidate, validateBookmark, type Bookmark } from "./radio/bookmarks";
 import { applyBookmark } from "./radio/bookmarkSelection";
 import { SearchOverlay } from "./ui/SearchOverlay";
+import type { AntennaContext } from "./radio/antennaGuide";
+const AntennaGuide = lazy(() => import("./ui/AntennaGuide").then(module => ({ default: module.AntennaGuide })));
 import { ModeSelector } from "./ui/ModeSelector";
 import { previewDiscovery } from "./radio/discoverySelection";
 import { applyReceptionCandidate } from "./radio/atlasStationSelection";
@@ -183,8 +185,8 @@ const preferenceStorage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
 };
-type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "compatibility" | "about";
-const isUtilityView = (view: AppView): view is UtilityView => view === "settings" || view === "help" || view === "compatibility" || view === "about";
+type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "antenna" | "compatibility" | "about";
+const isUtilityView = (view: AppView): view is UtilityView => view === "settings" || view === "help" || view === "antenna" || view === "compatibility" || view === "about";
 type ReceiverDockView = "decode" | "capture" | "session";
 type ReplayImportFormat = "browsersdr" | "sigmf";
 
@@ -1357,6 +1359,7 @@ export function ReceiverApp({
   const authorizedUsbDevice = useRef<USBDevice | undefined>(undefined);
   const [activeView, setActiveViewState] = useState<AppView>("receiver");
   const [utilityView, setUtilityView] = useState<UtilityView | null>(null);
+  const [utilityTriggerId, setUtilityTriggerId] = useState<string>();
   const [remoteSelected, setRemoteSelected] = useState(false);
   const [remoteStatus, setRemoteStatus] = useState("disconnected");
   const [remotePreset, setRemotePreset] = useState<RemotePreset>();
@@ -1371,6 +1374,7 @@ export function ReceiverApp({
     else if (view === "explorer" || view === "decoder") setLastWorkspace(view);
   }, [remoteSelected]);
   const openAuxiliaryView = (view: AppView) => {
+    setUtilityTriggerId(undefined);
     setActiveView(view);
     if (!isUtilityView(view)) requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
   };
@@ -2483,6 +2487,11 @@ export function ReceiverApp({
   };
 
   const activeSession = receiver.session;
+  const antennaContext: AntennaContext = remoteSelected
+    ? { kind: "remote", sourceLabel: "Remote receiver" }
+    : { kind: source === "replay" ? "replay" : source === "synthetic" ? "demo" : "local", sourceLabel: caps.label,
+      frequencyHz: displayedFrequencyHz ?? frequencyMhz * 1e6, mode: liveMode, range: caps.frequency };
+  const openAntennaGuide = (triggerId: string) => { setUtilityTriggerId(triggerId); setUtilityView("antenna"); };
   const activeHackrfSettings = activeSession?.hackrf?.captureSettings;
   const compatibilityReportContext: CompatibilityReportContext = {
     sessionGeneration: activeSession?.sessionGeneration ?? receiver.sessionGeneration,
@@ -2624,6 +2633,7 @@ export function ReceiverApp({
         <WorkspaceControls layout={layout} onChange={setLayout} activeView={utilityView ?? activeView}
           onSettings={() => openAuxiliaryView("settings")}
           onHelp={() => openAuxiliaryView("help")}
+          onAntenna={() => openAntennaGuide("antenna-help-trigger")}
           onCompatibility={() => openAuxiliaryView("compatibility")}
           onAbout={() => openAuxiliaryView("about")}
         />
@@ -3438,7 +3448,8 @@ export function ReceiverApp({
                 />}
                 </div>
                 {source !== "replay" && source !== "synthetic" && ["DAB", "AIS", "ADS-B", "ACARS", "NAVTEX"].includes(mode) && <Suspense fallback={null}><ModeFrequencyHint mode={mode} frequencyHz={frequencyMhz * 1e6} disabled={transitioning || Boolean(recordingStatus) || exportingRecording || atlasTransferActive} onChoose={hz => { setChannelFrequencyDraft(undefined); setFrequencyMhz(hz / 1e6); if (running) tune(hz); }} /></Suspense>}
-                <SearchOverlay favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
+                <button id="antenna-guide-trigger" type="button" className="secondary" aria-haspopup="dialog" onClick={() => openAntennaGuide("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</button>
+                <SearchOverlay antennaContext={antennaContext} favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
                   contextKey={`${source}:${remoteSelected}:${receiver.sessionGeneration}:${mode}:${sampleRateHz}:${frequencyMhz}`}
                   blockedReason={stationUseBlockedReason} onRecall={recallFavorite} onUseStation={useAtlasStation} onFavorite={saveAtlasFavorite}
                   onPreview={(bookmark) => previewDiscovery(controller, bookmark, { source, channelFrequencyHz: frequencyMhz * 1e6, modeSettings: currentModeSettings, sampleRateHz, ...hardwareOptions })} />
@@ -4622,8 +4633,11 @@ export function ReceiverApp({
 
       <DeferredWorkspace active={utilityView !== null}><UtilityOverlay view={utilityView}
         workspaceLabel={activeView === "diagnostics" ? "Diagnostics" : lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}
-        returnFocusId={activeView === "diagnostics" ? "auxiliary-return" : `${lastWorkspace}-tab`}
+        returnFocusId={utilityTriggerId ?? (activeView === "diagnostics" ? "auxiliary-return" : `${lastWorkspace}-tab`)}
         onViewChange={setUtilityView} onDismiss={() => setUtilityView(null)}>
+      <div id="antenna-view" role="region" aria-label="Antenna guide" hidden={utilityView !== "antenna"}>
+        <DeferredWorkspace active={utilityView === "antenna"}><AntennaGuide context={antennaContext} /></DeferredWorkspace>
+      </div>
       <div
         id="settings-view"
         role="region"
@@ -4835,6 +4849,11 @@ export function ReceiverApp({
                   <p className="eyebrow">Frequently asked questions</p>
                   <h2 id="faq-heading">The useful answers, up front</h2>
                   <div className="faq-list">
+                    <details>
+                      <summary>Which antenna should I use?</summary>
+                      <p>Find starting element lengths, polarization and placement advice for radio, aircraft, ships, balloons and weather satellites.</p>
+                      <button id="antenna-help-link" type="button" className="secondary" onClick={() => { setUtilityTriggerId(undefined); setUtilityView("antenna"); }}>Open antenna guide</button>
+                    </details>
                     <details open>
                       <summary>How do I get started?</summary>
                       <p>

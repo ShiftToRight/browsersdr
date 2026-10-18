@@ -2,10 +2,11 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { AppIcon, type AppIconName } from "./AppIcon";
 import "./UtilityOverlay.css";
 
-export type UtilityView = "settings" | "help" | "compatibility" | "about";
+export type UtilityView = "settings" | "help" | "antenna" | "compatibility" | "about";
 const pages: Array<{ view: UtilityView; label: string; icon: AppIconName }> = [
   { view: "settings", label: "Settings", icon: "settings" },
   { view: "help", label: "Help & setup", icon: "help" },
+  { view: "antenna", label: "Antenna guide", icon: "radio" },
   { view: "compatibility", label: "Compatibility & tests", icon: "activity" },
   { view: "about", label: "About BrowserSDR", icon: "info" },
 ];
@@ -56,7 +57,7 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
     };
   }, [open]);
 
-  return <dialog ref={dialog} className="utility-overlay" hidden={!open} role="dialog" aria-modal="true" aria-labelledby="utility-overlay-heading"
+  return <dialog ref={dialog} className={`utility-overlay${view === "antenna" ? " utility-overlay-antenna" : ""}`} hidden={!open} role="dialog" aria-modal="true" aria-labelledby="utility-overlay-heading"
     onCancel={event => { if (event.target === event.currentTarget) { event.preventDefault(); onDismiss(); } }}
     onPointerDown={event => {
       const bounds = event.currentTarget.getBoundingClientRect();
@@ -82,10 +83,10 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
     }}>
     <header className="utility-overlay-header">
       <span className="utility-overlay-emblem"><AppIcon name={selected.icon} /></span>
-      <div><p className="eyebrow">{view === "settings" ? "Settings" : "Help"}</p><h2 id="utility-overlay-heading">{selected.label}</h2></div>
+      <div><p className="eyebrow">{view === "settings" ? "Settings" : view === "antenna" ? "Antennas & reception" : "Help"}</p><h2 id="utility-overlay-heading">{selected.label}</h2></div>
       <button ref={closeButton} type="button" className="secondary utility-overlay-close" aria-label="Close utility overlay" onClick={onDismiss}><AppIcon name="close" /></button>
     </header>
-    <nav className="utility-overlay-navigation" aria-label="Utility pages">
+    <nav className="utility-overlay-navigation" aria-label="Utility pages" hidden={view === "antenna"}>
       {pages.map(page => <button key={page.view} type="button" className="secondary" aria-pressed={view === page.view} aria-controls={`${page.view}-view`}
         onClick={() => {
           onViewChange(page.view);
@@ -93,6 +94,6 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
         }}><AppIcon name={page.icon} />{page.label}</button>)}
     </nav>
     <div className="utility-overlay-content">{children}</div>
-    <footer className="utility-overlay-footer"><span>{workspaceLabel} stays underneath</span><button type="button" className="secondary" onClick={onDismiss}>Back to {workspaceLabel}</button></footer>
+    <footer className="utility-overlay-footer">{view === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={onDismiss}>Back to {workspaceLabel}</button></footer>
   </dialog>;
 }

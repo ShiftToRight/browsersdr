@@ -4,6 +4,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  lazy,
+  Suspense,
 } from "react";
 import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
@@ -36,6 +38,14 @@ import type { ReceptionCandidate } from "../radio/receptionEvidence";
 import type { ReceiverMode } from "../radio/receiverConfig";
 import type { SharedFrequencyGuide } from "../radio/sharedFrequencyGuides";
 import "./SearchOverlay.css";
+import {
+  ANTENNA_GUIDES,
+  type AntennaContext,
+  type AntennaGuideId,
+} from "../radio/antennaGuide";
+const AntennaGuide = lazy(() =>
+  import("./AntennaGuide").then((module) => ({ default: module.AntennaGuide })),
+);
 interface Preview {
   bookmark: Bookmark;
   station?: PublicStationReferences;
@@ -117,6 +127,7 @@ function FrequencyPlan({
   );
 }
 export interface SearchOverlayProps {
+  antennaContext?: AntennaContext;
   favorites: Bookmark[];
   frequencyHz: number;
   mode: ReceiverMode;
@@ -335,6 +346,12 @@ function StationReferences({
   );
 }
 export function SearchOverlayFeature(props: SearchOverlayProps) {
+  const [antenna, setAntenna] = useState<{
+    id?: AntennaGuideId;
+    frequencyHz: number;
+    mode: ReceiverMode;
+  }>();
+  const antennaReturn = useRef("");
   const [client] = useState(() => props.client ?? new PublicStationClient());
   const [search] = useState(() => new PublicStationSearch(client));
   const state = useSyncExternalStore(search.subscribe, search.getSnapshot);
@@ -544,7 +561,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
             if (event.key !== "Tab") return;
             const elements = Array.from(
               event.currentTarget.querySelectorAll<HTMLElement>(
-                'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]',
+                'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], summary, [tabindex="0"]',
               ),
             ).filter((e) => e.getClientRects().length > 0);
             const first = elements[0],
@@ -561,8 +578,14 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
         >
           <header className="favorites-heading">
             <div>
-              <h2 id={`${id}-title`}>Search stations & signals</h2>
-              <p>Local guides, approved Atlas references and your favorites</p>
+              <h2 id={`${id}-title`}>
+                {antenna ? "Antenna guide" : "Search stations & signals"}
+              </h2>
+              <p>
+                {antenna
+                  ? "Reception setups & starting dimensions"
+                  : "Local guides, approved Atlas references and your favorites"}
+              </p>
             </div>
             <button
               type="button"
@@ -574,465 +597,570 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
             </button>
           </header>
           <div className="favorites-body discovery-body">
-            <p id={`${id}-help`} className="display-note">
-              Free public catalog search, no account needed. Browsing keeps
-              reception unchanged. Results are references, not verified
-              reception.
-            </p>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                submit();
-              }}
-            >
-              <label>
-                Search text, frequency or DAB block
-                <input
-                  type="search"
-                  maxLength={200}
-                  value={query}
-                  placeholder="meshcore, meshtastic europe, zigbee, energy…"
-                  onChange={(event) => {
-                    edit();
-                    setQuery(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <div className="discovery-fields">
-                <label>
-                  Interpretation
-                  <select
-                    value={interpretation}
-                    onChange={(event) => {
-                      edit();
-                      setInterpretation(
-                        event.currentTarget.value as "auto" | "text",
-                      );
-                    }}
-                  >
-                    <option value="auto">Auto · bare numbers are MHz</option>
-                    <option value="text">Text · keep numbers as names</option>
-                  </select>
-                </label>
-                <label>
-                  Show
-                  <select
-                    value={group}
-                    onChange={(event) => setGroup(event.currentTarget.value)}
-                  >
-                    <option value="all">All sources</option>
-                    <option value="guides">Local guides</option>
-                    <option value="frequencies">Shared RF frequencies</option>
-                    <option value="atlas">Atlas stations</option>
-                    <option value="favorites">My favorites</option>
-                  </select>
-                </label>
-              </div>
-              <details>
-                <summary>Optional Atlas frequency window</summary>
-                <div className="discovery-fields">
-                  <label>
-                    Minimum frequency (MHz)
-                    <input
-                      inputMode="decimal"
-                      value={minimum}
-                      onChange={(event) => {
-                        edit();
-                        setMinimum(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    Maximum frequency (MHz)
-                    <input
-                      inputMode="decimal"
-                      value={maximum}
-                      onChange={(event) => {
-                        edit();
-                        setMaximum(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="display-note">
-                  Paired bounds: minimum included, maximum excluded. Applies to
-                  published nominal references.
-                </p>
-              </details>
-              {parsed.notice && <p className="display-note">{parsed.notice}</p>}
-              {parsed.error && <p role="alert">{parsed.error}</p>}
-              <div className="discovery-actions">
-                <button type="submit" disabled={state.status === "loading"}>
-                  Search Atlas
-                </button>
+            {antenna ? (
+              <>
                 <button
                   type="button"
+                  ref={(node) => {
+                    node?.focus();
+                  }}
                   className="secondary"
                   onClick={() => {
-                    edit();
-                    setQuery("");
-                    setMinimum("");
-                    setMaximum("");
+                    setAntenna(undefined);
+                    requestAnimationFrame(() =>
+                      Array.from(
+                        dialog.current?.querySelectorAll<HTMLButtonElement>(
+                          "button",
+                        ) ?? [],
+                      )
+                        .find(
+                          (button) =>
+                            button.textContent === antennaReturn.current,
+                        )
+                        ?.focus(),
+                    );
                   }}
                 >
-                  Clear search
+                  ← Back to Search
                 </button>
-              </div>
-            </form>
-            {props.blockedReason && (
-              <p className="display-note">
-                {props.blockedReason} Browsing remains available.
-              </p>
-            )}
-            {message && <p role="status">{message}</p>}
-            {preview && (
-              <section
-                className="discovery-preview"
-                aria-label="Receiver preview"
-                tabIndex={-1}
-              >
-                <h3>Receiver preview · {preview.bookmark.name}</h3>
-                <p>{previewText || previewError}</p>
-                {preview.bookmark.atlasReference && (
-                  <p className="display-note">
-                    Catalog-requested bandwidth:{" "}
-                    {preview.bookmark.atlasReference.bandwidth_hz.toLocaleString()}{" "}
-                    Hz. The receiver preview shows the supported applied
-                    profile.
-                  </p>
-                )}
-                {preview.station && (
-                  <>
-                    <p>
-                      Public station ID: {preview.station.id} · reference:{" "}
-                      {preview.referenceId} · publication version{" "}
-                      {preview.station.publication_version}. Candidate only;
-                      identity unconfirmed.
-                    </p>
-                    <Sources sources={preview.station.sources} />
-                    <Sources
-                      sources={
-                        preview.station.transmissions.find(
-                          (t) => t.id === preview.referenceId,
-                        )!.sources
-                      }
-                    />
-                  </>
-                )}
-                {preview.bookmark.settings.mode === "DAB" && (
-                  <p>
-                    After manually starting reception, select a decoded service
-                    in the DAB programme control. No programme is selected by
-                    search.
-                  </p>
-                )}
-                <div className="discovery-actions">
-                  <button
-                    type="button"
-                    disabled={!!previewError || applying}
-                    onClick={() => void apply()}
-                  >
-                    {applying ? "Checking and applying…" : "Apply to receiver"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={invalidate}
-                  >
-                    Cancel preview
-                  </button>
-                </div>
-              </section>
-            )}
-            {(group === "all" || group === "frequencies") && (
-              <section aria-label="Shared RF frequencies">
-                <h3>Shared RF frequencies</h3>
-                <p className="display-note">
-                  Public carriers, regional channel plans and USB dial
-                  conventions, available without an account. Expand a plan to
-                  browse its channels. Frequency alone does not identify
-                  traffic. Preview uses the listed audio mode or your current
-                  mode; a frequency guide does not add a protocol decoder. Check
-                  receiver range and capture bandwidth before recording.
+                <Suspense
+                  fallback={<p role="status">Opening antenna guide…</p>}
+                >
+                  <AntennaGuide
+                    initialGuideId={antenna.id}
+                    context={{
+                      ...(props.antennaContext ?? {
+                        kind: "local",
+                        sourceLabel: "Receiver",
+                      }),
+                      frequencyHz: antenna.frequencyHz,
+                      mode: antenna.mode,
+                    }}
+                  />
+                </Suspense>
+              </>
+            ) : (
+              <>
+                <p id={`${id}-help`} className="display-note">
+                  Free public catalog search, no account needed. Browsing keeps
+                  reception unchanged. Results are references, not verified
+                  reception.
                 </p>
-                {!shared && !guideLoadError && (
-                  <p role="status">Loading shared frequency guides…</p>
-                )}
-                {guideLoadError && (
-                  <p role="alert">
-                    Shared guides could not load.{" "}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGuideLoadError(false);
-                        setGuideLoadAttempt((value) => value + 1);
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    submit();
+                  }}
+                >
+                  <label>
+                    Search text, frequency or DAB block
+                    <input
+                      type="search"
+                      maxLength={200}
+                      value={query}
+                      placeholder="meshcore, meshtastic europe, zigbee, energy…"
+                      onChange={(event) => {
+                        edit();
+                        setQuery(event.currentTarget.value);
                       }}
-                    >
-                      Retry frequency guides
-                    </button>
-                  </p>
-                )}
-                {shared && !sharedFrequencies.length && (
-                  <p>
-                    No matching shared frequency. Try meshtastic Europe, LoRaWAN
-                    US, Bluetooth advertising, GPS L1, PMR446, NOAA weather or
-                    FT8 20m.
-                  </p>
-                )}
-                {shared?.SHARED_FREQUENCY_FAMILIES.map(([family, label]) => {
-                  const rows = sharedFrequencies.filter(
-                    (row) => row.family === family,
-                  );
-                  return (
-                    rows.length > 0 && (
-                      <details key={family} open={!!query.trim()}>
-                        <summary>
-                          {label} · {rows.length} frequency profiles
-                        </summary>
-                        {[...new Set(rows.map((row) => row.plan))].map(
-                          (plan) => {
-                            const planRows = rows.filter(
-                              (row) => row.plan === plan,
-                            );
-                            return plan === null ? (
-                              <FrequencyRows
-                                key="presets"
-                                rows={planRows}
-                                mode={props.mode}
-                                choose={choose}
-                              />
-                            ) : (
-                              <FrequencyPlan
-                                key={`${plan}:${query}:${interpretation}`}
-                                name={plan}
-                                rows={planRows}
-                                mode={props.mode}
-                                choose={choose}
-                              />
-                            );
-                          },
-                        )}
-                      </details>
-                    )
-                  );
-                })}
-              </section>
-            )}
-            {(group === "all" || group === "guides") && (
-              <section aria-label="Modes & frequency guides">
-                <h3>Modes & frequency guides</h3>
-                {parsed.frequencyHz !== undefined && (
-                  <article>
-                    <h4>
-                      {parsed.block
-                        ? `DAB block ${parsed.block}`
-                        : `${parsed.frequencyHz / 1e6} MHz`}
-                    </h4>
-                    <p>{parsed.notice}</p>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() =>
-                        choose(
-                          guideBookmark(
-                            parsed.block
-                              ? `DAB ${parsed.block}`
-                              : `${parsed.frequencyHz! / 1e6} MHz`,
-                            parsed.block ? "DAB" : props.mode,
-                            parsed.frequencyHz!,
-                          ),
-                        )
-                      }
-                    >
-                      Preview{" "}
-                      {parsed.block
-                        ? "DAB block"
-                        : `frequency with ${props.mode}`}
-                    </button>
-                  </article>
-                )}
-                {!guides.length && parsed.frequencyHz === undefined && (
-                  <p>
-                    No local guide matches. Try a mode name, frequency or DAB
-                    block.
-                  </p>
-                )}
-                {guides.map((guide) => (
-                  <article key={guide.id}>
-                    <h4>{guide.name}</h4>
-                    <p>{guide.context}</p>
-                    <p>{guide.status}</p>
-                    <p className="display-note">
-                      {guide.match} ·{" "}
-                      <a
-                        href={guide.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    />
+                  </label>
+                  <div className="discovery-fields">
+                    <label>
+                      Interpretation
+                      <select
+                        value={interpretation}
+                        onChange={(event) => {
+                          edit();
+                          setInterpretation(
+                            event.currentTarget.value as "auto" | "text",
+                          );
+                        }}
                       >
-                        {guide.publisher}
-                      </a>{" "}
-                      · {guide.sourceDate}
-                    </p>
-                    {guide.mode && guide.id !== "dab" && guide.id !== "atis" && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() =>
-                          choose(
-                            guideBookmark(
-                              guide.name,
-                              guide.mode!,
-                              guide.frequencyHz ?? props.frequencyHz,
-                            ),
-                          )
+                        <option value="auto">
+                          Auto · bare numbers are MHz
+                        </option>
+                        <option value="text">
+                          Text · keep numbers as names
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      Show
+                      <select
+                        value={group}
+                        onChange={(event) =>
+                          setGroup(event.currentTarget.value)
                         }
                       >
-                        Preview {guide.name}
-                      </button>
-                    )}
-                  </article>
-                ))}
-              </section>
-            )}
-            {(group === "all" || group === "atlas") && (
-              <section aria-label="Atlas stations">
-                <h3>Atlas stations</h3>
-                <p className="display-note">
-                  Published references only, pages of up to 50. Name, alias and
-                  call-sign matches come first within each returned page;
-                  continuation follows catalog order. No global relevance ranking
-                  or complete worldwide inventory. Text
-                  matching is literal; Atlas preserves accents and approved
-                  aliases. A DAB format does not establish programme membership.
-                </p>
-                {state.status === "idle" && (
-                  <p>Choose Search Atlas to query the public catalog.</p>
-                )}
-                {state.status === "loading" && (
-                  <p role="status">Searching public Atlas catalog…</p>
-                )}
-                {state.message && (
-                  <p role={state.status === "error" ? "alert" : "status"}>
-                    {state.message}
-                  </p>
-                )}
-                {state.status === "error" && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      invalidate();
-                      void search.retry();
-                    }}
-                  >
-                    Retry station page
-                  </button>
-                )}
-                {state.status === "ready" && (
-                  <>
-                    <p role="status">
-                      {state.page!.items.length
-                        ? `Page ${state.pageIndex + 1} · ${state.page!.items.length} published stations`
-                        : "No matching published stations. This does not establish absence of an RF signal."}
-                    </p>
-                    {rankPublicStations(state.page!.items, search.getQuery().q).map(({ station, match, relevance }) => (
-                      <article
-                        key={station.id}
-                        aria-label={station.name}
-                        className="discovery-station"
-                      >
-                        <h4>{station.name}</h4>
-                        {search.getQuery().q && <p className="display-note">{relevance.label}. Check the published service and local frequency before choosing it.</p>}
-                        <p>
-                          {[
-                            station.country,
-                            station.service,
-                            station.network,
-                            station.call_sign,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "Region / service unknown"}
-                        </p>
-                        {station.aliases.length > 0 && (
-                          <p>Approved aliases: {station.aliases.join(", ")}</p>
-                        )}
-                        <p className="display-note">
-                          Matched{" "}
-                          {match.station_fields.length
-                            ? match.station_fields.join(", ")
-                            : "published reference / browse"}
-                          . Only references matching this page's filters are
-                          listed.
-                        </p>
-                        <Sources sources={station.sources} />
-                        <StationReferences
-                          key={`${state.page!.catalog_revision}:${station.id}:${station.publication_version}:${search.getRequestId()}`}
-                          client={client}
-                          station={station}
-                          catalogRevision={state.page!.catalog_revision}
-                          total={match.matching_transmission_count}
-                          query={search.getQuery()}
-                          choose={choose}
-                          onFavorite={props.onFavorite}
-                          onMessage={setMessage}
+                        <option value="all">All sources</option>
+                        <option value="guides">Local guides</option>
+                        <option value="frequencies">
+                          Shared RF frequencies
+                        </option>
+                        <option value="atlas">Atlas stations</option>
+                        <option value="favorites">My favorites</option>
+                      </select>
+                    </label>
+                  </div>
+                  <details>
+                    <summary>Optional Atlas frequency window</summary>
+                    <div className="discovery-fields">
+                      <label>
+                        Minimum frequency (MHz)
+                        <input
+                          inputMode="decimal"
+                          value={minimum}
+                          onChange={(event) => {
+                            edit();
+                            setMinimum(event.currentTarget.value);
+                          }}
                         />
-                      </article>
-                    ))}
-                    <nav
-                      className="discovery-actions"
-                      aria-label="Public station pages"
-                    >
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={!state.previous}
-                        onClick={() => {
-                          invalidate();
-                          void search.previous();
-                        }}
-                      >
-                        Previous stations
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={!state.next}
-                        onClick={() => {
-                          invalidate();
-                          void search.next();
-                        }}
-                      >
-                        Next stations
-                      </button>
-                    </nav>
-                  </>
-                )}
-              </section>
-            )}
-            {(group === "all" || group === "favorites") && (
-              <section aria-label="My favorites">
-                <h3>My favorites</h3>
-                <p className="display-note">
-                  Stored in this browser. Recall does not verify a stored
-                  station identity.
-                </p>
-                {!favorites.length && <p>No matching local favorites.</p>}
-                {favorites.map((item) => (
-                  <article key={item.id}>
-                    <h4>{item.name}</h4>
-                    <p>
-                      {item.frequencyHz / 1e6} MHz · {item.settings.mode}
+                      </label>
+                      <label>
+                        Maximum frequency (MHz)
+                        <input
+                          inputMode="decimal"
+                          value={maximum}
+                          onChange={(event) => {
+                            edit();
+                            setMaximum(event.currentTarget.value);
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <p className="display-note">
+                      Paired bounds: minimum included, maximum excluded. Applies
+                      to published nominal references.
                     </p>
+                  </details>
+                  {parsed.notice && (
+                    <p className="display-note">{parsed.notice}</p>
+                  )}
+                  {parsed.error && <p role="alert">{parsed.error}</p>}
+                  <div className="discovery-actions">
+                    <button type="submit" disabled={state.status === "loading"}>
+                      Search Atlas
+                    </button>
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() => choose(item)}
+                      onClick={() => {
+                        edit();
+                        setQuery("");
+                        setMinimum("");
+                        setMaximum("");
+                      }}
                     >
-                      Preview favorite {item.name}
+                      Clear search
                     </button>
-                  </article>
-                ))}
-              </section>
+                  </div>
+                </form>
+                {props.blockedReason && (
+                  <p className="display-note">
+                    {props.blockedReason} Browsing remains available.
+                  </p>
+                )}
+                {message && <p role="status">{message}</p>}
+                {preview && (
+                  <section
+                    className="discovery-preview"
+                    aria-label="Receiver preview"
+                    tabIndex={-1}
+                  >
+                    <h3>Receiver preview · {preview.bookmark.name}</h3>
+                    <p>{previewText || previewError}</p>
+                    {preview.bookmark.atlasReference && (
+                      <p className="display-note">
+                        Catalog-requested bandwidth:{" "}
+                        {preview.bookmark.atlasReference.bandwidth_hz.toLocaleString()}{" "}
+                        Hz. The receiver preview shows the supported applied
+                        profile.
+                      </p>
+                    )}
+                    {preview.station && (
+                      <>
+                        <p>
+                          Public station ID: {preview.station.id} · reference:{" "}
+                          {preview.referenceId} · publication version{" "}
+                          {preview.station.publication_version}. Candidate only;
+                          identity unconfirmed.
+                        </p>
+                        <Sources sources={preview.station.sources} />
+                        <Sources
+                          sources={
+                            preview.station.transmissions.find(
+                              (t) => t.id === preview.referenceId,
+                            )!.sources
+                          }
+                        />
+                      </>
+                    )}
+                    {preview.bookmark.settings.mode === "DAB" && (
+                      <p>
+                        After manually starting reception, select a decoded
+                        service in the DAB programme control. No programme is
+                        selected by search.
+                      </p>
+                    )}
+                    <div className="discovery-actions">
+                      <button
+                        type="button"
+                        disabled={!!previewError || applying}
+                        onClick={() => void apply()}
+                      >
+                        {applying
+                          ? "Checking and applying…"
+                          : "Apply to receiver"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={invalidate}
+                      >
+                        Cancel preview
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {(group === "all" || group === "frequencies") && (
+                  <section aria-label="Shared RF frequencies">
+                    <h3>Shared RF frequencies</h3>
+                    <p className="display-note">
+                      Public carriers, regional channel plans and USB dial
+                      conventions, available without an account. Expand a plan
+                      to browse its channels. Frequency alone does not identify
+                      traffic. Preview uses the listed audio mode or your
+                      current mode; a frequency guide does not add a protocol
+                      decoder. Check receiver range and capture bandwidth before
+                      recording.
+                    </p>
+                    {!shared && !guideLoadError && (
+                      <p role="status">Loading shared frequency guides…</p>
+                    )}
+                    {guideLoadError && (
+                      <p role="alert">
+                        Shared guides could not load.{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGuideLoadError(false);
+                            setGuideLoadAttempt((value) => value + 1);
+                          }}
+                        >
+                          Retry frequency guides
+                        </button>
+                      </p>
+                    )}
+                    {shared && !sharedFrequencies.length && (
+                      <p>
+                        No matching shared frequency. Try meshtastic Europe,
+                        LoRaWAN US, Bluetooth advertising, GPS L1, PMR446, NOAA
+                        weather or FT8 20m.
+                      </p>
+                    )}
+                    {shared?.SHARED_FREQUENCY_FAMILIES.map(
+                      ([family, label]) => {
+                        const rows = sharedFrequencies.filter(
+                          (row) => row.family === family,
+                        );
+                        return (
+                          rows.length > 0 && (
+                            <details key={family} open={!!query.trim()}>
+                              <summary>
+                                {label} · {rows.length} frequency profiles
+                              </summary>
+                              {[...new Set(rows.map((row) => row.plan))].map(
+                                (plan) => {
+                                  const planRows = rows.filter(
+                                    (row) => row.plan === plan,
+                                  );
+                                  return plan === null ? (
+                                    <FrequencyRows
+                                      key="presets"
+                                      rows={planRows}
+                                      mode={props.mode}
+                                      choose={choose}
+                                    />
+                                  ) : (
+                                    <FrequencyPlan
+                                      key={`${plan}:${query}:${interpretation}`}
+                                      name={plan}
+                                      rows={planRows}
+                                      mode={props.mode}
+                                      choose={choose}
+                                    />
+                                  );
+                                },
+                              )}
+                            </details>
+                          )
+                        );
+                      },
+                    )}
+                  </section>
+                )}
+                {(group === "all" || group === "guides") && (
+                  <section aria-label="Modes & frequency guides">
+                    <h3>Modes & frequency guides</h3>
+                    {parsed.frequencyHz !== undefined && (
+                      <article>
+                        <h4>
+                          {parsed.block
+                            ? `DAB block ${parsed.block}`
+                            : `${parsed.frequencyHz / 1e6} MHz`}
+                        </h4>
+                        <p>{parsed.notice}</p>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() =>
+                            choose(
+                              guideBookmark(
+                                parsed.block
+                                  ? `DAB ${parsed.block}`
+                                  : `${parsed.frequencyHz! / 1e6} MHz`,
+                                parsed.block ? "DAB" : props.mode,
+                                parsed.frequencyHz!,
+                              ),
+                            )
+                          }
+                        >
+                          Preview{" "}
+                          {parsed.block
+                            ? "DAB block"
+                            : `frequency with ${props.mode}`}
+                        </button>
+                      </article>
+                    )}
+                    {!guides.length && parsed.frequencyHz === undefined && (
+                      <p>
+                        No local guide matches. Try a mode name, frequency or
+                        DAB block.
+                      </p>
+                    )}
+                    {guides.map((guide) => (
+                      <article key={guide.id}>
+                        <h4>{guide.name}</h4>
+                        <p>{guide.context}</p>
+                        <p>{guide.status}</p>
+                        {ANTENNA_GUIDES.some(
+                          (item) =>
+                            item.mode === guide.mode &&
+                            guide.mode !== undefined,
+                        ) && (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={(event) => {
+                              antennaReturn.current =
+                                event.currentTarget.textContent ?? "";
+                              setAntenna({
+                                id: ANTENNA_GUIDES.find(
+                                  (item) => item.mode === guide.mode,
+                                )?.id,
+                                frequencyHz:
+                                  guide.frequencyHz ?? props.frequencyHz,
+                                mode: guide.mode!,
+                              });
+                              requestAnimationFrame(() =>
+                                dialog.current
+                                  ?.querySelector<HTMLElement>(
+                                    ".antenna-guide button",
+                                  )
+                                  ?.focus(),
+                              );
+                            }}
+                          >
+                            Antenna setup for {guide.name}
+                          </button>
+                        )}
+                        <p className="display-note">
+                          {guide.match} ·{" "}
+                          <a
+                            href={guide.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {guide.publisher}
+                          </a>{" "}
+                          · {guide.sourceDate}
+                        </p>
+                        {guide.mode &&
+                          guide.id !== "dab" &&
+                          guide.id !== "atis" && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                choose(
+                                  guideBookmark(
+                                    guide.name,
+                                    guide.mode!,
+                                    guide.frequencyHz ?? props.frequencyHz,
+                                  ),
+                                )
+                              }
+                            >
+                              Preview {guide.name}
+                            </button>
+                          )}
+                      </article>
+                    ))}
+                  </section>
+                )}
+                {(group === "all" || group === "atlas") && (
+                  <section aria-label="Atlas stations">
+                    <h3>Atlas stations</h3>
+                    <p className="display-note">
+                      Published references only, pages of up to 50. Name, alias
+                      and call-sign matches come first within each returned
+                      page; continuation follows catalog order. No global
+                      relevance ranking or complete worldwide inventory. Text
+                      matching is literal; Atlas preserves accents and approved
+                      aliases. A DAB format does not establish programme
+                      membership.
+                    </p>
+                    {state.status === "idle" && (
+                      <p>Choose Search Atlas to query the public catalog.</p>
+                    )}
+                    {state.status === "loading" && (
+                      <p role="status">Searching public Atlas catalog…</p>
+                    )}
+                    {state.message && (
+                      <p role={state.status === "error" ? "alert" : "status"}>
+                        {state.message}
+                      </p>
+                    )}
+                    {state.status === "error" && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          invalidate();
+                          void search.retry();
+                        }}
+                      >
+                        Retry station page
+                      </button>
+                    )}
+                    {state.status === "ready" && (
+                      <>
+                        <p role="status">
+                          {state.page!.items.length
+                            ? `Page ${state.pageIndex + 1} · ${state.page!.items.length} published stations`
+                            : "No matching published stations. This does not establish absence of an RF signal."}
+                        </p>
+                        {rankPublicStations(
+                          state.page!.items,
+                          search.getQuery().q,
+                        ).map(({ station, match, relevance }) => (
+                          <article
+                            key={station.id}
+                            aria-label={station.name}
+                            className="discovery-station"
+                          >
+                            <h4>{station.name}</h4>
+                            {search.getQuery().q && (
+                              <p className="display-note">
+                                {relevance.label}. Check the published service
+                                and local frequency before choosing it.
+                              </p>
+                            )}
+                            <p>
+                              {[
+                                station.country,
+                                station.service,
+                                station.network,
+                                station.call_sign,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "Region / service unknown"}
+                            </p>
+                            {station.aliases.length > 0 && (
+                              <p>
+                                Approved aliases: {station.aliases.join(", ")}
+                              </p>
+                            )}
+                            <p className="display-note">
+                              Matched{" "}
+                              {match.station_fields.length
+                                ? match.station_fields.join(", ")
+                                : "published reference / browse"}
+                              . Only references matching this page's filters are
+                              listed.
+                            </p>
+                            <Sources sources={station.sources} />
+                            <StationReferences
+                              key={`${state.page!.catalog_revision}:${station.id}:${station.publication_version}:${search.getRequestId()}`}
+                              client={client}
+                              station={station}
+                              catalogRevision={state.page!.catalog_revision}
+                              total={match.matching_transmission_count}
+                              query={search.getQuery()}
+                              choose={choose}
+                              onFavorite={props.onFavorite}
+                              onMessage={setMessage}
+                            />
+                          </article>
+                        ))}
+                        <nav
+                          className="discovery-actions"
+                          aria-label="Public station pages"
+                        >
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={!state.previous}
+                            onClick={() => {
+                              invalidate();
+                              void search.previous();
+                            }}
+                          >
+                            Previous stations
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={!state.next}
+                            onClick={() => {
+                              invalidate();
+                              void search.next();
+                            }}
+                          >
+                            Next stations
+                          </button>
+                        </nav>
+                      </>
+                    )}
+                  </section>
+                )}
+                {(group === "all" || group === "favorites") && (
+                  <section aria-label="My favorites">
+                    <h3>My favorites</h3>
+                    <p className="display-note">
+                      Stored in this browser. Recall does not verify a stored
+                      station identity.
+                    </p>
+                    {!favorites.length && <p>No matching local favorites.</p>}
+                    {favorites.map((item) => (
+                      <article key={item.id}>
+                        <h4>{item.name}</h4>
+                        <p>
+                          {item.frequencyHz / 1e6} MHz · {item.settings.mode}
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => choose(item)}
+                        >
+                          Preview favorite {item.name}
+                        </button>
+                      </article>
+                    ))}
+                  </section>
+                )}
+              </>
             )}
           </div>
           <footer className="favorites-footer">
