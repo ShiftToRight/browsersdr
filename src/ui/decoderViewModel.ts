@@ -55,7 +55,10 @@ export function decoderIdentity(
   mode: ReceiverMode,
   source: string,
 ): string {
-  return `${source}:${mode}:${receiver.sessionGeneration}`;
+  // EOF invalidates callbacks while retaining the completed acquisition.
+  const generation =
+    receiver.session?.sessionGeneration ?? receiver.sessionGeneration;
+  return `${source}:${mode}:${generation}`;
 }
 export function decoderAcceptedCount(
   receiver: ReceiverSnapshot,

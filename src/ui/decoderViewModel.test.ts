@@ -48,6 +48,35 @@ const initial: ReceiverSnapshot = {
 };
 const address = { callsign: "N0CALL", ssid: 1, repeated: false };
 
+it("retains decoder inspection across EOF cleanup but clears it for a new acquisition", () => {
+  const running: ReceiverSnapshot = {
+    ...initial,
+    lifecycle: "running",
+    message: "Replaying",
+    session: { ...initial.session!, mode: "RS41" },
+  };
+  const closing: ReceiverSnapshot = {
+    ...running,
+    lifecycle: "stopping",
+    sessionGeneration: 4,
+    message: "Closing the completed replay…",
+  };
+  const finished: ReceiverSnapshot = {
+    ...closing,
+    lifecycle: "idle",
+    message: "Replay reached end of file. Final spectrum retained.",
+  };
+  const identity = decoderIdentity(running, "RS41", "replay");
+  expect(decoderIdentity(closing, "RS41", "replay")).toBe(identity);
+  expect(decoderIdentity(finished, "RS41", "replay")).toBe(identity);
+  expect(decoderIdentity({
+    ...running,
+    sessionGeneration: 5,
+    session: { ...running.session!, sessionGeneration: 5 },
+  }, "RS41", "replay")).not.toBe(identity);
+  expect(decoderIdentity({ ...finished, session: undefined }, "RS41", "replay")).not.toBe(identity);
+});
+
 describe("decoder review evidence", () => {
   it("exports a full bounded aircraft collection without duplicating map history", () => {
     const targets: AdsbTarget[] = Array.from({ length: 50 }, (_, index) => ({
@@ -158,7 +187,11 @@ describe("decoder review evidence", () => {
     expect(exported.display).toBe("frozen snapshot");
     expect(exported.clock).toContain("export time is not receive time");
     expect(decoderIdentity(receiver, "APRS", "replay")).not.toBe(
-      decoderIdentity({ ...receiver, sessionGeneration: 4 }, "APRS", "replay"),
+      decoderIdentity({
+        ...receiver,
+        sessionGeneration: 4,
+        session: { ...receiver.session!, sessionGeneration: 4 },
+      }, "APRS", "replay"),
     );
   });
 

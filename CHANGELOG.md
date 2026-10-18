@@ -12,6 +12,7 @@
 - Improve Favorites recall and detailed-map responsiveness; bundle UI fonts locally for reliable startup.
 - Preserve installation prompts during lazy receiver startup and keep Session tools compact.
 - Guard complete browser-test coverage and split CI checks across four development/production shards.
+- Preserve decoded-record selection and frozen review when a replay ends.
 
 ## 1.8.0 — 2026-10-17
 
