@@ -18,6 +18,10 @@ test("frequency edits survive a delayed real sample-rate transaction without imp
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
+  // Install the delayed rate hook only after startup has sent its own rate command.
+  await expect(
+    page.getByRole("button", { name: "Stop receiving", exact: true }),
+  ).toBeEnabled();
   await page.getByText("Device details & settings", { exact: true }).click();
   await page.evaluate(() => {
     const win = window as unknown as {

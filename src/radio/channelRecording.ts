@@ -185,17 +185,22 @@ export class ChannelCaptureFilter {
   ): { I: Float32Array; Q: Float32Array } {
     if (I.length !== Q.length || I.length > CHANNEL_MAX_SAMPLES)
       throw new Error("Invalid channel capture block.");
-    I = I.slice();
-    Q = Q.slice();
+    return this.processOwned(I.slice(), Q.slice());
+  }
+  /** The recording worker owns transferred/decoded buffers and may consume them. */
+  processOwned(
+    I: Float32Array,
+    Q: Float32Array,
+  ): { I: Float32Array; Q: Float32Array } {
+    if (I.length !== Q.length || I.length > CHANNEL_MAX_SAMPLES)
+      throw new Error("Invalid channel capture block.");
     let count = I.length;
     for (const stage of this.stages)
       count = stage.process(I.subarray(0, count), Q.subarray(0, count));
-    for (let n = 0; n < count; n++) {
-      let i = I[n]!,
-        q = Q[n]!;
-      if (!this.stages.length) {
-        i = I[n]! * this.oscillatorI - Q[n]! * this.oscillatorQ;
-        q = I[n]! * this.oscillatorQ + Q[n]! * this.oscillatorI;
+    if (!this.stages.length)
+      for (let n = 0; n < count; n++) {
+        const i = I[n]! * this.oscillatorI - Q[n]! * this.oscillatorQ;
+        const q = I[n]! * this.oscillatorQ + Q[n]! * this.oscillatorI;
         const nextI =
           this.oscillatorI * this.rotationI - this.oscillatorQ * this.rotationQ;
         this.oscillatorQ =
@@ -207,10 +212,9 @@ export class ChannelCaptureFilter {
           this.oscillatorQ /= norm;
           this.oscillatorCount = 0;
         }
+        I[n] = i;
+        Q[n] = q;
       }
-      I[n] = i;
-      Q[n] = q;
-    }
     // Keep the same 95-tap response and delay. The pinned Signals WASM
     // convolver avoids a JavaScript 95-MAC loop per I/Q output sample.
     if (count)

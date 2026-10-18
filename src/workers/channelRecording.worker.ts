@@ -10,7 +10,7 @@ function post(message: ChannelRecordingOutput, transfer: Transferable[] = []) {
   self.postMessage(message, { transfer });
 }
 function process(I: Float32Array, Q: Float32Array, limit: number): number {
-  const result = filter.process(I, Q);
+  const result = filter.processOwned(I, Q);
   const count = Math.min(limit, result.I.length);
   const bytes = new Uint8Array(count * stride);
   const view = new DataView(bytes.buffer);

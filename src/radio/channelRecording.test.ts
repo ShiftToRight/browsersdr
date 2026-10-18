@@ -95,6 +95,35 @@ it("preserves an offset station and rejects an out-of-band signal that would ali
   expect(amplitude(I, Q, 1000, plan.outputSampleRateHz)).toBeLessThan(0.31); // aliased interferer adds < 0.01
   expect(input.I[0]).toBeCloseTo(0.6); // borrowed input remains intact
 });
+it.each([
+  { rate: 1_024_000, offset: 100_000, mode: "AM", bandwidth: 15_000 },
+  { rate: 2_400_000, offset: 0, mode: "DAB", bandwidth: 1_536_000 },
+  { rate: 3_200_000, offset: 37_000, mode: "APRS", bandwidth: 15_000 },
+  { rate: 19_200_000, offset: 0, mode: "DAB", bandwidth: 1_536_000 },
+  { rate: 19_200_000, offset: 7_000_000, mode: "DAB", bandwidth: 1_536_000 },
+] as const)("consumes owned worker buffers without changing borrowed input, clocks or reset output at $rate Hz / $offset Hz", ({ rate, offset, mode, bandwidth }) => {
+  const plan = planChannelCapture({ ...session, actualSampleRateHz: rate,
+    selectedChannelFrequencyHz: session.hardwareCenterFrequencyHz + offset,
+    mode, channelBandwidthHz: bandwidth });
+  const borrowed = new ChannelCaptureFilter(plan), owned = new ChannelCaptureFilter(plan);
+  const input = tones(rate, 65_541, [offset + 1100]);
+  const originalI = input.I.slice(), originalQ = input.Q.slice();
+  const boundaries = [0, 1, 123, 4567, 32768, 65536, 65541];
+  for (let n = 1; n < boundaries.length; n++) {
+    const I = input.I.subarray(boundaries[n - 1], boundaries[n]);
+    const Q = input.Q.subarray(boundaries[n - 1], boundaries[n]);
+    const expected = borrowed.process(I, Q), workerI = I.slice(), workerQ = Q.slice();
+    const result = owned.processOwned(workerI, workerQ);
+    expect(result.I.buffer).toBe(workerI.buffer);
+    expect(result.Q.buffer).toBe(workerQ.buffer);
+    expect(result.I).toEqual(expected.I);
+    expect(result.Q).toEqual(expected.Q);
+    if (n === 3) { borrowed.reset(); owned.reset(); }
+  }
+  expect(input.I).toEqual(originalI);
+  expect(input.Q).toEqual(originalQ);
+});
+
 it("keeps DSP state across odd chunk boundaries", () => {
   const input = tones(session.actualSampleRateHz, 25_003, [102_000]);
   const whole = new ChannelCaptureFilter(planChannelCapture(session)).process(
