@@ -50,14 +50,16 @@ const address = (a: Ax25Address) =>
 const clock = (p: DigitalProvenance) =>
   `sample ${p.lastInputSampleIndex.toLocaleString()} · generation ${p.generation}`;
 
+// EOF invalidates callbacks while retaining the completed acquisition.
+const acquisitionGeneration = (receiver: ReceiverSnapshot) =>
+  receiver.session?.sessionGeneration ?? receiver.sessionGeneration;
+
 export function decoderIdentity(
   receiver: ReceiverSnapshot,
   mode: ReceiverMode,
   source: string,
 ): string {
-  // EOF invalidates callbacks while retaining the completed acquisition.
-  const generation =
-    receiver.session?.sessionGeneration ?? receiver.sessionGeneration;
+  const generation = acquisitionGeneration(receiver);
   return `${source}:${mode}:${generation}`;
 }
 export function decoderAcceptedCount(
@@ -95,17 +97,17 @@ export function decoderRecords(
   mode: ReceiverMode,
   messages = false,
 ): DecoderRecord[] {
+  const generation = acquisitionGeneration(receiver);
+  const key = (id: string | number) => `${mode}:${generation}:${id}`;
   if ((mode === "WEFAX" || mode === "SSTV") && receiver.textModem?.image?.rows) {
     const image = receiver.textModem.image;
-    return [{ key: `${mode}:${receiver.sessionGeneration}:${image.id}`, label: `${image.mode} image`, summary: `${image.width} × ${image.rows} received rows`, integrity: image.reason, clock: clock(image.provenance), fields: [["Rows", String(image.rows)], ["Complete", image.complete ? "Yes · synchronization only" : "Partial"], ["Checksum", "None"]], raw: image }];
+    return [{ key: key(image.id), label: `${image.mode} image`, summary: `${image.width} × ${image.rows} received rows`, integrity: image.reason, clock: clock(image.provenance), fields: [["Rows", String(image.rows)], ["Complete", image.complete ? "Yes · synchronization only" : "Partial"], ["Checksum", "None"]], raw: image }];
   }
   if (isTextMode(mode)) return (receiver.textModem?.messages ?? []).slice(-16).map((message): DecoderRecord => ({
-    key: `${mode}:${receiver.sessionGeneration}:${message.sequence}`, label: message.address || message.header || `${mode} text ${message.sequence}`,
+    key: key(message.sequence), label: message.address || message.header || `${mode} text ${message.sequence}`,
     summary: message.text, integrity: message.integrity, clock: clock(message.provenance),
     fields: [["Complete message", message.complete ? "Yes" : "Text segment / incomplete"], ["Header", message.header || "None"], ["Reported address", message.address || "None"], ["Label", message.label || "None"]], raw: message,
   })).reverse();
-  const generation = receiver.sessionGeneration;
-  const key = (id: string | number) => `${mode}:${generation}:${id}`;
   if (mode === "ADS-B")
     return (receiver.adsb?.targets ?? [])
       .slice(0, 50)

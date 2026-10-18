@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReceiverSnapshot } from "../radio/receiverController";
 import type { DigitalProvenance } from "../digital";
 import type { AdsbTarget } from "../adsb/adsbReceiver";
+import { defaultTextModemSettings } from "../textmodem/settings";
 import {
   DECODER_EXPORT_MAX_BYTES,
   decoderIdentity,
@@ -75,6 +76,37 @@ it("retains decoder inspection across EOF cleanup but clears it for a new acquis
     session: { ...running.session!, sessionGeneration: 5 },
   }, "RS41", "replay")).not.toBe(identity);
   expect(decoderIdentity({ ...finished, session: undefined }, "RS41", "replay")).not.toBe(identity);
+});
+
+it.each(["DAB", "RTTY", "WEFAX"] as const)("retains %s record keys at EOF and changes them for a new acquisition", (mode) => {
+  const running: ReceiverSnapshot = {
+    ...initial,
+    lifecycle: "running",
+    session: { ...initial.session!, mode },
+    dab: { state: "synchronized", message: "Found", frameCount: 1, nullSymbolCount: 1, estimatedSnrDb: null, coarseFrequencyOffsetHz: null,
+      stations: [{ key: "1:0", serviceId: 1, subchannelId: 0, primary: true, dabPlus: true, playable: true, bitrateKbps: 72, protection: "EEP 2-B" }] },
+    textModem: {
+      mode: mode === "DAB" ? "RTTY" : mode,
+      settings: defaultTextModemSettings(),
+      text: "TEST",
+      messages: [{ sequence: 1, text: "TEST", integrity: "No checksum", complete: false, provenance }],
+      status: "decoding", signalLevel: 1, confidence: 1, frequencyErrorHz: 0, markHz: null, spaceHz: null,
+      counters: { characters: 4, accepted: 4, rejected: 0, framingErrors: 0, corrected: 0, discontinuities: 0 },
+      image: { id: 1, mode: "WEFAX", width: 904, height: 800, channels: 1, rows: 1, complete: false, reason: "Receiving", provenance },
+    },
+  };
+  const closing: ReceiverSnapshot = { ...running, lifecycle: "stopping", sessionGeneration: 4 };
+  const finished: ReceiverSnapshot = { ...closing, lifecycle: "idle" };
+  const records = decoderRecords(running, mode);
+  expect(records).toHaveLength(1);
+  const retainedKey = records[0]!.key;
+  for (const snapshot of [closing, finished]) {
+    expect(decoderIdentity(snapshot, mode, "replay")).toBe(decoderIdentity(running, mode, "replay"));
+    expect(decoderRecords(snapshot, mode)[0]!.key).toBe(retainedKey);
+  }
+  const restarted: ReceiverSnapshot = { ...running, sessionGeneration: 5, session: { ...running.session!, sessionGeneration: 5 } };
+  expect(decoderRecords(restarted, mode)[0]!.key).not.toBe(retainedKey);
+  expect(decoderRecords({ ...finished, session: undefined }, mode)[0]!.key).not.toBe(retainedKey);
 });
 
 describe("decoder review evidence", () => {
