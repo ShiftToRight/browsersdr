@@ -172,8 +172,19 @@ test("mobile keeps source and tuning controls before the spectrum and output", a
     await expect(
       toolbar.getByRole("button", { name: "Auto scale", exact: true }),
     ).toBeVisible();
-    const outer = (await toolbar.locator(".spectrum-actions").boundingBox())!;
-    const inner = (await pause.boundingBox())!;
+    // Viewport changes can move the whole toolbar between protocol calls.
+    // Compare the same layout snapshot, retaining the original 1px tolerance.
+    const { outer, inner } = await pause.evaluate((node) => {
+      const actions = node.closest(".spectrum-actions");
+      if (!actions?.getClientRects().length || !node.getClientRects().length)
+        throw new Error("Spectrum actions and pause control must be laid out");
+      const outer = actions.getBoundingClientRect();
+      const inner = node.getBoundingClientRect();
+      return {
+        outer: { y: outer.y, height: outer.height },
+        inner: { y: inner.y, height: inner.height },
+      };
+    });
     expect(
       Math.abs(
         inner.y - outer.y - (outer.y + outer.height - inner.y - inner.height),
