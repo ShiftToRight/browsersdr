@@ -30,6 +30,10 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    files: ["src/offline/service-worker.js"],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
     files: [
       "src/**/*.{ts,tsx}",
       "e2e/**/*.ts",

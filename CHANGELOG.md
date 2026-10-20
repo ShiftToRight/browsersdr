@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0 — 2026-10-20
+
+- Prepare the installed app for offline startup, including receiver tools, local recordings and replay. Settings shows preparation progress and cache readiness.
+- Verify every cached application file and keep each cached build consistent. Failed or incomplete updates preserve the ready version.
+- Hold updates until all app windows and tabs close, preserving ongoing reception and recording.
+- Improve high-rate recording headroom while preserving filter response and bounded capture safeguards.
+
 ## 1.10.0 — 2026-10-19
 
 - Add an integrated antenna guide with reception tips, selectable antenna diagrams and frequency-based element lengths.

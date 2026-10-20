@@ -7,6 +7,13 @@ import { initializeTheme } from "./ui/themes";
 // Capture install prompts before the receiver application finishes loading.
 import "./ui/appInstallation";
 initializeTheme();
+// Keep offline preparation out of the receiver's required startup graph.
+// Installed apps prepare automatically; ordinary tabs can opt in in Settings.
+if (import.meta.env.PROD) {
+  const initializeOffline = () => { void import("./offline/offlineApp").then(module => module.initializeOfflineApp()).catch(() => { /* Online reception remains available. */ }); };
+  if (document.readyState === "complete") initializeOffline();
+  else window.addEventListener("load", initializeOffline, { once: true });
+}
 import { exposeBrowserTestUnmount } from "./testing/browserTestBridge";
 import { defaultDiagnosticRecorder, installGlobalDiagnosticHandlers } from "./diagnostics/diagnosticRecorder";
 import { ApplicationErrorBoundary } from "./ui/ApplicationErrorBoundary";

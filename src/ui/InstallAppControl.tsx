@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { installation, INSTALLATION_CHANGED } from "./appInstallation";
+import { offlineState, prepareOffline, subscribeOffline } from "../offline/offlineApp";
+import "./InstallAppControl.css";
 
 export function InstallAppControl() {
+  const offline = useSyncExternalStore(subscribeOffline, offlineState);
   const [prompt, setPrompt] = useState(installation.prompt);
   const [installed, setInstalled] = useState(() => installation.installed || (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches));
   const [pending, setPending] = useState(false);
@@ -27,7 +30,16 @@ export function InstallAppControl() {
       } catch { setMessage("Installation could not start. Try your browser’s app menu."); }
       finally { setPending(false); }
     }}>Install BrowserSDR app</button> : <p>Install from your browser’s app menu when offered.</p>}
-    <small>Launch in its own window. Internet access is needed to open the app; receiver permissions still apply.</small>
+    <small>Launch in its own window. Open online once to prepare offline use; receiver permissions still apply.</small>
+    <div aria-label="Offline app" role="group">
+      <p role="status">{offline.ready ? "Ready for offline use" : offline.preparing ? "Preparing offline app… Keep this window open until ready." : offline.supported ? "Offline app not ready yet" : "Offline preparation is available in supported browsers with the built app."}</p>
+      {offline.supported && <button type="button" className="secondary" disabled={offline.preparing} onClick={() => { void prepareOffline(); }}>{offline.preparing ? "Preparing offline app…" : offline.ready ? "Check for app updates" : "Prepare offline app"}</button>}
+      {offline.updateReady && <p>A new version is ready. Finish reception and save recordings, then close all BrowserSDR windows and tabs. The update applies the next time you open the app.</p>}
+      {offline.needsReopen && <p>The files are saved for your next launch. Finish reception and save recordings, then close and reopen BrowserSDR to use them in this window.</p>}
+      {offline.error && <p>Offline preparation or update check failed. Try again online; any complete saved version is kept.</p>}
+      <small>Local reception, decoding and replay work offline once ready. Online search, remote receivers and internet sharing need a connection. Browser storage can be cleared or evicted.</small>
+      <small>Updates never reload an open window. They wait until all BrowserSDR windows and tabs close.</small>
+    </div>
     {message && <p role="status">{message}</p>}
   </div>;
 }

@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { signalsWasmCompatibility } from "./src/dsp/signalsWasmPlugin.ts";
 import { seoAssets } from "./scripts/seo-site.mjs";
+import { offlineApp } from "./scripts/offline-build.mjs";
 
 const LOCAL_USRP_PREFIX = "/local/usrp-b205/";
 const LOCAL_USRP_ARTIFACTS = new Set(["ad9364-no-os.js", "ad9364-no-os.wasm"]);
@@ -62,6 +63,7 @@ export default defineConfig({
   worker: { plugins: () => [signalsWasmCompatibility()] },
   plugins: [
     react(),
+    offlineApp(),
     signalsWasmCompatibility(),
     {
       name: "static-site-documents",
