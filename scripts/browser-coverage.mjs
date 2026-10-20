@@ -150,6 +150,11 @@ export function assertShardUnion(receipts, projects, total = 2) {
     )
       throw new Error(`Missing or duplicate shards: ${project}`);
     const full = group[0].full;
+    if (
+      new Set(group.map((r) => JSON.stringify(r.testedArtifact ?? null)))
+        .size !== 1
+    )
+      throw new Error(`Shard tested artifact mismatch: ${project}`);
     if (full.some((test) => test.project !== project))
       throw new Error(`Wrong project in full inventory: ${project}`);
     for (const receipt of group) {

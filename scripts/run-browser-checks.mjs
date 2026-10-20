@@ -15,6 +15,7 @@ import {
   digest,
   verificationDigest,
 } from "./browser-coverage.mjs";
+import { verifyBuildReceipt } from "./browser-build.mjs";
 
 export function execute(command, args, options) {
   return new Promise((resolve, reject) => {
@@ -58,6 +59,7 @@ export async function runBrowserChecks({
   env = process.env,
   globalTimeoutMs = 25 * 60_000,
   quiet = false,
+  inventoryCheck,
 }) {
   if (
     !Number.isSafeInteger(globalTimeoutMs) ||
@@ -100,6 +102,13 @@ export async function runBrowserChecks({
   };
   const inputDigest = verificationDigest(root);
   const configurationDigest = digest(readFileSync(config).toString("base64"));
+  // Set server selection for CLI discovery as well as execution. A shard must
+  // never start an unrelated target, and explicit prebuilt bytes fail closed.
+  env = { ...env, BSD_E2E_TARGET: project ?? "" };
+  const artifact =
+    env.BSD_E2E_BUILD_RECEIPT && project !== "chromium-dev"
+      ? verifyBuildReceipt(root, env.BSD_E2E_BUILD_RECEIPT, env)
+      : undefined;
   async function discover(name, extra = []) {
     const path = join(output, name);
     const result = await execute(
@@ -122,6 +131,7 @@ export async function runBrowserChecks({
     return tests;
   }
   const full = await discover("full-inventory.json");
+  if (inventoryCheck) inventoryCheck(full);
   const shardArgs = shard ? [`--shard=${shard.current}/${shard.total}`] : [];
   const selected = shard
     ? await discover("shard-inventory.json", shardArgs)
@@ -142,6 +152,7 @@ export async function runBrowserChecks({
     full,
     selected,
     allowedSkips: allowedSkips(selected, policy, env),
+    ...(artifact ? { testedArtifact: artifact } : {}),
   };
   writeFileSync(
     join(output, "manifest.json"),
@@ -199,6 +210,12 @@ export async function runBrowserChecks({
     throw new Error(
       "Incomplete browser results or verification inputs changed during the run",
     );
+  if (
+    artifact &&
+    JSON.stringify(verifyBuildReceipt(root, env.BSD_E2E_BUILD_RECEIPT, env)) !==
+      JSON.stringify(artifact)
+  )
+    throw new Error("Tested artifact receipt changed during browser checks");
   return { output, receipt };
 }
 
@@ -210,6 +227,11 @@ if (
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith("--project=")) options.project = arg.slice(10);
     else if (arg.startsWith("--output=")) options.output = arg.slice(9);
+    else if (arg.startsWith("--prebuilt="))
+      options.env = {
+        ...process.env,
+        BSD_E2E_BUILD_RECEIPT: resolve(arg.slice(11)),
+      };
     else if (/^--shard=[12]\/2$/.test(arg))
       options.shard = { current: Number(arg[8]), total: 2 };
     else throw new Error(`Unsupported guarded selection: ${arg}`);

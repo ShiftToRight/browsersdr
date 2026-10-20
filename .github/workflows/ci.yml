@@ -46,13 +46,24 @@ jobs:
         run: npm test -- --reporter=verbose
 
       - name: Build production bundle
-        run: npm run build
+        run: npm run build:verified
 
       - name: Check initial JavaScript and map byte budgets
         run: npm run test:performance && npm run performance:check
 
       - name: Verify static SEO documents and discovery files
         run: node scripts/verify-seo.mjs dist
+
+      - name: Retain the exact quality-checked production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-build
+          include-hidden-files: true
+          path: |
+            dist/
+            test-results/browser-build.json
+          if-no-files-found: error
+          retention-days: 14
 
   browser:
     needs: quality
@@ -79,7 +90,16 @@ jobs:
       - name: Install Chromium for browser integration tests
         run: npx playwright install --with-deps chromium
 
+      - name: Download the quality-checked production build
+        if: ${{ matrix.project == 'chromium-production' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-build
+          path: .
+
       - name: Run browser integration tests
+        env:
+          BSD_E2E_BUILD_RECEIPT: ${{ matrix.project == 'chromium-production' && 'test-results/browser-build.json' || '' }}
         run: npm run test:e2e:check -- --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --output=test-results/guarded
 
       - name: Upload browser failure artifacts

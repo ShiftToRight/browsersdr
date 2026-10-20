@@ -172,6 +172,9 @@ test("shard union requires both complete targets, both shards, identical inputs 
       r[1].inputDigest = "other";
     },
     (r) => {
+      r[1].testedArtifact = { receiptSha256: "other" };
+    },
+    (r) => {
       r[1].configurationDigest = "other";
     },
     (r) => {

@@ -11,12 +11,17 @@ import { createHash } from "node:crypto";
 import { fingerprintCommunityEvidence } from "./community-evidence-fingerprint.mjs";
 import { runBrowserChecks } from "./run-browser-checks.mjs";
 import { sharingCheckProxy } from "./sharing-check-proxy.mjs";
+import { runReleaseRisk } from "./browser-release-risk.mjs";
 
 // Run against the actual stamped payload using the exact frozen source's tests.
 const [siteArgument, sourceArgument, mode = "full"] = process.argv.slice(2);
-if (!siteArgument || !sourceArgument || !["full", "access"].includes(mode))
+if (
+  !siteArgument ||
+  !sourceArgument ||
+  !["full", "access", "risk"].includes(mode)
+)
   throw new Error(
-    "Usage: check-community-release.mjs SITE FROZEN_SOURCE [full|access]",
+    "Usage: check-community-release.mjs SITE FROZEN_SOURCE [full|access|risk]",
   );
 const site = resolve(siteArgument),
   source = resolve(sourceArgument);
@@ -66,7 +71,7 @@ const mime = {
   ".webp": "image/webp",
   ".webmanifest": "application/manifest+json",
 };
-const sharingProxy = sharingCheckProxy(process.env, mode === "full");
+const sharingProxy = sharingCheckProxy(process.env, mode !== "access");
 const server = createServer((request, response) => {
   if (sharingProxy(request, response)) return;
   if (!["GET", "HEAD"].includes(request.method)) {
@@ -112,70 +117,84 @@ writeFileSync(
   `const config = ${JSON.stringify({ testDir: join(source, "e2e"), testMatch: files ?? "**/*.e2e.ts", fullyParallel: false, workers: 1, retries: 0, forbidOnly: true, failOnFlakyTests: true, timeout: 20000, expect: { timeout: 7000 }, use: { baseURL: url, browserName: "chromium", acceptDownloads: true, viewport: { width: 1440, height: 1000 }, screenshot: "only-on-failure", trace: "retain-on-failure" } })}; config.grep = new RegExp(${JSON.stringify(grep ?? ".*")}); export default config;\n`,
 );
 try {
-  await runBrowserChecks({
-    root: source,
-    config,
-    output: join(work, "guarded"),
-    env: {
-      ...process.env,
-      VITE_BUILD_ID: metadata.release,
-      VITE_BUILD_TIMESTAMP: metadata.builtAt,
-    },
-  });
-  // Preserve the established summary path for private operator/review tooling.
-  const resultBytes = readFileSync(join(work, "guarded", "results.json"));
-  writeFileSync(join(work, "results.json"), resultBytes);
-  const results = JSON.parse(resultBytes);
-  // Retain the original coarse backstop in addition to exact discovered coverage.
-  if (
-    results.stats.unexpected ||
-    results.stats.flaky ||
-    results.stats.expected < (mode === "access" ? 7 : 100)
-  )
-    throw new Error("Incomplete stamped integration results");
-  const check = {
-    checkedAt: new Date().toISOString(),
-    features:
-      mode === "access"
-        ? ["access"]
-        : Object.keys(fingerprints.evidenceFingerprints),
-    evidence: `https://browsersdr.com/community-evidence/${metadata.release}.json`,
-    kind:
-      mode === "access"
-        ? "Mocked WebUSB connection/ownership integration"
-        : "Full stamped Chromium integration",
-    tests: results.stats.expected,
-    skipped: results.stats.skipped,
-  };
-  const audit = {
-    schemaVersion: 1,
-    build: metadata,
-    check,
-    policy,
-    policySha256: createHash("sha256")
-      .update(JSON.stringify(policy))
-      .digest("hex"),
-    ...fingerprints,
-  };
-  mkdirSync(join(site, "community-evidence"), { recursive: true });
-  writeFileSync(
-    join(site, "community-evidence", metadata.release + ".json"),
-    JSON.stringify(audit, null, 2) + "\n",
-    { flag: "wx" },
-  );
-  writeFileSync(
-    metadataPath,
-    JSON.stringify(
-      {
-        ...metadata,
-        evidenceFingerprints: fingerprints.evidenceFingerprints,
-        communityCarryCheck: check,
+  if (mode === "risk") {
+    // No carry metadata/audit or package is emitted for this filtered preflight.
+    await runReleaseRisk({
+      source,
+      work,
+      url,
+      env: {
+        ...process.env,
+        VITE_BUILD_ID: metadata.release,
+        VITE_BUILD_TIMESTAMP: metadata.builtAt,
       },
-      null,
-      2,
-    ) + "\n",
-  );
-  console.log(JSON.stringify({ buildId: metadata.release, check }, null, 2));
+    });
+  } else {
+    await runBrowserChecks({
+      root: source,
+      config,
+      output: join(work, "guarded"),
+      env: {
+        ...process.env,
+        VITE_BUILD_ID: metadata.release,
+        VITE_BUILD_TIMESTAMP: metadata.builtAt,
+      },
+    });
+    // Preserve the established summary path for private operator/review tooling.
+    const resultBytes = readFileSync(join(work, "guarded", "results.json"));
+    writeFileSync(join(work, "results.json"), resultBytes);
+    const results = JSON.parse(resultBytes);
+    // Retain the original coarse backstop in addition to exact discovered coverage.
+    if (
+      results.stats.unexpected ||
+      results.stats.flaky ||
+      results.stats.expected < (mode === "access" ? 7 : 100)
+    )
+      throw new Error("Incomplete stamped integration results");
+    const check = {
+      checkedAt: new Date().toISOString(),
+      features:
+        mode === "access"
+          ? ["access"]
+          : Object.keys(fingerprints.evidenceFingerprints),
+      evidence: `https://browsersdr.com/community-evidence/${metadata.release}.json`,
+      kind:
+        mode === "access"
+          ? "Mocked WebUSB connection/ownership integration"
+          : "Full stamped Chromium integration",
+      tests: results.stats.expected,
+      skipped: results.stats.skipped,
+    };
+    const audit = {
+      schemaVersion: 1,
+      build: metadata,
+      check,
+      policy,
+      policySha256: createHash("sha256")
+        .update(JSON.stringify(policy))
+        .digest("hex"),
+      ...fingerprints,
+    };
+    mkdirSync(join(site, "community-evidence"), { recursive: true });
+    writeFileSync(
+      join(site, "community-evidence", metadata.release + ".json"),
+      JSON.stringify(audit, null, 2) + "\n",
+      { flag: "wx" },
+    );
+    writeFileSync(
+      metadataPath,
+      JSON.stringify(
+        {
+          ...metadata,
+          evidenceFingerprints: fingerprints.evidenceFingerprints,
+          communityCarryCheck: check,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    console.log(JSON.stringify({ buildId: metadata.release, check }, null, 2));
+  }
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

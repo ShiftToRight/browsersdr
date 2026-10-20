@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { browserServers } from "./scripts/browser-servers.mjs";
 
 const devPort = Number(process.env.BSD_E2E_DEV_PORT ?? 43173);
 const productionPort = Number(process.env.BSD_E2E_PRODUCTION_PORT ?? 43174);
@@ -38,20 +39,5 @@ export default defineConfig({
       },
     },
   ],
-  webServer: [
-    {
-      name: "vite-development",
-      command: `npm run dev -- --host 127.0.0.1 --port ${devPort} --strictPort`,
-      url: `http://127.0.0.1:${devPort}`,
-      reuseExistingServer: false,
-      timeout: 120_000,
-    },
-    {
-      name: "vite-production-preview",
-      command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${productionPort} --strictPort`,
-      url: `http://127.0.0.1:${productionPort}`,
-      reuseExistingServer: false,
-      timeout: 120_000,
-    },
-  ],
+  webServer: browserServers(process.cwd()),
 });
