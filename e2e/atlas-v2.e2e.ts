@@ -19,11 +19,13 @@ async function setup(page: Page) {
   });
   await page.route("**/api/v2/public/**", async (route) => {
     const url = new URL(route.request().url());
-    requests.push(url.pathname + url.search);
     const headers = await route.request().allHeaders();
     expect(headers.authorization).toBeUndefined();
     expect(headers.cookie).toBeUndefined();
     expect(headers["x-csrf-token"]).toBeUndefined();
+    // Track named-station traffic independently of the public frequency catalog.
+    if (url.pathname === "/api/v2/public/frequencies") return route.abort();
+    requests.push(url.pathname + url.search);
     if (url.pathname.endsWith("/transmissions")) {
       if (slow) await delayed;
       if (fault)
