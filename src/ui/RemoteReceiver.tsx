@@ -135,7 +135,12 @@ function RemoteReceiverView({
   const [applyingPreset, setApplyingPreset] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (input.current?.getClientRects().length) input.current.focus();
+    // Lazy mounting may finish after the user has already opened another tool.
+    // Only move focus while they are still entering through the source control.
+    const focused = document.activeElement;
+    const entering = focused === document.body ||
+      (focused instanceof HTMLSelectElement && focused.getAttribute("aria-label") === "Signal source");
+    if (entering && input.current?.getClientRects().length) input.current.focus();
     return () => client.stop();
   }, [client]);
   useEffect(() => {

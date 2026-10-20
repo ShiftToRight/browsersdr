@@ -6,6 +6,7 @@
 - Verify every cached application file and keep each cached build consistent. Failed or incomplete updates preserve the ready version.
 - Hold updates until all app windows and tabs close, preserving ongoing reception and recording.
 - Improve high-rate recording headroom while preserving filter response and bounded capture safeguards.
+- Preserve the selected tool and keyboard focus while the remote receiver finishes loading.
 
 ## 1.10.0 — 2026-10-19
 
