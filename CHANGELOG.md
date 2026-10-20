@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0 — 2026-10-21
+
+- Shared RF frequency Search now uses SigIntAtlas’s reviewed public catalog. Choose Automatic, Live or Saved, with a dated offline fallback and explicit unavailable states. Live updates and new protocol families appear without rebuilding BrowserSDR.
+- Validate and save catalog updates in a worker while preserving high-rate reception and capture.
+
 ## 1.11.0 — 2026-10-20
 
 - Prepare the installed app for offline startup, including receiver tools, local recordings and replay. Settings shows preparation progress and cache readiness.

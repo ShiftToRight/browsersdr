@@ -110,7 +110,7 @@ test("single-target browser runs start only the required server and verify prebu
     }),
   );
 });
-test("early risk inventory requires all eight exact cases including three cold repeats", () => {
+test("early risk inventory requires all nine exact cases including cold repeats and full catalog capture", () => {
   let count = 0;
   for (const group of riskGroups) {
     const cases = group.cases.flatMap(([file, title]) =>
@@ -128,5 +128,5 @@ test("early risk inventory requires all eight exact cases including three cold r
     wrong[0].titles = ["renamed"];
     assert.throws(() => assertRiskInventory(wrong, group));
   }
-  assert.equal(count, 8);
+  assert.equal(count, 9);
 });

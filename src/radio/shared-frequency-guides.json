@@ -1,10 +1,5 @@
 [
   {
-    "plan": null,
-    "direction": null,
-    "frequencyMeaning": "channel_center",
-    "recommendedMode": null,
-    "channelSpacingHz": null,
     "id": "meshcore-australia",
     "family": "meshcore",
     "name": "MeshCore Australia",
@@ -22,14 +17,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-australia-narrow",
     "family": "meshcore",
     "name": "MeshCore Australia (Narrow)",
@@ -47,14 +42,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-australia-mid",
     "family": "meshcore",
     "name": "MeshCore Australia (Mid)",
@@ -72,14 +67,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-australia-sa-wa",
     "family": "meshcore",
     "name": "MeshCore Australia: SA, WA",
@@ -97,14 +92,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-australia-qld",
     "family": "meshcore",
     "name": "MeshCore Australia: QLD",
@@ -122,14 +117,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-brazil",
     "family": "meshcore",
     "name": "MeshCore Brazil",
@@ -147,14 +142,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-canada",
     "family": "meshcore",
     "name": "MeshCore Canada",
@@ -172,14 +167,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-costa-rica",
     "family": "meshcore",
     "name": "MeshCore Costa Rica",
@@ -197,14 +192,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-eu-uk-narrow",
     "family": "meshcore",
     "name": "MeshCore EU/UK (Narrow)",
@@ -222,14 +217,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-czech-republic-narrow",
     "family": "meshcore",
     "name": "MeshCore Czech Republic (Narrow)",
@@ -247,14 +242,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-eu-433mhz-long-range",
     "family": "meshcore",
     "name": "MeshCore EU 433MHz (Long Range)",
@@ -272,14 +267,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-eu-433mhz-narrow",
     "family": "meshcore",
     "name": "MeshCore EU 433MHz (Narrow)",
@@ -297,14 +292,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-hungary",
     "family": "meshcore",
     "name": "MeshCore Hungary",
@@ -322,14 +317,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-netherlands",
     "family": "meshcore",
     "name": "MeshCore Netherlands",
@@ -347,14 +342,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-netherlands-limburg",
     "family": "meshcore",
     "name": "MeshCore Netherlands (Limburg)",
@@ -372,14 +367,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-new-zealand-narrow",
     "family": "meshcore",
     "name": "MeshCore New Zealand (Narrow)",
@@ -397,14 +392,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-new-zealand-gisborne",
     "family": "meshcore",
     "name": "MeshCore New Zealand (Gisborne)",
@@ -422,14 +417,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-portugal-433",
     "family": "meshcore",
     "name": "MeshCore Portugal 433",
@@ -447,14 +442,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-portugal-868",
     "family": "meshcore",
     "name": "MeshCore Portugal 868",
@@ -472,14 +467,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-slovakia",
     "family": "meshcore",
     "name": "MeshCore Slovakia",
@@ -497,14 +492,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-switzerland",
     "family": "meshcore",
     "name": "MeshCore Switzerland",
@@ -522,14 +517,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-usa",
     "family": "meshcore",
     "name": "MeshCore USA",
@@ -547,14 +542,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-usa-southern-california",
     "family": "meshcore",
     "name": "MeshCore USA - Southern California",
@@ -572,14 +567,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshcore-vietnam-narrow",
     "family": "meshcore",
     "name": "MeshCore Vietnam (Narrow)",
@@ -597,14 +592,14 @@
     "publisher": "MeshCore",
     "url": "https://docs.meshcore.io/radio_presets/",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2405",
     "family": "zigbee",
     "name": "Zigbee channel 11",
@@ -622,14 +617,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2410",
     "family": "zigbee",
     "name": "Zigbee channel 12",
@@ -647,14 +642,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2415",
     "family": "zigbee",
     "name": "Zigbee channel 13",
@@ -672,14 +667,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2420",
     "family": "zigbee",
     "name": "Zigbee channel 14",
@@ -697,14 +692,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2425",
     "family": "zigbee",
     "name": "Zigbee channel 15",
@@ -722,14 +717,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2430",
     "family": "zigbee",
     "name": "Zigbee channel 16",
@@ -747,14 +742,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2435",
     "family": "zigbee",
     "name": "Zigbee channel 17",
@@ -772,14 +767,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2440",
     "family": "zigbee",
     "name": "Zigbee channel 18",
@@ -797,14 +792,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2445",
     "family": "zigbee",
     "name": "Zigbee channel 19",
@@ -822,14 +817,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2450",
     "family": "zigbee",
     "name": "Zigbee channel 20",
@@ -847,14 +842,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2455",
     "family": "zigbee",
     "name": "Zigbee channel 21",
@@ -872,14 +867,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2460",
     "family": "zigbee",
     "name": "Zigbee channel 22",
@@ -897,14 +892,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2465",
     "family": "zigbee",
     "name": "Zigbee channel 23",
@@ -922,14 +917,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2470",
     "family": "zigbee",
     "name": "Zigbee channel 24",
@@ -947,14 +942,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2475",
     "family": "zigbee",
     "name": "Zigbee channel 25",
@@ -972,14 +967,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "zigbee-rf-2480",
     "family": "zigbee",
     "name": "Zigbee channel 26",
@@ -997,14 +992,14 @@
     "publisher": "Silicon Labs coexistence documentation",
     "url": "https://docs.silabs.com/wifi/wf200/content-source/application-note/wifi-coexistence",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2405",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 11",
@@ -1022,14 +1017,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2410",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 12",
@@ -1047,14 +1042,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2415",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 13",
@@ -1072,14 +1067,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2420",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 14",
@@ -1097,14 +1092,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2425",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 15",
@@ -1122,14 +1117,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2430",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 16",
@@ -1147,14 +1142,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2435",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 17",
@@ -1172,14 +1167,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2440",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 18",
@@ -1197,14 +1192,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2445",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 19",
@@ -1222,14 +1217,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2450",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 20",
@@ -1247,14 +1242,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2455",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 21",
@@ -1272,14 +1267,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2460",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 22",
@@ -1297,14 +1292,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2465",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 23",
@@ -1322,14 +1317,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2470",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 24",
@@ -1347,14 +1342,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2475",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 25",
@@ -1372,14 +1367,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "thread-rf-2480",
     "family": "thread",
     "name": "Thread / 6LoWPAN on IEEE 802.15.4 channel 26",
@@ -1397,14 +1392,14 @@
     "publisher": "Silicon Labs",
     "url": "https://www.silabs.com/documents/public/user-guides/ug103-17-wi-fi-coexistence-fundamentals.pdf",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": null
-  },
-  {
+    "sourceRevision": null,
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-us-longfast-slot20",
     "family": "meshtastic",
     "name": "Meshtastic United States · LongFast (US)",
@@ -1429,14 +1424,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-us-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic United States · LongTurbo (US)",
@@ -1461,14 +1456,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-eu433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic European Union 433 MHz · LongFast (EU_433)",
@@ -1527,14 +1522,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-eu-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic European Union 433 MHz · LongTurbo (EU_433)",
@@ -1593,14 +1588,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-eu-longfast",
     "family": "meshtastic",
     "name": "Meshtastic European Union 868 MHz · LongFast (EU_868)",
@@ -1660,14 +1655,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-eu-866-litefast",
     "family": "meshtastic",
     "name": "Meshtastic European Union 866 MHz · LiteFast (EU_866)",
@@ -1688,14 +1683,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-eu-n-868-narrowslow",
     "family": "meshtastic",
     "name": "Meshtastic European Union 868 MHz (Narrow) · NarrowSlow (EU_N_868)",
@@ -1716,14 +1711,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-cn-longfast",
     "family": "meshtastic",
     "name": "Meshtastic China · LongFast (CN)",
@@ -1745,14 +1740,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-cn-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic China · LongTurbo (CN)",
@@ -1774,14 +1769,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-jp-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Japan · LongFast (JP)",
@@ -1803,14 +1798,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-jp-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Japan · LongTurbo (JP)",
@@ -1832,14 +1827,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-anz-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Australia & New Zealand · LongFast (ANZ)",
@@ -1868,14 +1863,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-anz-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Australia & New Zealand · LongTurbo (ANZ)",
@@ -1904,14 +1899,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-anz-433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Australia & New Zealand · LongFast (ANZ_433)",
@@ -1933,14 +1928,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-anz-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Australia & New Zealand · LongTurbo (ANZ_433)",
@@ -1962,14 +1957,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ru-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Russia · LongFast (RU)",
@@ -1991,14 +1986,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ru-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Russia · LongTurbo (RU)",
@@ -2020,14 +2015,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kr-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Korea · LongFast (KR)",
@@ -2049,14 +2044,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kr-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Korea · LongTurbo (KR)",
@@ -2078,14 +2073,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-tw-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Taiwan · LongFast (TW)",
@@ -2107,14 +2102,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-tw-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Taiwan · LongTurbo (TW)",
@@ -2136,14 +2131,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-in-longfast",
     "family": "meshtastic",
     "name": "Meshtastic India · LongFast (IN)",
@@ -2165,14 +2160,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-in-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic India · LongTurbo (IN)",
@@ -2194,14 +2189,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-nz-865-longfast",
     "family": "meshtastic",
     "name": "Meshtastic New Zealand 865 MHz · LongFast (NZ_865)",
@@ -2223,14 +2218,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-nz-865-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic New Zealand 865 MHz · LongTurbo (NZ_865)",
@@ -2252,14 +2247,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-th-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Thailand · LongFast (TH)",
@@ -2281,14 +2276,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-th-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Thailand · LongTurbo (TH)",
@@ -2310,14 +2305,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ua-433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Ukraine 433 MHz · LongFast (UA_433)",
@@ -2339,14 +2334,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ua-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Ukraine 433 MHz · LongTurbo (UA_433)",
@@ -2368,14 +2363,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-my-433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Malaysia 433 MHz · LongFast (MY_433)",
@@ -2397,14 +2392,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-my-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Malaysia 433 MHz · LongTurbo (MY_433)",
@@ -2426,14 +2421,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-my-919-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Malaysia 919 MHz · LongFast (MY_919)",
@@ -2455,14 +2450,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-my-919-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Malaysia 919 MHz · LongTurbo (MY_919)",
@@ -2484,14 +2479,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-sg-923-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Singapore 923 MHz · LongFast (SG_923)",
@@ -2514,14 +2509,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-sg-923-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Singapore 923 MHz · LongTurbo (SG_923)",
@@ -2544,14 +2539,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ph-433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Philippines 433 MHz · LongFast (PH_433)",
@@ -2572,14 +2567,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ph-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Philippines 433 MHz · LongTurbo (PH_433)",
@@ -2600,14 +2595,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ph-915-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Philippines 915 MHz · LongFast (PH_915)",
@@ -2629,14 +2624,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-ph-915-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Philippines 915 MHz · LongTurbo (PH_915)",
@@ -2658,14 +2653,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kz-433-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Kazakhstan 433 MHz · LongFast (KZ_433)",
@@ -2687,14 +2682,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kz-433-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Kazakhstan 433 MHz · LongTurbo (KZ_433)",
@@ -2716,14 +2711,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kz-863-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Kazakhstan 863 MHz · LongFast (KZ_863)",
@@ -2745,14 +2740,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-kz-863-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Kazakhstan 863 MHz · LongTurbo (KZ_863)",
@@ -2774,14 +2769,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-np-865-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Nepal 865 MHz · LongFast (NP_865)",
@@ -2803,14 +2798,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-np-865-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Nepal 865 MHz · LongTurbo (NP_865)",
@@ -2832,14 +2827,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-br-902-longfast",
     "family": "meshtastic",
     "name": "Meshtastic Brazil 902 MHz · LongFast (BR_902)",
@@ -2861,14 +2856,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-br-902-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic Brazil 902 MHz · LongTurbo (BR_902)",
@@ -2890,14 +2885,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu1-2m-tinyfast",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 1 Amateur 2m · TinyFast (ITU1_2M)",
@@ -2918,14 +2913,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu2-2m-tinyfast",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 2 Amateur 2m · TinyFast (ITU2_2M)",
@@ -2946,14 +2941,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu3-2m-tinyfast",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 3 Amateur 2m · TinyFast (ITU3_2M)",
@@ -2974,14 +2969,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu2-125cm-narrowslow",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 2 Amateur 1.25m · NarrowSlow (ITU2_125CM)",
@@ -3002,14 +2997,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu1-70cm-narrowslow",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 1 Amateur 70cm · NarrowSlow (ITU1_70CM)",
@@ -3030,14 +3025,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu2-70cm-narrowslow",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 2 Amateur 70cm · NarrowSlow (ITU2_70CM)",
@@ -3058,14 +3053,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-itu3-70cm-narrowslow",
     "family": "meshtastic",
     "name": "Meshtastic ITU Region 3 Amateur 70cm · NarrowSlow (ITU3_70CM)",
@@ -3086,14 +3081,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-lora-24-longfast",
     "family": "meshtastic",
     "name": "Meshtastic 2.4 GHz band worldwide · LongFast (LORA_24)",
@@ -3114,14 +3109,14 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
-  },
-  {
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
     "plan": null,
     "direction": null,
     "frequencyMeaning": "channel_center",
     "recommendedMode": null,
-    "channelSpacingHz": null,
+    "channelSpacingHz": null
+  },
+  {
     "id": "meshtastic-lora-24-longturbo",
     "family": "meshtastic",
     "name": "Meshtastic 2.4 GHz band worldwide · LongTurbo (LORA_24)",
@@ -3142,7 +3137,12 @@
     "publisher": "Meshtastic",
     "url": "https://github.com/meshtastic/meshtastic/blob/a5c9bd27527a004452afffea394c7703af0f7201/src/components/tools/FrequencyCalculator.tsx",
     "reviewedOn": "2026-10-13",
-    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201"
+    "sourceRevision": "a5c9bd27527a004452afffea394c7703af0f7201",
+    "plan": null,
+    "direction": null,
+    "frequencyMeaning": "channel_center",
+    "recommendedMode": null,
+    "channelSpacingHz": null
   },
   {
     "id": "lorawan-eu-default-0",

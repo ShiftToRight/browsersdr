@@ -32,6 +32,9 @@ async function setup(page: Page, remembered = false) {
   await page.route("**/api/v*/**", async (route) => {
     const request = route.request(),
       url = new URL(request.url());
+    // Shared-frequency delivery is independent of named-station request/freshness checks.
+    if (url.pathname === "/api/v2/public/frequencies")
+      return route.abort("connectionrefused");
     requests.push({
       path: url.pathname + url.search,
       headers: await request.allHeaders(),

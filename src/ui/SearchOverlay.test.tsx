@@ -240,13 +240,70 @@ it("keeps search dormant initially and supplies honest ATIS guidance after openi
   expect(document.querySelector("dialog")).toBeNull();
   expect(calls).toEqual([]);
   await click("Search");
-  const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+  const input = document.querySelector<HTMLInputElement>(
+    'input[type="search"]',
+  )!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,"ATIS");
-    input.dispatchEvent(new Event("input",{bubbles:true}));
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "ATIS");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(document.body.textContent).toContain("ATIS / aviation voice");
-  expect(document.body.textContent).toContain("No local ATIS station or frequency");
-  expect([...document.querySelectorAll("button")].some(button => button.textContent?.trim() === "Preview ATIS / aviation voice")).toBe(false);
+  expect(document.body.textContent).toContain(
+    "No local ATIS station or frequency",
+  );
+  expect(
+    [...document.querySelectorAll("button")].some(
+      (button) =>
+        button.textContent?.trim() === "Preview ATIS / aviation voice",
+    ),
+  ).toBe(false);
   expect(calls).toEqual([]);
+});
+it("stable receiver progress preserves the Search view while actions use current callbacks", async () => {
+  const preview = vi.fn(() => "Current receiver preview");
+  props = {
+    ...props,
+    validationKey: "settings-a",
+    onPreview: preview,
+    antennaContext: {
+      kind: "local",
+      sourceLabel: "Test receiver",
+      frequencyHz: 100e6,
+      mode: "WBFM",
+    },
+  };
+  await render();
+  await click("Search");
+  await click("Preview ADS-B / 1090ES");
+  const rendered = preview.mock.calls.length;
+  const latest = vi.fn(async () => "Latest callback applied");
+  props = {
+    ...props,
+    onRecall: latest,
+    antennaContext: { ...props.antennaContext! },
+  };
+  await render();
+  expect(preview).toHaveBeenCalledTimes(rendered);
+  await click("Apply to receiver");
+  expect(latest).toHaveBeenCalledOnce();
+});
+it("changed preview settings still revalidate an open selection", async () => {
+  props = { ...props, validationKey: "settings-a" };
+  await render();
+  await click("Search");
+  await click("Preview ADS-B / 1090ES");
+  props = {
+    ...props,
+    validationKey: "settings-b",
+    onPreview: () => {
+      throw new Error("Current receiver range changed");
+    },
+  };
+  await render();
+  expect(document.body.textContent).toContain("Current receiver range changed");
+  expect(button("Apply to receiver").disabled).toBe(true);
+  expect(props.onRecall).not.toHaveBeenCalled();
 });

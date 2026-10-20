@@ -16,6 +16,16 @@ export const riskGroups = [
     ],
   },
   {
+    name: "catalog-throughput",
+    repeats: 1,
+    cases: [
+      [
+        "public-frequency-capture.e2e.ts",
+        "19.2 MS/s capture preserves five seconds while a complete live frequency catalog is validated and saved",
+      ],
+    ],
+  },
+  {
     name: "integration",
     repeats: 1,
     cases: [

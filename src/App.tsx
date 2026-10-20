@@ -3459,7 +3459,7 @@ export function ReceiverApp({
                 </div>
                 {source !== "replay" && source !== "synthetic" && ["DAB", "AIS", "ADS-B", "ACARS", "NAVTEX"].includes(mode) && <Suspense fallback={null}><ModeFrequencyHint mode={mode} frequencyHz={frequencyMhz * 1e6} disabled={transitioning || Boolean(recordingStatus) || exportingRecording || atlasTransferActive} onChoose={hz => { setChannelFrequencyDraft(undefined); setFrequencyMhz(hz / 1e6); if (running) tune(hz); }} /></Suspense>}
                 <button id="antenna-guide-trigger" type="button" className="secondary" aria-haspopup="dialog" onClick={() => openAntennaGuide("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</button>
-                <SearchOverlay antennaContext={antennaContext} favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
+                <SearchOverlay validationKey={JSON.stringify([currentModeSettings, hardwareOptions])} antennaContext={antennaContext} favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
                   contextKey={`${source}:${remoteSelected}:${receiver.sessionGeneration}:${mode}:${sampleRateHz}:${frequencyMhz}`}
                   blockedReason={stationUseBlockedReason} onRecall={recallFavorite} onUseStation={useAtlasStation} onFavorite={saveAtlasFavorite}
                   onPreview={(bookmark) => previewDiscovery(controller, bookmark, { source, channelFrequencyHz: frequencyMhz * 1e6, modeSettings: currentModeSettings, sampleRateHz, ...hardwareOptions })} />

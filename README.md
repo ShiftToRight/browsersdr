@@ -36,3 +36,15 @@ RTL-SDR also offers **3.2 MS/s (experimental)** in Device details & settings. It
 Browse the [wiki](https://github.com/cybearde/browsersdr/wiki), read [what's changed](CHANGELOG.md), or follow the [development guide](https://github.com/cybearde/browsersdr/wiki/Development). Found a problem? [Open an issue](https://github.com/cybearde/browsersdr/issues) with your receiver, browser and steps to reproduce it. You can also share results through **Compatibility & tests** in the app's help menu.
 
 BrowserSDR is receive-only. Licensed under [PolyForm Perimeter 1.0.1](LICENSE); bundled components retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+
+Shared RF frequency Search uses the reviewed public SigIntAtlas catalog without an account.
+**Automatic** checks the live catalog and falls back to a dated saved copy when unavailable;
+**Live** shows only current live results; **Saved** searches the saved public copy without a
+catalog request. Revision, publication and last-live-check times make the source visible.
+Saved copies can include subsequently changed or withdrawn profiles. Station search keeps
+its existing live reference checks, and Preview/Apply remains deliberate.
+
+The bundled public snapshot is generated from Atlas's public export with
+`node scripts/update-frequency-snapshot.mjs ATLAS-EXPORT.json`; edit/review the catalog in
+Atlas, then regenerate this delivery copy rather than maintaining a second catalog here.

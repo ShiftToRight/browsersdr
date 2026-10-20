@@ -1,3 +1,5 @@
+import type { FrequencySnapshot } from "./publicFrequencyCatalog";
+import metadata from "./shared-frequency-snapshot.json";
 import data from "./shared-frequency-guides.json";
 import { parseDiscoveryFrequency } from "./discoveryGuides";
 
@@ -25,6 +27,11 @@ export interface SharedFrequencyGuide {
   channelSpacingHz: number | null;
 }
 const profiles = data as SharedFrequencyGuide[];
+export const bundledFrequencySnapshot: FrequencySnapshot = {
+  ...metadata,
+  schema_version: "public-frequency-catalog-v1",
+  profiles,
+};
 const regionNames: Record<string, string[]> = {
   EU: [
     "Europe",
@@ -81,15 +88,17 @@ const words = (value: string): string[] =>
 export function matchingSharedFrequencies(
   query: string,
   interpretation: "auto" | "text" = "auto",
+  catalog: readonly SharedFrequencyGuide[] = profiles,
 ) {
   const parsed =
     interpretation === "auto" ? parseDiscoveryFrequency(query) : { notice: "" };
   if (parsed.error) return [];
   const tokens = words(query);
+  if (!tokens.length && parsed.frequencyHz === undefined) return [...catalog];
   const channelNumber = query
     .toLowerCase()
     .match(/\b(?:channel|ch)\s+(\d+)\b/)?.[1];
-  return profiles.filter((profile) => {
+  return catalog.filter((profile) => {
     if (parsed.frequencyHz !== undefined)
       return Math.abs(profile.frequencyHz - parsed.frequencyHz) <= 500;
     if (channelNumber && !words(profile.channel ?? "").includes(channelNumber))
