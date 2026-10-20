@@ -16,8 +16,9 @@ afterEach(() => {
 });
 
 it("retains hidden rows without drawing, throttles status, and caches canvas layout", async () => {
-  // Settle the deferred guide before measuring steady-state renderer redraws.
-  await import("./BandGuideFeature");
+  // Settle both deferred UI modules before measuring redraws and dispatching
+  // pointer events; act does not wait for an unresolved dynamic import.
+  await Promise.all([import("./BandGuideFeature"), import("./SpectrumHover")]);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let resize!: ResizeObserverCallback;
   vi.stubGlobal(
