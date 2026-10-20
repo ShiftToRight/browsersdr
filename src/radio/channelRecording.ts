@@ -4,6 +4,16 @@ import { CHANNEL_MAX_SAMPLES } from "./widebandChannel";
 import { channelSampleRate } from "./sourceCapabilities";
 import { planChannelTune, validateModeSampleRate } from "./receiverConfig";
 import type { SourceKind, SourceSessionMetadata } from "./types";
+import type { FirConvolver } from "./wasmHalfBand";
+
+export interface RecordingFir {
+  inPlace(I: Float32Array, Q: Float32Array): void;
+  clone(): RecordingFir;
+}
+export interface RecordingKernels {
+  convolver(): FirConvolver;
+  fir(taps: Float32Array): RecordingFir;
+}
 
 export interface RecordingOptions {
   receiverLocation?: import("./receiverLocation").ReceiverLocation;
@@ -124,13 +134,13 @@ export function planChannelCapture(
 export class ChannelCaptureFilter {
   private readonly stages: WasmHalfBandStage[] = [];
   private readonly taps = new Float64Array(95);
-  private channelFilter: IqFIRFilter;
+  private channelFilter: RecordingFir;
   private oscillatorI = 1;
   private oscillatorQ = 0;
   private oscillatorCount = 0;
   private readonly rotationI: number;
   private readonly rotationQ: number;
-  constructor(readonly plan: ChannelCapturePlan) {
+  constructor(readonly plan: ChannelCapturePlan, kernels?: RecordingKernels) {
     const angle =
       (-2 * Math.PI * (plan.channelFrequencyHz - plan.inputCenterFrequencyHz)) /
       plan.inputSampleRateHz;
@@ -147,6 +157,7 @@ export class ChannelCaptureFilter {
           rate,
           last ? 95 : rate >= plan.outputSampleRateHz * 8 ? 15 : 31,
           true,
+          kernels?.convolver,
         ),
       );
     }
@@ -171,7 +182,8 @@ export class ChannelCaptureFilter {
       sum += this.taps[n]!;
     }
     for (let n = 0; n < 95; n++) this.taps[n] = this.taps[n]! / sum;
-    this.channelFilter = new IqFIRFilter(Float32Array.from(this.taps));
+    const coefficients = Float32Array.from(this.taps);
+    this.channelFilter = kernels ? kernels.fir(coefficients) : new IqFIRFilter(coefficients);
   }
   reset(): void {
     this.stages.forEach((stage) => stage.reset());

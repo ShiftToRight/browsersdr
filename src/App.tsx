@@ -2,7 +2,7 @@ import { isTextMode, defaultTextModemSettings, type TextModemSettings } from "./
 const TextModemControls = lazy(() => import("./ui/TextModemControls").then(module => ({ default: module.TextModemControls })));
 import { useCaptureRetention } from "./ui/useCaptureRetention";
 import { COMPATIBILITY_DETAILS, COMPATIBILITY_STATUS_LABELS, DESKTOP_SUPPORT_SCOPE, SUPPORT_EVIDENCE, type CompatibilityDetailView } from "./radio/supportEvidence";
-import { DeferredWorkspace } from "./ui/DeferredWorkspace";
+import { DeferredWorkspace, useWorkspaceVisited } from "./ui/DeferredWorkspace";
 import { selectAuthorizedUsbDevice, usbDeviceMatchesSource } from "./radio/sourceSetup";
 export { selectAuthorizedUsbDevice, usbDeviceMatchesSource } from "./radio/sourceSetup";
 import { AppResourceOwner, type AppRuntime } from "./ui/AppResourceOwner";
@@ -522,6 +522,7 @@ function DiagnosticsPanel({
   health: ReactNode;
 }) {
   const visible = usePageVisible(active);
+  const renderDiagnostics = useWorkspaceVisited(active);
   const [diagnostics, setDiagnostics] = useState<AnalysisDiagnostics>(() =>
     pipeline.getDiagnostics(),
   );
@@ -708,6 +709,9 @@ function DiagnosticsPanel({
       : {}),
   };
 
+  // Keep background diagnostics running; construct its UI only after first use.
+  if (!renderDiagnostics) return null;
+
   return (
     <section
       className="diagnostics-panel"
@@ -855,6 +859,17 @@ const RecordingModeOptions = memo(function RecordingModeOptions() {
       {RECEIVER_MODES.map((candidate) => (
         <option key={candidate} value={candidate}>
           {candidate}
+        </option>
+      ))}
+    </>
+  );
+});
+const DabChannelOptions = memo(function DabChannelOptions() {
+  return (
+    <>
+      {DAB_BAND_III_CHANNELS.map((channel) => (
+        <option key={channel.label} value={channel.label}>
+          {channel.label} · {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz
         </option>
       ))}
     </>
@@ -3338,12 +3353,7 @@ export function ReceiverApp({
                       {!dabChannelAt(frequencyMhz * 1_000_000) && (
                         <option value="custom">Custom frequency</option>
                       )}
-                      {DAB_BAND_III_CHANNELS.map((channel) => (
-                        <option key={channel.label} value={channel.label}>
-                          {channel.label} ·{" "}
-                          {(channel.frequencyHz / 1_000_000).toFixed(3)} MHz
-                        </option>
-                      ))}
+                      <DabChannelOptions />
                     </select>
                   </label>
                 )}
@@ -3868,6 +3878,7 @@ export function ReceiverApp({
             aria-labelledby="recording-heading"
             hidden={!receiverDockExpanded || receiverDockView !== "capture"}
           >
+            <DeferredWorkspace active={receiverDockExpanded && receiverDockView === "capture"}>{() => <>
             <h2 id="recording-heading" className="visually-hidden">I/Q recordings</h2>
             <div className="capture-topline">
             <div
@@ -4179,6 +4190,7 @@ export function ReceiverApp({
               aria-labelledby="open-recording-tab"
               hidden={captureView !== "open"}
             >
+              <DeferredWorkspace active={captureView === "open"}>{() => <>
               <div className="replay-inputs">
                 <label className="recording-format">
                   Replay pair format
@@ -4370,6 +4382,8 @@ export function ReceiverApp({
                 </button>
               </div>}
 
+              </>}</DeferredWorkspace>
+
             </div>
             <div id="library-panel" role="tabpanel" aria-labelledby="library-tab" hidden={captureView !== "library"}>
             <DeferredWorkspace active={receiverDockExpanded && receiverDockView === "capture" && captureView === "library"}><RecordingLibrary blocked={busy || running || importingReplay || exportingRecording || atlasTransferActive || Boolean(recordingStatus) || retainedCapturePresent}
@@ -4389,6 +4403,7 @@ export function ReceiverApp({
                 } catch (error) { await recording.releaseData?.(); throw error; }
               }} /></DeferredWorkspace>
             </div>
+            </>}</DeferredWorkspace>
           </section>
 
           <section
@@ -4491,6 +4506,7 @@ export function ReceiverApp({
                   </p>
                 </details>
             )}
+
           </section>
         </section>
       </ReceiverWorkspace>

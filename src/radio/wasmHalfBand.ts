@@ -3,18 +3,22 @@ import {
   type Convolver,
 } from "@jtarrio/signals/wasm/convolver.js";
 export const CHANNEL_MAX_SAMPLES = 32_768;
+export type FirConvolver = Pick<Convolver, "setCoefs" | "convolveWithStride"> & {
+  halfBand?(data: Float32Array, count: number, skip: number): Float32Array;
+};
 
 /** Same Blackman half-band response and retained phase as HalfBandStage, with
  * block convolution in WASM. Fixed buffers retain history; only retained output phases are evaluated.
  * ChannelCaptureFilter copies borrowed input before calling this stage. */
 export class WasmHalfBandStage {
-  private readonly iConvolver: Convolver = getConvolver();
-  private readonly qConvolver: Convolver = getConvolver();
+  private readonly iConvolver: FirConvolver;
+  private readonly qConvolver: FirConvolver;
   private readonly workI: Float32Array;
   private readonly workQ: Float32Array;
   private readonly compactI: Float32Array;
   private readonly compactQ: Float32Array;
   private centerCoefficient = 0;
+  private readonly directHalfBand: boolean;
   private parity = 0;
   private oscillatorI = 1;
   private oscillatorQ = 0;
@@ -26,7 +30,11 @@ export class WasmHalfBandStage {
     private readonly rate: number,
     private readonly tapCount: number,
     private readonly compactHalfBand = false,
+    createConvolver: () => FirConvolver = getConvolver,
   ) {
+    this.iConvolver = createConvolver();
+    this.qConvolver = createConvolver();
+    this.directHalfBand = compactHalfBand && Boolean(this.iConvolver.halfBand && this.qConvolver.halfBand);
     const taps = new Float32Array(tapCount);
     const middle = (tapCount - 1) / 2;
     let sum = 0;
@@ -51,14 +59,14 @@ export class WasmHalfBandStage {
     // Recording can convolve the retained phase with only the nonzero taps.
     if (compactHalfBand && tapCount % 4 !== 3)
       throw new Error("Compact half-band filter requires 4k-1 taps.");
-    const coefficients = compactHalfBand
+    const coefficients = compactHalfBand && !this.directHalfBand
       ? Float32Array.from(taps.filter((_, n) => n % 2 === 0))
       : taps;
     this.centerCoefficient = taps[middle]!;
     this.iConvolver.setCoefs(coefficients);
     this.qConvolver.setCoefs(coefficients);
     this.compactI = new Float32Array(
-      compactHalfBand ? Math.ceil((CHANNEL_MAX_SAMPLES + tapCount) / 2) : 0,
+      compactHalfBand && !this.directHalfBand ? Math.ceil((CHANNEL_MAX_SAMPLES + tapCount) / 2) : 0,
     );
     this.compactQ = new Float32Array(this.compactI.length);
     this.workI = new Float32Array(CHANNEL_MAX_SAMPLES + tapCount - 1);
@@ -107,7 +115,10 @@ export class WasmHalfBandStage {
     const skip = this.parity === 0 ? 1 : 0;
     this.parity = (this.parity + I.length) % 2;
     if (count) {
-      if (this.compactHalfBand) {
+      if (this.directHalfBand) {
+        I.set(this.iConvolver.halfBand!(this.workI.subarray(0, history + I.length), count, skip));
+        Q.set(this.qConvolver.halfBand!(this.workQ.subarray(0, history + Q.length), count, skip));
+      } else if (this.compactHalfBand) {
         const compactLength = count + (this.tapCount + 1) / 2 - 1;
         for (let n = 0; n < compactLength; n++) {
           this.compactI[n] = this.workI[skip + n * 2]!;

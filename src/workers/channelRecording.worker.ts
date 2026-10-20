@@ -3,6 +3,7 @@ import { ChannelCaptureFilter } from "../radio/channelRecording";
 import { decodeRecordingSamples, validateSampleEncoding, type RecordingSampleFormat } from "../radio/iqRecording";
 import { CHANNEL_MAX_SAMPLES } from "../radio/widebandChannel";
 import type { ChannelRecordingInput, ChannelRecordingOutput } from "../radio/channelRecordingWorker";
+import { recordingKernels } from "../radio/recordingConvolver";
 
 let filter: ChannelCaptureFilter;
 let encoding: RecordingSampleFormat;
@@ -33,7 +34,7 @@ function process(I: Float32Array, Q: Float32Array, limit: number): number {
 self.onmessage = (event: MessageEvent<ChannelRecordingInput>) => {
   try {
     const message = event.data;
-    if (message.type === "configure") { validateSampleEncoding(message.encoding); filter = new ChannelCaptureFilter(message.plan); encoding = message.encoding; stride = message.stride; }
+    if (message.type === "configure") { validateSampleEncoding(message.encoding); filter = new ChannelCaptureFilter(message.plan, recordingKernels); encoding = message.encoding; stride = message.stride; }
     else if (message.type === "reset") filter.reset();
     else if (message.type === "finish") post({ type: "finished" });
     else {

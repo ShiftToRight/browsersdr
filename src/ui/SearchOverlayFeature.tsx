@@ -1,3 +1,4 @@
+import { DeferredWorkspace } from "./DeferredWorkspace";
 import {
   useEffect,
   useId,
@@ -576,6 +577,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
             }
           }}
         >
+          <DeferredWorkspace active={open} freezeWhenInactive>{() => <>
           <header className="favorites-heading">
             <div>
               <h2 id={`${id}-title`}>
@@ -1171,6 +1173,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
               Close Search
             </button>
           </footer>
+          </>}</DeferredWorkspace>
         </dialog>,
         document.body,
       )}
