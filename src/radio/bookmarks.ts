@@ -1,3 +1,4 @@
+import { normalizePocsagSettings } from "../pocsag/settings";
 import { isTextMode, normalizeTextModemSettings } from "../textmodem/settings";
 import {
   defaultModeSettings,
@@ -115,6 +116,7 @@ export function validateBookmark(value: unknown): Bookmark {
         }
       : {}),
     ...(srd ? { srd } : {}),
+    ...(mode === "POCSAG" ? {pocsag:normalizePocsagSettings(raw.pocsag as import("../pocsag/settings").PocsagSettings | undefined)} : {}),
     ...(isTextMode(mode) ? { textModem: normalizeTextModemSettings(raw.textModem as import("../textmodem/settings").TextModemSettings | undefined) } : {}),
   });
   if (!Array.isArray(row.tags) || row.tags.length > 10)

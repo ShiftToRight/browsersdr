@@ -1,3 +1,5 @@
+import { PocsagDigitalReceiver } from "../pocsag/pocsagDigitalReceiver";
+import { pocsagConfiguration } from "../pocsag/settings";
 import type { DigitalInputSampleRateHz } from "../digital/inputRates";
 import { TextDigitalReceiver } from "../textmodem/digitalReceiver";
 import { isTextMode, textModemConfiguration } from "../textmodem/settings";
@@ -79,6 +81,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
+  private pocsag?: PocsagDigitalReceiver;
   private aprs?: AprsDigitalReceiver;
   private rs41?: Rs41DigitalReceiver;
   private textModem?: TextDigitalReceiver;
@@ -286,8 +289,9 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
   async prepare(metadata: SourceSessionMetadata): Promise<void> {
     this.requireOpen();
-    if (metadata.mode === "APRS" || metadata.mode === "RS41" || isTextMode(metadata.mode)) this.enabled = false;
+    if (metadata.mode === "POCSAG" || metadata.mode === "APRS" || metadata.mode === "RS41" || isTextMode(metadata.mode)) this.enabled = false;
     this.preparePackets(metadata);
+    if (metadata.mode === "POCSAG") await this.pocsag!.prepare();
     if (metadata.mode === "APRS") await this.aprs!.prepare();
     if (metadata.mode === "RS41") await this.rs41!.prepare();
     if (isTextMode(metadata.mode)) await this.textModem!.prepare();
@@ -369,12 +373,12 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.analysis?.markDiscontinuity(missingSamples ?? 0);
     this.player.reset();
     this.rds.reset();
-    if (this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode)) {
+    if (this.metadata.mode === "POCSAG" || this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode)) {
       const missing = missingSamples === null ? null : missingSamples / (this.metadata.actualSampleRateHz / channelSampleRate(this.metadata.actualSampleRateHz));
-      (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
+      (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "POCSAG" ? this.pocsag : this.metadata.mode === "APRS" ? this.aprs : this.rs41)?.reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
     } else this.receiver.resetDigitalReceiver();
     this.dabResources?.reset();
-    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(this.metadata.mode)) {
+    if (!["OFF", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(this.metadata.mode)) {
       this.demodulator.setMode(createSignalsMode({
         mode: this.metadata.mode,
         bandwidthHz: this.metadata.channelBandwidthHz,
@@ -392,7 +396,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
 
   updateAnalogMode(settings: ReceiverModeSettings): void {
     this.requireOpen();
-    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode))
+    if (["OFF", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode))
       throw new Error(`${settings.mode} does not use the analog audio path.`);
     this.demodulator.setCwToneFrequency?.(settings.beatToneHz ?? 600);
     this.demodulator.setMode(createSignalsMode(settings));
@@ -404,6 +408,10 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (isTextMode(metadata.mode)) {
       this.textModem ??= new TextDigitalReceiver(({ snapshot, diagnostics, image }) => this.events.textModemChanged?.(snapshot, diagnostics, image), error => this.events.runtimeError(error));
       this.textModem.configureSession(textModemConfiguration(metadata.mode, metadata.textModem, rate, metadata.sessionGeneration, offset));
+    }
+    if (metadata.mode === "POCSAG") {
+      this.pocsag ??= new PocsagDigitalReceiver(({snapshot, diagnostics}) => this.events.pocsagChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
+      this.pocsag.configureSession(pocsagConfiguration(metadata.pocsag,rate,metadata.sessionGeneration,offset));
     }
     if (metadata.mode === "APRS") {
       this.aprs ??= new AprsDigitalReceiver(({ snapshot, diagnostics }) => this.events.aprsChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
@@ -457,6 +465,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
           ? this.ais
           : metadata.mode === "SRD"
             ? this.srd
+          : metadata.mode === "POCSAG" ? this.pocsag
           : metadata.mode === "APRS" ? this.aprs
           : isTextMode(metadata.mode) ? this.textModem
           : metadata.mode === "RS41" ? this.rs41
@@ -486,6 +495,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (metadata.mode !== "DAB") this.releaseDabResources();
     if (digital !== this.adsb) this.adsb.reset();
     if (digital !== this.ais) this.ais.reset();
+    if (digital !== this.pocsag) this.pocsag?.reset();
     if (digital !== this.aprs) this.aprs?.reset();
     if (digital !== this.rs41) this.rs41?.reset();
     if (digital !== this.textModem) this.textModem?.reset();
@@ -525,6 +535,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.adsb.reset();
     this.ais.reset();
     this.srd?.reset();
+    this.pocsag?.reset();
     this.aprs?.reset();
     this.rs41?.reset();
     this.textModem?.reset();
@@ -540,6 +551,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.reset();
     const task = (async () => {
       this.srd?.dispose();
+      this.pocsag?.dispose();
       this.aprs?.dispose();
       this.rs41?.dispose();
       this.textModem?.dispose();

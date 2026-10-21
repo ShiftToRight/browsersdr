@@ -33,6 +33,7 @@ import "./ModeChooser.css";
 const categoryIcons = {
   "All modes": LayoutGrid,
   Broadcast: RadioTower,
+  Paging: RadioTower,
   Aviation: Plane,
   Marine: Ship,
   Amateur: Radio,

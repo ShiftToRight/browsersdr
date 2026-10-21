@@ -22,6 +22,7 @@ export interface DecoderRecord {
   map?: TargetMapPresentation;
 }
 export const DECODER_FORMATS = [
+  {mode:"POCSAG",label:"POCSAG · Paging",title:"Paging messages"},
   { mode: "WEFAX", label: "WEFAX · Images", title: "Weather charts" },
   { mode: "SSTV", label: "SSTV · Images", title: "Amateur pictures" },
   { mode: "CW-TEXT", label: "CW + text", title: "Tentative Morse transcription" },
@@ -73,6 +74,7 @@ export function decoderAcceptedCount(
       return receiver.adsb?.validFrames ?? 0;
     case "AIS":
       return receiver.ais?.validFrames ?? 0;
+    case "POCSAG": return receiver.pocsag?.counters.complete ?? 0;
     case "APRS":
       return receiver.aprs?.counters.validAx25Frames ?? 0;
     case "RS41":
@@ -99,6 +101,11 @@ export function decoderRecords(
 ): DecoderRecord[] {
   const generation = acquisitionGeneration(receiver);
   const key = (id: string | number) => `${mode}:${generation}:${id}`;
+  if (mode === "POCSAG") return (receiver.pocsag?.messages ?? []).map((m): DecoderRecord => ({
+    key: key(m.sequence), label: m.address === null ? "Unknown address" : `RIC ${m.address}`, summary: m.text || "Address only",
+    integrity: `${m.complete ? "Complete framing" : "Partial"} · ${m.erasures.length ? "Erasures" : m.correctedBits ? "Corrected codewords" : "Clean codewords"}`, clock: clock(m.provenance),
+    fields: [["Display",m.displayTruncated ? "Truncated at 2,048 characters; raw payload retained" : "Full bounded text"],["Bit rate",`${m.rate} bit/s`],["Function",String(m.function ?? "Unknown")],["Polarity",m.polarity],["Interpretation",m.interpretation],["Corrected bits",String(m.correctedBits)],["Ending",m.ending],["Payload bits",m.payloadBits],["First input sample",String(m.provenance.firstInputSampleIndex)]], raw:m,
+  })).reverse();
   if ((mode === "WEFAX" || mode === "SSTV") && receiver.textModem?.image?.rows) {
     const image = receiver.textModem.image;
     return [{ key: key(image.id), label: `${image.mode} image`, summary: `${image.width} × ${image.rows} received rows`, integrity: image.reason, clock: clock(image.provenance), fields: [["Rows", String(image.rows)], ["Complete", image.complete ? "Yes · synchronization only" : "Partial"], ["Checksum", "None"]], raw: image }];
@@ -408,7 +415,7 @@ export function decoderJson(value: unknown, indentation = 2): string {
   return JSON.stringify(
     value,
     (_key, item: unknown) =>
-      item instanceof Uint8Array ? Array.from(item) : item,
+      item instanceof Uint8Array || item instanceof Uint32Array ? Array.from(item) : item,
     indentation,
   );
 }
@@ -416,7 +423,7 @@ export const DECODER_EXPORT_MAX_BYTES = 256 * 1024;
 export function decoderRetention(mode: ReceiverMode) {
   return {
     maximumResults:
-      isTextMode(mode) ? 16 : mode === "DAB"
+      mode === "POCSAG" || isTextMode(mode) ? 16 : mode === "DAB"
         ? 64
         : mode === "WBFM"
           ? 1
@@ -424,7 +431,7 @@ export function decoderRetention(mode: ReceiverMode) {
             ? 50
             : 32,
     maximumMessages:
-      isTextMode(mode) ? 16 : mode === "SRD" ? 4 : mode === "APRS" || mode === "RS41" ? 32 : 0,
+      mode === "POCSAG" || isTextMode(mode) ? 16 : mode === "SRD" ? 4 : mode === "APRS" || mode === "RS41" ? 32 : 0,
     policy:
       "Bounded current published state, not durable history; protocol fields may have been retained from earlier accepted records.",
   };

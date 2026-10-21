@@ -1,5 +1,6 @@
 import { isTextMode } from "../textmodem/settings";
 import { lazy, Suspense } from "react";
+const PocsagPanel = lazy(() => import("./PocsagPanel").then(module => ({default:module.PocsagPanel})));
 const TextDecodePanel = lazy(() => import("./TextDecodePanel").then(module => ({ default: module.TextDecodePanel })));
 import { useVisibleReceiver } from "./useVisibleReceiver";
 import type {
@@ -83,6 +84,7 @@ function downloadSrdSnapshot(receiver: ReceiverSnapshot): void {
 }
 
 export function dataAcquisitionSummary(receiver: ReceiverSnapshot, mode: ReceiverMode): string {
+  if (mode === "POCSAG") return `${receiver.pocsag?.state ?? "ready"} · ${receiver.pocsag?.counters.complete ?? 0} complete framing · ${receiver.pocsag?.counters.partial ?? 0} partial`;
   const worker = mode === "APRS" ? receiver.aprsWorker : mode === "RS41" ? receiver.rs41Worker : receiver.srdWorker;
   const current = !worker || worker.generation === receiver.sessionGeneration;
   const accepted = !current ? 0 : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames ?? 0
@@ -135,7 +137,7 @@ export function DecodedResults({
                 ? "Demodulation disabled"
                 : mode === "DAB"
                   ? "DAB+ audio output"
-                  : mode === "CW-TEXT" ? "CW audio + tentative text" : ["ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode)
+                  : mode === "CW-TEXT" ? "CW audio + tentative text" : ["ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode)
                     ? "Data acquisition"
                     : "Audio output"}
           </span>
@@ -147,7 +149,7 @@ export function DecodedResults({
                 : mode === "DAB"
                   ? (receiver.dab?.message ?? "Not active")
                   : isTextMode(mode) ? `${receiver.textModem?.counters.characters ?? 0} decoded characters`
-                  : ["APRS", "RS41", "SRD"].includes(mode) ? dataAcquisitionSummary(receiver, mode)
+                  : ["POCSAG", "APRS", "RS41", "SRD"].includes(mode) ? dataAcquisitionSummary(receiver, mode)
                     : mode === "ADS-B"
                         ? (receiver.adsb?.message ?? "Not active")
                         : mode === "AIS"
@@ -161,7 +163,7 @@ export function DecodedResults({
               ? "Raw I/Q continues to feed the spectrum, waterfall, surveys and recordings."
               : mode === "DAB"
                 ? `Mode I · browser HE-AAC · ${Math.round(volume * 100)}% volume`
-                : isTextMode(mode) ? "Receive-only text · open Decoder for messages and export" : mode === "APRS"
+                : mode === "POCSAG" ? "Receive-only paging · 512 / 1200 / 2400 bit/s" : isTextMode(mode) ? "Receive-only text · open Decoder for messages and export" : mode === "APRS"
                   ? "1200-baud Bell-202 · AX.25 FCS"
                   : mode === "RS41"
                     ? "4800 bit/s · unencrypted RS41"
@@ -187,7 +189,7 @@ export function DecodedResults({
             </button>
           )}
           <span
-            className={`status-pill ${!modeChangePending && (isTextMode(mode) ? receiver.textModem?.status === "decoding" : mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
+            className={`status-pill ${!modeChangePending && (mode === "POCSAG" ? ["receiving", "synchronized", "degraded"].includes(receiver.pocsag?.state ?? "") : isTextMode(mode) ? receiver.textModem?.status === "decoding" : mode === "DAB" ? receiver.dab?.state === "synchronized" : mode === "ADS-B" ? receiver.adsb?.validFrames : mode === "AIS" ? receiver.ais?.validFrames : mode === "SRD" ? receiver.srd?.counters.bursts : mode === "APRS" ? receiver.aprs?.counters.validAx25Frames : mode === "RS41" ? receiver.rs41?.counters.uncorrectedFrames || receiver.rs41?.counters.correctedFrames : receiver.rds?.validGroups) ? "status-running" : "status-idle"}`}
           >
             {modeChangePending
               ? "reconfiguring"
@@ -197,7 +199,7 @@ export function DecodedResults({
                   ? (receiver.dab?.state ?? "not started")
                   : mode === "ADS-B"
                     ? `${receiver.adsb?.validFrames ?? 0} valid frames`
-                    : isTextMode(mode) ? receiver.textModem?.status ?? "not started" : mode === "APRS"
+                    : mode === "POCSAG" ? receiver.pocsag?.state ?? "ready" : isTextMode(mode) ? receiver.textModem?.status ?? "not started" : mode === "APRS"
                       ? `${receiver.aprs?.counters.validAx25Frames ?? 0} FCS-valid packets`
                       : mode === "RS41"
                         ? `${(receiver.rs41?.counters.uncorrectedFrames ?? 0) + (receiver.rs41?.counters.correctedFrames ?? 0)} integrity-valid frames`
@@ -214,7 +216,7 @@ export function DecodedResults({
           <AudioCapturePanel />
         </div>
         {source !== "synthetic" &&
-          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(
+          ["WBFM", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(
             mode,
           ) && (
             <div className="rds-content">
@@ -227,7 +229,7 @@ export function DecodedResults({
                       ? "Aircraft targets"
                       : mode === "AIS"
                         ? "Vessel targets"
-                        : isTextMode(mode) ? (mode === "WEFAX" || mode === "SSTV" ? `${mode} images` : `${mode === "PSK31" ? "BPSK31" : mode} text & messages`) : mode === "APRS"
+                        : mode === "POCSAG" ? "Paging messages" : isTextMode(mode) ? (mode === "WEFAX" || mode === "SSTV" ? `${mode} images` : `${mode === "PSK31" ? "BPSK31" : mode} text & messages`) : mode === "APRS"
                           ? "APRS stations"
                           : mode === "RS41"
                             ? "RS41 radiosondes"
@@ -240,7 +242,7 @@ export function DecodedResults({
                   Spectrum-only mode keeps RF acquisition and analysis active
                   without sending samples to an audio or digital decoder.
                 </p>
-              ) : isTextMode(mode) ? <Suspense fallback={<p role="status">Loading decoded text…</p>}><TextDecodePanel receiver={receiver} mode={mode} /></Suspense> : mode === "APRS" || mode === "RS41" ? (
+              ) : mode === "POCSAG" ? <Suspense fallback={<p role="status">Loading paging messages…</p>}><PocsagPanel receiver={receiver} /></Suspense> : isTextMode(mode) ? <Suspense fallback={<p role="status">Loading decoded text…</p>}><TextDecodePanel receiver={receiver} mode={mode} /></Suspense> : mode === "APRS" || mode === "RS41" ? (
                 <Suspense fallback={<p role="status">Loading packet details…</p>}><PacketDecodePanel receiver={receiver} mode={mode} /></Suspense>
               ) : mode === "SRD" ? (
                 <>
@@ -802,7 +804,7 @@ export function ReceiverMetadataSummary(props: { controller: ReceiverController;
   if (!presenting || receiver.session?.source !== props.source || receiver.session?.mode !== props.mode) return null;
   const dab = receiver.dab;
   const station = dab?.stations?.find(s => s.serviceId === dab.serviceId && s.subchannelId === dab.subchannelId);
-  const summary = props.mode === "WBFM" ? [`FM stereo reception: ${fmStereoReceptionLabel(receiver)}`, receiver.rds?.programmeService || receiver.rds?.pi, receiver.rds?.radioText].filter(Boolean).join(" · ")
+  const summary = props.mode === "POCSAG" ? `${receiver.pocsag?.detectedRate ?? "Auto"} bit/s · ${receiver.pocsag?.state ?? "ready"} · ${receiver.pocsag?.counters.complete ?? 0} complete messages` : props.mode === "WBFM" ? [`FM stereo reception: ${fmStereoReceptionLabel(receiver)}`, receiver.rds?.programmeService || receiver.rds?.pi, receiver.rds?.radioText].filter(Boolean).join(" · ")
     : [station?.label || dab?.ensemble?.label, dab?.programmeMetadata?.text].filter(Boolean).join(" · ");
   return summary ? <p className="collapsed-metadata" role="status" title={summary}>{summary}</p> : null;
 }

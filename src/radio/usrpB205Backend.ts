@@ -546,7 +546,7 @@ export class Usrpb205Backend implements ReceiverBackend {
       channelBandwidthHz: selection.mode.bandwidthHz,
       squelch: selection.mode.squelch,
       beatToneHz: selection.mode.beatToneHz,
-      srd: selection.mode.srd, textModem: selection.mode.textModem,
+      srd: selection.mode.srd, textModem: selection.mode.textModem, pocsag: selection.mode.pocsag,
       gainDb: null,
       sampleFormat: "planar-f32-iq-normalized",
       usrpB205: structuredClone(details),
@@ -616,7 +616,7 @@ export class Usrpb205Backend implements ReceiverBackend {
       if (!hardware) {
         const metadata = this.publish(this.details!, selection);
         this.check(token);
-        if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
+        if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
           await this.pipeline.prepare({ ...metadata, sessionGeneration: generation });
         }
         this.pipeline.retune({ ...metadata, sessionGeneration: generation });
@@ -636,7 +636,7 @@ export class Usrpb205Backend implements ReceiverBackend {
       this.check(token);
       if (!this.workerSession)
         this.adapter.ready({ generation: this.transport!.diagnostics.generation, details });
-      if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
+      if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration: generation }).mode)) {
         await this.pipeline.prepare({ ...metadata, sessionGeneration: generation });
       }
       this.pipeline.retune({ ...metadata, sessionGeneration: generation });

@@ -142,6 +142,8 @@ export class BoundedDigitalWorkerAdapter<
     this.readyGeneration = -1;
     for (const waiter of this.readiness) { clearTimeout(waiter.timer); waiter.reject(new Error("Digital configuration changed before readiness.")); }
     this.readiness.clear();
+    for (const waiter of this.flushes.values()) { clearTimeout(waiter.timer); waiter.reject(new Error("Digital configuration changed before flush.")); }
+    this.flushes.clear();
     this.generation = configuration.generation;
     this.pendingDiscontinuity = undefined;
     this.worker.postMessage({

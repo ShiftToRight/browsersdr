@@ -81,7 +81,7 @@ export function planChannelCapture(
     session.channelBandwidthHz / (session.mode === "ADS-B" ? 0.9 : 0.7),
     [
       "SRD",
-      "APRS",
+      "POCSAG", "APRS",
       "RS41",
       "RTTY",
       "PSK31",
@@ -101,7 +101,7 @@ export function planChannelCapture(
       if (
         ![
           "SRD",
-          "APRS",
+          "POCSAG", "APRS",
           "RS41",
           "RTTY",
           "PSK31",

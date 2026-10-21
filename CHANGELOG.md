@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0 — 2026-10-21
+
+- Add POCSAG paging reception and recording replay at 512, 1200 and 2400 bit/s, with message details, framing and correction evidence, filters and text/JSON exports.
+- Preserve POCSAG settings in recordings and SigMF metadata, with bounded worker queues and explicit partial-message endings.
+- Improve acquisition with short preambles and carrier offsets while retaining conservative framing validation.
+- Catch up overdue recording-replay blocks at every supported rate within existing work and memory limits, so delayed browser timers do not leave replay needlessly behind.
+
 ## 1.12.0 — 2026-10-21
 
 - Shared RF frequency Search now uses SigIntAtlas’s reviewed public catalog. Choose Automatic, Live or Saved, with a dated offline fallback and explicit unavailable states. Live updates and new protocol families appear without rebuilding BrowserSDR.

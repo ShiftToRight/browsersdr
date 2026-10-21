@@ -1,3 +1,4 @@
+import type { PocsagSettings } from "../pocsag/settings";
 import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
 import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
 import type { UsrpB205Ci16RecordingFormat } from "./ci16Recording";
@@ -13,6 +14,7 @@ export const SIGMF_VERSION = "1.2.6" as const;
 export const SIGMF_RECORDER = "BrowserSDR" as const;
 
 export interface SigmfGlobal {
+  "browsersdr:pocsag"?: PocsagSettings;
   "browsersdr:reception"?: import("./receptionEvidence").ReceptionContext;
   "core:datatype": "cu8" | "ci8" | "ci16_le";
   "core:version": typeof SIGMF_VERSION;
@@ -267,6 +269,7 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
       "core:recorder": SIGMF_RECORDER,
       "core:sha512": await recordingSha512Hex(recording),
       "core:description": describeRecording(recording),
+      ...(metadata.mode === "POCSAG" && metadata.pocsag ? {"core:extensions": [{name:"browsersdr" as const,version:"1.0.0" as const,optional:true as const}], "browsersdr:pocsag":metadata.pocsag} : {}),
       ...(metadata.format !== CHANNEL_RECORDING_FORMAT && metadata.format !== RECORDING_FORMAT && metadata.format !== CI16_RECORDING_FORMAT && metadata.format !== BLADERF_SC16_RECORDING_FORMAT && metadata.hardware ? { "core:hw": `${metadata.hardware?.kind === "hackrf-one" ? "HackRF One" : "HackRF Pro"} via WebUSB; board ${metadata.hardware.boardId}; revision ${metadata.hardware.boardRevisionRaw}; API ${metadata.hardware.usbApiVersion}; firmware ${metadata.hardware.firmwareVersion}; serial ${metadata.hardware.serialWords.map(word => word.toString(16).padStart(8, "0")).join("")}` } : {}),
       ...(metadata.format === CI16_RECORDING_FORMAT ? { "core:hw": `USRP B205-mini via WebUSB; ${metadata.hardware.capabilities.identity.productName}; serial ${metadata.hardware.capabilities.identity.serialNumber ?? "unavailable"}; FPGA SHA-256 ${metadata.hardware.capabilities.fpga.imageSha256}; UHD profile ${metadata.hardware.capabilities.protocolProfile}` } : {}),
       ...(metadata.format === BLADERF_SC16_RECORDING_FORMAT ? {

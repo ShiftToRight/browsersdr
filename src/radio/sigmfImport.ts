@@ -192,7 +192,7 @@ export async function importSigmfRecording(
     throw new Error("SigMF CI16 needs a supported explicit sample format/scaling; Q11 is never inferred.");
   const sampleCount = byteLength / bytesPerComplexSample;
   const { centerFrequencyHz, captureStartedAt, knownGaps } = captureDetails(root.captures, sampleCount);
-  const mode = normalizeModeSettings(options.modeSettings);
+  const mode = normalizeModeSettings({...options.modeSettings, ...(options.modeSettings.mode === "POCSAG" && options.modeSettings.pocsag === undefined && global["browsersdr:pocsag"] !== undefined ? {pocsag:global["browsersdr:pocsag"] as import("../pocsag/settings").PocsagSettings} : {})});
   validateModeSampleRate(mode.mode, encoding === "ci16_le" || encoding === "ci8" ? channelSampleRate(nativeFormat?.format === CHANNEL_RECORDING_FORMAT ? finite(object(nativeFormat.channelCapture, "channel capture").dspSampleRateHz, "channel DSP sample rate") : nativeFormat?.format === BLADERF_SC16_RECORDING_FORMAT ? finite(nativeFormat.nativeSampleRateHz, "nominal bladeRF sample rate") : sampleRateHz) : sampleRateHz);
   const selectedChannelFrequencyHz = options.selectedChannelFrequencyHz ?? centerFrequencyHz;
 
@@ -220,6 +220,7 @@ export async function importSigmfRecording(
     ...(mode.beatToneHz !== undefined ? { beatToneHz: mode.beatToneHz } : {}),
     ...(mode.srd ? { srd: mode.srd } : {}),
     ...(mode.textModem ? { textModem: mode.textModem } : {}),
+    ...(mode.pocsag ? {pocsag:mode.pocsag} : {}),
     knownGaps: importGapAnnotations(root.annotations, knownGaps, sampleCount),
     stopReason: "import",
     provenance: "Imported from a local SigMF pair; original metadata text is retained without treating annotations as receiver settings.",

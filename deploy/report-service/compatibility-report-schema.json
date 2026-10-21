@@ -298,6 +298,7 @@
                   "dab-plus-audio",
                   "adsb",
                   "ais",
+                  "pocsag",
                   "aprs",
                   "rs41",
                   "rtty",

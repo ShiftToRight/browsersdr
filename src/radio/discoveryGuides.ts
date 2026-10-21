@@ -199,6 +199,7 @@ export const DISCOVERY_GUIDES: readonly DiscoveryGuide[] = [
       ["WEFAX", "Weather-fax chart images", ["wefax", "radiofax", "weather chart"]],
       ["SSTV", "SSTV Martin M1/M2 pictures", ["sstv", "martin", "slow scan television"]],
       ["CW-TEXT", "CW text assistant", ["morse text", "cw text", "transcription"]],
+      ["POCSAG", "POCSAG radio paging", ["pocsag", "pager", "paging", "ric", "capcode"]],
       ["RS41", "RS41 radiosondes", ["rs41", "radiosonde", "weather balloon"]],
       ["SRD", "Short-range devices", ["srd", "ook", "2fsk", "sensors"]],
     ] as const

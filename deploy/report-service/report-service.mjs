@@ -374,6 +374,7 @@ export const COMMUNITY_FEATURE_MODES = {
   wefax: "WEFAX",
   sstv: "SSTV",
   "cw-text": "CW-TEXT",
+  pocsag: "POCSAG",
   aprs: "APRS",
   rs41: "RS41",
   "srd-acurite": "SRD",

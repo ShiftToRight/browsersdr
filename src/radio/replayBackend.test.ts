@@ -42,7 +42,7 @@ beforeEach(() => {
   });
   vi.stubGlobal("AudioBufferSourceNode", class { connect() {} start() {} });
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function setupRecording(recording: IqRecording, compiledChannel?: (rate: number) => Promise<WasmChannelFilter>) {
   const samples: SampleBlock[] = [];
@@ -129,6 +129,27 @@ function dabTransitionSignal(): { I: Float32Array; Q: Float32Array } {
 }
 
 describe("real replay backend integration", () => {
+  it.each([false, true])("catches up after clamped timers at 2.4 MS/s (Blob=%s) and reaches EOF", async blob => {
+    const count = 8192 * 40;
+    const recording = recordingAt(2_400_000, 1_090_000_000, new Float32Array(count), new Float32Array(count));
+    recording.metadata.mode = "OFF";
+    recording.metadata.channelBandwidthHz = defaultModeSettings("OFF").bandwidthHz;
+    if (blob) {
+      recording.dataBlob = new Blob([recording.data.slice()]);
+      recording.data = new Uint8Array();
+    }
+    const schedule = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => schedule(callback, Math.max(20, delay ?? 0), ...args));
+    const f = setupRecording(recording);
+    await f.backend.start(f.options);
+    await vi.advanceTimersByTimeAsync(160);
+    expect(f.backend.getReplayPosition()).toBe(count);
+    expect(f.events.sourceEnded).toHaveBeenCalledOnce();
+    expect(f.samples.reduce((sum, block) => sum + block.I.length, 0)).toBe(count);
+    expect(f.events.runtimeError).not.toHaveBeenCalled();
+    await f.backend.stop();
+  });
+
   it("uses the canonical CU8 endpoint normalization", async () => {
     const recording = createDeterministicRecordingFixture(1);
     recording.data.set([0, 255]);

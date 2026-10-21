@@ -1,4 +1,6 @@
+import { defaultPocsagSettings, type PocsagSettings } from "./pocsag/settings";
 import { isTextMode, defaultTextModemSettings, type TextModemSettings } from "./textmodem/settings";
+const PocsagControls = lazy(() => import("./ui/PocsagControls").then(module => ({default:module.PocsagControls})));
 const TextModemControls = lazy(() => import("./ui/TextModemControls").then(module => ({ default: module.TextModemControls })));
 import { useCaptureRetention } from "./ui/useCaptureRetention";
 import { COMPATIBILITY_DETAILS, COMPATIBILITY_STATUS_LABELS, DESKTOP_SUPPORT_SCOPE, SUPPORT_EVIDENCE, type CompatibilityDetailView } from "./radio/supportEvidence";
@@ -192,7 +194,10 @@ type ReplayImportFormat = "browsersdr" | "sigmf";
 
 function selectedSigmfModeSettings(mode: ReceiverMode | "") {
   if (!mode) throw new Error("Choose a replay mode for the SigMF capture.");
-  return defaultModeSettings(mode);
+  const settings = defaultModeSettings(mode);
+  // This chooser selects only the mode; let optional SigMF decoder settings apply.
+  if (mode === "POCSAG") delete settings.pocsag;
+  return settings;
 }
 
 export function waitForCaptureDelay(
@@ -1035,7 +1040,7 @@ export function ReceiverApp({
   }, [spectrumDisplay]);
   const [sourceAdvancedOpen, setSourceAdvancedOpen] = useState(false);
   const [channelAdvancedOpen, setChannelAdvancedOpen] = useState(
-    !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(initialPreferences.modeSettings.mode),
+    !["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(initialPreferences.modeSettings.mode),
   );
   const [channelTuneIssue, setChannelTuneIssue] = useState<string>();
   const [autoRecenter, setAutoRecenter] = useState(() =>
@@ -1059,6 +1064,7 @@ export function ReceiverApp({
   const [beatToneHz, setBeatToneHz] = useState(
     initialPreferences.modeSettings.beatToneHz ?? 600,
   );
+  const [pocsagSettings, setPocsagSettings] = useState<PocsagSettings>(initialPreferences.modeSettings.pocsag ?? defaultPocsagSettings());
   const [textModemSettings, setTextModemSettings] = useState<TextModemSettings>(initialPreferences.modeSettings.textModem ?? defaultTextModemSettings());
   const [srdSettings, setSrdSettings] = useState<SrdModeSettings>(
     initialPreferences.modeSettings.srd ?? defaultSrdModeSettings(),
@@ -1098,8 +1104,9 @@ export function ReceiverApp({
       beatToneHz,
       ...(mode === "SRD" ? { srd: srdSettings } : {}),
       ...(isTextMode(mode) ? { textModem: textModemSettings } : {}),
+      ...(mode === "POCSAG" ? {pocsag:pocsagSettings} : {}),
     }),
-    [bandwidthHz, beatToneHz, mode, squelch, srdSettings, textModemSettings],
+    [bandwidthHz, beatToneHz, mode, squelch, srdSettings, textModemSettings, pocsagSettings],
   );
   useEffect(() => {
     saveSourcePreferences(preferenceStorage, source, {
@@ -1808,8 +1815,9 @@ export function ReceiverApp({
     setSquelch(next.modeSettings.squelch);
     setBeatToneHz(next.modeSettings.beatToneHz ?? 600);
     setSrdSettings(next.modeSettings.srd ?? defaultSrdModeSettings());
+    setPocsagSettings(next.modeSettings.pocsag ?? defaultPocsagSettings());
     setTextModemSettings(next.modeSettings.textModem ?? defaultTextModemSettings());
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(next.modeSettings.mode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(next.modeSettings.mode));
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
@@ -1831,9 +1839,10 @@ export function ReceiverApp({
       setSquelch(loadedReplay.metadata.squelch);
       setBeatToneHz(loadedReplay.metadata.beatToneHz ?? 600);
       setSrdSettings(loadedReplay.metadata.srd ?? defaultSrdModeSettings());
+      setPocsagSettings(loadedReplay.metadata.pocsag ?? defaultPocsagSettings());
       setTextModemSettings(loadedReplay.metadata.textModem ?? defaultTextModemSettings());
       setChannelAdvancedOpen(
-        !["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(loadedReplay.metadata.mode),
+        !["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(loadedReplay.metadata.mode),
       );
       setFrequencyMhz(
         loadedReplay.metadata.selectedChannelFrequencyHz / 1_000_000,
@@ -1912,7 +1921,7 @@ export function ReceiverApp({
       const active = controller.getSnapshot().session;
       if (
         active?.mode === settings.mode &&
-        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode)
+        !["OFF", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(settings.mode)
       ) {
         controller.updateAnalogMode(settings);
         return;
@@ -1948,11 +1957,12 @@ export function ReceiverApp({
     if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(nextMode));
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
     setSrdSettings(next.srd ?? defaultSrdModeSettings());
+    setPocsagSettings(next.pocsag ?? defaultPocsagSettings());
     setTextModemSettings(next.textModem ?? defaultTextModemSettings());
     if (running) applyModeSettings(next);
     if (sourceConfigurationEditable)
@@ -2119,6 +2129,7 @@ export function ReceiverApp({
       setSquelch(accepted.settings.squelch);
       setBeatToneHz(accepted.settings.beatToneHz ?? 600);
       setSrdSettings(accepted.settings.srd ?? defaultSrdModeSettings());
+      setPocsagSettings(accepted.settings.pocsag ?? defaultPocsagSettings());
       setTextModemSettings(accepted.settings.textModem ?? defaultTextModemSettings());
       if (!running) setSampleRateHz(nextRate);
       setFrequencyMhz(accepted.frequencyHz / 1e6);
@@ -2126,7 +2137,7 @@ export function ReceiverApp({
       setChannelTuneIssue(undefined);
       // A stored catalog reference is not a freshly checked receiver candidate.
       setReceptionCandidate(undefined);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(accepted.settings.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(accepted.settings.mode));
       return `Recalled ${accepted.name}. ${running ? "Applied to reception." : "Start remains manual."}${accepted.atlasReference ? " Saved Atlas reference has not been rechecked; station identity is unconfirmed." : ""}`;
     } finally {
       stationSelectionPending.current = false;
@@ -2437,10 +2448,11 @@ export function ReceiverApp({
       setLoadedReplay(recording);
       setFrequencyMhz(recording.metadata.selectedChannelFrequencyHz / 1_000_000);
       setMode(recording.metadata.mode);
-      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(recording.metadata.mode));
+      setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(recording.metadata.mode));
       setBandwidthHz(recording.metadata.channelBandwidthHz);
       setSquelch(recording.metadata.squelch);
       setSrdSettings(recording.metadata.srd ?? defaultSrdModeSettings());
+      setPocsagSettings(recording.metadata.pocsag ?? defaultPocsagSettings());
       setTextModemSettings(recording.metadata.textModem ?? defaultTextModemSettings());
       setBeatToneHz(recording.metadata.beatToneHz ?? 600);
       setSampleRateHz(recordingRoutingSampleRate(recording.metadata));
@@ -3471,7 +3483,7 @@ export function ReceiverApp({
                   <FmStationSummary controller={controller} />
                 )}
                 {source !== "synthetic" &&
-                  !["OFF", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode) && (
+                  !["OFF", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode) && (
                     <>
                       <label htmlFor="receiver-volume">
                         <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} /><span id="receiver-volume-label">Volume</span> <output aria-hidden="true">{Math.round(volume * 100)}%</output></span>
@@ -3497,6 +3509,7 @@ export function ReceiverApp({
                       </label>
                     </>
                   )}
+                {mode === "POCSAG" && <Suspense fallback={<p role="status">Loading paging controls…</p>}><PocsagControls settings={pocsagSettings} disabled={Boolean(modeChangeBlockedReason)} onChange={next=>{setPocsagSettings(next); void applyModeSettings({...currentModeSettings,pocsag:next});}} /></Suspense>}
                 {isTextMode(mode) && <Suspense fallback={<p role="status">Loading decoder controls…</p>}><TextModemControls mode={mode} settings={textModemSettings} disabled={Boolean(modeChangeBlockedReason)} onChange={next => {
                   setTextModemSettings(next);
                   void applyModeSettings({ ...currentModeSettings, textModem: next });
@@ -4114,7 +4127,7 @@ export function ReceiverApp({
               {captureCurrentChannel && (
                 <p className="display-note" aria-live="polite">
                   {channelCapturePreview.plan
-                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
+                    ? `${channelCapturePreview.plan.bandwidthHz.toLocaleString()} Hz channel · Auto: ${formatSampleRate(channelCapturePreview.plan.outputSampleRateHz)} · ${(captureRateHz * captureBytesPerSample * 60 / 1_000_000).toFixed(2)} MB/min. Captures channel I/Q before audio and squelch. Frequency or bandwidth changes end the recording.${["DAB", "ADS-B", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode) ? " Auto keeps the sample rate required by the decoder." : ""}`
                     : channelCapturePreview.error}
                 </p>
               )}
@@ -4575,6 +4588,7 @@ export function ReceiverApp({
             setSquelch(settings.squelch);
             setBeatToneHz(settings.beatToneHz ?? 600);
             setSrdSettings(settings.srd ?? defaultSrdModeSettings());
+            setPocsagSettings(settings.pocsag ?? defaultPocsagSettings());
             setTextModemSettings(settings.textModem ?? defaultTextModemSettings());
             if (sourceConfigurationEditable)
               setSampleRateHz(compatibleSourceRate(source, investigationMode, sampleRateHz) ?? sampleRateHz);

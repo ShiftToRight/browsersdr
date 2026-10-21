@@ -1,3 +1,4 @@
+import { PocsagPanel } from "./PocsagPanel";
 import { isTextMode } from "../textmodem/settings";
 import { TextDecodePanel } from "./TextDecodePanel";
 import { useVisibleReceiver } from "./useVisibleReceiver";
@@ -71,6 +72,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   }>();
   const selectionTrigger = useRef<HTMLElement | SVGElement | null>(null);
   const exportMenu = useRef<HTMLDetailsElement>(null);
+  const [clearedPaging, setClearedPaging] = useState<{identity:string;keys:string[]}>();
   const [trayCollapsed, setTrayCollapsed] = useState(false);
   const [fitRequest, setFitRequest] = useState(0);
   const [filter, setFilter] = useState("");
@@ -126,7 +128,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   const display = held ?? live;
   const hasReviewData =
     display.results.length > 0 || display.messages.length > 0;
-  const hasMessages = isTextMode(reviewMode) || ["APRS", "RS41", "SRD"].includes(reviewMode);
+  const hasMessages = isTextMode(reviewMode) || ["POCSAG", "APRS", "RS41", "SRD"].includes(reviewMode);
   const supportsMap = ["ADS-B", "AIS", "APRS", "RS41"].includes(reviewMode);
   const preferredView =
     view?.format === format ? view.value : supportsMap ? "map" : "results";
@@ -138,6 +140,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   const records =
     effectiveView === "messages" ? display.messages : display.results;
   const filtered = presenting ? records.filter((r) =>
+    !(reviewMode === "POCSAG" && clearedPaging?.identity === identity && clearedPaging.keys.includes(r.key)) &&
     `${r.label} ${r.summary} ${r.fields.flat().join(" ")}`
       .toLowerCase()
       .includes(filter.toLowerCase()),
@@ -257,8 +260,8 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
           ? "readings"
           : "frames";
   const reviewStatus = held
-    ? `Frozen at ${held.frozenAt}. Reception continues; ${Math.max(0, live.accepted - held.accepted).toLocaleString()} additional accepted ${unit}.`
-    : `${records.length} retained ${geographic ? "targets" : effectiveView === "messages" ? "records" : "results"}${geographic ? ` · ${positioned.length} positioned` : ""} · ${live.accepted.toLocaleString()} accepted ${unit}`;
+    ? `Frozen at ${held.frozenAt}. Reception continues; ${Math.max(0, live.accepted - held.accepted).toLocaleString()} additional ${reviewMode === "POCSAG" ? "messages with complete framing" : `accepted ${unit}`}.`
+    : `${records.length} retained ${geographic ? "targets" : effectiveView === "messages" ? "records" : "results"}${geographic ? ` · ${positioned.length} positioned` : ""} · ${live.accepted.toLocaleString()} ${reviewMode === "POCSAG" ? "messages with complete framing" : `accepted ${unit}`}`;
   const columns = geographic ? geographicColumns(reviewMode) : [];
 
   const inspector = selected && !satellite && (
@@ -360,6 +363,18 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
         </tbody>
       </table>
     </div>
+  ) : reviewMode === "POCSAG" ? (
+    <div className="decoder-record-list decoder-table-wrap" aria-label="Retained paging messages">
+      <table className="decoder-target-table decoder-paging-table">
+        <thead><tr>{["Address", "Message", "Rate / function", "Framing / integrity", "Input clock"].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+        <tbody>{filtered.map(r => <tr key={r.key} className={selected?.key === r.key ? "decoder-row-selected" : undefined}>
+          <td><button type="button" className="decoder-record" aria-pressed={selected?.key === r.key} onClick={event=>selectRecord(r.key,event.currentTarget)}><strong>{r.label}</strong></button></td>
+          <td>{r.summary}</td>
+          <td>{r.fields.find(([f])=>f==="Bit rate")?.[1]} / {r.fields.find(([f])=>f==="Function")?.[1]}</td>
+          <td>{r.integrity}</td><td>{r.clock}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
   ) : (
     <div className="decoder-record-list" aria-label="Retained decoded records">
       {filtered.map((r) => (
@@ -434,7 +449,8 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
             <span className="decoder-state">{stateLabel}</span>
             {!satellite && hasReviewData && (
               <>
-                <label className="decoder-filter">
+                {reviewMode === "POCSAG" && <button type="button" className="secondary" onClick={()=>{setClearedPaging({identity,keys:records.map(r=>r.key)});setSelection(undefined);}}>Clear displayed messages</button>}
+              <label className="decoder-filter">
                   <span className="visually-hidden">Filter results</span>
                   <AppIcon name="search" />
                   <input
@@ -822,6 +838,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               </>
             )}
           </section>
+          {reviewMode === "POCSAG" && applied && <PocsagPanel receiver={receiver} />}
           {isTextMode(reviewMode) && applied && <TextDecodePanel receiver={receiver} mode={reviewMode} />}
           <footer className="decoder-footer">
             {!satellite && (
@@ -904,6 +921,7 @@ function geographicColumns(mode: ReceiverMode): string[] {
       ];
     case "AIS":
       return ["MMSI", "Speed over ground", "Course", "Received channel"];
+
     case "APRS":
       return ["Destination", "Path", "Position ambiguity", "Status"];
     case "RS41":

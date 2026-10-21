@@ -1,3 +1,5 @@
+import { PocsagDigitalReceiver } from "../pocsag/pocsagDigitalReceiver";
+import { pocsagConfiguration } from "../pocsag/settings";
 import type { DigitalInputSampleRateHz } from "../digital/inputRates";
 import { TextDigitalReceiver } from "../textmodem/digitalReceiver";
 import { isTextMode, textModemConfiguration } from "../textmodem/settings";
@@ -42,6 +44,7 @@ import { SrdDigitalReceiver } from "../srd/srdDigitalReceiver";
 import { srdConfigurationForRoute } from "../srd/settings";
 
 const REPLAY_CHUNK_SAMPLES = 8192;
+const REPLAY_MAX_CATCH_UP_BLOCKS = 32;
 
 export class ReplayBackend implements ReceiverBackend {
   private readonly audioContext: AudioContext;
@@ -75,6 +78,7 @@ export class ReplayBackend implements ReceiverBackend {
   private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
+  private readonly pocsag: PocsagDigitalReceiver;
   private readonly aprs: AprsDigitalReceiver;
   private readonly rs41: Rs41DigitalReceiver;
   private readonly textModem: TextDigitalReceiver;
@@ -109,6 +113,7 @@ export class ReplayBackend implements ReceiverBackend {
     );
     this.adsb = new AdsbReceiver((state) => this.events.adsbChanged?.(state));
     this.ais = new AisReceiver((state) => this.events.aisChanged?.(state));
+    this.pocsag = new PocsagDigitalReceiver(({snapshot,diagnostics}) => this.events.pocsagChanged?.(snapshot,diagnostics),error => this.events.runtimeError(error));
     this.aprs = new AprsDigitalReceiver(({ snapshot, diagnostics }) => this.events.aprsChanged?.(snapshot, diagnostics), error => this.events.runtimeError(error));
     this.rs41 = new Rs41DigitalReceiver(({ snapshot, diagnostics }) => this.events.rs41Changed?.(snapshot, diagnostics), error => this.events.runtimeError(error));
     this.textModem = new TextDigitalReceiver(({ snapshot, diagnostics, image }) => this.events.textModemChanged?.(snapshot, diagnostics, image), error => this.events.runtimeError(error));
@@ -126,7 +131,7 @@ export class ReplayBackend implements ReceiverBackend {
       bandwidthHz: sourceMetadata.channelBandwidthHz,
       squelch: sourceMetadata.squelch,
       beatToneHz: sourceMetadata.beatToneHz,
-      srd: sourceMetadata.srd, textModem: sourceMetadata.textModem,
+      srd: sourceMetadata.srd, textModem: sourceMetadata.textModem, pocsag: sourceMetadata.pocsag,
     });
     const metadata: SourceSessionMetadata = {
       source: "replay",
@@ -139,7 +144,7 @@ export class ReplayBackend implements ReceiverBackend {
       channelBandwidthHz: mode.bandwidthHz,
       squelch: mode.squelch,
       beatToneHz: mode.beatToneHz,
-      srd: mode.srd, textModem: mode.textModem,
+      srd: mode.srd, textModem: mode.textModem, pocsag: mode.pocsag,
       gainDb: sourceMetadata.gainDb ?? null,
       ...(sourceMetadata.format !== RECORDING_FORMAT && sourceMetadata.format !== CHANNEL_RECORDING_FORMAT && sourceMetadata.provenanceDetails.originalSource === "hackrf" ? { hackrf: ci8SessionDetails(sourceMetadata as HackrfRecordingFormat) } : {}),
       ...(sourceMetadata.format === BLADERF_SC16_RECORDING_FORMAT ? { bladerf: structuredClone(sourceMetadata.hardware) } : {}),
@@ -147,7 +152,7 @@ export class ReplayBackend implements ReceiverBackend {
     };
     if (sourceMetadata.format !== RECORDING_FORMAT) validateLiveRateBudget(channelSampleRate(metadata.actualSampleRateHz), this.audioContext.sampleRate);
     validateModeSampleRate(mode.mode, channelSampleRate(metadata.actualSampleRateHz));
-    const analogMode = ["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode.mode) ? undefined : createSignalsMode(mode);
+    const analogMode = ["OFF", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode.mode) ? undefined : createSignalsMode(mode);
     this.outputEnabled = mode.mode !== "OFF";
     const channel = metadata.actualSampleRateHz === 19_200_000 ? await this.compiledChannel(metadata.actualSampleRateHz) : undefined;
     if (this.stopped) { channel?.dispose(); throw new DOMException("Replay start was stopped", "AbortError"); }
@@ -172,6 +177,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.receiver.setSampleRate(channelSampleRate(metadata.actualSampleRateHz));
     this.receiver.setDigitalReceiver(this.digitalReceiver(mode.mode), channelSampleRate(metadata.actualSampleRateHz), frequencyOffsetHz, mode.mode === "CW-TEXT");
     await this.dabPlayback?.ensemble.prepare?.();
+    if (mode.mode === "POCSAG") await this.pocsag.prepare();
     if (mode.mode === "APRS") await this.aprs.prepare();
     if (mode.mode === "RS41") await this.rs41.prepare();
     if (isTextMode(mode.mode)) await this.textModem.prepare();
@@ -196,6 +202,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.channel = undefined;
     this.analysis.stop(this.sessionGeneration);
     this.srd.dispose();
+    this.pocsag.dispose();
     this.aprs.dispose();
     this.rs41.dispose();
     this.textModem.dispose();
@@ -227,6 +234,7 @@ export class ReplayBackend implements ReceiverBackend {
     this.rds.setFrequencyOffset(this.channel ? 0 : plan.frequencyOffsetHz);
     this.metadata = { ...this.metadata, sessionGeneration, selectedChannelFrequencyHz: channelFrequencyHz };
     this.prepareSrd(this.metadata, this.channel ? 0 : plan.frequencyOffsetHz);
+    if (this.metadata.mode === "POCSAG") await this.pocsag.prepare();
     if (this.metadata.mode === "APRS") await this.aprs.prepare();
     if (this.metadata.mode === "RS41") await this.rs41.prepare();
     if (isTextMode(this.metadata.mode)) await this.textModem.prepare();
@@ -242,12 +250,12 @@ export class ReplayBackend implements ReceiverBackend {
     validateModeSampleRate(mode.mode, channelSampleRate(this.metadata.actualSampleRateHz));
     const plan = planChannelTune(this.metadata.hardwareCenterFrequencyHz, this.metadata.selectedChannelFrequencyHz, this.metadata.actualSampleRateHz, mode.bandwidthHz);
     if (plan.hardwareRetuneRequired) throw new Error("That channel bandwidth lies outside the recorded capture span.");
-    const analogMode = ["OFF", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode.mode) ? undefined : createSignalsMode(mode);
+    const analogMode = ["OFF", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode.mode) ? undefined : createSignalsMode(mode);
     this.outputEnabled = mode.mode !== "OFF";
     if (analogMode) this.demodulator.setMode(analogMode);
     this.rds.setEnabled(mode.mode === "WBFM");
     this.demodulator.setCwToneFrequency(mode.beatToneHz ?? 600);
-    this.metadata = { ...this.metadata, mode: mode.mode, channelBandwidthHz: mode.bandwidthHz, squelch: mode.squelch, beatToneHz: mode.beatToneHz, srd: mode.srd, textModem: mode.textModem };
+    this.metadata = { ...this.metadata, mode: mode.mode, channelBandwidthHz: mode.bandwidthHz, squelch: mode.squelch, beatToneHz: mode.beatToneHz, srd: mode.srd, textModem: mode.textModem, pocsag: mode.pocsag };
     this.prepareSrd(this.metadata, this.channel ? 0 : this.metadata.selectedChannelFrequencyHz - this.metadata.hardwareCenterFrequencyHz);
     if (mode.mode === "DAB") {
       this.digitalReceiver("DAB");
@@ -310,6 +318,7 @@ export class ReplayBackend implements ReceiverBackend {
     if (mode === "ADS-B") return this.adsb;
     if (mode === "AIS") return this.ais;
     if (mode === "SRD") return this.srd;
+    if (mode === "POCSAG") return this.pocsag;
     if (mode === "APRS") return this.aprs;
     if (mode === "RS41") return this.rs41;
     if (isTextMode(mode)) return this.textModem;
@@ -318,6 +327,7 @@ export class ReplayBackend implements ReceiverBackend {
 
   private prepareSrd(metadata: SourceSessionMetadata, offsetHz: number): void {
     const rate = channelSampleRate(metadata.actualSampleRateHz) as DigitalInputSampleRateHz;
+    if (metadata.mode === "POCSAG") this.pocsag.configureSession(pocsagConfiguration(metadata.pocsag,rate,metadata.sessionGeneration,offsetHz));
     if (metadata.mode === "APRS") this.aprs.configureSession(defaultAprsConfiguration(rate, metadata.sessionGeneration, offsetHz));
     if (metadata.mode === "RS41") this.rs41.configureSession(defaultRs41Configuration(rate, metadata.sessionGeneration, offsetHz));
     if (isTextMode(metadata.mode)) this.textModem.configureSession(textModemConfiguration(metadata.mode, metadata.textModem, rate, metadata.sessionGeneration, offsetHz));
@@ -344,7 +354,7 @@ export class ReplayBackend implements ReceiverBackend {
     if (this.pausedAt !== undefined) { this.timer = window.setTimeout(() => this.scheduleNext(), 25); return; }
     if (this.recording.dataBlob) {
       const bytesPerSample = this.recording.metadata.bytesPerComplexSample;
-      void this.reader.prepare(this.position * bytesPerSample, Math.min(REPLAY_CHUNK_SAMPLES * (recordingRoutingSampleRate(this.recording.metadata) === 19_200_000 ? 32 : 1), this.rangeEnd - this.position) * bytesPerSample)
+      void this.reader.prepare(this.position * bytesPerSample, Math.min(REPLAY_CHUNK_SAMPLES * REPLAY_MAX_CATCH_UP_BLOCKS, this.rangeEnd - this.position) * bytesPerSample)
         .then(() => { if (!this.stopped) this.deliverNext(); })
         .catch(error => { if (!this.stopped) this.events.runtimeError(error); });
     } else this.deliverNext();
@@ -355,10 +365,10 @@ export class ReplayBackend implements ReceiverBackend {
     if (this.pausedAt !== undefined) { this.timer = window.setTimeout(() => this.scheduleNext(), 25); return; }
     try {
       const began = performance.now();
-      const limit = recordingRoutingSampleRate(this.recording.metadata) === 19_200_000 ? 32 : 1;
       let delay = 0;
-      // Catch up after timer clamping without unbounded main-thread work.
-      for (let n = 0; n < limit && !this.stopped && !this.ended; n++) {
+      // All rates can fall behind clamped/delayed browser timers. Drain only
+      // overdue blocks, retaining the same block/time budget and worker credits.
+      for (let n = 0; n < REPLAY_MAX_CATCH_UP_BLOCKS && !this.stopped && !this.ended; n++) {
         delay = this.readNext();
         if (delay > 0 || performance.now() - began >= 6) break;
       }
@@ -373,9 +383,9 @@ export class ReplayBackend implements ReceiverBackend {
       this.demodulator.setSampleRate(channelSampleRate(recordingRoutingSampleRate(this.recording.metadata)));
       this.channel?.reset(this.metadata!.selectedChannelFrequencyHz - this.metadata!.hardwareCenterFrequencyHz);
       this.rds.setSampleRate(channelSampleRate(recordingRoutingSampleRate(this.recording.metadata)));
-      if (this.metadata && (this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode))) {
+      if (this.metadata && (this.metadata.mode === "POCSAG" || this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode))) {
         const missing = gap.missingSamples === null ? null : gap.missingSamples / (this.metadata.actualSampleRateHz / channelSampleRate(this.metadata.actualSampleRateHz));
-        (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41).reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
+        (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "POCSAG" ? this.pocsag : this.metadata.mode === "APRS" ? this.aprs : this.rs41).reset({ reason: "source-gap", missingInputSamples: missing !== null && Number.isSafeInteger(missing) ? missing : null });
       } else this.receiver?.resetDigitalReceiver();
       this.dabPlayback?.reset();
       this.analysis.markDiscontinuity(gap.missingSamples ?? 0);
@@ -395,8 +405,8 @@ export class ReplayBackend implements ReceiverBackend {
       if (this.metadata?.mode === "DAB" && this.dabPlayback) {
         void this.dabPlayback.flush().then(() => { if (!this.stopped) { audioCaptureTap.archive?.finish(this.dabPlayback!.output); this.events.sourceEnded(); } })
           .catch(error => { if (!this.stopped) this.events.runtimeError(error); });
-      } else if (this.metadata && (this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode))) {
-        void (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "APRS" ? this.aprs : this.rs41).flush()
+      } else if (this.metadata && (this.metadata.mode === "POCSAG" || this.metadata.mode === "APRS" || this.metadata.mode === "RS41" || isTextMode(this.metadata.mode))) {
+        void (isTextMode(this.metadata.mode) ? this.textModem : this.metadata.mode === "POCSAG" ? this.pocsag : this.metadata.mode === "APRS" ? this.aprs : this.rs41).flush()
           .then(() => { if (!this.stopped) this.events.sourceEnded(); })
           .catch(error => { if (!this.stopped) this.events.runtimeError(error); });
       } else this.events.sourceEnded();
@@ -404,7 +414,7 @@ export class ReplayBackend implements ReceiverBackend {
     }
     // File replay may wait for a busy decoder: unlike live acquisition, no
     // samples need to be dropped to keep a physical input stream moving.
-    const packetQueue = this.metadata?.mode === "APRS" ? this.aprs.diagnostics
+    const packetQueue = this.metadata?.mode === "POCSAG" ? this.pocsag.diagnostics : this.metadata?.mode === "APRS" ? this.aprs.diagnostics
       : this.metadata?.mode === "RS41" ? this.rs41.diagnostics : this.metadata && isTextMode(this.metadata.mode) ? this.textModem.diagnostics : undefined;
     if (packetQueue && packetQueue.queueCapacityBlocks > 0 && packetQueue.queuedBlocks >= packetQueue.queueCapacityBlocks) return 4;
     const gapPosition = this.recording.metadata.knownGaps[this.nextGap]?.afterSample;

@@ -1,3 +1,4 @@
+import { normalizePocsagSettings, type PocsagSettings } from "../pocsag/settings";
 import { isTextMode, normalizeTextModemSettings, type TextModemSettings } from "../textmodem/settings";
 import "@jtarrio/signals/demod/demodulator.js";
 import { digitalInputProfile } from "../digital/inputRates";
@@ -11,7 +12,7 @@ import {
   type SrdModeSettings,
 } from "../srd/settings";
 
-export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD" | "APRS" | "RS41" | "RTTY" | "PSK31" | "NAVTEX" | "ACARS" | "WEFAX" | "SSTV" | "CW-TEXT";
+export type ReceiverMode = "OFF" | "WBFM" | "NBFM" | "AM" | "USB" | "LSB" | "CW" | "DAB" | "ADS-B" | "AIS" | "SRD" | "POCSAG" | "APRS" | "RS41" | "RTTY" | "PSK31" | "NAVTEX" | "ACARS" | "WEFAX" | "SSTV" | "CW-TEXT";
 
 export const CW_FILTER_BANDWIDTHS_HZ = [100, 250, 500, 1_000] as const;
 export const CW_DEFAULT_BANDWIDTH_HZ = 500;
@@ -28,6 +29,7 @@ export interface ReceiverModeSettings {
   /** Decoder-specific settings; absent on legacy recordings/preferences. */
   srd?: SrdModeSettings;
   textModem?: TextModemSettings;
+  pocsag?: PocsagSettings;
 }
 
 export interface ModeCapabilities {
@@ -37,7 +39,7 @@ export interface ModeCapabilities {
   squelchSettable: boolean;
 }
 
-export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"];
+export const RECEIVER_MODES: readonly ReceiverMode[] = ["OFF", "WBFM", "NBFM", "AM", "USB", "LSB", "CW", "DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"];
 export const SQUELCH_MIN = 0;
 export const SQUELCH_MAX = 6;
 export const MANUAL_GAIN_MIN_DB = 0;
@@ -57,6 +59,7 @@ const MODE_CAPABILITIES: Record<ReceiverMode, ModeCapabilities> = {
   DAB: { bandwidthSettable: false, minimumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, maximumBandwidthHz: DAB_OCCUPIED_BANDWIDTH_HZ, squelchSettable: false },
   "ADS-B": { bandwidthSettable: false, minimumBandwidthHz: ADSB_BANDWIDTH_HZ, maximumBandwidthHz: ADSB_BANDWIDTH_HZ, squelchSettable: false },
   AIS: { bandwidthSettable: false, minimumBandwidthHz: AIS_BANDWIDTH_HZ, maximumBandwidthHz: AIS_BANDWIDTH_HZ, squelchSettable: false },
+  POCSAG: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
   APRS: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
   RS41: { bandwidthSettable: false, minimumBandwidthHz: 20_000, maximumBandwidthHz: 20_000, squelchSettable: false },
   WEFAX: { bandwidthSettable: false, minimumBandwidthHz: 8_000, maximumBandwidthHz: 8_000, squelchSettable: false },
@@ -74,6 +77,7 @@ export function modeCapabilities(mode: ReceiverMode): ModeCapabilities {
 }
 
 export function defaultModeSettings(mode: ReceiverMode): ReceiverModeSettings {
+  if (mode === "POCSAG") return {mode, bandwidthHz: 20_000, squelch: 0, pocsag: normalizePocsagSettings()};
   if (isTextMode(mode) && mode !== "CW-TEXT") return { mode, bandwidthHz: mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings(undefined, mode) };
   if (mode === "OFF") return { mode, bandwidthHz: 1, squelch: 0 };
   if (mode === "CW" || mode === "CW-TEXT") return { mode, bandwidthHz: CW_DEFAULT_BANDWIDTH_HZ, squelch: 0, beatToneHz: CW_DEFAULT_TONE_HZ, ...(mode === "CW-TEXT" ? { textModem: normalizeTextModemSettings(undefined, "CW-TEXT") } : {}) };
@@ -94,6 +98,7 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
   if (!RECEIVER_MODES.includes(settings.mode)) throw new Error(`Unsupported receiver mode: ${String(settings.mode)}`);
   if (!Number.isFinite(settings.bandwidthHz)) throw new Error("Enter a valid channel bandwidth.");
   if (!Number.isFinite(settings.squelch)) throw new Error("Enter a valid squelch level.");
+  if (settings.mode === "POCSAG") return {mode: settings.mode, bandwidthHz: 20_000, squelch: 0, pocsag: normalizePocsagSettings(settings.pocsag)};
   if (isTextMode(settings.mode) && settings.mode !== "CW-TEXT") return { mode: settings.mode, bandwidthHz: settings.mode === "ACARS" ? 12_000 : 8_000, squelch: 0, textModem: normalizeTextModemSettings(settings.textModem, settings.mode) };
   if (settings.mode === "OFF") return { mode: "OFF", bandwidthHz: 1, squelch: 0 };
   if (settings.mode === "CW" || settings.mode === "CW-TEXT") {
@@ -127,7 +132,7 @@ export function normalizeModeSettings(settings: ReceiverModeSettings): ReceiverM
 export function createSignalsMode(settings: ReceiverModeSettings): Mode {
   const normalized = normalizeModeSettings(settings);
   if (normalized.mode === "OFF") throw new Error("OFF does not use the analog demodulator.");
-  if (["DAB", "ADS-B", "AIS", "SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
+  if (["DAB", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(normalized.mode)) throw new Error(`${normalized.mode} uses the digital receiver path, not the analog demodulator.`);
   const parameters = modeParameters(getMode(normalized.mode === "CW-TEXT" ? "CW" : normalized.mode));
   if (parameters.hasBandwidth()) parameters.setBandwidth(normalized.bandwidthHz);
   if (parameters.hasSquelch()) parameters.setSquelch(normalized.squelch);
@@ -140,7 +145,7 @@ export function validateModeSampleRate(mode: ReceiverMode, sampleRateHz: number)
   if (mode === "DAB") validateDabSampleRate(sampleRateHz);
   else if (mode === "ADS-B") validateAdsbSampleRate(sampleRateHz);
   else if (mode === "AIS") validateAisSampleRate(sampleRateHz);
-  else if (["SRD", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode))
+  else if (["SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(mode))
     digitalInputProfile(sampleRateHz);
 }
 

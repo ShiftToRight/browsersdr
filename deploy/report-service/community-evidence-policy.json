@@ -284,6 +284,13 @@
         "flags": {}
       }
     },
+    "pocsag": {
+      "buildContext": {
+        "node": "22.23.1",
+        "contract": "Conservative complete runtime and build inputs; changed or unknown dependencies require fresh evidence.",
+        "flags": {}
+      }
+    },
     "aprs": {
       "buildContext": {
         "node": "22.23.1",

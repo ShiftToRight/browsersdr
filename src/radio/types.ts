@@ -1,3 +1,4 @@
+import type { PocsagSettings } from "../pocsag/settings";
 import type { TextModemSettings } from "../textmodem/settings";
 export type SourceKind =
   "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
@@ -72,6 +73,7 @@ export interface SourceSessionMetadata {
   beatToneHz?: number;
   srd?: SrdModeSettings;
   textModem?: TextModemSettings;
+  pocsag?: PocsagSettings;
   /** Legacy RTL scalar. HackRF keeps null for compatibility; this is NOT AGC. */
   gainDb: number | null;
   /** Probed chip family; this does not identify a commercial RTL board. */

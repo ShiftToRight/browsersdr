@@ -23,6 +23,7 @@ describe("receiver mode configuration", () => {
       "ADS-B",
       "AIS",
       "SRD",
+      "POCSAG",
       "APRS",
       "RS41",
       "RTTY",

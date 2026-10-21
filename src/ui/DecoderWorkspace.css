@@ -122,3 +122,5 @@
   .decoder-geographic .decoder-inspector { height: 100%; max-height: 100%; }
   .decoder-geographic .decoder-tray-heading, .decoder-geographic .decoder-table-wrap { flex: 0 0 auto; }
 }
+
+.decoder-paging-table td:nth-child(2) { white-space: normal; min-width: 200px; max-width: 440px; overflow-wrap: anywhere; }

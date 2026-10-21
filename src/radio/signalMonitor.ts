@@ -173,7 +173,7 @@ export function monitorContext(
     bandwidth: receiver.channelBandwidthHz,
     squelch: receiver.squelch,
     srd: receiver.srd,
-    textModem: receiver.textModem,
+    textModem: receiver.textModem, pocsag: receiver.pocsag,
   });
 }
 export function createMonitorSession(

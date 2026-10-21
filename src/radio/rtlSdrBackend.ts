@@ -245,7 +245,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       channelBandwidthHz: this.modeSettings.bandwidthHz,
       squelch: this.modeSettings.squelch,
       beatToneHz: this.modeSettings.beatToneHz,
-      textModem: this.modeSettings.textModem,
+      textModem: this.modeSettings.textModem, pocsag: this.modeSettings.pocsag,
       gainDb: null,
       sampleFormat: "planar-f32-iq-normalized",
     };
@@ -328,7 +328,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     );
     validateModeSampleRate(modeSettings.mode, metadata.actualSampleRateHz);
     this.modeSettings = modeSettings;
-    if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration }).mode)) {
+    if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...metadata, sessionGeneration }).mode)) {
       await this.pipeline.prepare({ ...metadata, sessionGeneration });
       this.throwIfDisconnectRequested();
     }
@@ -426,7 +426,7 @@ export class RtlSdrBackend implements ReceiverBackend {
         actualSampleRateHz, hardwareCenterFrequencyHz, gainDb: this.metadata!.gainDb };
       this.sessionGeneration = sessionGeneration;
       if (epoch === this.receptionEpoch) {
-        if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
+        if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
           await this.pipeline.prepare({ ...this.metadata, sessionGeneration });
           this.throwIfDisconnectRequested();
         }
@@ -501,7 +501,7 @@ export class RtlSdrBackend implements ReceiverBackend {
     }
     planChannelTune(provisional.hardwareCenterFrequencyHz, channelFrequencyHz, this.metadata.actualSampleRateHz, this.modeSettings.bandwidthHz, { autoRecenter: false });
     this.metadata = provisional;
-    if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...provisional, sessionGeneration }).mode)) {
+    if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...provisional, sessionGeneration }).mode)) {
       await this.pipeline.prepare({ ...provisional, sessionGeneration });
       this.throwIfDisconnectRequested();
     }
@@ -534,7 +534,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       ...provisional,
       hardwareCenterFrequencyHz: actualFrequencyHz,
     };
-    if (["APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
+    if (["POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(({ ...this.metadata, sessionGeneration }).mode)) {
       await this.pipeline.prepare({ ...this.metadata, sessionGeneration });
       this.throwIfDisconnectRequested();
     }
@@ -556,7 +556,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       channelBandwidthHz: modeSettings.bandwidthHz,
       squelch: modeSettings.squelch,
       beatToneHz: modeSettings.beatToneHz,
-      srd: modeSettings.srd, textModem: modeSettings.textModem,
+      srd: modeSettings.srd, textModem: modeSettings.textModem, pocsag: modeSettings.pocsag,
     };
     return this.tune(
       this.metadata.selectedChannelFrequencyHz,
@@ -678,7 +678,7 @@ export class RtlSdrBackend implements ReceiverBackend {
       squelch: this.modeSettings.squelch,
       beatToneHz: this.modeSettings.beatToneHz,
       srd: this.modeSettings.srd,
-      textModem: this.modeSettings.textModem,
+      textModem: this.modeSettings.textModem, pocsag: this.modeSettings.pocsag,
       gainDb,
       sampleFormat: "planar-f32-iq-normalized",
     };

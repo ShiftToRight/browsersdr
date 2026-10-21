@@ -3,6 +3,7 @@ import type { ReceiverMode } from "../radio/receiverConfig";
 export const MODE_CATEGORIES = [
   "All modes",
   "Broadcast",
+  "Paging",
   "Aviation",
   "Marine",
   "Amateur",
@@ -45,6 +46,7 @@ export const MODE_DESCRIPTIONS: Record<ReceiverMode, ModeDescription> = {
     categories: ["Marine"],
     aliases: "ships boats automatic identification",
   },
+  POCSAG: {label:"POCSAG", description:"512 / 1200 / 2400 bit/s radio paging", categories:["Paging"], aliases:"pager paging ric capcode pocsag512 pocsag1200 pocsag2400"},
   APRS: {
     label: "APRS",
     description: "Amateur packet radio",

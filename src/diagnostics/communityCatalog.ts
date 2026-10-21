@@ -47,6 +47,7 @@ export const COMMUNITY_FEATURES = [
   },
   { id: "adsb", label: "ADS-B 1090", group: "data", mode: "ADS-B" },
   { id: "ais", label: "AIS", group: "data", mode: "AIS" },
+  { id: "pocsag", label: "POCSAG", group: "data", mode: "POCSAG" },
   { id: "aprs", label: "APRS", group: "data", mode: "APRS" },
   { id: "rs41", label: "RS41", group: "data", mode: "RS41" },
   { id: "rtty", label: "RTTY text", group: "data", mode: "RTTY" },
