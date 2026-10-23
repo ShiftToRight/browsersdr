@@ -205,15 +205,19 @@ test("spectrum typography stays at twelve screen pixels on wide and normal deskt
   await monitorHistory(page);
   for (const width of [2868, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
-    const size = await page
-      .locator(".monitor-spectrum-plot > svg text")
-      .first()
-      .evaluate(
-        (node) =>
-          Number.parseFloat(getComputedStyle(node).fontSize) *
-          (node as SVGTextElement).getScreenCTM()!.a,
-      );
-    expect(size).toBeGreaterThan(10);
-    expect(size).toBeLessThan(14);
+    // Viewport resizing completes before ResizeObserver's React update.
+    // Measure the committed layout within the existing expectation deadline.
+    await expect(async () => {
+      const size = await page
+        .locator(".monitor-spectrum-plot > svg text")
+        .first()
+        .evaluate(
+          (node) =>
+            Number.parseFloat(getComputedStyle(node).fontSize) *
+            (node as SVGTextElement).getScreenCTM()!.a,
+        );
+      expect(size).toBeGreaterThan(10);
+      expect(size).toBeLessThan(14);
+    }).toPass({ timeout: 7000 });
   }
 });
