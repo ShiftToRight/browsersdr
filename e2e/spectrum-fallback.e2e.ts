@@ -33,7 +33,7 @@ for (const unavailable of [
     );
     await expect(canvas).toBeVisible();
     await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-      "ready",
+      "Display ready",
     );
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
@@ -144,7 +144,7 @@ test("compatibility renderer can be explicitly selected and WebGPU retried witho
   await renderer.selectOption("webgpu");
   // The runner may have no adapter; automatic fallback remains a working display.
   await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-    "ready",
+    "Display ready",
   );
   await expect(
     page.getByRole("button", { name: "Pause display", exact: true }),

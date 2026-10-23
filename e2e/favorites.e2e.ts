@@ -43,7 +43,7 @@ test("compact view and panel choices persist, enlarge the plot and reset", async
     768,
   );
   await page.getByLabel("Settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await page.getByRole("button", { name: "Reset layout", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Signal source", exact: true }),
   ).toBeVisible();
@@ -63,7 +63,9 @@ test("compact view and panel choices persist, enlarge the plot and reset", async
       page.getByRole("button", { name: "Expand source panel" }),
     ).toBeVisible();
     await page.getByLabel("Settings", { exact: true }).click();
-    await page.getByRole("button", { name: "Reset view", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Reset layout", exact: true })
+      .click();
   }
 });
 

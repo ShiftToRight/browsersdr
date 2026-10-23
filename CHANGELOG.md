@@ -7,6 +7,7 @@
 - Add bounded signal refinement and silent FM pilot/RDS analysis, with measured progress, retained dated evidence and explicit receiver handoff.
 - Alternate repeated discovery sweeps with individual candidate analyses until paused, preserving receiver ownership, cleanup and history.
 - Start reception when explicitly investigating a signal in a connected, paused receiver; stabilize monitoring status layout and theme its switches.
+- Increase high-rate channel-recording headroom while preserving filter output and bounded capture safeguards.
 
 ## 1.13.0 — 2026-10-21
 

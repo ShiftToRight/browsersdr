@@ -82,7 +82,7 @@ test("header layout controls and condensed docks keep primary actions fully visi
   ).not.toHaveAttribute("open");
   await expect(page.getByLabel("Settings", { exact: true })).toBeFocused();
   await page.getByLabel("Settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await page.getByRole("button", { name: "Reset layout", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Compact", exact: true }),
   ).toBeFocused();

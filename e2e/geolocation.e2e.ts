@@ -188,7 +188,9 @@ test("capture retains its start site after edits and the survey uses an explicit
     .getByRole("button", { name: "Discard prepared capture", exact: true })
     .click();
   await page.getByRole("tab", { name: "Explorer", exact: true }).click();
-  await page.getByText("Site & profile", { exact: true }).click();
+  await page
+    .getByLabel("Explorer activity", { exact: true })
+    .selectOption("survey");
   await page
     .getByRole("button", { name: "Use receiver site", exact: true })
     .click();

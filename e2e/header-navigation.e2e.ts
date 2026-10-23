@@ -66,7 +66,7 @@ test("utility destinations return to the last workspace and preserve view prefer
     ).toBeFocused();
   }
   await page.getByLabel("Settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await page.getByRole("button", { name: "Reset layout", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Compact", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
@@ -102,7 +102,16 @@ test("header utilities fit desktop and mobile, with dismissible menus and retain
         }),
       );
       expect(centers).toHaveLength(7);
-      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
+      if (width > 1100) {
+        expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
+      } else {
+        // The tablet header intentionally uses a tab row and a utility row.
+        const tabs = centers.slice(0, 3);
+        const utilities = centers.slice(3);
+        expect(Math.max(...tabs) - Math.min(...tabs)).toBeLessThan(2);
+        expect(Math.max(...utilities) - Math.min(...utilities)).toBeLessThan(2);
+        expect(Math.min(...utilities)).toBeGreaterThan(Math.max(...tabs));
+      }
     }
     for (const name of ["Settings", "Help"] as const) {
       const trigger = page.getByLabel(name, { exact: true });
@@ -180,7 +189,7 @@ test("touch utility targets stay at least 44 pixels and keyboard Tab dismisses a
   await expect(integration).toBeFocused();
   await integration.press("Tab");
   await page
-    .getByRole("button", { name: "Reset view", exact: true })
+    .getByRole("button", { name: "Reset layout", exact: true })
     .press("Tab");
   await expect(page.getByLabel("Help", { exact: true })).toBeFocused();
   await expect(

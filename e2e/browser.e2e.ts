@@ -890,7 +890,9 @@ test("survey measurements progress without animation callbacks and freeze proven
   await gotoApp(page);
   await selectSyntheticAndStart(page);
   await page.getByRole("tab", { name: /Explorer/ }).click();
-  await page.getByText("Site & profile", { exact: true }).click();
+  await page
+    .getByLabel("Explorer activity", { exact: true })
+    .selectOption("survey");
   await page.getByText("Edit profile bands", { exact: true }).click();
   await page.getByText("Detector settings", { exact: true }).click();
 
@@ -978,7 +980,9 @@ test("survey measurements progress without animation callbacks and freeze proven
 
   await page.reload();
   await page.getByRole("tab", { name: /Explorer/ }).click();
-  await page.getByText("Site & profile", { exact: true }).click();
+  await page
+    .getByLabel("Explorer activity", { exact: true })
+    .selectOption("survey");
   await page.getByText("Edit profile bands", { exact: true }).click();
   await page.getByText("Detector settings", { exact: true }).click();
   await expect(
@@ -1002,7 +1006,9 @@ test("survey cancellation preserves progress and restores controls", async ({
   await gotoApp(page);
   await selectSyntheticAndStart(page);
   await page.getByRole("tab", { name: /Explorer/ }).click();
-  await page.getByText("Site & profile", { exact: true }).click();
+  await page
+    .getByLabel("Explorer activity", { exact: true })
+    .selectOption("survey");
   await page.getByText("Edit profile bands", { exact: true }).click();
   await page.getByText("Detector settings", { exact: true }).click();
   await page.getByLabel("Scan scope").selectOption("band-plan");
@@ -1412,7 +1418,7 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-    "ready",
+    "Display ready",
   );
   await openApplicationView(page, "Diagnostics");
   await expect(

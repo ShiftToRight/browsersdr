@@ -6,7 +6,7 @@ test("monitor status reserves stable rows across acquisition, progress and pause
 }, info) => {
   await monitorHistory(page);
   const styles = await page
-    .locator('link[rel="stylesheet"]')
+    .locator('style, link[rel="stylesheet"]')
     .evaluateAll((links) => links.map((link) => link.outerHTML).join(""));
   // Freeze the real rendered card in an isolated document to exercise each
   // status without starting acquisition or depending on transition timing.

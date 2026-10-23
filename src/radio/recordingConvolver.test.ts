@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { ChannelCaptureFilter, planChannelCapture } from "./channelRecording";
 import { RecordingConvolver, recordingKernels } from "./recordingConvolver";
 import { RECORDING_CONVOLVER } from "./recordingConvolverBytes";
@@ -32,6 +33,61 @@ function compare(actual: Float32Array, expected: Float32Array) {
   expect(ci8).toBeLessThanOrEqual(1);
   expect(ci16).toBeLessThanOrEqual(1);
 }
+it("preserves the original half-band output bytes at vector and tail boundaries", () => {
+  // Captured from the original WAT (SHA-256
+  // 190c8b2459f445f4889b468d2af60eb7321e5f089112c7b81e53420e94d1cfbc).
+  const hash = createHash("sha256");
+  for (const taps of [15, 31, 95]) {
+    const coefficients = new Float32Array(taps);
+    for (let n = 0; n < (taps - 1) / 2; n += 2)
+      coefficients[n] = coefficients[taps - 1 - n] =
+        ((n % 4 ? -1 : 1) * (n + 1)) / 128;
+    coefficients[(taps - 1) / 2] = 0.5;
+    const kernel = new RecordingConvolver();
+    kernel.setCoefs(coefficients);
+    for (const count of [0, 1, 2, 3, 4, 5, 7, 137, 4095, 16384])
+      for (const skip of [0, 1]) {
+        const output = kernel.halfBand(
+          noise(count * 2 + taps - 1),
+          count,
+          skip,
+        );
+        hash.update(
+          new Uint8Array(output.buffer, output.byteOffset, output.byteLength),
+        );
+      }
+  }
+  expect(hash.digest("hex")).toBe(
+    "8d10880ce7aeb8a02f83f039ec8a892cac3e0b186bd62abede05167f465c649e",
+  );
+});
+it("preserves original FIR output bytes for specialized and generic kernels", () => {
+  // Same original WAT as the half-band reference above; 50 complete outputs.
+  const hash = createHash("sha256");
+  for (const taps of [1, 8, 16, 48, 95]) {
+    const coefficients = noise(taps);
+    for (let n = 0; n <= Math.floor(taps / 2); n++)
+      coefficients[taps - 1 - n] = coefficients[n]! / taps;
+    for (let n = 0; n < Math.floor(taps / 2); n++)
+      coefficients[n] = coefficients[taps - 1 - n]!;
+    const kernel = new RecordingConvolver();
+    kernel.setCoefs(coefficients);
+    for (const count of [0, 1, 2, 3, 4, 5, 7, 137, 4095, 32768]) {
+      const output = kernel.convolveWithStride(
+        noise(count + taps - 1),
+        count,
+        1,
+        0,
+      );
+      hash.update(
+        new Uint8Array(output.buffer, output.byteOffset, output.byteLength),
+      );
+    }
+  }
+  expect(hash.digest("hex")).toBe(
+    "cccaf132f370299d16d476f51cb8c81f98e275a47f46555cbd78d7b62f5fb1dd",
+  );
+});
 it.each([1, 8, 16, 48, 95])(
   "matches independent full scalar %i-tap convolution at vector, tail and maximum boundaries",
   (taps) => {
