@@ -41,12 +41,32 @@ function measure(
 ): SignalCenterResult | undefined {
   const estimator = new SignalCenterEstimator(session);
   let otherPhase = 0;
-  let carrierI = 1, carrierQ = 0;
+  let carrierI = 1,
+    carrierQ = 0;
   const rate = session.actualSampleRateHz;
+  // Normalize optional controls once, outside the native-sample loop. Earlier
+  // cases use different option shapes; repeated property lookups can deoptimize
+  // the highest-rate fixture without changing the measurement being tested.
+  const noiseLevel = options.noise ?? 0.015;
+  const baseAmplitude = options.amplitude ?? 0.7;
+  const adjacent = options.adjacent;
+  const adjacentAmplitude = options.adjacentAmplitude ?? 0.7;
+  const dc = options.dc;
+  const duration = options.duration ?? 0.7;
+  const unmodulated = options.modulation === false;
+  const depth = options.depth ?? 0.6;
+  const drift = options.drift ?? 0;
+  const burst = options.burst;
+  const fade = options.fade;
+  const modulateAdjacent = options.adjacentModulation;
+
   const tone = (hz: number) => {
     const angle = (2 * Math.PI * hz) / rate;
-    const cos = Math.cos(angle), sin = Math.sin(angle);
-    let i = 1, q = 0, count = 0;
+    const cos = Math.cos(angle),
+      sin = Math.sin(angle);
+    let i = 1,
+      q = 0,
+      count = 0;
     return () => {
       const value = q;
       const next = i * cos - q * sin;
@@ -76,28 +96,28 @@ function measure(
     (session.mode === "WBFM"
       ? 55_000
       : Math.min(2500, session.channelBandwidthHz * 0.2));
-  const fixedCarrier = options.dc || (session.mode === "AM" && !options.drift);
-  const fixedAngle = (2 * Math.PI * (options.dc ? 0 : native + offset)) / rate;
-  const fixedI = Math.cos(fixedAngle), fixedQ = Math.sin(fixedAngle);
+  const fixedCarrier = dc || (session.mode === "AM" && !drift);
+  const fixedAngle = (2 * Math.PI * (dc ? 0 : native + offset)) / rate;
+  const fixedI = Math.cos(fixedAngle),
+    fixedQ = Math.sin(fixedAngle);
+  // accept consumes synchronously; reuse fully overwritten fixture blocks.
+  const I = new Float32Array(8192),
+    Q = new Float32Array(8192);
   for (
     let start = 0;
-    start < session.actualSampleRateHz * (options.duration ?? 0.7);
+    start < session.actualSampleRateHz * duration;
     start += 8192
   ) {
-    const I = new Float32Array(8192),
-      Q = new Float32Array(8192);
     for (let n = 0; n < 8192; n++) {
       const t = (start + n) / session.actualSampleRateHz;
-      const mod =
-        options.modulation === false
-          ? 0
-          : modulation() +
-            (options.depth === 1 ? 0 : 0.1 * slowModulation());
-      const f = options.dc
+      const mod = unmodulated
+        ? 0
+        : modulation() + (depth === 1 ? 0 : 0.1 * slowModulation());
+      const f = dc
         ? 0
         : native +
           offset +
-          (options.drift ?? 0) * t +
+          drift * t +
           (session.mode === "AM" ? 0 : deviation * mod);
       // Generate the same phase-integrated carrier with bounded oscillator
       // state. Fixed AM needs no trig calls per native sample; FM evaluates
@@ -114,30 +134,25 @@ function measure(
         carrierQ /= norm;
       }
       const amplitude =
-        (options.burst && t > 0.2 ? 0 : (options.amplitude ?? 0.7)) *
-        (options.fade ? 0.2 + 0.8 * fading() ** 2 : 1) *
-        (session.mode === "AM" ? 1 + (options.depth ?? 0.6) * mod : 1);
-      otherPhase +=
-        (2 *
-          Math.PI *
-          (native +
-            (options.adjacent ?? 0) +
-            (options.adjacentModulation
-              ? deviation * adjacentModulation()
-              : 0))) /
-        session.actualSampleRateHz;
+        (burst && t > 0.2 ? 0 : baseAmplitude) *
+        (fade ? 0.2 + 0.8 * fading() ** 2 : 1) *
+        (session.mode === "AM" ? 1 + depth * mod : 1);
+      if (adjacent !== undefined)
+        otherPhase +=
+          (2 *
+            Math.PI *
+            (native +
+              (adjacent ?? 0) +
+              (modulateAdjacent ? deviation * adjacentModulation() : 0))) /
+          session.actualSampleRateHz;
       I[n] =
         amplitude * carrierI +
-        (options.noise ?? 0.015) * noise() +
-        (options.adjacent === undefined
-          ? 0
-          : (options.adjacentAmplitude ?? 0.7) * Math.cos(otherPhase));
+        noiseLevel * noise() +
+        (adjacent === undefined ? 0 : adjacentAmplitude * Math.cos(otherPhase));
       Q[n] =
         amplitude * carrierQ +
-        (options.noise ?? 0.015) * noise() +
-        (options.adjacent === undefined
-          ? 0
-          : (options.adjacentAmplitude ?? 0.7) * Math.sin(otherPhase));
+        noiseLevel * noise() +
+        (adjacent === undefined ? 0 : adjacentAmplitude * Math.sin(otherPhase));
     }
     // Keep trig argument reduction inexpensive without changing the waveform.
     otherPhase %= 2 * Math.PI;
@@ -277,9 +292,13 @@ describe("bounded local signal center", () => {
   });
   it("rejects a noisy hardware DC line when adaptive filtering makes it visible", () => {
     const session = metadata("WBFM", 2_400_000);
-    session.selectedChannelFrequencyHz = session.hardwareCenterFrequencyHz + 10_000;
+    session.selectedChannelFrequencyHz =
+      session.hardwareCenterFrequencyHz + 10_000;
     const result = measure(session, 0, {
-      dc: true, modulation: false, amplitude: 0.14, noise: 1,
+      dc: true,
+      modulation: false,
+      amplitude: 0.14,
+      noise: 1,
     });
     expect(result?.kind, result?.message).toBe("no-signal");
   });

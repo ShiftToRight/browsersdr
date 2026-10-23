@@ -20,7 +20,7 @@ import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocatio
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 import { AudioCaptureGuard } from "./ui/AudioCaptureGuard";
 const RemoteReceiver = lazy(() => import("./ui/RemoteReceiver").then(module => ({ default: module.RemoteReceiver })));
-import { RemotePresetSharePanel } from "./ui/RemotePresetSharePanel";
+const RemotePresetSharePanel = lazy(() => import("./ui/RemotePresetSharePanel").then(module => ({ default: module.RemotePresetSharePanel })));
 import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
 import { SettingsSharePanel } from "./ui/SettingsSharePanel";
 const LiveSharePanel = lazy(() => import("./ui/LiveSharePanel").then(module => ({ default: module.LiveSharePanel })));
@@ -1021,6 +1021,13 @@ export function ReceiverApp({
     loadSourcePreferences(preferenceStorage, initialSource),
   );
   const [receptionCandidate, setReceptionCandidate] = useState<ReceptionCandidate | undefined>(() => (hasSettingsShare(location.hash) || hasRemoteShare(location.hash)) ? undefined : readReceptionCandidate(location.search));
+  const [remoteShareDetected, setRemoteShareDetected] = useState(() => hasRemoteShare(location.hash));
+  useEffect(() => {
+    const read = () => setRemoteShareDetected(hasRemoteShare(location.hash));
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
+
   const [mode, setMode] = useState(receptionCandidate?.mode ?? initialPreferences.modeSettings.mode);
   const [layout, setLayout] = useWorkspaceLayout();
   const favorites = useFavorites();
@@ -5073,9 +5080,9 @@ export function ReceiverApp({
         {utilityView === "about" && <AboutPage />}
       </div>
       </UtilityOverlay></DeferredWorkspace>
-      <RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {
+      <DeferredWorkspace active={remoteShareDetected}><RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {
         if (!await openRemoteReceiver(preset)) throw new Error(remoteBlockedReason ?? "The receiver could not be released. Finish the current operation and try again.");
-      }} />
+      }} /></DeferredWorkspace>
       <DeferredWorkspace active={liveShareOpen}><LiveSharePanel controller={controller} analysis={analysis} open={liveShareOpen} onClose={() => setLiveShareOpen(false)} /></DeferredWorkspace>
     </main>
   );
