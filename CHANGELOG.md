@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.14.0 — 2026-10-23
 
 - Redesign Explorer around a spectrum-led workspace with editable monitoring controls, clearer signal inspection, theme consistency and responsive layouts.
 - Remember scan drafts and display preferences, and save complete named scan setups without starting acquisition.
