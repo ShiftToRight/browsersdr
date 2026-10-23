@@ -41,6 +41,32 @@ const METADATA = {
   sampleFormat: "planar-f32-iq-normalized" as const,
 };
 
+it("bounds and cancels signal probes, ignores stale replies and rejects them on retune", async () => {
+  vi.useFakeTimers();
+  const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker);
+  try {
+    pipeline.begin(METADATA);
+    const config = { sampleRateHz: 1_024_000, centerFrequencyHz: 100e6, frequencyHz: 100.125e6, bandwidthHz: 180e3, seconds: 12 };
+    const abort = new AbortController(), progress = vi.fn();
+    const pending = pipeline.analyzeSignal(config, abort.signal, progress);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    const request = worker.sent.find(m => m.type === "probe-start")!;
+    if (request.type !== "probe-start") throw new Error("Missing request");
+    worker.emit({ type: "probe-progress", sessionGeneration: 6, requestId: request.requestId, sampledSeconds: 1 });
+    expect(progress).not.toHaveBeenCalled();
+    worker.emit({ type: "probe-progress", sessionGeneration: 7, requestId: request.requestId, sampledSeconds: 1 });
+    expect(progress).toHaveBeenCalledWith(1);
+    abort.abort(); await rejected;
+    expect(worker.sent.some(m => m.type === "probe-cancel")).toBe(true);
+    const next = pipeline.analyzeSignal(config, new AbortController().signal);
+    const retuned = expect(next).rejects.toThrow("settings changed");
+    pipeline.retune({ ...METADATA, sessionGeneration: 8 }); await retuned;
+    const timeout = pipeline.analyzeSignal(config, new AbortController().signal);
+    const timedOut = expect(timeout).rejects.toThrow("No analysis samples");
+    await vi.advanceTimersByTimeAsync(10_001); await timedOut;
+  } finally { pipeline.dispose(); vi.useRealTimers(); }
+});
+
 it("measures current raw input before worker backpressure, rejects stale generations and clears clipping on retune/stop", () => {
   const worker = new FakeWorker(), pipeline = new AnalysisPipeline(worker as unknown as Worker);
   pipeline.begin({ ...METADATA, source: "hackrf" });

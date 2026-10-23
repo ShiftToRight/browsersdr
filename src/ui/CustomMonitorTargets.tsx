@@ -1,4 +1,9 @@
-import { useEffect, useState } from "react";
+import {
+  CUSTOM_TARGET_DRAFT_KEY,
+  readPreference,
+  storePreference,
+} from "./explorerPreferences";
+import { useEffect, useState, useId } from "react";
 import {
   BOOKMARK_KEY,
   importBookmarks,
@@ -39,20 +44,80 @@ export function CustomMonitorTargets({
   disabled,
   currentFrequencyHz,
   seed,
+  activeTargets,
   onChange,
 }: {
   mode: MonitorTargetMode;
   disabled: boolean;
   currentFrequencyHz?: number;
   seed?: MonitorTarget[];
+  activeTargets?: readonly MonitorTarget[];
   onChange: (draft: CustomTargetDraft) => void;
 }) {
-  const [rows, setRows] = useState<Entry[]>([]);
-  const [frequency, setFrequency] = useState("99.77 MHz"),
-    [width, setWidth] = useState("25 kHz"),
-    [label, setLabel] = useState("");
-  const [lower, setLower] = useState("99.2 MHz"),
-    [upper, setUpper] = useState("100.6 MHz");
+  const fieldId = useId();
+  const fieldError = (value: string) => {
+    try {
+      if (parseMonitorFrequency(value) <= 0)
+        return "Use a positive value with Hz, kHz or MHz.";
+      return "";
+    } catch {
+      return "Enter a frequency with Hz, kHz or MHz.";
+    }
+  };
+
+  const [saved] = useState(() => readPreference(CUSTOM_TARGET_DRAFT_KEY));
+  const text = (key: string, fallback: string) =>
+    typeof saved[key] === "string" && saved[key].length <= 200
+      ? saved[key]
+      : fallback;
+  const [rows, setRows] = useState<Entry[]>(() =>
+    Array.isArray(saved.rows)
+      ? saved.rows
+          .filter(
+            (v): v is Entry =>
+              !!v &&
+              typeof v === "object" &&
+              ["id", "frequency", "width", "label"].every(
+                (k) => typeof v[k] === "string" && v[k].length <= 200,
+              ),
+          )
+          .slice(0, 64)
+      : [],
+  );
+  const [frequency, setFrequency] = useState(() =>
+      text("frequency", "99.77 MHz"),
+    ),
+    [width, setWidth] = useState(() => text("width", "25 kHz")),
+    [label, setLabel] = useState(() => text("label", ""));
+  const [lower, setLower] = useState(() => text("lower", "99.2 MHz")),
+    [upper, setUpper] = useState(() => text("upper", "100.6 MHz"));
+  const rangeError = (() => {
+    try {
+      return parseMonitorFrequency(upper) <= parseMonitorFrequency(lower)
+        ? "End must be greater than start."
+        : "";
+    } catch {
+      return "";
+    }
+  })();
+  useEffect(() => {
+    storePreference(CUSTOM_TARGET_DRAFT_KEY, {
+      rows,
+      frequency,
+      width,
+      label,
+      lower,
+      upper,
+    });
+  }, [rows, frequency, width, label, lower, upper]);
+  const changedFrequency = (value: string, expected?: number) => {
+    if (expected === undefined) return false;
+    try {
+      return parseMonitorFrequency(value) !== expected;
+    } catch {
+      return true;
+    }
+  };
   const [paste, setPaste] = useState("");
   const [notice, setNotice] = useState("");
   const [lists, setLists] = useState(() => {
@@ -166,21 +231,48 @@ export function CustomMonitorTargets({
         </legend>
         {mode === "range" ? (
           <div className="custom-monitor-fields">
-            <label>
+            <label
+              data-changed={changedFrequency(
+                lower,
+                activeTargets?.find((t) => t.kind === "range")
+                  ?.startFrequencyHz,
+              )}
+            >
               Range start
               <input
+                aria-label="Range start"
+                aria-invalid={!!fieldError(lower)}
+                aria-describedby={`${fieldId}-start-error`}
                 value={lower}
                 onChange={(e) => setLower(e.target.value)}
                 placeholder="99.2 MHz"
               />
+              {fieldError(lower) && (
+                <small id={`${fieldId}-start-error`} role="alert">
+                  {fieldError(lower)}
+                </small>
+              )}
             </label>
-            <label>
+            <label
+              data-changed={changedFrequency(
+                upper,
+                activeTargets?.find((t) => t.kind === "range")?.endFrequencyHz,
+              )}
+            >
               Range end
               <input
+                aria-label="Range end"
+                aria-invalid={!!fieldError(upper) || !!rangeError}
+                aria-describedby={`${fieldId}-end-error`}
                 value={upper}
                 onChange={(e) => setUpper(e.target.value)}
                 placeholder="100.6 MHz"
               />
+              {(fieldError(upper) || rangeError) && (
+                <small id={`${fieldId}-end-error`} role="alert">
+                  {fieldError(upper) || rangeError}
+                </small>
+              )}
             </label>
           </div>
         ) : (
@@ -189,17 +281,33 @@ export function CustomMonitorTargets({
               <label>
                 Frequency
                 <input
+                  aria-label="Frequency"
+                  aria-invalid={!!fieldError(frequency)}
+                  aria-describedby={`${fieldId}-frequency-error`}
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value)}
                 />
+                {fieldError(frequency) && (
+                  <small id={`${fieldId}-frequency-error`} role="alert">
+                    {fieldError(frequency)}
+                  </small>
+                )}
               </label>
               <label>
                 Watch width
                 <input
+                  aria-label="Watch width"
+                  aria-invalid={!!fieldError(width)}
+                  aria-describedby={`${fieldId}-width-error`}
                   value={width}
                   onChange={(e) => setWidth(e.target.value)}
                   list="monitor-widths"
                 />
+                {fieldError(width) && (
+                  <small id={`${fieldId}-width-error`} role="alert">
+                    {fieldError(width)}
+                  </small>
+                )}
               </label>
               <datalist id="monitor-widths">
                 <option value="12.5 kHz" />
@@ -231,9 +339,25 @@ export function CustomMonitorTargets({
             <div className="custom-monitor-entries">
               {rows.map((r, i) => (
                 <div className="custom-monitor-entry" key={r.id}>
-                  <label>
+                  <label
+                    data-changed={changedFrequency(
+                      r.frequency,
+                      (() => {
+                        const target = activeTargets?.find(
+                          (t) => t.id === r.id,
+                        );
+                        return target
+                          ? (target.startFrequencyHz + target.endFrequencyHz) /
+                              2
+                          : undefined;
+                      })(),
+                    )}
+                  >
                     Frequency {i + 1}
                     <input
+                      aria-label={`Frequency ${i + 1}`}
+                      aria-invalid={!!fieldError(r.frequency)}
+                      aria-describedby={`${fieldId}-${r.id}-frequency-error`}
                       value={r.frequency}
                       onChange={(e) =>
                         setRows(
@@ -245,10 +369,33 @@ export function CustomMonitorTargets({
                         )
                       }
                     />
+                    {fieldError(r.frequency) && (
+                      <small
+                        id={`${fieldId}-${r.id}-frequency-error`}
+                        role="alert"
+                      >
+                        {fieldError(r.frequency)}
+                      </small>
+                    )}
                   </label>
-                  <label>
+                  <label
+                    data-changed={changedFrequency(
+                      r.width,
+                      (() => {
+                        const target = activeTargets?.find(
+                          (t) => t.id === r.id,
+                        );
+                        return target
+                          ? target.endFrequencyHz - target.startFrequencyHz
+                          : undefined;
+                      })(),
+                    )}
+                  >
                     Watch width {i + 1}
                     <input
+                      aria-label={`Watch width ${i + 1}`}
+                      aria-invalid={!!fieldError(r.width)}
+                      aria-describedby={`${fieldId}-${r.id}-width-error`}
                       value={r.width}
                       onChange={(e) =>
                         setRows(
@@ -258,6 +405,11 @@ export function CustomMonitorTargets({
                         )
                       }
                     />
+                    {fieldError(r.width) && (
+                      <small id={`${fieldId}-${r.id}-width-error`} role="alert">
+                        {fieldError(r.width)}
+                      </small>
+                    )}
                   </label>
                   <label>
                     Label {i + 1}

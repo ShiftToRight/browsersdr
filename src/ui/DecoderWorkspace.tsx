@@ -2,12 +2,7 @@ import { PocsagPanel } from "./PocsagPanel";
 import { isTextMode } from "../textmodem/settings";
 import { TextDecodePanel } from "./TextDecodePanel";
 import { useVisibleReceiver } from "./useVisibleReceiver";
-import {
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ReceiverController,
   ReceiverSnapshot,
@@ -63,7 +58,10 @@ export interface DecoderWorkspaceProps {
 
 /** Another view of the existing controller; no acquisition or decoder is started here. */
 export function DecoderWorkspace(props: DecoderWorkspaceProps) {
-  const { receiver, presenting } = useVisibleReceiver(props.controller, props.active);
+  const { receiver, presenting } = useVisibleReceiver(
+    props.controller,
+    props.active,
+  );
   const [browsedFormat, setBrowsedFormat] = useState<DecoderFormat>();
   const [frozen, setFrozen] = useState<ReviewSnapshot>();
   const [selection, setSelection] = useState<{
@@ -72,7 +70,10 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   }>();
   const selectionTrigger = useRef<HTMLElement | SVGElement | null>(null);
   const exportMenu = useRef<HTMLDetailsElement>(null);
-  const [clearedPaging, setClearedPaging] = useState<{identity:string;keys:string[]}>();
+  const [clearedPaging, setClearedPaging] = useState<{
+    identity: string;
+    keys: string[];
+  }>();
   const [trayCollapsed, setTrayCollapsed] = useState(false);
   const [fitRequest, setFitRequest] = useState(0);
   const [filter, setFilter] = useState("");
@@ -118,9 +119,12 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
         sessionGeneration: receiver.sessionGeneration,
         session: receiver.session,
       },
-      results: presenting && applied ? decoderRecords(receiver, reviewMode) : [],
-      messages: presenting && applied ? decoderRecords(receiver, reviewMode, true) : [],
-      accepted: presenting && applied ? decoderAcceptedCount(receiver, reviewMode) : 0,
+      results:
+        presenting && applied ? decoderRecords(receiver, reviewMode) : [],
+      messages:
+        presenting && applied ? decoderRecords(receiver, reviewMode, true) : [],
+      accepted:
+        presenting && applied ? decoderAcceptedCount(receiver, reviewMode) : 0,
     }),
     [identity, receiver, applied, reviewMode, presenting],
   );
@@ -128,7 +132,9 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   const display = held ?? live;
   const hasReviewData =
     display.results.length > 0 || display.messages.length > 0;
-  const hasMessages = isTextMode(reviewMode) || ["POCSAG", "APRS", "RS41", "SRD"].includes(reviewMode);
+  const hasMessages =
+    isTextMode(reviewMode) ||
+    ["POCSAG", "APRS", "RS41", "SRD"].includes(reviewMode);
   const supportsMap = ["ADS-B", "AIS", "APRS", "RS41"].includes(reviewMode);
   const preferredView =
     view?.format === format ? view.value : supportsMap ? "map" : "results";
@@ -139,12 +145,19 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       : preferredView;
   const records =
     effectiveView === "messages" ? display.messages : display.results;
-  const filtered = presenting ? records.filter((r) =>
-    !(reviewMode === "POCSAG" && clearedPaging?.identity === identity && clearedPaging.keys.includes(r.key)) &&
-    `${r.label} ${r.summary} ${r.fields.flat().join(" ")}`
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  ) : [];
+  const filtered = presenting
+    ? records.filter(
+        (r) =>
+          !(
+            reviewMode === "POCSAG" &&
+            clearedPaging?.identity === identity &&
+            clearedPaging.keys.includes(r.key)
+          ) &&
+          `${r.label} ${r.summary} ${r.fields.flat().join(" ")}`
+            .toLowerCase()
+            .includes(filter.toLowerCase()),
+      )
+    : [];
   const selected =
     selection?.identity === identity
       ? filtered.find((r) => r.key === selection.key)
@@ -251,8 +264,15 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
         : !needsApply
           ? "Configured / idle"
           : "Preview";
-  const unit =
-    isTextMode(reviewMode) ? (reviewMode === "WEFAX" || reviewMode === "SSTV" ? "images" : reviewMode === "RTTY" || reviewMode === "PSK31" || reviewMode === "CW-TEXT" ? "text segments" : "message blocks") : reviewMode === "WBFM"
+  const unit = isTextMode(reviewMode)
+    ? reviewMode === "WEFAX" || reviewMode === "SSTV"
+      ? "images"
+      : reviewMode === "RTTY" ||
+          reviewMode === "PSK31" ||
+          reviewMode === "CW-TEXT"
+        ? "text segments"
+        : "message blocks"
+    : reviewMode === "WBFM"
       ? "groups"
       : reviewMode === "DAB"
         ? "FIC blocks"
@@ -364,15 +384,54 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
       </table>
     </div>
   ) : reviewMode === "POCSAG" ? (
-    <div className="decoder-record-list decoder-table-wrap" aria-label="Retained paging messages">
+    <div
+      className="decoder-record-list decoder-table-wrap"
+      aria-label="Retained paging messages"
+    >
       <table className="decoder-target-table decoder-paging-table">
-        <thead><tr>{["Address", "Message", "Rate / function", "Framing / integrity", "Input clock"].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>{filtered.map(r => <tr key={r.key} className={selected?.key === r.key ? "decoder-row-selected" : undefined}>
-          <td><button type="button" className="decoder-record" aria-pressed={selected?.key === r.key} onClick={event=>selectRecord(r.key,event.currentTarget)}><strong>{r.label}</strong></button></td>
-          <td>{r.summary}</td>
-          <td>{r.fields.find(([f])=>f==="Bit rate")?.[1]} / {r.fields.find(([f])=>f==="Function")?.[1]}</td>
-          <td>{r.integrity}</td><td>{r.clock}</td>
-        </tr>)}</tbody>
+        <thead>
+          <tr>
+            {[
+              "Address",
+              "Message",
+              "Rate / function",
+              "Framing / integrity",
+              "Input clock",
+            ].map((label) => (
+              <th key={label} scope="col">
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((r) => (
+            <tr
+              key={r.key}
+              className={
+                selected?.key === r.key ? "decoder-row-selected" : undefined
+              }
+            >
+              <td>
+                <button
+                  type="button"
+                  className="decoder-record"
+                  aria-pressed={selected?.key === r.key}
+                  onClick={(event) => selectRecord(r.key, event.currentTarget)}
+                >
+                  <strong>{r.label}</strong>
+                </button>
+              </td>
+              <td>{r.summary}</td>
+              <td>
+                {r.fields.find(([f]) => f === "Bit rate")?.[1]} /{" "}
+                {r.fields.find(([f]) => f === "Function")?.[1]}
+              </td>
+              <td>{r.integrity}</td>
+              <td>{r.clock}</td>
+            </tr>
+          ))}
+        </tbody>
       </table>
     </div>
   ) : (
@@ -449,8 +508,22 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
             <span className="decoder-state">{stateLabel}</span>
             {!satellite && hasReviewData && (
               <>
-                {reviewMode === "POCSAG" && <button type="button" className="secondary" onClick={()=>{setClearedPaging({identity,keys:records.map(r=>r.key)});setSelection(undefined);}}>Clear displayed messages</button>}
-              <label className="decoder-filter">
+                {reviewMode === "POCSAG" && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setClearedPaging({
+                        identity,
+                        keys: records.map((r) => r.key),
+                      });
+                      setSelection(undefined);
+                    }}
+                  >
+                    Clear displayed messages
+                  </button>
+                )}
+                <label className="decoder-filter">
                   <span className="visually-hidden">Filter results</span>
                   <AppIcon name="search" />
                   <input
@@ -581,7 +654,15 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
             </div>
           )}
           {applied && ["WBFM", "DAB"].includes(reviewMode) && (
-            <div className="decoder-audio" aria-label="Shared audio">
+            <details
+              className="decoder-audio decoder-audio-disclosure"
+              aria-label="Shared audio"
+              open={receiver.lifecycle === "running"}
+            >
+              <summary>
+                Shared audio ·{" "}
+                {receiver.lifecycle === "running" ? "receiving" : "idle"}
+              </summary>
               <label htmlFor="decoder-volume">
                 Volume · {Math.round(props.volume * 100)}%
                 <input
@@ -609,7 +690,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 {props.volume > 0 ? "Mute audio" : "Unmute audio"}
               </button>
               {reviewMode === "DAB" && props.serviceControl}
-            </div>
+            </details>
           )}
           <section
             className={`decoder-stage${geographic ? " decoder-geographic" : ""}`}
@@ -838,8 +919,12 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               </>
             )}
           </section>
-          {reviewMode === "POCSAG" && applied && <PocsagPanel receiver={receiver} />}
-          {isTextMode(reviewMode) && applied && <TextDecodePanel receiver={receiver} mode={reviewMode} />}
+          {reviewMode === "POCSAG" && applied && (
+            <PocsagPanel receiver={receiver} />
+          )}
+          {isTextMode(reviewMode) && applied && (
+            <TextDecodePanel receiver={receiver} mode={reviewMode} />
+          )}
           <footer className="decoder-footer">
             {!satellite && (
               <details
@@ -847,7 +932,10 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 open={toolsOpen}
                 onToggle={(event) => setToolsOpen(event.currentTarget.open)}
               >
-                <summary>Reception details & protocol tools · live</summary>
+                <summary>
+                  Reception details &amp; protocol tools ·{" "}
+                  {receiver.lifecycle === "running" ? "live" : "idle"}
+                </summary>
                 {toolsOpen && (
                   <>
                     <p className="decoder-hint">

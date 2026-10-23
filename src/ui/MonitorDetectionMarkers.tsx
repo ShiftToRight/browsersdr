@@ -1,6 +1,7 @@
 import {
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -8,6 +9,7 @@ import {
 import type { MonitorSession } from "../radio/signalMonitor";
 import {
   layoutMonitorMarkers,
+  layoutMonitorLabels,
   markerWidth,
   monitorMarkerState,
 } from "./monitorMarkerLayout";
@@ -24,6 +26,8 @@ export function MonitorDetectionMarkers({
   x,
   plot,
   onSelect,
+  analysisLabels,
+  visibleIds,
 }: {
   session: MonitorSession;
   now: number;
@@ -33,6 +37,8 @@ export function MonitorDetectionMarkers({
   x: (hz: number) => number;
   plot: RefObject<SVGSVGElement | null>;
   onSelect: (id: string, trigger: HTMLButtonElement) => void;
+  analysisLabels?: Readonly<Record<string, string>>;
+  visibleIds?: ReadonlySet<string>;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -42,8 +48,10 @@ export function MonitorDetectionMarkers({
   const [geometry, setGeometry] = useState({
     width: 0,
     scale: 0,
+    scaleY: 0,
     left: 0,
     top: 0,
+    targetWidth: 44,
   });
   const [hover, setHover] = useState<string>();
   const [focus, setFocus] = useState<string>();
@@ -59,12 +67,18 @@ export function MonitorDetectionMarkers({
     const measure = () => {
       const box = svg.getBoundingClientRect(),
         parent = element.getBoundingClientRect();
-      const scale = Math.min(box.width / 1200, box.height / 184);
+      const scale = box.width / 1200;
+      const scaleY = box.height / 184;
       const next = {
         width: parent.width,
+        targetWidth:
+          box.width >= 600 && window.matchMedia("(pointer: fine)").matches
+            ? 24
+            : 44,
         scale,
-        left: box.left - parent.left + (box.width - 1200 * scale) / 2,
-        top: box.top - parent.top + (box.height - 184 * scale) / 2,
+        scaleY,
+        left: box.left - parent.left,
+        top: box.top - parent.top,
       };
       setGeometry((previous) =>
         Object.keys(next).every(
@@ -79,7 +93,12 @@ export function MonitorDetectionMarkers({
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(svg);
-    return () => observer.disconnect();
+    const pointer = window.matchMedia("(pointer: fine)");
+    pointer.addEventListener("change", measure);
+    return () => {
+      observer.disconnect();
+      pointer.removeEventListener("change", measure);
+    };
   }, [plot]);
   const members =
     chooser?.sessionId === session.id
@@ -99,10 +118,11 @@ export function MonitorDetectionMarkers({
       anchor.current?.focus({ preventScroll: true });
     };
   }, [open]);
-  const { scale, left, top } = geometry;
+  const { scale, scaleY, left, top } = geometry;
   const visible = session.signals.filter(
     (s) =>
       Number.isFinite(s.frequencyHz) &&
+      (!visibleIds || visibleIds.has(s.id)) &&
       s.frequencyHz >= lower &&
       s.frequencyHz <= upper,
   );
@@ -111,7 +131,38 @@ export function MonitorDetectionMarkers({
     (hz) => left + x(hz) * scale,
     left + 52 * scale,
     left + 1180 * scale,
+    geometry.targetWidth,
   );
+  const labels = useMemo(() => {
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) return [];
+    const family = overlay.current
+      ? getComputedStyle(overlay.current).fontFamily
+      : "sans-serif";
+    context.font = `500 12px ${family}`;
+    return layoutMonitorLabels(
+      groups.flatMap((group) => {
+        const signal = group.signals[0]!;
+        const text = analysisLabels?.[signal.id];
+        return group.signals.length === 1 && text
+          ? [
+              {
+                id: signal.id,
+                x: group.x,
+                width: Math.min(
+                  160,
+                  Math.ceil(context.measureText(text).width) + 14,
+                ),
+                priority:
+                  signal.id === selected ? 2 : text.startsWith("RDS") ? 1 : 0,
+              },
+            ]
+          : [];
+      }),
+      left + 52 * scale,
+      left + 1180 * scale,
+    );
+  }, [groups, analysisLabels, selected, left, scale]);
   const tooltipGroup = groups.find(
     (g) => g.signals[0]!.id === (hover ?? focus),
   );
@@ -149,20 +200,20 @@ export function MonitorDetectionMarkers({
                   signal.upperFrequencyHz !== undefined && (
                     <rect
                       x={sx(signal.lowerFrequencyHz)}
-                      y={top + 18 * scale}
+                      y={top + 18 * scaleY}
                       width={Math.max(
                         1,
                         sx(signal.upperFrequencyHz) -
                           sx(signal.lowerFrequencyHz),
                       )}
-                      height={132 * scale}
+                      height={132 * scaleY}
                     />
                   )}
                 <line
                   x1={sx(signal.frequencyHz)}
                   x2={sx(signal.frequencyHz)}
-                  y1={top + 18 * scale}
-                  y2={top + 150 * scale}
+                  y1={top + 18 * scaleY}
+                  y2={top + 150 * scaleY}
                 />
               </g>
             );
@@ -174,6 +225,8 @@ export function MonitorDetectionMarkers({
         const state = monitorMarkerState(session, first, now);
         const selectedGroup = group.signals.some((s) => s.id === selected);
         const key = first.id;
+        const label = labels.find((item) => item.id === key);
+        const width = markerWidth(group.signals.length, geometry.targetWidth);
         return (
           <button
             key={key}
@@ -184,16 +237,17 @@ export function MonitorDetectionMarkers({
             data-count={group.signals.length}
             aria-label={
               single
-                ? `Select detection at ${frequency(first.frequencyHz)}, ${state.label}`
+                ? `Select detection at ${frequency(first.frequencyHz)}, ${state.label}${analysisLabels?.[first.id] ? `, ${analysisLabels?.[first.id]}` : ""}`
                 : `Choose from ${group.signals.length} detected signals near ${frequency(first.frequencyHz)}`
             }
             aria-pressed={selectedGroup}
+            title={single ? analysisLabels?.[first.id] : undefined}
             aria-haspopup={single ? undefined : "dialog"}
             style={{
-              left: group.x - markerWidth(group.signals.length) / 2,
-              top: top + 18 * scale,
-              width: markerWidth(group.signals.length),
-              height: Math.max(44, 132 * scale),
+              left: group.x - width / 2,
+              top: top + 18 * scaleY,
+              width,
+              height: Math.max(44, 132 * scaleY),
             }}
             onMouseEnter={() => setHover(key)}
             onMouseLeave={() => setHover(undefined)}
@@ -212,8 +266,27 @@ export function MonitorDetectionMarkers({
             }}
           >
             <span className="monitor-marker-cap" aria-hidden="true">
-              {single ? "" : `${group.signals.length} signals`}
+              {single ? (
+                ""
+              ) : (
+                <>
+                  <b>{group.signals.length}</b>
+                  <small>marks</small>
+                </>
+              )}
             </span>
+            {single && label && (
+              <span
+                className="monitor-marker-intelligence"
+                style={{
+                  left: label.left - (group.x - width / 2),
+                  top: 4 + label.row * 24,
+                  width: label.width,
+                }}
+              >
+                {analysisLabels?.[first.id]}
+              </span>
+            )}
           </button>
         );
       })}
@@ -226,12 +299,15 @@ export function MonitorDetectionMarkers({
               0,
               Math.min(geometry.width - 230, tooltipGroup.x - 115),
             ),
-            top: top + 150 * scale + 4,
+            top: top + 150 * scaleY + 4,
           }}
         >
           {tooltipGroup.signals.length === 1 ? (
             <>
               <strong>{frequency(tooltipGroup.signals[0]!.frequencyHz)}</strong>
+              {analysisLabels?.[tooltipGroup.signals[0]!.id] && (
+                <span>{analysisLabels[tooltipGroup.signals[0]!.id]}</span>
+              )}
               <span>
                 {
                   monitorMarkerState(session, tooltipGroup.signals[0]!, now)
@@ -319,6 +395,9 @@ export function MonitorDetectionMarkers({
               >
                 <strong>{frequency(signal.frequencyHz)}</strong>
                 <span>{monitorMarkerState(session, signal, now).label}</span>
+                {analysisLabels?.[signal.id] && (
+                  <span>{analysisLabels[signal.id]}</span>
+                )}
                 <small>
                   {Math.round(signal.bandwidthHz).toLocaleString()} Hz measured
                   width

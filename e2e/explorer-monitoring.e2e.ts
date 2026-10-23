@@ -12,10 +12,10 @@ async function setup(page: Page, configureDetector = true) {
   if (configureDetector) {
     await page.getByText("Detector settings", { exact: true }).click();
     await page
-      .getByRole("slider", { name: "Dwell per window", exact: true })
+      .getByRole("spinbutton", { name: "Dwell milliseconds", exact: true })
       .fill("150");
     await page
-      .getByRole("slider", { name: "Detection threshold", exact: true })
+      .getByRole("spinbutton", { name: "Threshold decibels", exact: true })
       .fill("6");
   }
   await expect(
@@ -53,7 +53,7 @@ test("monitor holds a fixed center, retains stable signals and resumes the same 
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Investigate in Receiver" }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Pause monitoring" }).click();
   await expect(
     page.getByRole("button", { name: "Resume monitoring" }),
@@ -128,9 +128,7 @@ test("monitor sweeps enabled bands with measured coverage and retains history ac
   await expect(page.getByTestId("monitor-sweep-grid")).toContainText(
     "alternating half-window sweeps",
   );
-  await page
-    .getByText("Targets & observation coverage", { exact: true })
-    .click();
+  await page.getByRole("tab", { name: /^Targets/ }).click();
   await page.getByText("Coverage & revisit times", { exact: true }).click();
   await expect(page.locator(".monitor-coverage tbody tr")).toHaveCount(5);
   await page.getByRole("button", { name: "Pause monitoring" }).click();

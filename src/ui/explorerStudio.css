@@ -1,0 +1,1289 @@
+/* Spectrum Studio uses Receiver's signal-stage surfaces and density system. */
+.explorer-workspace.explorer-studio {
+  --studio-surface: var(--theme-surface, #071326);
+  --studio-panel: var(--theme-surface, rgba(7, 21, 45, 0.82));
+  --studio-soft: var(--theme-surface, rgba(3, 12, 29, 0.68));
+  --monitor-selection: var(--cyan);
+  --monitor-capture: var(--cyan);
+  --monitor-candidate: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  box-shadow: none;
+}
+.explorer-studio [hidden] {
+  display: none !important;
+}
+.explorer-studio :is(button, select, input:not([type="range"]), textarea) {
+  border-radius: 6px;
+  min-height: 36px;
+  font-size: 0.8rem;
+  box-sizing: border-box;
+}
+.explorer-studio button {
+  padding: 7px 11px;
+  line-height: 1.3;
+  white-space: normal;
+}
+.explorer-studio button.secondary {
+  background: var(--theme-surface, rgba(3, 12, 29, 0.68));
+  border-color: var(--line);
+  color: var(--ink);
+}
+.explorer-studio button.studio-primary {
+  background: var(--cyan);
+  color: var(--theme-surface, #071326);
+  border: 1px solid var(--cyan);
+  font-weight: 650;
+}
+.explorer-studio :is(button, summary, input, select, textarea):focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+.explorer-studio :is(button, summary):not(:disabled):hover {
+  border-color: var(--cyan);
+}
+.explorer-studio :is(label, small, summary, .eyebrow) {
+  font-size: max(0.75rem, 12px);
+}
+.explorer-studio small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.explorer-studio h3 {
+  font-size: 0.95rem;
+  margin: 0;
+  letter-spacing: 0;
+}
+.explorer-studio h4 {
+  font-size: 1rem;
+  margin: 0;
+}
+.explorer-studio :is(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+.explorer-studio label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+}
+.explorer-studio label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.explorer-studio input[type="checkbox"] {
+  min-height: 0;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
+.explorer-studio select {
+  width: 100%;
+}
+.explorer-studio .eyebrow {
+  color: var(--cyan-soft);
+  margin: 0;
+  letter-spacing: 0.12em;
+}
+.explorer-studio .explorer-heading {
+  display: none;
+}
+.explorer-studio .explorer-layout {
+  display: block;
+}
+.explorer-studio .monitor-shell,
+.explorer-studio .monitor-shell[data-detail="true"][data-guided="false"] {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 0;
+}
+.explorer-studio .monitor-left-rail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.explorer-studio
+  :is(
+    .monitor-setup-rail,
+    .monitor-run-card,
+    .monitor-band-spectrum,
+    .studio-results-main,
+    .monitor-inspector,
+    .studio-spectrum-empty
+  ) {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+  min-width: 0;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+.explorer-studio :is(.monitor-setup-rail, .monitor-run-card) {
+  display: grid;
+  gap: 12px;
+  width: auto;
+  max-height: none;
+  position: static;
+}
+.explorer-studio .monitor-setup-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.explorer-studio .monitor-setup-heading strong {
+  font-size: 0.8rem;
+}
+.explorer-studio .monitor-setup-step {
+  display: grid;
+  gap: 10px;
+}
+.explorer-studio .monitor-setup-step > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.explorer-studio .monitor-setup-step > h3 > span {
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  height: 20px;
+  width: 20px;
+  font-size: 0.75rem;
+}
+.explorer-studio
+  .monitor-setup-rail
+  :is(.scan-range-summary, .custom-monitor-editor) {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.explorer-studio .custom-monitor-editor > :is(h4, p:not([role="alert"])) {
+  display: none;
+}
+.explorer-studio .custom-monitor-editor fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+.explorer-studio .custom-monitor-editor legend {
+  font-size: 0.75rem;
+  padding: 0 0 8px;
+}
+.explorer-studio
+  :is(.custom-monitor-fields, .custom-monitor-entry, .monitor-number-fields) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.explorer-studio .custom-monitor-entry {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.explorer-studio .monitor-setup :is(input, select) {
+  width: 100%;
+}
+.explorer-studio
+  :is(.custom-monitor-fields, .custom-monitor-entry)
+  label:has(input[maxlength]) {
+  grid-column: 1/-1;
+}
+.explorer-studio :is(.monitor-plan, .explorer-save-status) {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.explorer-studio .monitor-plan {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.explorer-studio .monitor-control-state {
+  display: grid;
+  gap: 10px;
+}
+.explorer-studio .monitor-control-state > .status-pill {
+  width: fit-content;
+}
+.explorer-studio .monitor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.explorer-studio .monitor-transport {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.explorer-studio .monitor-transport .action-hint {
+  display: grid;
+  width: 100%;
+}
+.explorer-studio :is(.monitor-stop-analysis, .monitor-transport button) {
+  width: 100%;
+}
+.explorer-studio
+  .monitor-run-card
+  :is(
+    details,
+    .signal-analysis,
+    .monitor-session-summary,
+    .monitor-detail-stats
+  ) {
+  min-width: 0;
+}
+.explorer-studio details > summary {
+  cursor: pointer;
+  line-height: 1.5;
+  padding: 5px 0;
+  color: var(--ink);
+}
+.explorer-studio :is(.monitor-run-card, .monitor-setup-rail) details[open] {
+  display: grid;
+  gap: 8px;
+}
+.explorer-studio .monitor-session-summary {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  background: transparent;
+  font-size: 0.75rem;
+}
+.explorer-studio .monitor-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border: 0;
+}
+.explorer-studio .monitor-metrics > div {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+}
+.explorer-studio .monitor-metrics strong {
+  font-size: 0.8rem;
+  font-weight: 550;
+}
+.explorer-studio .monitor-metrics span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.explorer-studio :is(.monitor-message, .monitor-warning) {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 0;
+}
+.explorer-studio .monitor-routine-message:empty {
+  display: none;
+}
+.explorer-studio .monitor-sidebar-status:empty {
+  display: none;
+}
+.explorer-studio .monitor-sidebar-status .input-clipping-slot {
+  height: auto;
+  margin: 0;
+}
+.explorer-studio .monitor-sidebar-status .input-clipping-slot:empty {
+  display: none;
+}
+.explorer-studio .monitor-sidebar-status .input-clipping-details > summary {
+  white-space: normal;
+}
+.explorer-studio .monitor-sidebar-status .input-clipping-warning {
+  position: static;
+  width: auto;
+  margin: 8px 0 0;
+  box-shadow: none;
+}
+.explorer-studio .monitor-draft-notice {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--warning);
+  padding-top: 10px;
+}
+.explorer-studio [data-changed="true"] {
+  border-inline-start: 2px solid var(--warning);
+  padding-inline-start: 7px;
+}
+.explorer-studio [aria-invalid="true"] {
+  border-color: var(--warning);
+}
+.explorer-studio [role="alert"] {
+  color: var(--warning);
+  font-size: 0.75rem;
+}
+.explorer-studio .monitor-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 0;
+}
+.explorer-studio .monitor-band-spectrum {
+  margin: 0;
+  overflow: visible;
+}
+.explorer-studio .monitor-spectrum-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0 0 8px;
+}
+.explorer-studio .monitor-spectrum-heading > div:first-child {
+  flex: 1 1 300px;
+}
+.explorer-studio .monitor-spectrum-heading h4 {
+  font-size: 0.95rem;
+  margin: 0 0 4px;
+}
+.explorer-studio .monitor-spectrum-heading :is(span, strong) {
+  font-size: 0.75rem;
+  font-weight: 450;
+  line-height: 1.5;
+}
+.explorer-studio .monitor-plot-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.explorer-studio .monitor-display-options {
+  position: relative;
+}
+.explorer-studio .monitor-display-options[open] {
+  display: grid;
+  gap: 8px;
+}
+.explorer-studio .monitor-display-options label {
+  width: 140px;
+}
+.explorer-studio .monitor-display-options small {
+  max-width: 180px;
+}
+.explorer-studio .monitor-spectrum-plot {
+  position: relative;
+  padding: 0;
+  min-width: 0;
+  /* ResizeObserver updates markers after layout; old pixel positions must not widen the page. */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+.explorer-studio .monitor-spectrum-plot > svg {
+  display: block;
+  width: 100%;
+  height: min(var(--spectrum-height, 240px), 35vh);
+  min-height: 160px;
+  overflow: visible;
+}
+.explorer-studio .monitor-band-spectrum text {
+  font-size: var(--monitor-axis-font, 12px);
+  fill: var(--muted);
+}
+.explorer-studio .monitor-spectrum-legend {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.explorer-studio .monitor-spectrum-legend span {
+  display: block;
+  margin: 5px 0;
+}
+.explorer-studio .monitor-receiver-readout {
+  font-size: 0.75rem;
+  margin: 0 0 4px;
+}
+.explorer-studio .monitor-spectrum-empty-message {
+  font-size: 0.8rem;
+  position: absolute;
+  inset: 40% 8% auto;
+  text-align: center;
+  pointer-events: none;
+}
+.explorer-studio .monitor-plot-hover {
+  position: absolute;
+  z-index: 9;
+  background: var(--theme-surface, #071326);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  pointer-events: none;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.explorer-studio .monitor-plot-hover small {
+  display: block;
+}
+.explorer-studio .monitor-band-spectrum[data-full-view="true"] {
+  position: fixed;
+  inset: 16px;
+  z-index: 1000;
+  background: var(--theme-surface, #071326);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.explorer-studio
+  .monitor-band-spectrum[data-full-view="true"]
+  .monitor-spectrum-plot {
+  flex: 1;
+  min-height: 180px;
+}
+.explorer-studio
+  .monitor-band-spectrum[data-full-view="true"]
+  .monitor-spectrum-plot
+  > svg {
+  height: max(200px, 60vh);
+}
+.explorer-studio .monitor-detection-marker.is-older,
+.explorer-studio .monitor-detection-support.is-older {
+  opacity: 0.8;
+}
+.explorer-studio .monitor-marker-cap small {
+  font-size: 12px;
+}
+.explorer-studio .monitor-marker-intelligence {
+  background: var(--theme-surface, #071326);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.explorer-studio .studio-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+.explorer-studio .monitor-shell[data-detail="true"] .studio-review-layout {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.explorer-studio .studio-results-main {
+  min-width: 0;
+}
+.explorer-studio .monitor-view-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.explorer-studio .monitor-view-tabs button {
+  border-radius: 4px;
+  font-size: 0.8rem;
+  padding: 7px 12px;
+}
+.explorer-studio .monitor-view-tabs button[aria-selected="true"] {
+  background: var(--theme-surface, rgba(86, 220, 255, 0.12));
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+.explorer-studio .monitor-result-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 0 0 12px;
+}
+.explorer-studio .studio-results-title {
+  flex: 1 1 160px;
+}
+.explorer-studio .studio-results-title h4 {
+  font-size: 0.9rem;
+}
+.explorer-studio .studio-results-title small {
+  display: block;
+  padding-top: 4px;
+}
+.explorer-studio .monitor-result-controls label {
+  flex: 0 1 170px;
+}
+.explorer-studio .monitor-result-count {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.explorer-studio .monitor-table-wrap {
+  overflow: auto;
+  min-width: 0;
+}
+.explorer-studio .monitor-table-wrap.monitor-results-scroll {
+  max-height: 650px;
+}
+.explorer-studio .monitor-signal-table {
+  width: 100%;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.explorer-studio .monitor-signal-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.explorer-studio .monitor-signal-table th {
+  font-size: 0.75rem;
+  font-weight: 550;
+  padding: 9px 8px;
+  white-space: normal;
+}
+.explorer-studio .monitor-signal-table td {
+  padding: 10px 8px;
+  line-height: 1.5;
+  vertical-align: top;
+  cursor: pointer;
+}
+.explorer-studio .monitor-signal-table tr[aria-selected="true"] {
+  background: var(--theme-surface, rgba(86, 220, 255, 0.1));
+  box-shadow: inset 3px 0 var(--cyan);
+}
+.explorer-studio .monitor-signal-table td:nth-child(n + 3) {
+  text-align: right;
+}
+.explorer-studio .monitor-signal-table th:nth-child(n + 3) {
+  text-align: right;
+}
+.explorer-studio .monitor-signal-table :is(th, td):nth-child(4),
+.explorer-studio .monitor-signal-table :is(th, td):nth-child(6) {
+  display: none;
+}
+.explorer-studio .studio-signal-name {
+  display: block;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 550;
+}
+.explorer-studio .monitor-frequency {
+  min-height: 30px;
+  padding: 2px 0;
+  color: var(--cyan);
+  font-size: 0.85rem;
+  background: transparent;
+  border: 0;
+}
+.explorer-studio .monitor-signal-table td > small {
+  display: block;
+  margin: 3px 0;
+  font-size: 0.75rem;
+}
+.explorer-studio .monitor-group-details {
+  display: block;
+  margin-top: 5px;
+}
+.explorer-studio .monitor-group-details summary {
+  width: fit-content;
+  font-size: 0.75rem;
+  padding: 2px 0;
+}
+.explorer-studio .monitor-group-details[open] {
+  max-width: 380px;
+  white-space: normal;
+}
+.explorer-studio .monitor-table-note {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.explorer-studio .monitor-inspector {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  background: var(
+    --theme-surface,
+    linear-gradient(145deg, rgba(7, 21, 45, 0.82), rgba(3, 12, 29, 0.68))
+  );
+  overflow: visible;
+  display: grid;
+  gap: 12px;
+}
+.explorer-studio .monitor-inspector .monitor-toolbar {
+  position: static;
+  display: flex;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+}
+.explorer-studio .monitor-inspector .monitor-toolbar > div {
+  flex: 1 1 180px;
+}
+.explorer-studio .monitor-inspector .monitor-toolbar > button {
+  padding: 5px 8px;
+}
+.explorer-studio .studio-inspector-name {
+  margin: 5px 0;
+  font-size: 1rem;
+}
+.explorer-studio .monitor-inspector h4 {
+  font-size: 0.9rem;
+}
+.explorer-studio .monitor-detail-stats {
+  display: grid;
+  gap: 7px;
+  font-size: 0.8rem;
+}
+.explorer-studio .studio-decoded-evidence {
+  display: grid;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.explorer-studio .studio-decoded-evidence > span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.explorer-studio .studio-decoded-evidence > strong {
+  color: var(--cyan);
+}
+.explorer-studio .signal-analysis {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  gap: 8px;
+}
+.explorer-studio .signal-analysis-toolbar {
+  display: grid;
+  gap: 8px;
+}
+.explorer-studio .signal-analysis-toolbar > div {
+  display: none;
+}
+.explorer-studio .signal-analysis-toolbar button {
+  width: 100%;
+}
+.explorer-studio .signal-analysis-progress {
+  font-size: 0.75rem;
+  margin: 0;
+  line-height: 1.5;
+}
+.explorer-studio .studio-spectrum-empty > div,
+.explorer-studio .explorer-empty {
+  min-height: 200px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 20px;
+}
+.explorer-studio .studio-spectrum-empty p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.explorer-studio .explorer-saved-setups[open] {
+  display: grid;
+  gap: 8px;
+}
+.density-compact
+  .explorer-studio
+  :is(
+    .monitor-setup-rail,
+    .monitor-run-card,
+    .monitor-band-spectrum,
+    .studio-results-main,
+    .monitor-inspector
+  ) {
+  padding: 10px;
+}
+.density-compact .explorer-studio :is(button, input, select) {
+  min-height: 32px;
+}
+.density-compact .explorer-studio .monitor-signal-table td {
+  padding-block: 6px;
+}
+@media (min-width: 1900px) {
+  .explorer-studio .monitor-signal-table :is(th, td):nth-child(4),
+  .explorer-studio .monitor-signal-table :is(th, td):nth-child(6) {
+    display: table-cell;
+  }
+}
+@media (max-width: 1250px) {
+  .explorer-studio .monitor-shell[data-detail="true"] .studio-review-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 850px) {
+  .explorer-studio .monitor-shell,
+  .explorer-studio .monitor-shell[data-detail="true"][data-guided="false"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-studio .monitor-left-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .explorer-studio .monitor-spectrum-heading > div:first-child {
+    flex-basis: 100%;
+  }
+  .explorer-studio .monitor-band-spectrum[data-full-view="true"] {
+    inset: 5px;
+  }
+}
+@media (max-width: 600px) {
+  .explorer-studio .monitor-left-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-studio .monitor-result-controls {
+    align-items: stretch;
+  }
+  .explorer-studio .monitor-result-controls label {
+    flex: 1 1 120px;
+  }
+  .explorer-studio .monitor-spectrum-heading {
+    align-items: start;
+  }
+  .explorer-studio .monitor-signal-table {
+    min-width: 500px;
+  }
+  .explorer-studio .monitor-signal-table td {
+    padding: 8px 6px;
+  }
+  .explorer-studio .monitor-plot-tools {
+    width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .explorer-studio :is(button, input, select) {
+    min-height: 44px;
+  }
+}
+.explorer-studio[data-activity="survey"] {
+  padding: 25px;
+}
+.explorer-studio[data-activity="survey"] .explorer-heading {
+  padding: 0 0 20px;
+}
+.explorer-studio[data-activity="survey"] .explorer-heading h2 {
+  font-size: 1.65rem;
+  letter-spacing: -0.04em;
+}
+.explorer-studio[data-activity="survey"] .explorer-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 285px) minmax(0, 1fr);
+  gap: 22px;
+}
+.explorer-studio[data-activity="survey"] .explorer-results {
+  display: contents;
+}
+.explorer-studio[data-activity="survey"] .explorer-results > * {
+  grid-column: 2;
+  min-width: 0;
+}
+.explorer-studio[data-activity="survey"]
+  .explorer-results
+  > .explorer-chart-wrap,
+.explorer-studio[data-activity="survey"] .explorer-results > .explorer-empty {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  border: 1px solid var(--line);
+  background: var(
+    --theme-surface,
+    linear-gradient(145deg, rgba(7, 21, 45, 0.82), rgba(3, 12, 29, 0.68))
+  );
+  border-radius: 6px;
+  padding: 18px;
+}
+.explorer-studio[data-activity="survey"] .explorer-controls {
+  grid-column: 1;
+  grid-row: 2 / span 12;
+  position: static;
+  max-height: none;
+  overflow: visible;
+  background: var(
+    --theme-surface,
+    linear-gradient(145deg, rgba(7, 21, 45, 0.82), rgba(3, 12, 29, 0.68))
+  );
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 19px;
+}
+.explorer-studio .explorer-controls label {
+  font-size: 0.76rem;
+}
+.explorer-studio .explorer-controls select {
+  padding: 10px;
+}
+.explorer-studio .candidate-list-wrap {
+  background: var(
+    --theme-surface,
+    linear-gradient(145deg, rgba(7, 21, 45, 0.82), rgba(3, 12, 29, 0.68))
+  );
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: clip;
+}
+.explorer-studio .candidate-list-heading {
+  padding: 18px;
+  gap: 12px;
+}
+.explorer-studio .candidate-review-card {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 20px;
+}
+.explorer-studio .candidate-review-card-highlighted {
+  background: color-mix(in srgb, var(--cyan) 8%, var(--studio-panel));
+}
+.explorer-studio .candidate-annotation-grid input,
+.explorer-studio .candidate-review-card select {
+  background: var(--studio-surface);
+}
+/* Hiding the panorama is an explicit dense-review choice; retain eight rows above the fold. */
+/* Neutralize the previous workbench's fixed rails and expanded grid tracks. */
+.explorer-studio .monitor-setup-rail {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.explorer-studio .monitor-setup input[type="checkbox"] {
+  width: auto;
+}
+.explorer-studio .monitor-signals-panel {
+  display: block;
+}
+.explorer-studio .monitor-table-wrap.monitor-results-scroll {
+  height: auto;
+  min-height: 0;
+}
+.explorer-studio .monitor-tools {
+  width: 100%;
+  justify-self: stretch;
+}
+.explorer-studio .monitor-tools > summary {
+  text-align: left;
+}
+.explorer-studio .monitor-setup-step > label:has(select) {
+  gap: 5px;
+}
+.explorer-studio .monitor-setup-step > label > details {
+  margin: 0;
+}
+.explorer-studio .monitor-setup-step > details {
+  margin: 0;
+  padding: 0;
+}
+.explorer-studio .monitor-plan {
+  padding: 8px 0 0;
+  background: transparent;
+}
+@media (min-width: 851px) {
+  .explorer-studio .monitor-left-rail {
+    position: sticky;
+    top: 80px;
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .explorer-studio[data-activity="monitor"] .monitor-setup-rail {
+    max-height: min(610px, 58dvh);
+  }
+}
+.explorer-studio .monitor-signal-table td > small {
+  display: inline-block;
+  margin: 0 10px 0 0;
+}
+.explorer-studio .monitor-group-details {
+  display: inline-block;
+  margin: 0;
+  vertical-align: baseline;
+}
+.explorer-studio .monitor-signal-table td > .monitor-frequency {
+  display: block;
+}
+.explorer-studio .monitor-signal-table td {
+  padding-block: 7px;
+}
+@media (max-width: 850px) {
+  .explorer-studio[data-activity="survey"] {
+    padding: 0;
+  }
+  .explorer-studio[data-activity="survey"] .explorer-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .explorer-studio[data-activity="survey"] .explorer-results {
+    display: contents;
+  }
+  .explorer-studio[data-activity="survey"]
+    .explorer-results
+    > :is(.explorer-chart-wrap, .explorer-empty) {
+    order: -1;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .explorer-studio[data-activity="survey"] .explorer-controls {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+.explorer-studio .monitor-signal-table td:not(:first-child) > small {
+  display: block;
+  margin: 3px 0 0;
+}
+.explorer-studio .monitor-display-options > summary {
+  padding-right: 20px;
+}
+
+.explorer-studio .monitor-group-details > summary {
+  padding: 2px 22px 2px 0;
+}
+/* Themes must not paint the transparent spectrum hit targets as primary actions. */
+:root[data-theme]
+  .explorer-studio
+  button.monitor-detection-marker:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-theme] .explorer-studio button.monitor-frequency:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--cyan);
+}
+
+/* Small screens keep the reference plot first and expand setup inline, without a clipped mini rail. */
+@media (max-width: 850px) {
+  .explorer-studio .monitor-shell,
+  .explorer-studio .monitor-shell[data-detail="true"][data-guided="false"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-studio .monitor-left-rail,
+  .explorer-studio .monitor-workspace {
+    display: contents;
+  }
+  .explorer-studio :is(.monitor-band-spectrum, .studio-spectrum-empty) {
+    grid-row: 1;
+    grid-column: 1/-1;
+  }
+  .explorer-studio .studio-review-layout {
+    grid-column: 1/-1;
+  }
+  .explorer-studio[data-activity="monitor"] .monitor-setup-rail {
+    max-height: none;
+    overflow: visible;
+  }
+}
+@media (min-width: 601px) and (max-width: 850px) {
+  .explorer-studio .monitor-shell,
+  .explorer-studio .monitor-shell[data-detail="true"][data-guided="false"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+:root[data-theme]
+  .explorer-studio
+  button.monitor-detection-marker:not(:disabled) {
+  color: var(--ink);
+}
+.explorer-studio .monitor-detection-support {
+  color: var(--warning);
+}
+/* Let the review fill a desktop viewport; keep independent scroll areas for history and evidence. */
+@media (min-width: 1251px) and (min-height: 800px) {
+  .explorer-studio .monitor-workspace {
+    height: calc(100dvh - 96px);
+    min-height: 620px;
+  }
+  .explorer-studio .monitor-band-spectrum {
+    flex: none;
+  }
+  .explorer-studio .studio-review-layout {
+    flex: 1;
+    min-height: 0;
+  }
+  .explorer-studio .studio-results-main,
+  .explorer-studio .monitor-signals-panel:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .explorer-studio .monitor-signals-panel:not([hidden]),
+  .explorer-studio .monitor-table-wrap.monitor-results-scroll {
+    flex: 1;
+    max-height: none;
+  }
+  .explorer-studio .monitor-view-tabs,
+  .explorer-studio .monitor-result-controls,
+  .explorer-studio .monitor-table-note {
+    flex: none;
+  }
+  .explorer-studio #monitor-targets-panel:not([hidden]),
+  .explorer-studio .monitor-inspector {
+    min-height: 0;
+    overflow: auto;
+  }
+}
+:root[data-theme]
+  .explorer-studio
+  button.monitor-detection-marker.is-tentative:not(:disabled) {
+  color: var(--warning);
+}
+:root[data-theme]
+  .explorer-studio
+  button.monitor-detection-marker.is-selected:not(:disabled),
+.explorer-studio .monitor-detection-support.is-selected {
+  color: var(--violet);
+}
+
+/* Selected status design A: state and transport share one prominent left-rail card. */
+.explorer-studio .monitor-state-card {
+  --monitor-state-color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--monitor-state-color) 8%, transparent);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.explorer-studio .monitor-state-card[data-state="paused"] {
+  --monitor-state-color: var(--warning);
+}
+.explorer-studio .monitor-state-card[data-state="running"] {
+  --monitor-state-color: var(--success);
+}
+.explorer-studio .monitor-state-card[data-state="analysis"],
+.explorer-studio .monitor-state-card[data-state="cleanup"] {
+  --monitor-state-color: var(--violet);
+}
+.explorer-studio .monitor-state-card[data-state="failed"] {
+  --monitor-state-color: var(--warning);
+}
+.explorer-studio
+  .monitor-state-card:is(
+    [data-state="paused"],
+    [data-state="failed"],
+    [data-state="analysis"]
+  ) {
+  border-color: color-mix(in srgb, var(--monitor-state-color) 65%, var(--line));
+  background: color-mix(in srgb, var(--monitor-state-color) 12%, transparent);
+}
+.explorer-studio .monitor-state-title {
+  min-height: 2.7rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--monitor-state-color);
+}
+.explorer-studio .monitor-state-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.explorer-studio .monitor-state-icon .app-icon {
+  width: 18px;
+  height: 18px;
+}
+.explorer-studio .monitor-state-title .status-pill {
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  white-space: normal;
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+.explorer-studio .monitor-acquisition-state {
+  min-height: 3em;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.explorer-studio .monitor-state-measurement {
+  min-height: 5.75rem;
+}
+.explorer-studio .monitor-cycle-count {
+  min-height: 1.5em;
+}
+.explorer-studio .monitor-cycle-count[aria-hidden="true"] {
+  visibility: hidden;
+}
+.explorer-studio .monitor-state-progress > div {
+  min-height: 3em;
+  align-content: start;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.explorer-studio .monitor-state-progress progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 7px;
+  margin: 8px 0;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+  accent-color: var(--monitor-state-color);
+}
+.explorer-studio .monitor-state-progress progress::-webkit-progress-bar {
+  background: var(--line);
+  border-radius: 4px;
+}
+.explorer-studio .monitor-state-progress progress::-webkit-progress-value {
+  background: var(--monitor-state-color);
+  border-radius: 4px;
+}
+.explorer-studio .monitor-state-progress progress::-moz-progress-bar {
+  background: var(--monitor-state-color);
+  border-radius: 4px;
+}
+.explorer-studio .monitor-state-card[data-state="paused"] progress {
+  --monitor-state-color: var(--muted);
+}
+.explorer-studio .monitor-state-card small,
+.explorer-studio .monitor-cycle-explanation {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.explorer-studio .monitor-state-card .monitor-transport {
+  margin: 0;
+}
+.explorer-studio .monitor-state-card .studio-primary {
+  order: -1;
+}
+
+.explorer-studio .monitor-run-secondary {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+@media (min-width: 851px) and (min-height: 800px) {
+  .explorer-studio .monitor-left-rail {
+    height: calc(100dvh - 96px);
+    grid-template-rows: minmax(220px, 3fr) minmax(380px, 5fr);
+    overflow: visible;
+    min-height: 0;
+  }
+  .explorer-studio[data-activity="monitor"] .monitor-setup-rail {
+    max-height: none;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .explorer-studio .monitor-run-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .explorer-studio .monitor-run-card > h3,
+  .explorer-studio .monitor-control-state {
+    flex: none;
+  }
+  .explorer-studio .monitor-run-secondary {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .explorer-studio
+    .monitor-shell:has(.monitor-band-spectrum[data-expanded="false"])
+    .monitor-signal-table
+    td {
+    padding-block: 3px;
+  }
+}
+
+/* Native checkboxes retain keyboard behavior and a generous clickable label. */
+.explorer-studio .explorer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.explorer-studio .explorer-toggle:has(input:checked) {
+  border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+}
+.explorer-studio .explorer-toggle:has(input:disabled) {
+  color: var(--muted);
+  cursor: default;
+}
+.explorer-studio .explorer-toggle input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  min-height: 0;
+  flex: 0 0 34px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--muted);
+  border-radius: 12px;
+  background: var(--line);
+  cursor: inherit;
+}
+.explorer-studio .explorer-toggle input[type="checkbox"]::before {
+  content: "";
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.explorer-studio .explorer-toggle input:checked {
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+.explorer-studio .explorer-toggle input:checked::before {
+  transform: translateX(14px);
+  background: var(--theme-surface, #020611);
+}
+.explorer-studio .explorer-toggle input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+@media (forced-colors: active) {
+  .explorer-studio .explorer-toggle input[type="checkbox"] {
+    appearance: auto;
+  }
+  .explorer-studio .explorer-toggle input::before {
+    display: none;
+  }
+}

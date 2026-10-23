@@ -1,10 +1,10 @@
 /* Decoder: compact shared context, focused output, selection-only detail. */
-.decoder-workbench { --decoder-surface: #091627; display: grid; gap: 10px; min-width: 0; }
+.decoder-workbench { --decoder-surface: var(--theme-surface, #071326); display: grid; gap: 10px; min-width: 0; }
 .decoder-workbench[hidden] { display: none; }
 .decoder-workbench label { color: var(--muted); font-size: 12px; }
 .decoder-workbench select, .decoder-workbench input { width: 100%; min-width: 0; }
 .decoder-workbench button, .decoder-workbench select, .decoder-toolbar summary { min-height: 44px; }
-.decoder-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--decoder-surface); }
+.decoder-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--decoder-surface); }
 .decoder-format { flex: 0 1 190px; }
 .decoder-input-summary { display: grid; gap: 3px; flex: 0 1 auto; padding: 0 4px; font-size: 12px; }
 .decoder-input-summary small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -17,7 +17,7 @@
 .decoder-toolbar details > summary::after { display: none; }
 .decoder-toolbar details > summary { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--cyan-soft); }
 .decoder-input-details { margin-left: auto; }
-.decoder-toolbar .decoder-popover { position: absolute; z-index: 8; right: 0; top: calc(100% + 6px); width: min(320px, calc(100vw - 40px)); border: 1px solid var(--line); padding: 14px; border-radius: 8px; background: var(--decoder-surface); box-shadow: 0 12px 32px #0006; }
+.decoder-toolbar .decoder-popover { position: absolute; z-index: 8; right: 0; top: calc(100% + 6px); width: min(320px, calc(100vw - 40px)); border: 1px solid var(--line); padding: 14px; border-radius: 6px; background: var(--decoder-surface); box-shadow: 0 12px 32px #0006; }
 .decoder-popover > button { width: 100%; margin-top: 6px; justify-content: flex-start; }
 .decoder-popover > p { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .decoder-context { display: grid; gap: 10px; margin: 12px 0; }
@@ -25,12 +25,12 @@
 .decoder-context dt { color: var(--muted); font-size: 11px; }
 .decoder-context dd { margin: 0; font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .decoder-hint, .decoder-review-status { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.decoder-configuration { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.decoder-configuration { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; }
 .decoder-configuration p { flex: 1 1 240px; color: var(--muted); font-size: 12px; margin: 0; }
-.decoder-audio { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.decoder-audio { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; }
 .decoder-audio label { display: grid; flex: 1 1 180px; max-width: 300px; gap: 4px; }
 .decoder-audio input { min-height: 24px; }
-.decoder-stage { min-width: 0; border: 1px solid var(--line); border-radius: 8px; overflow: clip; background: var(--decoder-surface); }
+.decoder-stage { min-width: 0; border: 1px solid var(--line); border-radius: 6px; overflow: clip; background: var(--decoder-surface); }
 .decoder-stage > [role="alert"], .decoder-stage > .decoder-hint { margin: 10px 14px; }
 .decoder-canvas { display: grid; grid-template-columns: minmax(0, 1fr); }
 .decoder-canvas-inspecting { grid-template-columns: minmax(0, 1fr) 285px; }
@@ -124,3 +124,9 @@
 }
 
 .decoder-paging-table td:nth-child(2) { white-space: normal; min-width: 200px; max-width: 440px; overflow-wrap: anywhere; }
+
+.decoder-workbench :is(.decoder-toolbar,.decoder-stage) { background: var(--workspace-panel); }
+.decoder-audio-disclosure { display: block; }
+.decoder-audio-disclosure > summary { font-size: .8rem; cursor: pointer; }
+.decoder-audio-disclosure[open] { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.decoder-audio-disclosure[open] > summary { flex-basis: 100%; }

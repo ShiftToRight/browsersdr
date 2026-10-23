@@ -44,7 +44,8 @@ const sharingTarget = process.env.BROWSERSDR_SHARING_PROXY;
 const sharingProxy = sharingTarget ? { "/api/v1/sharing": { target: sharingTarget, changeOrigin: false, timeout: 35_000, proxyTimeout: 35_000 } } : undefined;
 
 export default defineConfig({
-  server: { proxy: sharingProxy },
+  // Private evidence includes extracted system symlinks; it is never app source.
+  server: { proxy: sharingProxy, watch: { ignored: ["**/.local/**"] } },
   preview: { proxy: sharingProxy },
   // Keep the app, stylesheet and module worker relocatable as one static directory.
   base: "./",

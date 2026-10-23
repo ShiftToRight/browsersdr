@@ -11,7 +11,7 @@ async function chooseMarker(page: Page, frequency: string) {
   else {
     const group = page
       .getByTestId("monitor-detection-marker")
-      .filter({ hasText: "signals" })
+      .filter({ hasText: "marks" })
       .last();
     await group.click();
     const chooser = page.getByRole("dialog", {
@@ -104,7 +104,7 @@ test("phone clusters keep every detection accessible with keyboard selection and
       buttons.reduce((n, b) => n + Number(b.getAttribute("data-count")), 0),
     ),
   ).toBe(17);
-  const cluster = groups.filter({ hasText: "signals" }).first();
+  const cluster = groups.filter({ hasText: "marks" }).first();
   await expect(cluster).toBeVisible();
   const before = await page.getByTestId("monitor-sweeps").textContent();
   await cluster.focus();

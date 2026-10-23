@@ -1,6 +1,7 @@
 import type { SourceSessionMetadata } from "../radio/types";
 import type { SignalCenterResult } from "./signalCenter";
 import type { AnalysisBackendName, AnalysisBackendPreference } from "./spectrumBackend";
+import type { SignalProbeConfiguration, SignalProbeResult } from "./signalIntelligence";
 
 export interface ConfigureAnalysisMessage {
   type: "configure";
@@ -34,7 +35,11 @@ export interface AnalysisStopMessage { type: "stop"; sessionGeneration: number }
 /** Maximum spectrum rows that may cross the worker boundary before the display drains them. */
 export const SPECTRUM_PUBLICATION_WINDOW = 32;
 export interface SpectrumCreditMessage { type: "spectrum-credit"; sessionGeneration: number; credits: number }
-export type AnalysisWorkerInput = ConfigureAnalysisMessage | AnalysisSamplesMessage | AnalysisCi8Message | AnalysisSc16Message | AnalysisUsrpSc16Message | AnalysisStopMessage | SpectrumCreditMessage | CenterStartMessage | CenterCancelMessage;
+export interface ProbeStartMessage { type: "probe-start"; sessionGeneration: number; requestId: number; minimumSampleIndex: number; configuration: SignalProbeConfiguration }
+export interface ProbeCancelMessage { type: "probe-cancel"; sessionGeneration: number; requestId: number }
+export interface ProbeResultMessage { type: "probe-result"; sessionGeneration: number; requestId: number; result?: SignalProbeResult; error?: string }
+export interface ProbeProgressMessage { type: "probe-progress"; sessionGeneration: number; requestId: number; sampledSeconds: number }
+export type AnalysisWorkerInput = ConfigureAnalysisMessage | AnalysisSamplesMessage | AnalysisCi8Message | AnalysisSc16Message | AnalysisUsrpSc16Message | AnalysisStopMessage | SpectrumCreditMessage | CenterStartMessage | CenterCancelMessage | ProbeStartMessage | ProbeCancelMessage;
 
 export interface AnalysisAckMessage {
   type: "samples-ack";
@@ -63,7 +68,7 @@ export interface AnalysisFrameMessage {
   hopSamples?: number;
 }
 
-export type AnalysisWorkerOutput = AnalysisAckMessage | AnalysisCi8Ack | AnalysisSc16Ack | AnalysisUsrpSc16Ack | AnalysisFrameMessage | CenterResultMessage;
+export type AnalysisWorkerOutput = AnalysisAckMessage | AnalysisCi8Ack | AnalysisSc16Ack | AnalysisUsrpSc16Ack | AnalysisFrameMessage | CenterResultMessage | ProbeResultMessage | ProbeProgressMessage;
 
 export interface CenterStartMessage { type: "center-start"; sessionGeneration: number; requestId: number; minimumSampleIndex: number; metadata: SourceSessionMetadata }
 export interface CenterCancelMessage { type: "center-cancel"; sessionGeneration: number; requestId: number }

@@ -873,7 +873,7 @@ export function WebGpuSpectrum({
             <h2 id="graphics-heading">Spectrum & waterfall</h2>
           </div>
         </div>
-        <span className={`status-pill status-${state.kind}`}>{state.kind}</span>
+        <span className={`status-pill status-${state.kind}`}>{state.kind === "ready" ? "Display ready" : state.kind}</span>
         <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
           coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
           onPlanChange={setRasterRegion} onHeightChange={setGuideGap} /></Suspense>
@@ -936,7 +936,7 @@ export function WebGpuSpectrum({
                 {state.kind === "error" || state.kind === "unsupported"
                   ? state.message
                   : !session
-                    ? "Connect a receiver or choose the synthetic demo in Acquire."
+                    ? "Connect a receiver or choose the synthetic demo in Receiver."
                     : "The spectrum will appear when samples reach the display."}
               </p>
               <div>
@@ -965,7 +965,7 @@ export function WebGpuSpectrum({
                     className="secondary"
                     onClick={onOpenAcquire}
                   >
-                    Go to Acquire
+                    Open Receiver
                   </button>
                 )}
               </div>

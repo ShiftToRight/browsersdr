@@ -1,5 +1,6 @@
 /* Optional themes are isolated tokens; Midnight Observatory retains its defaults. */
 :root[data-theme="field-deck"] {
+  --workspace-panel: linear-gradient(145deg, #f4f3f0, #eeede9);
   color-scheme: light;
   --ink: #242426; --muted: #55545a; --dim: #626168;
   --cyan: #a83b10; --cyan-soft: #953409; --violet: #74459d; --stellar: #242426;
@@ -11,6 +12,7 @@
   --theme-surface: #f2f1ee; --theme-ink: #242426; --theme-muted: #55545a;
 }
 :root[data-theme="vice-afterglow"] {
+  --workspace-panel: linear-gradient(150deg, #211433, #160f27);
   color-scheme: dark;
   --ink: #f5eefe; --muted: #c1aed8; --dim: #b7a5cd;
   --cyan: #65f1ef; --cyan-soft: #a1fafa; --violet: #ff5caa; --stellar: #ffd7e9;

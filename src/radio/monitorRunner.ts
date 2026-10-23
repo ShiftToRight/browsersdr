@@ -39,7 +39,10 @@ export function monitorWait(ms: number, signal: AbortSignal): Promise<void> {
     else signal.addEventListener("abort", abort, { once: true });
   });
 }
-interface MonitorRunnerOptions {
+export interface MonitorRunnerOptions {
+  /** Yield at a complete sweep boundary, after receiver cleanup. */
+  stopAfterSweeps?: number;
+  onReleased?: (snapshot: ReceiverSnapshot) => void;
   controller: Pick<
     ReceiverController,
     "getSnapshot" | "scanTune" | "tune" | "stop" | "setVolume"
@@ -246,6 +249,17 @@ export async function runMonitor(
             "No monitoring window had valid sample coverage in this sweep. Check input and Resume.",
           );
         validThisSweep = 0;
+        if (
+          options.stopAfterSweeps !== undefined &&
+          session.sweeps >= initial.sweeps + options.stopAfterSweeps
+        ) {
+          session = {
+            ...session,
+            status: "paused",
+            message: "Discovery slice complete. History retained.",
+          };
+          break;
+        }
       }
     }
   } catch (error) {
@@ -269,14 +283,65 @@ export async function runMonitor(
       original.session
     ) {
       try {
-        if (
-          current.session.hardwareCenterFrequencyHz !==
-          original.session.hardwareCenterFrequencyHz
-        )
-          await controller.scanTune(original.session.hardwareCenterFrequencyHz);
-        if (controller.getSnapshot().lifecycle === "running")
-          await controller.tune(original.session.selectedChannelFrequencyHz);
-        if (original.lifecycle === "connected") await controller.stop();
+        const originalSession = original.session;
+        const currentSession = current.session;
+        const restore = async () => {
+          if (
+            currentSession.hardwareCenterFrequencyHz !==
+            originalSession.hardwareCenterFrequencyHz
+          ) {
+            const restored = await controller.scanTune(
+              originalSession.hardwareCenterFrequencyHz,
+            );
+            if (!restored)
+              throw new Error("Could not restore receiver center.");
+            ownedGeneration = restored.sessionGeneration;
+          }
+          if (
+            controller.getSnapshot().session?.sessionGeneration !==
+            ownedGeneration
+          )
+            throw new Error("Receiver ownership changed during cleanup.");
+          const tuning = controller.tune(
+            originalSession.selectedChannelFrequencyHz,
+          );
+          ownedGeneration = controller.getSnapshot().session?.sessionGeneration;
+          await tuning;
+          const restored = controller.getSnapshot();
+          if (
+            restored.lifecycle !== "running" ||
+            !restored.session ||
+            restored.session.sessionGeneration !== ownedGeneration ||
+            monitorContext(
+              initial.snapshot.profile,
+              restored.session,
+              initial.targets,
+              initial.analysis,
+            ) !== initial.context
+          )
+            throw new Error("Receiver ownership changed during cleanup.");
+          controller.setVolume(options.volume);
+          const stopping =
+            original.lifecycle === "connected"
+              ? controller.stop()
+              : Promise.resolve();
+          const releaseGeneration = controller.getSnapshot().sessionGeneration;
+          await stopping;
+          const released = controller.getSnapshot();
+          if (
+            released.session &&
+            released.sessionGeneration === releaseGeneration &&
+            released.lifecycle === original.lifecycle &&
+            monitorContext(
+              initial.snapshot.profile,
+              released.session,
+              initial.targets,
+              initial.analysis,
+            ) === initial.context
+          )
+            options.onReleased?.(released);
+        };
+        await restore();
       } catch (error) {
         session = {
           ...session,
@@ -285,7 +350,6 @@ export async function runMonitor(
         };
       }
     }
-    controller.setVolume(options.volume);
     session = { ...session, updatedAt: new Date(now()).toISOString() };
     publish();
   }

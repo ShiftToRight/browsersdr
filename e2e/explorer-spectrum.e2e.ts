@@ -93,7 +93,7 @@ test("band spectrum follows real synthetic measurements and the active tuning wi
   expect(await traces.count()).toBeLessThanOrEqual(5);
   await page.getByText("History & tools", { exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Use saved targets", exact: true }),
+    page.getByRole("button", { name: "Restore active settings", exact: true }),
   ).toHaveCount(0);
   await page.getByText("History & tools", { exact: true }).click();
   await expect(page.getByLabel("Band spectrum overview")).toContainText(
@@ -109,61 +109,108 @@ test("band spectrum follows real synthetic measurements and the active tuning wi
   expect(errors).toEqual([]);
 });
 
-test("target dropdown opens a modal over stable results and retains the draft and focus", async ({
+test("inline setup preserves result geometry and drafts without a modal", async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 1686, height: 903 });
   await monitorHistory(page);
   const results = page.locator(".monitor-workspace");
   const before = await results.boundingBox();
-  const target = page.getByLabel("Monitor targets", { exact: true });
-  await target.selectOption("frequencies");
-  const dialog = page.getByRole("dialog", {
-    name: "Monitoring setup",
+  const setup = page.getByRole("complementary", {
+    name: "Monitor setup",
     exact: true,
   });
-  await expect(dialog).toBeVisible();
-  expect(await results.boundingBox()).toEqual(before);
-  await expect(
-    page.getByRole("button", { name: "Close setup", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("Shift+Tab");
-  await expect(
-    page.getByRole("button", { name: "Back to results", exact: true }),
-  ).toBeFocused();
-  await dialog.getByLabel("Frequency", { exact: true }).fill("99.77 MHz");
-  await dialog
+  await setup
+    .getByLabel("Monitor targets", { exact: true })
+    .selectOption("frequencies");
+  await setup.getByLabel("Frequency", { exact: true }).fill("99.77 MHz");
+  await setup
     .getByLabel("Label (optional)", { exact: true })
-    .fill("Popup draft");
-  await dialog
+    .fill("Sidebar draft");
+  await setup
     .getByRole("button", { name: "Add frequency", exact: true })
     .click();
-  await page.screenshot({ path: info.outputPath("monitor-setup-popup.png") });
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect(target).toBeFocused();
-  await page.getByRole("button", { name: "Edit setup", exact: true }).click();
-  await expect(dialog.getByLabel("Label 1", { exact: true })).toHaveValue(
-    "Popup draft",
-  );
-  await dialog
+  await setup
     .getByLabel("Monitor targets", { exact: true })
     .selectOption("range");
-  await dialog.getByLabel("Range start", { exact: true }).fill("99.3 MHz");
-  await dialog
-    .getByRole("button", { name: "Close setup", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Edit setup", exact: true }).click();
-  await expect(dialog.getByLabel("Range start", { exact: true })).toHaveValue(
-    "99.3 MHz",
+  await setup.getByLabel("Range start", { exact: true }).fill("99.3 MHz");
+  await setup
+    .getByLabel("Monitor targets", { exact: true })
+    .selectOption("frequencies");
+  await expect(setup.getByLabel("Label 1", { exact: true })).toHaveValue(
+    "Sidebar draft",
   );
-  await dialog
-    .getByRole("button", { name: "Close setup", exact: true })
-    .click();
   await expect(
-    page.getByRole("button", { name: "Edit setup", exact: true }),
-  ).toBeFocused();
+    page.getByRole("dialog", { name: "Monitoring setup", exact: true }),
+  ).toHaveCount(0);
+  const after = await results.boundingBox();
+  expect(after!.x).toEqual(before!.x);
+  expect(after!.y).toEqual(before!.y);
+  expect(after!.width).toEqual(before!.width);
   await expect(
     page.getByRole("button", { name: "Pause monitoring", exact: true }),
   ).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("monitor-inline-setup.png") });
+});
+
+test("band spectrum fills a wide workspace and keeps markers aligned when resized", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 2868, height: 1440 });
+  await monitorHistory(page);
+  const plot = page.getByRole("img", {
+    name: "Latest measured band power spectrum in relative dB",
+    exact: true,
+  });
+  const geometry = () =>
+    plot.evaluate((node) => {
+      const svg = node as SVGSVGElement;
+      const box = svg.getBoundingClientRect(),
+        matrix = svg.getScreenCTM()!;
+      const start = new DOMPoint(0, 0).matrixTransform(matrix),
+        end = new DOMPoint(1200, 184).matrixTransform(matrix);
+      return {
+        width: box.width,
+        height: box.height,
+        drawnWidth: end.x - start.x,
+        leftInset: start.x - box.left,
+      };
+    });
+  const wide = await geometry();
+  expect(wide.width).toBeGreaterThan(2000);
+  expect(wide.height).toBe(240);
+  expect(wide.height).toBeLessThan(500);
+  expect(Math.abs(wide.drawnWidth - wide.width)).toBeLessThan(1);
+  expect(Math.abs(wide.leftInset)).toBeLessThan(1);
+  const marker = page.getByRole("button", {
+    name: /^Select detection at 914\.750000 MHz/,
+  });
+  await expect(marker).toBeVisible();
+  const expectedX = await plot.evaluate(
+    (node) =>
+      new DOMPoint(52 + (0.05 / 0.6) * 1128, 18).matrixTransform(
+        (node as SVGSVGElement).getScreenCTM()!,
+      ).x,
+  );
+  await expect
+    .poll(async () => {
+      const box = await marker.boundingBox();
+      return Math.abs(box!.x + box!.width / 2 - expectedX);
+    })
+    .toBeLessThan(1);
+  await page.screenshot({ path: info.outputPath("wide-band-spectrum.png") });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(async () => {
+        const current = await geometry();
+        return Math.abs(current.drawnWidth - current.width);
+      })
+      .toBeLessThan(1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
 });

@@ -15,6 +15,8 @@ export interface RdsState {
 
 export interface RdsDecoderOptions {
   onUpdate?: (state: RdsState) => void;
+  /** Deduplicated, CRC/offset-validated groups only; words are borrowed synchronously. */
+  onGroup?: (words: readonly number[]) => void;
 }
 
 interface BitPath {
@@ -145,6 +147,7 @@ export class RdsDecoder {
       validGroups: this.state.validGroups + 1,
     };
     this.publish(next);
+    this.options.onGroup?.(words);
   }
 
   private publish(state: RdsState): void {

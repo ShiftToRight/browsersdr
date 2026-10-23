@@ -21,7 +21,7 @@ async function setup(
   if (receive && configureDetector) {
     await page.getByText("Detector settings", { exact: true }).click();
     await page
-      .getByRole("slider", { name: "Dwell per window", exact: true })
+      .getByRole("spinbutton", { name: "Dwell milliseconds", exact: true })
       .fill("150");
   }
 }
@@ -64,9 +64,7 @@ test("custom targets share windows, retain quiet targets and export their defini
   await expect(
     page.getByRole("button", { name: "Resume monitoring", exact: true }),
   ).toBeEnabled();
-  await page
-    .getByText("Targets & observation coverage", { exact: true })
-    .click();
+  await page.getByRole("tab", { name: /^Targets/ }).click();
   await expect(page.locator(".monitor-target-table tbody tr")).toHaveCount(2);
   await expect(page.locator(".monitor-target-table")).toContainText(
     "Demo carrier",
@@ -89,16 +87,12 @@ test("custom targets share windows, retain quiet targets and export their defini
   expect(
     saved.signals.some((s: { targetIds: string[] }) => s.targetIds.length > 0),
   ).toBe(true);
-  await page.getByRole("button", { name: "Edit setup", exact: true }).click();
   await page.getByLabel("Watch width 1", { exact: true }).fill("50 kHz");
   await expect(
     page.getByRole("button", { name: "Resume monitoring", exact: true }),
   ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Back to results", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Use saved targets", exact: true })
+    .getByRole("button", { name: "Restore active settings", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Resume monitoring", exact: true }),

@@ -1,0 +1,90 @@
+/* Annotation labels overlay measured data; unused lanes reserve no space. */
+.monitor-band-spectrum .monitor-spectrum-plot {
+  padding-top: 0;
+}
+.monitor-band-spectrum .monitor-marker-intelligence {
+  transform: none;
+  box-sizing: border-box;
+  max-width: none;
+  height: 20px;
+  line-height: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 5px;
+  text-align: left;
+  opacity: 1;
+}
+.monitor-band-spectrum
+  .monitor-detection-marker.is-cluster
+  .monitor-marker-cap {
+  display: grid;
+  width: 44px;
+  min-width: 0;
+  padding: 2px 0;
+  line-height: 12px;
+  box-sizing: border-box;
+}
+.monitor-marker-cap b {
+  font-size: 12px;
+}
+.monitor-marker-cap small {
+  font-size: 12px;
+}
+.input-clipping-slot {
+  position: relative;
+  height: 28px;
+  margin: 4px 0;
+}
+.input-clipping-details {
+  position: relative;
+  font-size: 12px;
+}
+.input-clipping-slot .input-clipping-details > summary {
+  cursor: pointer;
+  color: var(--warning);
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
+  line-height: 24px;
+}
+.input-clipping-details .input-clipping-warning {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  z-index: 24;
+  width: min(460px, calc(100vw - 48px));
+  box-sizing: border-box;
+  margin: 0;
+  background: var(--theme-surface, #071222);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #0008;
+}
+.monitor-receiver-footprint {
+  fill: var(--cyan);
+  fill-opacity: 0.13;
+  stroke: var(--cyan);
+  stroke-opacity: 0.7;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.monitor-receiver-cursor {
+  stroke: var(--cyan);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.monitor-probe-cursor {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+.monitor-receiver-readout {
+  color: var(--cyan);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 4px 0;
+}
+.monitor-receiver-readout strong {
+  color: var(--theme-ink, #edf5ff);
+}

@@ -7,6 +7,30 @@ vi.mock("../dsp/spectrumBackend", async () => {
   }) };
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+it.each(["samples", "samples-ci8", "samples-sc16", "samples-usrp-sc16"] as const)("returns borrowed input ownership while running a real %s intelligence probe", async encoding => {
+  const sent: AnalysisWorkerOutput[] = [];
+  const scope = { onmessage: null as null | ((event: {data: AnalysisWorkerInput}) => void),
+    postMessage: (message: AnalysisWorkerOutput, transfer: Transferable[]) => sent.push(structuredClone(message, { transfer })) };
+  vi.stubGlobal("self", scope); await import("./spectrum.worker");
+  const send = (data: AnalysisWorkerInput) => scope.onmessage!({ data });
+  send({ type: "configure", sessionGeneration: 12, centerFrequencyHz: 100e6, sampleRateHz: 1_024_000, backendPreference: "javascript" });
+  send({ type: "probe-start", sessionGeneration: 12, requestId: 44, minimumSampleIndex: 32768, configuration: {
+    sampleRateHz: 1_024_000, centerFrequencyHz: 100e6, frequencyHz: 100.125e6, bandwidthHz: 2000, seconds: 1,
+  } });
+  await vi.waitFor(() => expect(sent.some(m => m.type === "probe-progress")).toBe(true));
+  for (let n = 0; n < 34; n++) {
+    const context = { sessionGeneration: 12, sampleIndex: n * 32768, centerFrequencyHz: 100e6, sampleRateHz: 1_024_000,
+      discontinuity: false, droppedInputBlocks: 0, droppedInputSamples: 0 };
+    if (encoding === "samples") send({ type: encoding, ...context, I: new Float32Array(32768).buffer, Q: new Float32Array(32768).buffer });
+    else send({ type: encoding, ...context, bytes: new Uint8Array(32768 * (encoding === "samples-ci8" ? 2 : 4)).buffer });
+  }
+  await vi.waitFor(() => expect(sent.filter(m => m.type.endsWith("-ack"))).toHaveLength(34));
+  const result = sent.find(m => m.type === "probe-result");
+  if (result?.type !== "probe-result") throw new Error("Missing probe result");
+  expect(result.result).toMatchObject({ firstSampleIndex: 32768, sampledSeconds: 1, status: "inconclusive" });
+  expect(result.result?.suggestedMode).toBeUndefined();
+  send({ type: "stop", sessionGeneration: 12 });
+});
 it.each([-1, 1])("processes signed CI8 tone orientation %i through the actual worker message handler", async sign => {
   const sent: AnalysisWorkerOutput[] = [];
   const scope = { onmessage: null as null | ((event: { data: AnalysisWorkerInput }) => void),

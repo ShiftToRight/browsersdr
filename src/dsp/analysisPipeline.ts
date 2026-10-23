@@ -1,4 +1,5 @@
 import type { SignalCenterResult } from "./signalCenter";
+import type { SignalProbeConfiguration, SignalProbeResult } from "./signalIntelligence";
 import { InputClippingMonitor } from "./inputClipping";
 import type { IngressTimings } from "../radio/ingressTimings";
 import { decodeCi8Into } from "../radio/ci8Samples";
@@ -105,6 +106,7 @@ export class AnalysisPipeline {
   private realtimeMeasurementConsumers = 0;
   private generation = 0;
   private centerRequestId = 0;
+  private probeRequest?: { id: number; resolve: (value: SignalProbeResult) => void; reject: (error: Error) => void; cleanup: () => void; progress?: (seconds: number) => void; resetWatchdog: () => void };
   private centerRequest?: { id: number; resolve: (result: SignalCenterResult) => void; timer: ReturnType<typeof setTimeout> };
   private sampleRateHz = 0;
   private centerFrequencyHz = 0;
@@ -340,12 +342,44 @@ export class AnalysisPipeline {
   }
 
   cancelSignalCenter(message = "Measurement cancelled after receiver settings changed."): void {
+    this.cancelSignalProbe(message);
     const request = this.centerRequest;
     if (!request) return;
     this.centerRequest = undefined;
     clearTimeout(request.timer);
     this.post({ type: "center-cancel", sessionGeneration: this.generation, requestId: request.id });
     request.resolve({ kind: "failure", message });
+  }
+
+  analyzeSignal(configuration: SignalProbeConfiguration, signal: AbortSignal, progress?: (seconds: number) => void): Promise<SignalProbeResult> {
+    this.cancelSignalProbe("Another signal analysis started.");
+    if (signal.aborted) return Promise.reject(new DOMException("Signal analysis cancelled", "AbortError"));
+    if (!this.sourceToken || configuration.sampleRateHz !== this.sampleRateHz || configuration.centerFrequencyHz !== this.centerFrequencyHz)
+      return Promise.reject(new Error("Start matching reception before analyzing a signal."));
+    const id = ++this.centerRequestId;
+    return new Promise((resolve, reject) => {
+      let watchdog: ReturnType<typeof setTimeout>;
+      const abort = () => this.cancelSignalProbe("Signal analysis cancelled.", true);
+      const resetWatchdog = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => this.cancelSignalProbe("No analysis samples arrived for 10 seconds. Check reception and retry."), 10_000);
+      };
+      const deadline = setTimeout(() => this.cancelSignalProbe("Signal analysis exceeded its wall-clock safety limit; completed evidence was retained."), configuration.seconds * 6_000 + 20_000);
+      this.probeRequest = { id, resolve, reject, progress, resetWatchdog, cleanup: () => {
+        clearTimeout(watchdog); clearTimeout(deadline); signal.removeEventListener("abort", abort);
+      } };
+      signal.addEventListener("abort", abort, { once: true });
+      resetWatchdog();
+      this.post({ type: "probe-start", sessionGeneration: this.generation, requestId: id, minimumSampleIndex: this.gpuSourceSamples, configuration });
+    });
+  }
+
+  cancelSignalProbe(message = "Signal analysis stopped after receiver settings changed.", aborted = false): void {
+    const request = this.probeRequest;
+    if (!request) return;
+    this.probeRequest = undefined; request.cleanup();
+    this.post({ type: "probe-cancel", sessionGeneration: this.generation, requestId: request.id });
+    request.reject(aborted ? new DOMException(message, "AbortError") : new Error(message));
   }
 
   subscribe(listener: DisplayListener): () => void {
@@ -662,6 +696,17 @@ export class AnalysisPipeline {
 
   private onWorkerMessage(message: AnalysisWorkerOutput): void {
     if (message.sessionGeneration !== this.generation) return;
+    if (message.type === "probe-result" || message.type === "probe-progress") {
+      const request = this.probeRequest;
+      if (!request || request.id !== message.requestId) return;
+      if (message.type === "probe-progress") { request.resetWatchdog(); request.progress?.(message.sampledSeconds); }
+      else {
+        this.probeRequest = undefined; request.cleanup();
+        if (message.result) request.resolve(message.result);
+        else request.reject(new Error(message.error ?? "Signal analysis returned no result."));
+      }
+      return;
+    }
     if (message.type === "center-result") {
       const request = this.centerRequest;
       if (request?.id === message.requestId) {

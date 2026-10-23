@@ -1,4 +1,5 @@
 import { SignalCenterEstimator } from "../dsp/signalCenter";
+import type { SignalIntelligenceProbe } from "../dsp/signalIntelligence";
 import { decodeCi8Into } from "../radio/ci8Samples";
 import { decodeSc16Q11Into } from "../radio/sc16Samples";
 import { decodeUsrpB205Sc16Into } from "../radio/usrpB205RxVrt";
@@ -18,9 +19,13 @@ let centerFrequencyHz = 0;
 let sampleRateHz = 0;
 let sequence = 0;
 let ci8Scratch: [Float32Array, Float32Array] | undefined;
+let probe: { engine: SignalIntelligenceProbe; requestId: number; minimumSampleIndex: number; lastProgress: number } | undefined;
+let probeEpoch = 0;
 
 async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
   if (message.type === "configure") {
+    probeEpoch++;
+    probe = undefined;
     centerMeasurement = undefined;
     const previous = processorPromise;
     if (previous) void previous.then(({ processor }) => processor.dispose());
@@ -33,6 +38,27 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
     return;
   }
   if (message.sessionGeneration !== generation) return;
+  if (message.type === "probe-start") {
+    const epoch = ++probeEpoch;
+    probe = undefined;
+    try {
+      const { SignalIntelligenceProbe } = await import("../dsp/signalIntelligence");
+      if (epoch !== probeEpoch || message.sessionGeneration !== generation) return;
+      if (message.configuration.sampleRateHz !== sampleRateHz || message.configuration.centerFrequencyHz !== centerFrequencyHz)
+        throw new Error("Probe acquisition context changed.");
+      probe = { engine: new SignalIntelligenceProbe(message.configuration), requestId: message.requestId, minimumSampleIndex: message.minimumSampleIndex, lastProgress: 0 };
+      workerScope.postMessage({ type: "probe-progress", sessionGeneration: generation, requestId: message.requestId, sampledSeconds: 0 }, []);
+    } catch (error) {
+      probe = undefined;
+      workerScope.postMessage({ type: "probe-result", sessionGeneration: generation, requestId: message.requestId, error: error instanceof Error ? error.message : "Could not start signal analysis." }, []);
+    }
+    return;
+  }
+  if (message.type === "probe-cancel") {
+    probeEpoch++;
+    if (probe?.requestId === message.requestId) probe = undefined;
+    return;
+  }
   if (message.type === "center-start") {
     centerMeasurement = { estimator: new SignalCenterEstimator(message.metadata), requestId: message.requestId, minimumSampleIndex: message.minimumSampleIndex };
     return;
@@ -42,6 +68,8 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
     return;
   }
   if (message.type === "stop") {
+    probeEpoch++;
+    probe = undefined;
     centerMeasurement = undefined;
     const stopped = processorPromise;
     processorPromise = undefined;
@@ -95,6 +123,26 @@ async function handleMessage(message: AnalysisWorkerInput): Promise<void> {
     message.droppedInputBlocks,
     message.droppedInputSamples,
   );
+  const activeProbe = probe;
+  if (activeProbe && message.sampleIndex !== undefined) {
+    const skip = Math.max(0, activeProbe.minimumSampleIndex - message.sampleIndex);
+    if (skip < I.length) try {
+      const config = activeProbe.engine.config;
+      if (message.sampleRateHz !== config.sampleRateHz || message.centerFrequencyHz !== config.centerFrequencyHz)
+        throw new Error("Signal analysis stopped after acquisition context changed.");
+      const done = activeProbe.engine.accept(I.subarray(skip), Q.subarray(skip), message.sampleIndex + skip, message.discontinuity);
+      if (done) {
+        probe = undefined;
+        workerScope.postMessage({ type: "probe-result", sessionGeneration: generation, requestId: activeProbe.requestId, result: activeProbe.engine.result() }, []);
+      } else if (activeProbe.engine.sampledSeconds - activeProbe.lastProgress >= 0.5) {
+        activeProbe.lastProgress = activeProbe.engine.sampledSeconds;
+        workerScope.postMessage({ type: "probe-progress", sessionGeneration: generation, requestId: activeProbe.requestId, sampledSeconds: activeProbe.lastProgress }, []);
+      }
+    } catch (error) {
+      probe = undefined;
+      workerScope.postMessage({ type: "probe-result", sessionGeneration: generation, requestId: activeProbe.requestId, error: error instanceof Error ? error.message : "Signal analysis failed." }, []);
+    }
+  }
   const acknowledgement: AnalysisWorkerOutput = {
     ...(message.type === "samples-ci8" ? { type: "samples-ci8-ack" as const, bytes: message.bytes }
       : message.type === "samples-sc16" ? { type: "samples-sc16-ack" as const, bytes: message.bytes }

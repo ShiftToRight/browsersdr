@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   layoutMonitorMarkers,
+  layoutMonitorLabels,
   markerWidth,
   monitorMarkerState,
 } from "./monitorMarkerLayout";
@@ -28,11 +29,12 @@ describe("responsive detection marker layout", () => {
       0,
       100,
     );
-    expect(result).toHaveLength(1);
-    expect(result[0]!.signals).toHaveLength(4);
-    expect(result[0]!.x).toBe(50);
+    expect(result.map((group) => [group.x, group.signals.length])).toEqual([
+      [22, 2],
+      [78, 2],
+    ]);
   });
-  it("accounts for grown cluster badges, keeping every result selectable across 512 dense detections", () => {
+  it("keeps compact cluster badges disjoint, keeping every result selectable across 512 dense detections", () => {
     const signals = Array.from({ length: 512 }, (_, i) =>
       signal(i, (i * 1100) / 511),
     );
@@ -78,6 +80,48 @@ describe("responsive detection marker layout", () => {
     expect(narrow).toHaveLength(1);
     expect(narrow[0]!.signals.map((s) => s.id)).toEqual(["1", "2", "3", "4"]);
     expect(layoutMonitorMarkers(signals, (hz) => hz, 0, 0)).toEqual([]);
+  });
+  it("does not let a small cluster swallow an independently resolved neighbor", () => {
+    const result = layoutMonitorMarkers(
+      [signal(1, 100), signal(2, 110), signal(3, 165)],
+      (hz) => hz,
+      0,
+      400,
+    );
+    expect(result.map((g) => g.signals.map((s) => s.id))).toEqual([
+      ["1", "2"],
+      ["3"],
+    ]);
+  });
+  it("uses compact mouse targets to separate resolved signals while preserving touch targets", () => {
+    const signals = [signal(1, 100), signal(2, 135), signal(3, 170)];
+    expect(layoutMonitorMarkers(signals, (hz) => hz, 0, 400, 24)).toHaveLength(
+      3,
+    );
+    expect(layoutMonitorMarkers(signals, (hz) => hz, 0, 400, 44)).toHaveLength(
+      2,
+    );
+  });
+  it("packs labels in independent lanes with priority and bounded edges", () => {
+    const labels = Array.from({ length: 10 }, (_, i) => ({
+      id: String(i),
+      x: i * 18,
+      width: 100,
+      priority: i === 5 ? 2 : 0,
+    }));
+    const placed = layoutMonitorLabels(labels, 20, 220);
+    expect(placed.some((p) => p.id === "5")).toBe(true);
+    expect(placed.length).toBeGreaterThan(1);
+    expect(placed.length).toBeLessThan(labels.length);
+    for (const a of placed) {
+      expect(a.left).toBeGreaterThanOrEqual(20);
+      expect(a.left + a.width).toBeLessThanOrEqual(220);
+      for (const b of placed.filter((b) => b.id !== a.id && b.row === a.row))
+        expect(
+          a.left >= b.left + b.width + 6 || b.left >= a.left + a.width + 6,
+        ).toBe(true);
+    }
+    expect(layoutMonitorLabels(labels, 0, 0)).toEqual([]);
   });
   it("keeps confirmation, age and latest-valid-visit presence separate, including legacy histories", () => {
     const s = {

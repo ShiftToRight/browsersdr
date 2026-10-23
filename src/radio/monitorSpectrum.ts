@@ -1,4 +1,5 @@
 import { compressSpectrumPoints, type SpectrumPoint } from "./spectrumScan";
+import type { MonitorSession } from "./signalMonitor";
 
 export const MONITOR_SPECTRUM_POINT_BUDGET = 4096;
 export type MonitorSpectrumPhase =
@@ -20,6 +21,38 @@ export interface MonitorSpectrumView {
     number,
     { points: SpectrumPoint[]; at: number; sweep: number }
   >;
+}
+
+/** Union of retained measured regions, not the number of slots across alternate grids. */
+export function monitorSpectrumCoverage(
+  session: Pick<MonitorSession, "id" | "windows" | "snapshot">,
+  view?: MonitorSpectrumView,
+): number {
+  const unionWidth = (intervals: number[][]) => {
+    let width = 0,
+      end = -Infinity;
+    for (const [lo, hi] of intervals.sort((a, b) => a[0]! - b[0]!)) {
+      width += Math.max(0, hi! - Math.max(lo!, end));
+      end = Math.max(end, hi!);
+    }
+    return width;
+  };
+  const bands = session.snapshot.profile.bands.map((b) => [
+    b.startFrequencyHz,
+    b.endFrequencyHz,
+  ]);
+  const total = unionWidth(bands);
+  if (view?.sessionId !== session.id || !total) return 0;
+  const measured = session.windows.flatMap((w, i) =>
+    !view.windows[i]?.points.length
+      ? []
+      : bands.flatMap(([lo, hi]) => {
+          const start = Math.max(lo!, w.plan.lowerFrequencyHz),
+            end = Math.min(hi!, w.plan.upperFrequencyHz);
+          return end > start ? [[start, end]] : [];
+        }),
+  );
+  return unionWidth(measured) / total;
 }
 
 /** Display-only scalar points. No FFT frames, raw samples, storage or acquisition ownership. */

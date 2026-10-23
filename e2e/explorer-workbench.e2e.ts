@@ -31,9 +31,8 @@ test("guided monitoring separates the draft from retained settings and keeps qui
       .getByRole("button", { name: "Add frequency", exact: true })
       .click();
   }
-  await page
-    .getByRole("button", { name: "Back to results", exact: true })
-    .click();
+  // The persistent desktop sidebar edits targets directly beside the results.
+
   await page.getByRole("tab", { name: /^Targets/ }).click();
   await expect(page.locator(".monitor-target-table tbody tr")).toHaveCount(2);
   await expect(page.locator(".monitor-target-table")).toContainText(
@@ -68,7 +67,6 @@ test("guided monitoring separates the draft from retained settings and keeps qui
   await expect(page.getByLabel("Active session settings")).toContainText(
     "350 ms per window",
   );
-  await page.getByRole("button", { name: "Edit setup", exact: true }).click();
   await page.getByLabel("Dwell milliseconds", { exact: true }).fill("500");
   await expect(page.getByLabel("Active session settings")).toContainText(
     "350 ms per window",
@@ -79,9 +77,6 @@ test("guided monitoring separates the draft from retained settings and keeps qui
   await expect(resume).toBeDisabled();
   await page.getByLabel("Dwell milliseconds", { exact: true }).fill("350");
   await expect(resume).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Back to results", exact: true })
-    .click();
   await expect(page.getByRole("tab", { name: /^Targets/ })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -133,13 +128,12 @@ test("phone workbench exposes setup and targets without page overflow", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await monitorHistory(page);
   await expect(
-    page.getByRole("button", { name: "Edit setup", exact: true }),
+    page.getByRole("complementary", { name: "Monitor setup", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: /^Targets/ }).click();
   await expect(page.locator(".monitor-target-table")).toContainText(
     "Custom UHF range",
   );
-  await page.getByRole("button", { name: "Edit setup", exact: true }).click();
   await expect(
     page.getByLabel("Monitor targets", { exact: true }),
   ).toBeVisible();
@@ -148,19 +142,17 @@ test("phone workbench exposes setup and targets without page overflow", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  const popup = page.getByRole("dialog", {
-    name: "Monitoring setup",
+  const rail = page.getByRole("complementary", {
+    name: "Monitor setup",
     exact: true,
   });
-  const popupBox = await popup.boundingBox();
-  expect(popupBox!.x).toBeGreaterThanOrEqual(0);
-  expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(390);
-  expect(popupBox!.y).toBeGreaterThanOrEqual(0);
-  expect(popupBox!.y + popupBox!.height).toBeLessThanOrEqual(844);
-  await page.screenshot({ path: info.outputPath("setup-popup-phone.png") });
-  await page
-    .getByRole("button", { name: "Back to results", exact: true })
-    .click();
+  const railBox = await rail.boundingBox();
+  expect(railBox!.x).toBeGreaterThanOrEqual(0);
+  expect(railBox!.x + railBox!.width).toBeLessThanOrEqual(390);
+  await expect(
+    page.getByRole("dialog", { name: "Monitoring setup", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("setup-inline-phone.png") });
   await page.getByRole("tab", { name: /^Signals/ }).click();
   await page.locator(".monitor-frequency").first().click();
   const detail = page.getByRole("complementary", {

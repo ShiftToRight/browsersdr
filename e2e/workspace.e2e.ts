@@ -17,7 +17,9 @@ test("desktop receiver fills the window with all primary panels in view", async 
   ]) {
     await page.setViewportSize(viewport);
     await page.getByLabel("Settings", { exact: true }).click();
-    await page.getByRole("button", { name: "Reset view", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Reset layout", exact: true })
+      .click();
     if (viewport.height < 900)
       await page.getByRole("button", { name: "Compact", exact: true }).click();
     await expect

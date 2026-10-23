@@ -1,6 +1,18 @@
+import { ExplorerSavedSetups, type ExplorerSetup } from "./ExplorerSavedSetups";
+import { RememberedDetails } from "./ExplorerPreferencesUI";
+import type { MonitorSession } from "../radio/signalMonitor";
+import {
+  CUSTOM_TARGET_DRAFT_KEY,
+  readPreference,
+  EXPLORER_PREFERENCES_KEY,
+  loadExplorerPreferences,
+  storePreference,
+} from "./explorerPreferences";
 import { MONITOR_PRESETS, type MonitorPreset } from "../radio/monitorDetection";
 import type { MonitorTargetMode } from "./CustomMonitorTargets";
 import { ExplorerMonitor } from "./ExplorerMonitor";
+import { SignalAnalysisPanel } from "./SignalAnalysisPanel";
+import "./explorerStudio.css";
 import {
   snapshotReceiverLocation,
   type ReceiverLocation,
@@ -127,11 +139,7 @@ function loadProfile(): SurveyProfile {
 }
 
 function storeProfile(profile: SurveyProfile): void {
-  try {
-    localStorage.setItem(PROFILE_STORAGE_KEY, surveyProfileJson(profile));
-  } catch {
-    /* Optional local preference. */
-  }
+  storePreference(PROFILE_STORAGE_KEY, JSON.parse(surveyProfileJson(profile)));
 }
 
 function loadEnabledBandIds(profile: SurveyProfile): Set<string> {
@@ -153,11 +161,7 @@ function loadEnabledBandIds(profile: SurveyProfile): Set<string> {
 }
 
 function storeEnabledBandIds(ids: ReadonlySet<string>): void {
-  try {
-    localStorage.setItem(ENABLED_BANDS_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    /* Optional local preference. */
-  }
+  storePreference(ENABLED_BANDS_STORAGE_KEY, [...ids]);
 }
 
 export function currentWindowSurveyBand(
@@ -462,31 +466,81 @@ export function SpectrumExplorer({
     signal: AbortSignal,
   ) => Promise<{ captured: number[]; cancelled: boolean }>;
 }) {
+  const [preferences] = useState(loadExplorerPreferences);
+  const [setupRevision, setSetupRevision] = useState(0);
+  const [appliedMonitor, setAppliedMonitor] = useState<MonitorSession>();
   const [profile, setProfile] = useState<SurveyProfile>(loadProfile);
-  const [monitorPreset, setMonitorPreset] = useState<MonitorPreset>("general");
-  const [monitorTargetMode, setMonitorTargetMode] =
-    useState<MonitorTargetMode>("window");
-  const [scope, setScope] = useState<ExplorerScanScope>("window");
-  const [activity, setActivity] = useState<"survey" | "monitor">("survey");
+  const [monitorPreset, setMonitorPreset] = useState<MonitorPreset>(
+    preferences.monitorPreset ?? "general",
+  );
+  const [monitorTargetMode, setMonitorTargetMode] = useState<MonitorTargetMode>(
+    preferences.monitorTargetMode ?? "window",
+  );
+  const [scope, setScope] = useState<ExplorerScanScope>(
+    preferences.scope ?? "window",
+  );
+  const [activity, setActivity] = useState<"survey" | "monitor">(
+    preferences.activity ?? "survey",
+  );
   const [enabledBandIds, setEnabledBandIds] = useState(() =>
     loadEnabledBandIds(profile),
   );
-  const [selectedBandId, setSelectedBandId] = useState(profile.bands[0]!.id);
+  const [selectedBandId, setSelectedBandId] = useState(
+    preferences.selectedBandId ?? profile.bands[0]!.id,
+  );
   const selectedBand =
     profile.bands.find((band) => band.id === selectedBandId) ??
     profile.bands[0]!;
-  const [bandName, setBandName] = useState(selectedBand.name);
+  const [bandName, setBandName] = useState(
+    preferences.bandName ?? selectedBand.name,
+  );
   const [startMhz, setStartMhz] = useState(
-    selectedBand.startFrequencyHz / 1_000_000,
+    preferences.startMhz ?? selectedBand.startFrequencyHz / 1_000_000,
   );
-  const [endMhz, setEndMhz] = useState(selectedBand.endFrequencyHz / 1_000_000);
-  const [dwellMs, setDwellMs] = useState(selectedBand.dwellMs);
-  const [thresholdDb, setThresholdDb] = useState(selectedBand.thresholdDb);
+  const [endMhz, setEndMhz] = useState(
+    preferences.endMhz ?? selectedBand.endFrequencyHz / 1_000_000,
+  );
+  const [dwellMs, setDwellMs] = useState(
+    preferences.dwellMs ?? selectedBand.dwellMs,
+  );
+  const [thresholdDb, setThresholdDb] = useState(
+    preferences.thresholdDb ?? selectedBand.thresholdDb,
+  );
   const [detector, setDetector] = useState<SurveyDetectorMode>(
-    selectedBand.detector,
+    preferences.detector ?? selectedBand.detector,
   );
+  useEffect(() => {
+    storePreference(EXPLORER_PREFERENCES_KEY, {
+      activity,
+      monitorTargetMode,
+      monitorPreset,
+      scope,
+      selectedBandId,
+      bandName,
+      startMhz,
+      endMhz,
+      dwellMs,
+      thresholdDb,
+      detector,
+    });
+  }, [
+    activity,
+    monitorTargetMode,
+    monitorPreset,
+    scope,
+    selectedBandId,
+    bandName,
+    startMhz,
+    endMhz,
+    dwellMs,
+    thresholdDb,
+    detector,
+  ]);
   const [scanning, setScanning] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [analyzeAfterScan, setAnalyzeAfterScan] = useState(false);
+  const [analysisToken, setAnalysisToken] = useState(0);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [windows, setWindows] = useState<ScanWindowResult[]>([]);
   const [records, setRecords] = useState<SurveyCandidateRecord[]>([]);
@@ -628,7 +682,7 @@ export function SpectrumExplorer({
   const canScan = canStartSpectrumScan(
     receiver.lifecycle,
     receiver.session?.source,
-    recordingBlocked || capturing,
+    recordingBlocked || capturing || analysisBusy,
   );
   const enabledBands = profile.bands.filter((band) =>
     enabledBandIds.has(band.id),
@@ -751,7 +805,7 @@ export function SpectrumExplorer({
     resume = false,
   ) => {
     const initialSession = receiver.session;
-    if (!initialSession || !canScan || scanning) return;
+    if (!initialSession || !canScan || scanning || analysisBusy) return;
     let state: SurveyResumeState;
     try {
       if (initialSession.mode === "ADS-B")
@@ -825,6 +879,7 @@ export function SpectrumExplorer({
     abortRef.current = abort;
     let snapshot = state.snapshot;
     let finalStatus: SurveyRunStatus = "failed";
+    if (!resume) setAnalysisToken(0);
     setScanning(true);
     onScanningChange(true);
     setWindows([...state.windows]);
@@ -1015,6 +1070,12 @@ export function SpectrumExplorer({
         createSurveyManifest(snapshot, finalStatus, state.records, completedAt),
       );
       setRunStatus(finalStatus);
+      if (
+        analyzeAfterScan &&
+        ["completed", "insufficient"].includes(finalStatus) &&
+        state.records.length
+      )
+        setAnalysisToken((token) => token + 1);
       abortRef.current = undefined;
       setScanning(false);
       onScanningChange(false);
@@ -1047,6 +1108,7 @@ export function SpectrumExplorer({
       ),
     );
   const captureSelected = async () => {
+    if (analysisBusy || scanning || capturing) return;
     const selected = records.filter((record) => record.selected);
     if (!selected.length) {
       setMessage("Select at least one candidate to capture.");
@@ -1145,7 +1207,7 @@ export function SpectrumExplorer({
           Profile band
           <select
             value={selectedBandId}
-            disabled={scanning || capturing}
+            disabled={scanning || capturing || analysisBusy}
             onChange={(e) => chooseBand(e.currentTarget.value)}
           >
             {profile.bands.map((band) => (
@@ -1159,7 +1221,7 @@ export function SpectrumExplorer({
           Band name
           <input
             value={bandName}
-            disabled={scanning || capturing}
+            disabled={scanning || capturing || analysisBusy}
             onChange={(e) => setBandName(e.currentTarget.value)}
           />
         </label>
@@ -1172,7 +1234,7 @@ export function SpectrumExplorer({
                 min="0.000001"
                 step="0.001"
                 value={startMhz}
-                disabled={scanning || capturing}
+                disabled={scanning || capturing || analysisBusy}
                 onChange={(e) => setStartMhz(e.currentTarget.valueAsNumber)}
               />
               <span>MHz</span>
@@ -1186,7 +1248,7 @@ export function SpectrumExplorer({
                 min="0.000001"
                 step="0.001"
                 value={endMhz}
-                disabled={scanning || capturing}
+                disabled={scanning || capturing || analysisBusy}
                 onChange={(e) => setEndMhz(e.currentTarget.valueAsNumber)}
               />
               <span>MHz</span>
@@ -1197,7 +1259,7 @@ export function SpectrumExplorer({
           <button
             type="button"
             className="secondary"
-            disabled={scanning || capturing}
+            disabled={scanning || capturing || analysisBusy}
             onClick={saveBand}
           >
             Save band
@@ -1223,17 +1285,16 @@ export function SpectrumExplorer({
           Save band to apply edits to band-plan and full-survey scans.
         </p>
       </details>
-      <details
+      <section
         className="survey-profile-panel"
         aria-label="Survey profile and site"
       >
-        <summary>Site &amp; profile</summary>
         <div className="survey-profile-grid">
           <label>
             Profile name
             <input
               value={profile.name}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1246,7 +1307,7 @@ export function SpectrumExplorer({
             Site label
             <input
               value={profile.site.label}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1300,7 +1361,7 @@ export function SpectrumExplorer({
               max="90"
               step="0.000001"
               value={profile.site.latitude ?? ""}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1324,7 +1385,7 @@ export function SpectrumExplorer({
               max="180"
               step="0.000001"
               value={profile.site.longitude ?? ""}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1344,7 +1405,7 @@ export function SpectrumExplorer({
             Antenna
             <input
               value={profile.site.antenna ?? ""}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1357,7 +1418,7 @@ export function SpectrumExplorer({
             Site notes
             <input
               value={profile.site.notes ?? ""}
-              disabled={scanning || capturing}
+              disabled={scanning || capturing || analysisBusy}
               onChange={(e) =>
                 updateProfile({
                   ...profile,
@@ -1371,7 +1432,7 @@ export function SpectrumExplorer({
           <button
             type="button"
             className="secondary"
-            disabled={scanning || capturing}
+            disabled={scanning || capturing || analysisBusy}
             onClick={() =>
               downloadText(
                 `${safeSurveySlug(profile.name)}.browsersdr-survey.json`,
@@ -1385,7 +1446,7 @@ export function SpectrumExplorer({
           <button
             type="button"
             className="secondary"
-            disabled={scanning || capturing}
+            disabled={scanning || capturing || analysisBusy}
             onClick={() => profileInputRef.current?.click()}
           >
             Import profile
@@ -1403,7 +1464,7 @@ export function SpectrumExplorer({
           supplied. Profiles and the latest survey results remain in this
           browser until its site data is cleared.
         </p>
-      </details>
+      </section>
     </>
   );
   const monitorTargetControls = (
@@ -1413,7 +1474,7 @@ export function SpectrumExplorer({
         <select
           aria-label="Monitor targets"
           value={monitorTargetMode}
-          disabled={scanning || capturing}
+          disabled={capturing || recordingBlocked}
           onChange={(e) => {
             const mode = e.currentTarget.value as MonitorTargetMode;
             setMonitorTargetMode(mode);
@@ -1444,7 +1505,7 @@ export function SpectrumExplorer({
               <input
                 type="checkbox"
                 checked={enabledBandIds.has(band.id)}
-                disabled={scanning || capturing}
+                disabled={capturing || recordingBlocked}
                 onChange={(e) =>
                   setBandEnabled(band.id, e.currentTarget.checked)
                 }
@@ -1460,14 +1521,47 @@ export function SpectrumExplorer({
       )}
     </>
   );
+  const changedField = (field: "dwellMs" | "thresholdDb" | "detector") =>
+    !!appliedMonitor &&
+    currentBand()[field] !== appliedMonitor.snapshot.profile.bands[0]?.[field];
+  const modifiedPreset =
+    dwellMs !== MONITOR_PRESETS[monitorPreset].dwellMs ||
+    thresholdDb !== MONITOR_PRESETS[monitorPreset].thresholdDb ||
+    detector !== MONITOR_PRESETS[monitorPreset].detector;
+  const applySetup = (value: ExplorerSetup) => {
+    const v = value.settings;
+    setProfile(value.profile);
+    storeProfile(value.profile);
+    setEnabledBandIds(new Set(value.enabledBandIds));
+    storeEnabledBandIds(new Set(value.enabledBandIds));
+    setMonitorTargetMode(v.monitorTargetMode!);
+    setMonitorPreset(v.monitorPreset!);
+    setSelectedBandId(v.selectedBandId ?? value.profile.bands[0]!.id);
+    setBandName(v.bandName ?? "Custom band");
+    setStartMhz(v.startMhz ?? 84);
+    setEndMhz(v.endMhz ?? 108);
+    setDwellMs(v.dwellMs!);
+    setThresholdDb(v.thresholdDb!);
+    setDetector(v.detector!);
+    storePreference(CUSTOM_TARGET_DRAFT_KEY, value.custom);
+    storePreference("browsersdr.analysisBudget.v1", { seconds: value.budget });
+    storePreference("browsersdr.monitorAnalysisPreference.v1", {
+      enabled: value.analyze,
+    });
+    setSetupRevision((n) => n + 1);
+  };
   const monitorDetectionControls = (
     <>
-      <label>
+      <label
+        data-changed={
+          !!appliedMonitor && appliedMonitor.analysis?.preset !== monitorPreset
+        }
+      >
         Detection preset
         <select
           aria-label="Detection preset"
           value={monitorPreset}
-          disabled={scanning || capturing}
+          disabled={capturing || recordingBlocked}
           onChange={(e) => {
             const key = e.currentTarget.value as MonitorPreset;
             const next = MONITOR_PRESETS[key];
@@ -1492,46 +1586,87 @@ export function SpectrumExplorer({
             ))}
           </optgroup>
         </select>
-        <small>{MONITOR_PRESETS[monitorPreset].description}</small>
+        <small>
+          {modifiedPreset ? "Modified · " : ""}Choosing a preset replaces dwell,
+          threshold and detector.
+        </small>
+        <details>
+          <summary>About this preset</summary>
+          {MONITOR_PRESETS[monitorPreset].description}
+        </details>
       </label>
       <div className="monitor-number-fields">
-        <label>
-          Dwell per window (ms)
+        <label data-changed={changedField("dwellMs")}>
+          Scan dwell (ms / window)
           <input
             aria-label="Dwell milliseconds"
+            aria-invalid={
+              !Number.isFinite(dwellMs) ||
+              dwellMs < MIN_DWELL_MS ||
+              dwellMs > MAX_DWELL_MS
+            }
+            aria-describedby="monitor-dwell-error"
             type="number"
             min={MIN_DWELL_MS}
             max={MAX_DWELL_MS}
             step="50"
             value={Number.isFinite(dwellMs) ? dwellMs : ""}
-            disabled={scanning || capturing}
+            disabled={capturing || recordingBlocked}
             onChange={(e) => setDwellMs(e.currentTarget.valueAsNumber)}
           />
+          {(!Number.isFinite(dwellMs) ||
+            dwellMs < MIN_DWELL_MS ||
+            dwellMs > MAX_DWELL_MS) && (
+            <small id="monitor-dwell-error" role="alert">
+              Use {MIN_DWELL_MS}–{MAX_DWELL_MS} ms.
+            </small>
+          )}
         </label>
-        <label>
-          Threshold (dB)
+        <label data-changed={changedField("thresholdDb")}>
+          Threshold (dB above noise)
           <input
             aria-label="Threshold decibels"
+            aria-invalid={
+              !Number.isFinite(thresholdDb) ||
+              thresholdDb < 1 ||
+              thresholdDb > 40
+            }
+            aria-describedby="monitor-threshold-error"
             type="number"
             min="1"
             max="40"
             value={Number.isFinite(thresholdDb) ? thresholdDb : ""}
-            disabled={scanning || capturing}
+            disabled={capturing || recordingBlocked}
             onChange={(e) => setThresholdDb(e.currentTarget.valueAsNumber)}
           />
+          {(!Number.isFinite(thresholdDb) ||
+            thresholdDb < 1 ||
+            thresholdDb > 40) && (
+            <small id="monitor-threshold-error" role="alert">
+              Use 1–40 dB above noise.
+            </small>
+          )}
         </label>
       </div>
-      <small>
-        Threshold is above the estimated noise floor. Longer dwell measures each
-        window for longer, but slows revisits.
-      </small>
-      <details className="explorer-settings">
+      <details>
+        <summary>Dwell &amp; grouping</summary>
+        <small>
+          Threshold is above the estimated noise floor. Longer dwell measures
+          each window for longer, but slows revisits. It does not increase FFT
+          resolution or force separate peaks into one signal.
+        </small>
+      </details>
+      <RememberedDetails
+        preference="detectorSettings"
+        className="explorer-settings"
+      >
         <summary>Detector settings</summary>
         <label>
           Detector
           <select
+            data-changed={changedField("detector")}
             value={detector}
-            disabled={scanning || capturing}
+            disabled={capturing || recordingBlocked}
             onChange={(e) =>
               setDetector(e.currentTarget.value as SurveyDetectorMode)
             }
@@ -1542,42 +1677,17 @@ export function SpectrumExplorer({
             <option value="wideband">Wideband plateau</option>
           </select>
         </label>
-        <label>
-          Dwell per window <output>{dwellMs} ms</output>
-          <input
-            type="range"
-            aria-label="Dwell per window"
-            min={MIN_DWELL_MS}
-            max={MAX_DWELL_MS}
-            step="50"
-            value={Number.isFinite(dwellMs) ? dwellMs : MIN_DWELL_MS}
-            disabled={scanning || capturing}
-            onChange={(e) => setDwellMs(e.currentTarget.valueAsNumber)}
-          />
-        </label>
-        <label>
-          Detection threshold <output>{thresholdDb} dB</output>
-          <input
-            type="range"
-            aria-label="Detection threshold"
-            min="1"
-            max="40"
-            value={Number.isFinite(thresholdDb) ? thresholdDb : 1}
-            disabled={scanning || capturing}
-            onChange={(e) => setThresholdDb(e.currentTarget.valueAsNumber)}
-          />
-        </label>
-      </details>
-      <details className="monitor-advanced">
+      </RememberedDetails>
+      <RememberedDetails preference="siteSettings" className="monitor-advanced">
         <summary>Site &amp; profile settings</summary>
         {activity === "monitor" && advancedControls}
-      </details>
+      </RememberedDetails>
     </>
   );
   return (
     <section
       data-activity={activity}
-      className="explorer-workspace"
+      className="explorer-workspace explorer-studio"
       aria-labelledby="explorer-heading"
     >
       <div className="panel-heading explorer-heading">
@@ -1623,11 +1733,11 @@ export function SpectrumExplorer({
                     ? "✓ Connected · scan will start reception"
                     : scanning
                       ? "● Sweeping · receiver is tuning"
-                      : "Connect a receiver in Acquire to scan."}
+                      : "Connect a receiver in Receiver to scan."}
               </small>
               {!receiver.session && onOpenReceiver && (
                 <button type="button" onClick={onOpenReceiver}>
-                  Go to Acquire
+                  Open Receiver
                 </button>
               )}
             </div>
@@ -1636,7 +1746,7 @@ export function SpectrumExplorer({
               <select
                 aria-label="Explorer activity"
                 value={activity}
-                disabled={scanning || capturing}
+                disabled={scanning || capturing || analysisBusy}
                 onChange={(event) => {
                   const next = event.target.value as "survey" | "monitor";
                   setActivity(next);
@@ -1653,7 +1763,7 @@ export function SpectrumExplorer({
               <select
                 aria-label="Scan scope"
                 value={scope}
-                disabled={scanning || capturing}
+                disabled={scanning || capturing || analysisBusy}
                 onChange={(e) =>
                   setScope(e.currentTarget.value as ExplorerScanScope)
                 }
@@ -1663,6 +1773,17 @@ export function SpectrumExplorer({
                 <option value="full">Full survey · coarse + detail</option>
               </select>
             </label>
+            {activity === "survey" && (
+              <label className="intelligent-after-scan">
+                <input
+                  type="checkbox"
+                  checked={analyzeAfterScan}
+                  disabled={scanning || capturing || analysisBusy}
+                  onChange={(e) => setAnalyzeAfterScan(e.target.checked)}
+                />
+                Analyze signals after scan
+              </label>
+            )}
             {(activity === "survey"
               ? scope === "window"
               : monitorTargetMode === "window") && (
@@ -1688,7 +1809,7 @@ export function SpectrumExplorer({
                     <input
                       type="checkbox"
                       checked={enabledBandIds.has(band.id)}
-                      disabled={scanning || capturing}
+                      disabled={scanning || capturing || analysisBusy}
                       onChange={(e) =>
                         setBandEnabled(band.id, e.currentTarget.checked)
                       }
@@ -1717,7 +1838,7 @@ export function SpectrumExplorer({
                   type="button"
                   disabledReason={
                     !receiver.session
-                      ? "Connect a receiver in Acquire first."
+                      ? "Connect a receiver in Receiver first."
                       : scanning || capturing
                         ? "Wait for the current scan or capture to finish."
                         : recordingBlocked
@@ -1803,7 +1924,7 @@ export function SpectrumExplorer({
                 Detector
                 <select
                   value={detector}
-                  disabled={scanning || capturing}
+                  disabled={scanning || capturing || analysisBusy}
                   onChange={(e) =>
                     setDetector(e.currentTarget.value as SurveyDetectorMode)
                   }
@@ -1824,7 +1945,7 @@ export function SpectrumExplorer({
                   max={MAX_DWELL_MS}
                   step="50"
                   value={dwellMs}
-                  disabled={scanning || capturing}
+                  disabled={scanning || capturing || analysisBusy}
                   onChange={(e) => setDwellMs(e.currentTarget.valueAsNumber)}
                 />
               </label>
@@ -1838,7 +1959,7 @@ export function SpectrumExplorer({
                   max="40"
                   step="1"
                   value={thresholdDb}
-                  disabled={scanning || capturing}
+                  disabled={scanning || capturing || analysisBusy}
                   onChange={(e) =>
                     setThresholdDb(e.currentTarget.valueAsNumber)
                   }
@@ -1884,6 +2005,63 @@ export function SpectrumExplorer({
         )}
         <div className="explorer-results">
           <ExplorerMonitor
+            setupRevision={setupRevision}
+            onAppliedSession={setAppliedMonitor}
+            onRestoreSetup={(saved) => {
+              const b = saved.snapshot.profile.bands[0]!;
+              setProfile(structuredClone(saved.snapshot.profile));
+              setEnabledBandIds(
+                new Set(saved.snapshot.profile.bands.map((band) => band.id)),
+              );
+              setSelectedBandId(b.id);
+              setBandName(b.name);
+              setStartMhz(b.startFrequencyHz / 1e6);
+              setEndMhz(b.endFrequencyHz / 1e6);
+              setDwellMs(b.dwellMs);
+              setThresholdDb(b.thresholdDb);
+              setDetector(b.detector);
+              if (saved.analysis) setMonitorPreset(saved.analysis.preset);
+              if (!saved.targets)
+                setMonitorTargetMode(
+                  saved.snapshot.profile.bands.length === 1 &&
+                    b.id === "current-window"
+                    ? "window"
+                    : "band-plan",
+                );
+            }}
+            savedSetupControls={
+              <ExplorerSavedSetups
+                disabled={
+                  capturing || recordingBlocked || scanning || analysisBusy
+                }
+                snapshot={() => ({
+                  settings: {
+                    activity: "monitor",
+                    monitorTargetMode,
+                    monitorPreset,
+                    scope,
+                    selectedBandId,
+                    bandName,
+                    startMhz,
+                    endMhz,
+                    dwellMs,
+                    thresholdDb,
+                    detector,
+                  },
+                  profile,
+                  enabledBandIds: [...enabledBandIds],
+                  custom: readPreference(CUSTOM_TARGET_DRAFT_KEY),
+                  analyze:
+                    readPreference("browsersdr.monitorAnalysisPreference.v1")
+                      .enabled === true,
+                  budget:
+                    Number(
+                      readPreference("browsersdr.analysisBudget.v1").seconds,
+                    ) || 12,
+                })}
+                onLoad={applySetup}
+              />
+            }
             targetControls={monitorTargetControls}
             detectionControls={monitorDetectionControls}
             sourceLabel={
@@ -1914,14 +2092,17 @@ export function SpectrumExplorer({
                     })),
             }}
             volume={volume}
-            blocked={recordingBlocked || capturing}
+            blocked={recordingBlocked || capturing || analysisBusy}
             startReception={startReceptionForScan}
             onBusy={(active) => {
               setScanning(active);
               onScanningChange(active);
             }}
-            onInvestigate={(frequencyHz) =>
-              onInvestigate(frequencyHz, receiver.session?.mode ?? "OFF")
+            onInvestigate={(frequencyHz, suggestedMode) =>
+              onInvestigate(
+                frequencyHz,
+                suggestedMode ?? receiver.session?.mode ?? "OFF",
+              )
             }
           />
           {activity === "survey" && (
@@ -1942,6 +2123,30 @@ export function SpectrumExplorer({
               <p className="survey-storage-status" role="status">
                 {storageMessage}
               </p>
+              {records.length > 0 && (
+                <SignalAnalysisPanel
+                  key={sessionId}
+                  sessionKey={sessionId}
+                  candidates={records.map((record) => ({
+                    id: recordKey(record),
+                    frequencyHz: record.frequencyHz,
+                    bandwidthHz: record.bandwidthHz,
+                  }))}
+                  selectedId={highlightedRecordKey}
+                  receiver={receiver}
+                  controller={controller}
+                  pipeline={pipeline}
+                  volume={volume}
+                  blocked={scanning || capturing || recordingBlocked}
+                  startReception={startReceptionForScan}
+                  runToken={analysisToken}
+                  onApply={onInvestigate}
+                  onBusy={(value) => {
+                    setAnalysisBusy(value);
+                    onScanningChange(value);
+                  }}
+                />
+              )}
               <ActionButton
                 type="button"
                 className="secondary"
@@ -1988,7 +2193,7 @@ export function SpectrumExplorer({
                           type="checkbox"
                           aria-label="Select all candidates"
                           checked={records.every((record) => record.selected)}
-                          disabled={scanning || capturing}
+                          disabled={scanning || capturing || analysisBusy}
                           onChange={(event) => {
                             const selected = event.currentTarget.checked;
                             updateRecords((current) =>
@@ -2016,6 +2221,7 @@ export function SpectrumExplorer({
                         !records.some((record) => record.selected) ||
                         scanning ||
                         capturing ||
+                        analysisBusy ||
                         receiver.lifecycle !== "running"
                       }
                       disabledLabel="Capture selected signals"
@@ -2087,7 +2293,7 @@ export function SpectrumExplorer({
                           <input
                             type="checkbox"
                             checked={record.selected}
-                            disabled={scanning || capturing}
+                            disabled={scanning || capturing || analysisBusy}
                             onChange={(e) => {
                               const selected = e.currentTarget.checked;
                               setRecord(index, { selected });
@@ -2183,7 +2389,7 @@ export function SpectrumExplorer({
                           Investigation mode
                           <select
                             aria-label={`Investigation mode at ${record.frequencyHz / 1e6} MHz`}
-                            disabled={scanning || capturing}
+                            disabled={scanning || capturing || analysisBusy}
                             value={investigationMode(record)}
                             onChange={(event) =>
                               setInvestigationModes((current) => ({
@@ -2210,6 +2416,7 @@ export function SpectrumExplorer({
                           disabled={
                             scanning ||
                             capturing ||
+                            analysisBusy ||
                             Boolean(investigationIssue(record))
                           }
                           disabledReason={

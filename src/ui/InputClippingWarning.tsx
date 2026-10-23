@@ -1,3 +1,4 @@
+import "./spectrumActivity.css";
 import { useEffect, useState } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import type { SourceSessionMetadata } from "../radio/types";
@@ -6,10 +7,12 @@ export function InputClippingWarning({
   pipeline,
   session,
   running,
+  compact = false,
 }: {
   pipeline: Pick<AnalysisPipeline, "getInputClipping">;
   session?: SourceSessionMetadata;
   running: boolean;
+  compact?: boolean;
 }) {
   const [sample, setSample] = useState<{
     generation: number;
@@ -41,22 +44,37 @@ export function InputClippingWarning({
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [pipeline, running, session?.sessionGeneration, session?.source, session]);
-  if (
-    !running ||
-    !sample ||
-    sample.generation !== session?.sessionGeneration ||
-    sample.source !== session.source
-  )
-    return null;
-  return (
-    <p className="input-clipping-warning" role="status">
+  const active =
+    running &&
+    sample &&
+    sample.generation === session?.sessionGeneration &&
+    sample.source === session.source;
+  const warning = active ? (
+    <p className="input-clipping-warning" role={compact ? undefined : "status"}>
       <strong>Input clipping detected</strong> ·{" "}
       {(sample.fraction * 100).toFixed(1)}% of sampled I/Q components reached
       ADC limits.{" "}
-      {session.source === "hackrf"
+      {session!.source === "hackrf"
         ? "Lower LNA/VGA gain or turn off the RF amplifier."
         : "Reduce RF gain; use manual gain if needed."}{" "}
       This check cannot detect every kind of RF overload.
     </p>
+  ) : null;
+  return compact ? (
+    <div className="input-clipping-slot" data-testid="input-clipping-slot">
+      {active && (
+        <details className="input-clipping-details">
+          <summary>
+            <span role="status">
+              Input clipping · {(sample.fraction * 100).toFixed(1)}%
+            </span>{" "}
+            · Details
+          </summary>
+          {warning}
+        </details>
+      )}
+    </div>
+  ) : (
+    warning
   );
 }

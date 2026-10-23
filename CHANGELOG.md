@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Redesign Explorer around a spectrum-led workspace with editable monitoring controls, clearer signal inspection, theme consistency and responsive layouts.
+- Remember scan drafts and display preferences, and save complete named scan setups without starting acquisition.
+- Add bounded signal refinement and silent FM pilot/RDS analysis, with measured progress, retained dated evidence and explicit receiver handoff.
+- Alternate repeated discovery sweeps with individual candidate analyses until paused, preserving receiver ownership, cleanup and history.
+- Start reception when explicitly investigating a signal in a connected, paused receiver; stabilize monitoring status layout and theme its switches.
+
 ## 1.13.0 — 2026-10-21
 
 - Add POCSAG paging reception and recording replay at 512, 1200 and 2400 bit/s, with message details, framing and correction evidence, filters and text/JSON exports.

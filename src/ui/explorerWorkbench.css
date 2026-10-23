@@ -623,8 +623,9 @@
   flex-basis: 100%;
 }
 .monitor-band-spectrum svg {
-  max-height: 210px;
-  min-height: 140px;
+  max-height: none;
+  min-height: 180px;
+  height: auto;
   margin-top: 6px;
 }
 .monitor-spectrum-measured {

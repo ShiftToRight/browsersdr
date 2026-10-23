@@ -10,7 +10,9 @@ export function MonitorGroupDetails({ signal }: { signal: MonitorSignal }) {
       <summary
         aria-label={`Expand group · ${group.componentCount} ${group.componentCount === 1 ? "component" : "components"}`}
       >
-        Group ({group.componentCount})
+        {group.componentCount === 1
+          ? "Measurements"
+          : `Group (${group.componentCount})`}
       </summary>
       <div aria-label={`Group evidence at ${frequency(signal.frequencyHz)}`}>
         <p>

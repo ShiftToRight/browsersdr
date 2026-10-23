@@ -1086,7 +1086,7 @@ export function ReceiverApp({
   useEffect(() => () => clearTimeout(hackrfVgaTimer.current), [source, controller]);
   const hackrfIdentity = receiver.session?.source === "hackrf" ? receiver.session.hackrf?.capabilities.identity : undefined;
   const caps = sourceCapabilities(source, hackrfIdentity);
-  const hardwareOptions =
+  const hardwareOptions = useMemo(() =>
     source === "hackrf"
       ? { hardwareSettings }
       : source === "usrp-b205"
@@ -1095,7 +1095,7 @@ export function ReceiverApp({
           ? { bladerfSettings }
           : source === "rtl-sdr"
             ? { gainDb }
-            : {};
+            : {}, [source, hardwareSettings, usrpSettings, bladerfSettings, gainDb]);
   const currentModeSettings = useMemo(
     () => ({
       mode,
@@ -1113,31 +1113,9 @@ export function ReceiverApp({
       frequencyHz: frequencyMhz * 1_000_000,
       modeSettings: currentModeSettings,
       sampleRateHz,
-      ...(source === "hackrf"
-        ? { hardwareSettings }
-        : source === "rtl-sdr"
-          ? { gainDb }
-          : source === "usrp-b205"
-            ? { usrpSettings }
-            : source === "bladerf"
-              ? { bladerfSettings }
-              : {}),
+      ...hardwareOptions,
     });
-  }, [
-    currentModeSettings,
-    source,
-    frequencyMhz,
-    mode,
-    bandwidthHz,
-    squelch,
-    beatToneHz,
-    srdSettings,
-    sampleRateHz,
-    hardwareSettings,
-    gainDb,
-    usrpSettings,
-    bladerfSettings,
-  ]);
+  }, [currentModeSettings, source, frequencyMhz, sampleRateHz, hardwareOptions]);
   const [loadedReplay, setLoadedReplay] = useState<IqRecording>();
   const [storedFpgaImages, setStoredFpgaImages] = useState<BladeRfHostedImage[]>([]);
   const [fpgaImageMessage, setFpgaImageMessage] = useState(
@@ -1760,15 +1738,7 @@ export function ReceiverApp({
           channelFrequencyHz: frequencyMhz * 1_000_000,
           volume,
           modeSettings: currentModeSettings,
-          ...(source === "hackrf"
-            ? { hardwareSettings }
-            : source === "rtl-sdr"
-              ? { gainDb }
-              : source === "usrp-b205"
-                ? { usrpSettings }
-                : source === "bladerf"
-                  ? { bladerfSettings }
-                  : {}),
+          ...hardwareOptions,
           sampleRateHz,
         });
       }
@@ -1777,12 +1747,9 @@ export function ReceiverApp({
       currentModeSettings,
       controller,
       frequencyMhz,
-      gainDb,
-      hardwareSettings,
+      hardwareOptions,
       sampleRateHz,
       source,
-      usrpSettings,
-      bladerfSettings,
       volume,
     ]);
 
@@ -1861,12 +1828,11 @@ export function ReceiverApp({
   const tune = useCallback(
     (frequencyHz: number) => {
       analysis.cancelSignalCenter();
-      if (sourceCapabilities(source).frequency.integerHz)
+      if (caps.frequency.integerHz)
         frequencyHz = Math.round(frequencyHz);
-      const nextMhz = frequencyHz / 1_000_000;
       setChannelTuneIssue(undefined);
       setChannelFrequencyDraft(undefined);
-      setFrequencyMhz(nextMhz);
+      setFrequencyMhz(frequencyHz / 1_000_000);
       const previousGeneration = controller.getSnapshot().sessionGeneration;
       const editRevision = channelEditRevision.current;
       void controller.tune(frequencyHz).then(() => {
@@ -1886,7 +1852,7 @@ export function ReceiverApp({
         if (completed) retainCompletedRecording(completed);
       });
     },
-    [analysis, controller, retainCompletedRecording, source],
+    [analysis, controller, retainCompletedRecording, caps.frequency.integerHz],
   );
 
   const tuneReceiverCenter = async (frequencyHz: number): Promise<string | undefined> => {
@@ -1953,17 +1919,22 @@ export function ReceiverApp({
     [controller, currentModeSettings, running],
   );
 
-  const chooseMode = (nextMode: ReceiverMode) => {
-    if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
+  const selectModeDefaults = (nextMode: ReceiverMode) => {
     const next = defaultModeSettings(nextMode);
     setMode(nextMode);
-    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(nextMode));
     setBandwidthHz(next.bandwidthHz);
     setSquelch(next.squelch);
     setBeatToneHz(next.beatToneHz ?? 600);
     setSrdSettings(next.srd ?? defaultSrdModeSettings());
     setPocsagSettings(next.pocsag ?? defaultPocsagSettings());
     setTextModemSettings(next.textModem ?? defaultTextModemSettings());
+    return next;
+  };
+
+  const chooseMode = (nextMode: ReceiverMode) => {
+    if (modeChangeBlockedReason || recordingStartPending.current || modeUnavailable(nextMode)) return;
+    const next = selectModeDefaults(nextMode);
+    setChannelAdvancedOpen(!["OFF", "WBFM", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV", "CW-TEXT"].includes(nextMode));
     if (running) applyModeSettings(next);
     if (sourceConfigurationEditable)
       setSampleRateHz(
@@ -4581,18 +4552,18 @@ export function ReceiverApp({
           investigationBlockedReason={modeChangeBlockedReason}
           onInvestigate={(frequencyHz, investigationMode) => {
             if (modeChangeBlockedReason || modeUnavailable(investigationMode)) return;
+            if (caps.frequency.integerHz) frequencyHz = Math.round(frequencyHz);
             setActiveView("receiver");
-            const settings = defaultModeSettings(investigationMode);
-            setMode(investigationMode);
-            setBandwidthHz(settings.bandwidthHz);
-            setSquelch(settings.squelch);
-            setBeatToneHz(settings.beatToneHz ?? 600);
-            setSrdSettings(settings.srd ?? defaultSrdModeSettings());
-            setPocsagSettings(settings.pocsag ?? defaultPocsagSettings());
-            setTextModemSettings(settings.textModem ?? defaultTextModemSettings());
+            const settings = selectModeDefaults(investigationMode);
             if (sourceConfigurationEditable)
               setSampleRateHz(compatibleSourceRate(source, investigationMode, sampleRateHz) ?? sampleRateHz);
-            if (receiver.lifecycle === "running")
+            if (controller.getSnapshot().lifecycle === "connected") {
+              tune(frequencyHz);
+              void controller.start({ source, channelFrequencyHz: frequencyHz, volume,
+                modeSettings: settings, ...hardwareOptions,
+                sampleRateHz: compatibleSourceRate(source, investigationMode, sampleRateHz) ?? sampleRateHz,
+              });
+            } else if (receiver.lifecycle === "running")
               void controller
                 .configureMode(settings)
                 .then(() => {

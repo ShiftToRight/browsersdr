@@ -11,15 +11,22 @@ test("compact Explorer puts a useful UHF result list above the fold and keeps si
   await page
     .getByRole("button", { name: "Hide spectrum", exact: true })
     .click();
-  const rail = await page.locator(".explorer-controls").boundingBox();
+  await expect(page.locator(".monitor-setup-rail")).toBeVisible();
+  await expect(
+    page.getByLabel("Explorer activity", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Monitor setup", exact: true }),
+  ).toBeVisible();
   const table = await page.locator(".monitor-signal-table").boundingBox();
-  expect(rail!.width).toBeLessThanOrEqual(310);
   expect(table!.y).toBeLessThan(400);
-  expect(table!.width).toBeGreaterThan(1150);
-  const toolbar = await page.locator(".monitor-toolbar").first().boundingBox();
-  const metrics = await page.locator(".monitor-metrics").boundingBox();
-  expect(toolbar!.y + toolbar!.height).toBeLessThanOrEqual(metrics!.y);
-  expect(metrics!.y + metrics!.height).toBeLessThan(table!.y);
+  const workspace = await page.locator(".monitor-workspace").boundingBox();
+  // The owner-selected persistent sidebar occupies part of the viewport.
+  expect(table!.width).toBeGreaterThan(workspace!.width - 64);
+  const controls = await page
+    .getByRole("region", { name: "Monitoring & analysis", exact: true })
+    .boundingBox();
+  expect(controls!.x + controls!.width).toBeLessThan(table!.x);
   const viewportBottom = 903;
   const visibleRows = await page
     .locator(".monitor-signal-table tbody tr")
@@ -88,12 +95,12 @@ test("spectrum presets and optional FM presets apply explicit editable settings"
   await page.getByLabel("Range end", { exact: true }).fill("5.85 GHz");
   await expect(preset).toHaveValue("general");
   await page.getByText("Detector settings", { exact: true }).click();
-  const dwell = page.getByRole("slider", {
-    name: "Dwell per window",
+  const dwell = page.getByRole("spinbutton", {
+    name: "Dwell milliseconds",
     exact: true,
   });
-  const threshold = page.getByRole("slider", {
-    name: "Detection threshold",
+  const threshold = page.getByRole("spinbutton", {
+    name: "Threshold decibels",
     exact: true,
   });
   for (const [key, ms, db] of [
