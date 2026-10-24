@@ -103,6 +103,18 @@ beforeEach(async () => {
           selectedChannelFrequencyHz: value.channelFrequencyHz,
         };
       }
+      if (value.source === "hackrf" && value.hardwareSettings) {
+        metadata = {
+          ...metadata,
+          hackrf: {
+            ...metadata.hackrf!,
+            captureSettings: {
+              ...metadata.hackrf!.captureSettings,
+              ...value.hardwareSettings,
+            },
+          },
+        };
+      }
       return {
         ...metadata,
         hardwareCenterFrequencyHz: value.channelFrequencyHz,
@@ -411,6 +423,8 @@ it("holds source ownership on cleanup failure and restores source-specific choic
   await change(control("Source"), "hackrf");
   await change(control("RX VGA gain"), "26");
   await click("Connect");
+  expect(options.at(-1)?.hardwareSettings?.rxVgaGainDb).toBe(26);
+  expect(controller.getSnapshot().session?.hackrf?.captureSettings.rxVgaGainDb).toBe(26);
   closeFailures = 1;
   await change(control("Source"), "synthetic");
   expect(control("Source").value).toBe("hackrf");
