@@ -1,4 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
+
+// Keep this long tuning/reload workflow in a fresh normal browser, rather than
+// inheriting resources from the preceding decoder/Explorer context cycles.
+// Its original interactions, assertions and 20-second deadline stay intact.
+const test = base.extend<object, { isolatedTuningWorker: boolean }>({
+  isolatedTuningWorker: [true, { scope: "worker", auto: true }],
+});
 
 test("receiver window and channel tune independently, with guarded automatic re-centering", async ({
   page,
