@@ -1,4 +1,8 @@
 import {
+  openDisplaySettings,
+  closeDisplaySettings,
+} from "./display-settings-navigation";
+import {
   openApplicationView,
   chooseReceiverMode,
 } from "./application-navigation";
@@ -92,17 +96,22 @@ test("desktop keeps expanded tools reachable and utilities in their own scroll l
   const record = page.getByRole("button", { name: "Start I/Q recording" });
   await record.scrollIntoViewIfNeeded();
   await expect(record).toBeInViewport();
-  await page.locator(".display-settings > summary").click();
+  await openDisplaySettings(page);
   expect(
     (await page.locator(".graphics-panel canvas").boundingBox())!.height,
   ).toBeGreaterThanOrEqual(120);
   for (const toggle of await page
     .locator('.display-settings input[type="checkbox"]')
     .all()) {
-    const box = (await toggle.boundingBox())!;
+    // The transparent input covers the label; measure the visible switch itself.
+    await expect(toggle).toHaveCSS("opacity", "0");
+    const track = toggle.locator("xpath=following-sibling::*[1]");
+    await expect(track).toHaveClass("receiver-switch-track");
+    const box = (await track.boundingBox())!;
     expect(box.width).toBeLessThanOrEqual(24);
     expect(box.height).toBeLessThanOrEqual(24);
   }
+  await closeDisplaySettings(page);
   await page
     .getByRole("button", { name: "FFT & display details", exact: true })
     .click();
@@ -192,7 +201,9 @@ test("mobile keeps source and tuning controls before the spectrum and output", a
         inner.y - outer.y - (outer.y + outer.height - inner.y - inner.height),
       ),
     ).toBeLessThanOrEqual(1);
-    await expect(page.locator(".display-settings")).not.toHaveAttribute("open");
+    await expect(
+      page.getByRole("dialog", { name: "Display settings", exact: true }),
+    ).toBeHidden();
   }
 });
 

@@ -31,6 +31,23 @@ test("status changes keep header utility targets still and chooser filtering kee
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await search.fill("");
+    // Compare the resting frame after the button-origin entrance completes.
+    await expect
+      .poll(() =>
+        chooser.evaluate((el) =>
+          el
+            .getAnimations()
+            .every((animation) => animation.playState === "finished"),
+        ),
+      )
+      .toBe(true);
+    // Allow responsive layout/ResizeObserver placement to reach the next paint.
+    await chooser.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     const all = (await chooser.boundingBox())!;
     await search.fill("navtex");
     const filtered = (await chooser.boundingBox())!;

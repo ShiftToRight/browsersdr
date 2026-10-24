@@ -101,7 +101,8 @@ test("header utilities fit desktop and mobile, with dismissible menus and retain
           return box.y + box.height / 2;
         }),
       );
-      expect(centers).toHaveLength(7);
+      expect(centers).toHaveLength(8);
+      await expect(page.locator("#antenna-guide-trigger")).toBeVisible();
       if (width > 1100) {
         expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
       } else {

@@ -1,3 +1,7 @@
+import {
+  openDisplaySettings,
+  closeDisplaySettings,
+} from "./display-settings-navigation";
 import { expect, test, type Page } from "@playwright/test";
 
 async function start(page: Page) {
@@ -6,10 +10,11 @@ async function start(page: Page) {
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("synthetic");
   await page.getByRole("button", { name: "Start demo", exact: true }).click();
-  await page.getByText("Display settings", { exact: true }).click();
+  await openDisplaySettings(page);
   await page
     .getByRole("combobox", { name: "Display renderer", exact: true })
     .selectOption("canvas2d");
+  await closeDisplaySettings(page);
   await expect(page.locator(".band-guide-strip")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Pause display", exact: true }),
@@ -74,6 +79,7 @@ test("guide preference persists and changing renderer clears the old preview", a
   const canvas = page.locator(".canvas-frame canvas");
   await canvas.hover({ position: { x: 100, y: 60 } });
   await expect(page.locator(".spectrum-hover-readout")).toBeVisible();
+  await openDisplaySettings(page);
   await page
     .getByRole("combobox", { name: "Display renderer", exact: true })
     .selectOption("webgpu");
@@ -81,7 +87,7 @@ test("guide preference persists and changing renderer clears the old preview", a
   const toggle = page.getByRole("checkbox", { name: "Hover frequency guide" });
   await toggle.uncheck();
   await page.reload();
-  await page.getByText("Display settings", { exact: true }).click();
+  await openDisplaySettings(page);
   await expect(toggle).not.toBeChecked();
 });
 

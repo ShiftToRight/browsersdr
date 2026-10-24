@@ -1,3 +1,7 @@
+import {
+  openDisplaySettings,
+  closeDisplaySettings,
+} from "./display-settings-navigation";
 import { expect, test } from "@playwright/test";
 // Independent wire fixtures keep browser checks separate from the runtime validator.
 const SETTINGS_SHARE_SCHEMA = "browsersdr-settings-v1";
@@ -78,11 +82,12 @@ test("settings share generates a clean link and restores CW/display with no hard
   await page.goto("/");
   await page.getByRole("combobox", { name: /^Mode/ }).selectOption("CW");
   await page.getByRole("button", { name: "Compact", exact: true }).click();
-  await page.getByText("Display settings", { exact: true }).click();
+  await openDisplaySettings(page);
   await page.getByRole("slider", { name: "Spectrum floor" }).press("Home");
   await page
     .getByRole("slider", { name: "Spectrum floor" })
     .press("ArrowRight");
+  await closeDisplaySettings(page);
   await page.getByRole("tab", { name: "Session", exact: true }).click();
   await page
     .getByRole("button", { name: "Share settings", exact: true })
@@ -189,7 +194,7 @@ test("settings share generates a clean link and restores CW/display with no hard
   await expect(
     recipient.getByRole("button", { name: "Compact", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await recipient.getByText("Display settings", { exact: true }).click();
+  await openDisplaySettings(recipient);
   await expect(
     recipient.getByRole("slider", { name: "Spectrum floor" }),
   ).toHaveValue("-119");

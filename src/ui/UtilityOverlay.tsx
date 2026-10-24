@@ -13,10 +13,11 @@ const pages: Array<{ view: UtilityView; label: string; icon: AppIconName }> = [
 ];
 
 /** Presentation state stays separate from the active receiver/workspace. */
-export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChange, onDismiss, children }: {
+export function UtilityOverlay({ view, workspaceLabel, returnFocusId, workspaceFocusId = returnFocusId, onViewChange, onDismiss, children }: {
   view: UtilityView | null;
   workspaceLabel: string;
   returnFocusId: string;
+  workspaceFocusId?: string;
   onViewChange: (view: UtilityView) => void;
   onDismiss: () => void;
   children: ReactNode;
@@ -25,6 +26,7 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
   const closeButton = useRef<HTMLButtonElement>(null);
   const backdropPressed = useRef(false);
   const trigger = useRef<HTMLElement | null>(null);
+  const returnToWorkspace = useRef(false);
   const open = view !== null;
   const lastView = useRef(view);
   const lastChildren = useRef(children);
@@ -36,6 +38,7 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
     trigger.current = document.getElementById(returnFocusId);
     if (!open) return;
     setClosed(false);
+    returnToWorkspace.current = false;
     const position = () => {
       const bottom = document.querySelector(".app-topbar")?.getBoundingClientRect().bottom ?? 80;
       const top = Math.min(Math.max(bottom + 12, 16), window.innerHeight * 0.25);
@@ -48,7 +51,10 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
     window.addEventListener("resize", position);
     return () => { observer?.disconnect(); window.removeEventListener("resize", position); };
   }, [open, returnFocusId]);
-  useOverlayDialog(open, dialog, trigger, ".utility-overlay-close", () => setClosed(true));
+  useOverlayDialog(open, dialog, trigger, ".utility-overlay-close", () => {
+    setClosed(true);
+    if (returnToWorkspace.current) document.getElementById(workspaceFocusId)?.focus({ preventScroll: true });
+  });
 
   return <dialog ref={dialog} className={`utility-overlay overlay-motion${displayedView === "antenna" ? " utility-overlay-antenna" : ""}`} role="dialog" aria-modal="true" aria-labelledby="utility-overlay-heading"
     onCancel={event => { if (event.target === event.currentTarget) { event.preventDefault(); onDismiss(); } }}
@@ -87,6 +93,6 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
         }}><AppIcon name={page.icon} />{page.label}</button>)}
     </nav>
     <div className="utility-overlay-content">{open || closed ? children : lastChildren.current}</div>
-    <footer className="utility-overlay-footer">{displayedView === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={onDismiss}>Back to {workspaceLabel}</button></footer>
+    <footer className="utility-overlay-footer">{displayedView === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={() => { returnToWorkspace.current = true; onDismiss(); }}>Back to {workspaceLabel}</button></footer>
   </dialog>;
 }

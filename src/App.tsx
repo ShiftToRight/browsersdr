@@ -4701,6 +4701,7 @@ export function ReceiverApp({
       <DeferredWorkspace active={utilityView !== null}><UtilityOverlay view={utilityView}
         workspaceLabel={activeView === "diagnostics" ? "Diagnostics" : lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}
         returnFocusId={utilityTriggerId ?? (activeView === "diagnostics" ? "auxiliary-return" : `${lastWorkspace}-tab`)}
+        workspaceFocusId={activeView === "diagnostics" ? "auxiliary-return" : `${lastWorkspace}-tab`}
         onViewChange={setUtilityView} onDismiss={() => setUtilityView(null)}>
       <div id="antenna-view" role="region" aria-label="Antenna guide" hidden={utilityView !== "antenna"}>
         <DeferredWorkspace active={utilityView === "antenna"}><AntennaGuide context={antennaContext} /></DeferredWorkspace>

@@ -61,7 +61,9 @@ test("band guide follows accepted RF coordinates and inspection never tunes", as
   await page
     .getByRole("button", { name: "Resume display", exact: true })
     .click();
-  await page.getByText("Display settings", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Display settings", exact: true })
+    .click();
   await page
     .getByRole("combobox", { name: "Display renderer", exact: true })
     .selectOption("canvas2d");
@@ -69,6 +71,15 @@ test("band guide follows accepted RF coordinates and inspection never tunes", as
   await expect(
     page.getByRole("combobox", { name: "Display renderer", exact: true }),
   ).toHaveValue("canvas2d");
+  const display = page.getByRole("dialog", {
+    name: "Display settings",
+    exact: true,
+  });
+  await display.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(display).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Display settings", exact: true }),
+  ).toBeFocused();
   await expect(
     strip.getByRole("button", { name: /^FM broadcast/ }),
   ).toBeVisible();

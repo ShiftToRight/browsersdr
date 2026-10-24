@@ -1,3 +1,7 @@
+import {
+  openDisplaySettings,
+  closeDisplaySettings,
+} from "./display-settings-navigation";
 import { expect, test, type Page } from "@playwright/test";
 
 async function chooseTheme(page: Page, value: string) {
@@ -25,7 +29,7 @@ test("appearance switches while receiving, preserves paused pixels/history, and 
   await expect(page.locator(".receiver-status")).toContainText(
     "Synthetic RF demo running",
   );
-  await page.locator(".display-settings > summary").click();
+  await openDisplaySettings(page);
   await page.getByLabel("Display renderer").selectOption("canvas2d");
   await expect
     .poll(() =>
@@ -34,12 +38,12 @@ test("appearance switches while receiving, preserves paused pixels/history, and 
         .evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL().length),
     )
     .toBeGreaterThan(20000);
+  await closeDisplaySettings(page);
   await page
     .getByRole("button", { name: "Pause display", exact: true })
     .click();
-  await page.locator(".display-settings > summary").click();
   const plot = page.locator(".canvas-frame canvas");
-  // Closing Display settings changes the plot height; await its backing size.
+  // Await the canvas backing size before comparing unchanged paused history.
   await expect
     .poll(() =>
       plot.evaluate((canvas: HTMLCanvasElement) => {
