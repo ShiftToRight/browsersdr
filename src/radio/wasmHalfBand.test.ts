@@ -29,10 +29,18 @@ it.each(
             bQ = Q.slice();
           const count = fast.process(aI, aQ);
           expect(count).toBe(reference.process(bI, bQ));
+          // Check every component with the original five-decimal tolerance.
+          // Aggregating the error avoids thousands of matcher allocations per
+          // block; NaN and Infinity still fail the strict bound below.
+          let maxError = 0;
           for (let n = 0; n < count; n++) {
-            expect(aI[n]).toBeCloseTo(bI[n]!, 5);
-            expect(aQ[n]).toBeCloseTo(bQ[n]!, 5);
+            maxError = Math.max(
+              maxError,
+              Math.abs(aI[n]! - bI[n]!),
+              Math.abs(aQ[n]! - bQ[n]!),
+            );
           }
+          expect(maxError).toBeLessThan(0.5 * 10 ** -5);
           at += length;
         }
         fast.reset();
@@ -59,21 +67,29 @@ it.each([15, 31, 95])(
         copyQ = Q.slice();
       const count = dense.process(I, Q);
       expect(compact.process(copyI, copyQ)).toBe(count);
+      let maxRoundingError = 0;
+      let maxQuantizationError = 0;
       for (let n = 0; n < count; n++) {
         for (const [before, after] of [
           [I[n]!, copyI[n]!],
           [Q[n]!, copyQ[n]!],
         ] as const) {
-          expect(Math.abs(before - after)).toBeLessThan(1e-6);
+          maxRoundingError = Math.max(
+            maxRoundingError,
+            Math.abs(before - after),
+          );
           for (const scale of [128, 32768]) {
             const quantize = (x: number) =>
               Math.max(-scale, Math.min(scale - 1, Math.round(x * scale)));
-            expect(
+            maxQuantizationError = Math.max(
+              maxQuantizationError,
               Math.abs(quantize(before) - quantize(after)),
-            ).toBeLessThanOrEqual(1);
+            );
           }
         }
       }
+      expect(maxRoundingError).toBeLessThan(1e-6);
+      expect(maxQuantizationError).toBeLessThanOrEqual(1);
     }
   },
 );
