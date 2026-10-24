@@ -324,6 +324,7 @@ describe("VFO B passband, input ownership and real demodulation", () => {
 describe("honest RF levels and activity", () => {
   it("measures relative RMS/peak, expires stale input and resets context", () => {
     const monitor = new InputClippingMonitor();
+    monitor.setLevelEnabled(true);
     monitor.observePlanar(
       new Float32Array(1024).fill(0.1),
       new Float32Array(1024).fill(-0.1),

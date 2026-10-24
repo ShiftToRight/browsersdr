@@ -99,6 +99,7 @@ export class AnalysisPipeline {
   private readonly inputClipping = new InputClippingMonitor();
   getInputClipping = () => this.inputClipping.getSnapshot();
   getInputLevel = () => this.inputClipping.getLevel();
+  setInputLevelEnabled = (enabled:boolean) => this.inputClipping.setLevelEnabled(enabled);
   private worker: Worker;
   private recoveryAttempts = 0;
   private disposed = false;

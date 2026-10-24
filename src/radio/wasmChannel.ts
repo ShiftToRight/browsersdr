@@ -1,7 +1,7 @@
 import { decodeCi8Into } from "./ci8Samples";
 import { decodeSc16Q11Into } from "./sc16Samples";
 import wasmUrl from "../wasm/pkg/spectrum_analysis.wasm?url";
-import { CHANNEL_MAX_SAMPLES } from "./widebandChannel";
+import { CHANNEL_MAX_SAMPLES, type NativeChannelEncoding } from "./widebandChannel";
 
 export interface ChannelExports extends WebAssembly.Exports {
   memory: WebAssembly.Memory;
@@ -73,4 +73,25 @@ export async function createWasmChannel(rate = 9_600_000): Promise<WasmChannelFi
   } catch (error) {
     throw new Error(`${rate / 1_000_000} MS/s requires the optimized channel WebAssembly module. Select 2.4 MS/s or reload after checking asset access. ${String(error)}`, { cause: error });
   }
+}
+
+
+/** Prepare the actual ingress API before RX, then discard every warm-up sample.
+ * The filter coefficients, phase reset and bounded scratch stay unchanged. */
+export function warmChannelFilter(filter: {
+  reset(offset: number): void;
+  process(I: Float32Array, Q: Float32Array): number;
+  processCi8?(bytes: Uint8Array, I: Float32Array, Q: Float32Array): number;
+  processSc16?(bytes: Uint8Array, I: Float32Array, Q: Float32Array): number;
+}, rate: number, offset: number, native: NativeChannelEncoding = false): void {
+  const I = new Float32Array(CHANNEL_MAX_SAMPLES), Q = I.slice();
+  const bytes = native === "ci8" ? new Uint8Array(CHANNEL_MAX_SAMPLES * 2)
+    : native === "sc16" ? new Uint8Array(CHANNEL_MAX_SAMPLES * 2) : undefined;
+  if (rate === 19_200_000) filter.reset(1_000_000);
+  for (let block = 0; block < (rate === 19_200_000 ? 128 : 16); block++) {
+    if (native === "ci8" && filter.processCi8) filter.processCi8(bytes!, I, Q);
+    else if (native === "sc16" && filter.processSc16) filter.processSc16(bytes!, I, Q);
+    else filter.process(I, Q);
+  }
+  filter.reset(offset);
 }

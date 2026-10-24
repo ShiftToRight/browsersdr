@@ -86,6 +86,7 @@ export type ChannelWorkerInput =
       generation: number;
       offsetHz: number;
       sampleRateHz?: number;
+      native?: NativeChannelEncoding;
     }
   | {
       type: "samples";
@@ -329,6 +330,7 @@ export class WidebandChannelWorker {
       generation,
       offsetHz,
       sampleRateHz,
+      native,
     } satisfies ChannelWorkerInput);
     return this.ready;
   }

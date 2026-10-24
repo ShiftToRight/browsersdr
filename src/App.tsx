@@ -4014,7 +4014,6 @@ export function ReceiverApp({
                   </span>
                 )}
               </div>
-                <label>I/Q recording channel<select aria-label="I/Q recording channel" value={recordingVfo} disabled={Boolean(recordingStatus) || transitioning} onChange={event=>setRecordingVfo(event.currentTarget.value as "A"|"B")}><option value="A">VFO A</option><option value="B" disabled={!receiver.secondaryVfo}>VFO B · selected channel</option></select></label>
                 <div className="recording-actions">
                 {recordingStatus ? (
                   <button
@@ -4099,6 +4098,8 @@ export function ReceiverApp({
               hidden={captureView !== "record"}
             >
               <div className="capture-options">
+                <label className="capture-vfo">I/Q recording channel<select aria-label="I/Q recording channel" value={recordingVfo} disabled={Boolean(recordingStatus) || transitioning} onChange={event=>setRecordingVfo(event.currentTarget.value as "A"|"B")}><option value="A">VFO A</option><option value="B" disabled={!receiver.secondaryVfo}>VFO B · selected channel</option></select></label>
+
                 <label className="recording-format">
                   Export format
                   <select

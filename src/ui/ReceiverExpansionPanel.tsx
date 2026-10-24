@@ -70,6 +70,7 @@ export default function ReceiverExpansionPanel({
     currentVolume.current = volume;
   }, [volume]);
   const [level, setLevel] = useState<InputLevel>();
+  const [healthOpen, setHealthOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [messageLocation, setMessageLocation] = useState<
     "acquire" | "tune" | "watch"
@@ -101,9 +102,20 @@ export default function ReceiverExpansionPanel({
     running = receiver.lifecycle === "running";
   const local = ["rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(source);
   useEffect(() => {
-    const timer = setInterval(() => setLevel(pipeline.getInputLevel()), 500);
-    return () => clearInterval(timer);
-  }, [pipeline]);
+    const tracking = active && running && (healthOpen || operation === "gain");
+    pipeline.setInputLevelEnabled(tracking);
+    if (!tracking) {
+      setLevel(undefined);
+      return;
+    }
+    const refresh = () => setLevel(pipeline.getInputLevel());
+    refresh();
+    const timer = setInterval(refresh, 500);
+    return () => {
+      clearInterval(timer);
+      pipeline.setInputLevelEnabled(false);
+    };
+  }, [pipeline, active, running, healthOpen, operation]);
   const operationCallback = useRef(onOperationChange);
   useEffect(() => {
     operationCallback.current = onOperationChange;
@@ -209,7 +221,7 @@ export default function ReceiverExpansionPanel({
   };
   return (
     <div className="receiver-expansion receiver-tools">
-      <details>
+      <details onToggle={(event) => setHealthOpen(event.currentTarget.open)}>
         <summary>Reception health &amp; guided gain</summary>
         <p>
           {running && level

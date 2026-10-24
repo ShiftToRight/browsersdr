@@ -4698,6 +4698,7 @@ button:has(> .app-icon) {
 .capture-options .channel-capture-toggle { display: inline-flex; align-items: center; min-height: 32px; margin: 0; padding: 4px 8px; width: auto; }
 .capture-options .channel-capture-toggle input { min-height: 0; }
 .capture-duration { width: 170px; }
+.capture-vfo { width: 190px; }
 .capture-panel .recording-details { margin: 0; padding: 0; border: 0; }
 .capture-panel .recording-details > summary, .session-panel .receiver-session-details > summary { padding: 2px 0; min-height: 24px; font-size: 0.75rem; }
 .capture-panel .replay-inputs { margin-top: 8px; gap: 8px 12px; }

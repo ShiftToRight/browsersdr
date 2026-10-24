@@ -8,6 +8,7 @@
 - Add declared compatible RTL Q-branch HF input and converter-aware tuning, recording and replay provenance.
 - Add explicit compatible RTL/HackRF antenna-power controls, acknowledged recording settings and default-OFF saved preferences.
 - Match receiver-tool typography and themed switches, place VFO B under Tune & demodulate, and move quiet display status into the header health popup.
+- Keep closed RF-health tools passive, prepare the selected native input path before reception, and fit recording-channel selection into the existing capture options.
 
 ## 1.14.0 — 2026-10-23
 

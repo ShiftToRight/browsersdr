@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
-import { WasmChannelFilter, type ChannelExports } from "./wasmChannel";
+import { WasmChannelFilter, warmChannelFilter, type ChannelExports } from "./wasmChannel";
 import { WidebandChannelFilter } from "./widebandChannel";
 let exports: ChannelExports;
 beforeAll(async () => {
@@ -92,3 +92,30 @@ it.each([4_800_000, 9_600_000, 19_200_000])("normalizes bladeRF SC16 Q11 directl
   expect(() => native.processSc16(new Uint8Array(3), new Float32Array(1), new Float32Array(1))).toThrow();
   native.dispose(); planar.dispose();
 });
+
+
+it.each([4_800_000,9_600_000,19_200_000].flatMap(rate =>
+  ([false,"ci8","sc16"] as const).map(native => ({rate,native}))))(
+  "warm-up leaves first real samples and odd history exact at $rate / $native", ({rate,native}) => {
+    const warm = new WasmChannelFilter(exports,rate), cold = new WasmChannelFilter(exports,rate);
+    const offset = -700_000;
+    warm.reset(offset); cold.reset(offset);
+    warmChannelFilter(warm,rate,offset,native);
+    for (const size of [137,32768,3]) {
+      const I=Float32Array.from({length:size},(_,n)=>Math.cos(n*.31)*.7),Q=Float32Array.from({length:size},(_,n)=>Math.sin(n*.71)*.6);
+      const expectedI=I.slice(),expectedQ=Q.slice();
+      let count, expectedCount;
+      if(native){
+        const bytes=new Uint8Array(size*(native==="ci8"?2:4));
+        for(let n=0;n<bytes.length;n++)bytes[n]=(n*37)%256;
+        const before=bytes.slice();
+        count=native==="ci8"?warm.processCi8(bytes,I,Q):warm.processSc16(bytes,I,Q);
+        expectedCount=native==="ci8"?cold.processCi8(bytes,expectedI,expectedQ):cold.processSc16(bytes,expectedI,expectedQ);
+        expect(bytes).toEqual(before);
+      } else {count=warm.process(I,Q);expectedCount=cold.process(expectedI,expectedQ);}
+      expect(count).toBe(expectedCount);
+      expect(I.subarray(0,count)).toEqual(expectedI.subarray(0,count));
+      expect(Q.subarray(0,count)).toEqual(expectedQ.subarray(0,count));
+    }
+    warm.dispose();cold.dispose();
+  });

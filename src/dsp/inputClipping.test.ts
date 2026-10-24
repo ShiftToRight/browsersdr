@@ -52,3 +52,28 @@ it("does not claim clipping for unsupported inputs or statistically tiny blocks"
   monitor.observeCi8(Uint8Array.of(127, 128), 0);
   expect(monitor.getSnapshot(0)).toBeUndefined();
 });
+
+it("keeps clipping active while optional levels are off and requires fresh samples when enabled", () => {
+  const monitor = new InputClippingMonitor();
+  const bytes = new Uint8Array(2048);
+  for (let n = 0; n < bytes.length; n += 2) {
+    bytes[n] = 127;
+    bytes[n + 1] = 128;
+  }
+  monitor.observeCi8(bytes, 100);
+  expect(monitor.getLevel(100)).toBeUndefined();
+  expect(monitor.getSnapshot(100)?.clippedFraction).toBe(1);
+  monitor.setLevelEnabled(true);
+  expect(monitor.getLevel(100)).toBeUndefined();
+  bytes.fill(64);
+  monitor.observeCi8(bytes, 110);
+  expect(monitor.getLevel(110)?.rmsDb).toBeCloseTo(20 * Math.log10(0.5));
+  expect(monitor.getLevel(110)?.clippedFraction).toBe(0);
+  expect(monitor.getLevel(110)?.sampledComponents).toBe(2048);
+  monitor.setLevelEnabled(false);
+  expect(monitor.getLevel(110)).toBeUndefined();
+  expect(monitor.getSnapshot(110)).toEqual({
+    clippedFraction: 0.5,
+    sampledComponents: 4096,
+  });
+});

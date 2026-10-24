@@ -7,7 +7,7 @@ import {
   type ChannelWorkerInput,
   type ChannelWorkerOutput,
 } from "../radio/widebandChannel";
-import { createWasmChannel } from "../radio/wasmChannel";
+import { createWasmChannel, warmChannelFilter } from "../radio/wasmChannel";
 let filter: {
   reset(offset: number): void;
   process(I: Float32Array, Q: Float32Array): number;
@@ -21,6 +21,7 @@ let generation = -1;
 // reference filter while the higher rates used the intended implementation.
 let rate = 0;
 let warmedRate = 0;
+let warmedNative: import("../radio/widebandChannel").NativeChannelEncoding | undefined;
 // Serialize async module loading with control and bounded sample messages.
 let tasks = Promise.resolve();
 let ci8Scratch: [Float32Array, Float32Array] | undefined;
@@ -37,16 +38,11 @@ self.onmessage = (event: MessageEvent<ChannelWorkerInput>) => {
         }
         filter.reset(message.offsetHz);
         generation = message.generation;
-        if (warmedRate !== rate) {
-          const I = new Float32Array(32768),
-            Q = new Float32Array(32768);
-          // Exercise the translated path before high-rate RX, allowing browser WASM
-          // tiering to finish without consuming acquisition queue headroom.
-          if (rate === 19_200_000) filter.reset(1_000_000);
-          for (let block = 0; block < (rate === 19_200_000 ? 128 : 16); block++)
-            filter.process(I, Q);
-          filter.reset(message.offsetHz);
+        const native = message.native ?? false;
+        if (warmedRate !== rate || warmedNative !== native) {
+          warmChannelFilter(filter, rate, message.offsetHz, native);
           warmedRate = rate;
+          warmedNative = native;
         }
         self.postMessage({
           type: "ready",

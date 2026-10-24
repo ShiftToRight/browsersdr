@@ -14,6 +14,9 @@ test("header layout controls and condensed docks keep primary actions fully visi
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Compact", exact: true }).click();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
   const dock = page.locator(".receiver-dock");
   for (const viewport of [
     { width: 1686, height: 903 },

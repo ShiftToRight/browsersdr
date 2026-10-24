@@ -268,6 +268,8 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
   await click("Connect");
   expect(options[0]?.source).toBe("hackrf");
   expect(options[0]).not.toHaveProperty("gainDb");
+  // These edits/blur share one debounce window, independent of host load.
+  vi.useFakeTimers();
   await change(control("RX VGA gain"), "3");
   await act(async () => control("RX VGA gain").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
   expect(hardwareCalls).toBe(0);

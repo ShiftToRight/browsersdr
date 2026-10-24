@@ -5,9 +5,32 @@ export interface InputClippingSnapshot {
 
 /** Bounded sampling of raw ADC endpoints, before audio/DSP can mutate I/Q.
  * This is a saturation warning, not a calibrated RF overload detector. */
-export interface InputLevel { rmsDb:number;peakDb:number;dc:number;clippedFraction:number;sampledComponents:number;observedAtMs:number; }
+export interface InputLevel {
+  rmsDb: number;
+  peakDb: number;
+  dc: number;
+  clippedFraction: number;
+  sampledComponents: number;
+  observedAtMs: number;
+}
 export class InputClippingMonitor {
-  private sum=0; private sumSquares=0; private peak=0; private observedAt=0;
+  private levelEnabled = false;
+  private levelComponents = 0;
+  private levelClipped = 0;
+  setLevelEnabled(enabled: boolean): void {
+    if (enabled === this.levelEnabled) return;
+    this.levelEnabled = enabled;
+    this.levelComponents = 0;
+    this.levelClipped = 0;
+    this.sum = 0;
+    this.sumSquares = 0;
+    this.peak = 0;
+    this.observedAt = 0;
+  }
+  private sum = 0;
+  private sumSquares = 0;
+  private peak = 0;
+  private observedAt = 0;
   private windowStart = 0;
   private sampled = 0;
   private clipped = 0;
@@ -20,7 +43,12 @@ export class InputClippingMonitor {
     this.clipped = 0;
     this.warningUntil = 0;
     this.warning = undefined;
-    this.sum=0;this.sumSquares=0;this.peak=0;this.observedAt=0;
+    this.sum = 0;
+    this.sumSquares = 0;
+    this.peak = 0;
+    this.observedAt = 0;
+    this.levelComponents = 0;
+    this.levelClipped = 0;
   }
 
   observePlanar(
@@ -37,7 +65,7 @@ export class InputClippingMonitor {
     const low = source === "rtl-sdr" ? -127.5 / 128 : -1;
     const high = source === "rtl-sdr" ? 127.5 / 128 : 127 / 128;
     for (let n = 0; n < length; n += stride) {
-      this.level(I[n]!,Q[n]!,now);
+      if (this.levelEnabled) this.level(I[n]!, Q[n]!, now, low, high);
       this.sampled += 2;
       if (I[n]! <= low || I[n]! >= high) this.clipped++;
       if (Q[n]! <= low || Q[n]! >= high) this.clipped++;
@@ -50,8 +78,17 @@ export class InputClippingMonitor {
     const length = bytes.byteLength / 2;
     const stride = Math.max(1, Math.ceil(length / 1024));
     for (let n = 0; n < length; n += stride) {
-      const a=bytes[2*n]!,b=bytes[2*n+1]!;
-      this.level((a<128?a:a-256)/128,(b<128?b:b-256)/128,now);
+      if (this.levelEnabled) {
+        const a = bytes[2 * n]!,
+          b = bytes[2 * n + 1]!;
+        this.level(
+          (a < 128 ? a : a - 256) / 128,
+          (b < 128 ? b : b - 256) / 128,
+          now,
+          -1,
+          127 / 128,
+        );
+      }
       this.sampled += 2;
       if (bytes[2 * n] === 128 || bytes[2 * n] === 127) this.clipped++;
       if (bytes[2 * n + 1] === 128 || bytes[2 * n + 1] === 127) this.clipped++;
@@ -59,10 +96,32 @@ export class InputClippingMonitor {
     this.updateWarning(now);
   }
 
-  private level(i:number,q:number,now:number){this.sum+=i+q;this.sumSquares+=i*i+q*q;this.peak=Math.max(this.peak,Math.abs(i),Math.abs(q));this.observedAt=now;}
-  getLevel(now=performance.now()):InputLevel|undefined{
-    if(this.sampled<128||now-this.observedAt>1500)return;
-    return {rmsDb:10*Math.log10(Math.max(1e-12,this.sumSquares/this.sampled)),peakDb:20*Math.log10(Math.max(1e-6,this.peak)),dc:this.sum/this.sampled,clippedFraction:this.clipped/this.sampled,sampledComponents:this.sampled,observedAtMs:this.observedAt};
+  private level(i: number, q: number, now: number, low: number, high: number) {
+    this.sum += i + q;
+    this.sumSquares += i * i + q * q;
+    this.peak = Math.max(this.peak, Math.abs(i), Math.abs(q));
+    this.observedAt = now;
+    this.levelComponents += 2;
+    if (i <= low || i >= high) this.levelClipped++;
+    if (q <= low || q >= high) this.levelClipped++;
+  }
+  getLevel(now = performance.now()): InputLevel | undefined {
+    if (
+      !this.levelEnabled ||
+      this.levelComponents < 128 ||
+      now - this.observedAt > 1500
+    )
+      return;
+    return {
+      rmsDb:
+        10 *
+        Math.log10(Math.max(1e-12, this.sumSquares / this.levelComponents)),
+      peakDb: 20 * Math.log10(Math.max(1e-6, this.peak)),
+      dc: this.sum / this.levelComponents,
+      clippedFraction: this.levelClipped / this.levelComponents,
+      sampledComponents: this.levelComponents,
+      observedAtMs: this.observedAt,
+    };
   }
   getSnapshot(now = performance.now()): InputClippingSnapshot | undefined {
     return now < this.warningUntil ? this.warning : undefined;
@@ -73,7 +132,11 @@ export class InputClippingMonitor {
       this.windowStart = now;
       this.sampled = 0;
       this.clipped = 0;
-      this.sum=0;this.sumSquares=0;this.peak=0;
+      this.sum = 0;
+      this.sumSquares = 0;
+      this.peak = 0;
+      this.levelComponents = 0;
+      this.levelClipped = 0;
     }
   }
 
