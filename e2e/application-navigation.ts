@@ -54,6 +54,11 @@ export async function openApplicationView(
               ? "Compatibility & tests"
               : "About BrowserSDR";
       await overlay.getByRole("button", { name: label, exact: true }).click();
+      // A newly selected lazy page can suspend the enclosing overlay.
+      await page
+        .locator(`#${view.toLowerCase()}-view`)
+        .waitFor({ state: "visible" });
+      await overlay.waitFor({ state: "visible" });
       return;
     }
   } else if (await overlay.isVisible()) {

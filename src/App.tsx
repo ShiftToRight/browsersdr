@@ -4460,10 +4460,10 @@ export function ReceiverApp({
           >
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
             <button id="live-share-trigger" type="button" className="secondary" disabled={remoteSelected} onClick={() => setLiveShareOpen(true)}>Share live audio &amp; spectrum</button>
-            <DeferredWorkspace active={(receiverDockExpanded && receiverDockView === "session") || hasSettingsShare(incomingShareHash)}><SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
+            <DeferredWorkspace active={(receiverDockExpanded && receiverDockView === "session") || hasSettingsShare(incomingShareHash)}><Suspense fallback={null}><SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
               applyBlockedReason={remoteSelected ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
-              onApply={applySharedSettings} /></DeferredWorkspace>
+              onApply={applySharedSettings} /></Suspense></DeferredWorkspace>
             <dl className="session-grid">
               <div>
                 <dt>Receiver</dt>
@@ -5131,7 +5131,7 @@ export function ReceiverApp({
         aria-label="About BrowserSDR"
         hidden={utilityView !== "about"}
       >
-        {utilityView === "about" && <AboutPage />}
+        {utilityView === "about" && <Suspense fallback={<p role="status">Loading About…</p>}><AboutPage /></Suspense>}
       </div>
       </UtilityOverlay></DeferredWorkspace>
       <DeferredWorkspace active={remoteShareDetected}><RemotePresetSharePanel blockedReason={remoteBlockedReason} onApply={async (preset) => {

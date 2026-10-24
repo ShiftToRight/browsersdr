@@ -32,7 +32,14 @@ test("header layout controls and condensed docks keep primary actions fully visi
       ["Session", 145],
     ] as const) {
       await page.getByRole("tab", { name: tab, exact: true }).click();
-      expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(maximum);
+      if (tab === "Session") {
+        await expect(
+          dock.getByRole("button", { name: "Share settings", exact: true }),
+        ).toBeVisible();
+      }
+      await expect
+        .poll(async () => (await dock.boundingBox())!.height)
+        .toBeLessThanOrEqual(maximum);
     }
     await page
       .getByRole("tab", { name: "Capture & replay", exact: true })
