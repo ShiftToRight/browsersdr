@@ -27,6 +27,8 @@ import {
 import { ActivityCapture } from "../radio/activityCapture";
 import { defaultModeSettings } from "../radio/receiverConfig";
 import "./ReceiverExpansionPanel.css";
+import { WorkspaceToolDialog } from "./WorkspaceToolDialog";
+import { useVisibleReceiver } from "./useVisibleReceiver";
 
 export default function ReceiverExpansionPanel({
   active,
@@ -71,6 +73,13 @@ export default function ReceiverExpansionPanel({
   }, [volume]);
   const [level, setLevel] = useState<InputLevel>();
   const [healthOpen, setHealthOpen] = useState(false);
+  const [inputOpen, setInputOpen] = useState(false);
+  // App intentionally ignores passive decoder-only publications. Subscribe at
+  // this presentation boundary, just like the dock, while health is visible.
+  const { receiver: healthReceiver } = useVisibleReceiver(
+    controller,
+    active && healthOpen,
+  );
   const [message, setMessage] = useState("");
   const [messageLocation, setMessageLocation] = useState<
     "acquire" | "tune" | "watch"
@@ -101,8 +110,10 @@ export default function ReceiverExpansionPanel({
   const busy = !active || Boolean(operation) || blocked,
     running = receiver.lifecycle === "running";
   const local = ["rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(source);
+  const rawSupported = ["rtl-sdr", "hackrf"].includes(source);
   useEffect(() => {
-    const tracking = active && running && (healthOpen || operation === "gain");
+    const tracking =
+      active && running && rawSupported && (healthOpen || operation === "gain");
     pipeline.setInputLevelEnabled(tracking);
     if (!tracking) {
       setLevel(undefined);
@@ -115,7 +126,24 @@ export default function ReceiverExpansionPanel({
       clearInterval(timer);
       pipeline.setInputLevelEnabled(false);
     };
-  }, [pipeline, active, running, healthOpen, operation]);
+  }, [pipeline, active, running, rawSupported, healthOpen, operation]);
+  useEffect(() => {
+    setHealthOpen(false);
+    setInputOpen(false);
+    setLevel(undefined);
+  }, [source, active]);
+  const changeHealthOpen = (open: boolean) => {
+    if (!open && operation === "gain") abort.current?.abort();
+    if (!open) setLevel(undefined);
+    setHealthOpen(open);
+  };
+  const acceptedInput = receiver.session?.rtlInput;
+  const shownInput = acceptedInput ?? input;
+  const inputLabel = (value: RtlInputSettings) =>
+    `${value.directSampling === "q" ? "Direct sampling · Q branch" : "Normal tuner"}${value.converterOffsetHz ? ` · Converter ${value.converterOffsetHz > 0 ? "+" : ""}${value.converterOffsetHz.toLocaleString()} Hz` : ""} · ${value.profile === "always-on-bias" ? "Power always on (hardware)" : ["rtl-blog-v3", "rtl-blog-v4"].includes(value.profile) ? (value.biasTee ? "Power on (acknowledged)" : "Power off") : "Power unavailable"}`;
+  const inputPending = Boolean(
+    acceptedInput && JSON.stringify(acceptedInput) !== JSON.stringify(input),
+  );
   const operationCallback = useRef(onOperationChange);
   useEffect(() => {
     operationCallback.current = onOperationChange;
@@ -221,214 +249,336 @@ export default function ReceiverExpansionPanel({
   };
   return (
     <div className="receiver-expansion receiver-tools">
-      <details onToggle={(event) => setHealthOpen(event.currentTarget.open)}>
-        <summary>Reception health &amp; guided gain</summary>
-        <p>
-          {running && level
-            ? `Raw RMS ${level.rmsDb.toFixed(1)} dB relative · peak ${level.peakDb.toFixed(1)} · clipping ${(level.clippedFraction * 100).toFixed(2)}% · DC ${level.dc.toFixed(3)}`
-            : "Start RTL/HackRF reception to measure raw input headroom."}
-        </p>
-        <p>
-          {!running
-            ? "Connect a compatible source and Start; use replay to check decoder settings independently of the antenna."
-            : !level
-              ? "No fresh raw level. Check USB delivery and receiver status."
-              : level.clippedFraction >= 0.001
-                ? "Reduce gain or disable the RF amplifier. Strong nearby signals can overload reception."
-                : level.rmsDb < -35
-                  ? "Low total input level. Check the antenna/band and expected signal; quiet intervals are normal for packets."
-                  : "Input has headroom. If decoding fails, check the selected frequency, rate, bandwidth and decoder lock stage."}
-        </p>
-        {receiver.session?.mode === "DAB" && (
-          <p>
-            {receiver.dab?.state !== "synchronized"
-              ? "DAB has no current synchronization. Check the ensemble center and full-band sample rate, then antenna placement and gain."
-              : !receiver.dab?.ficBlockCount
-                ? "DAB timing is present but valid service information is missing. Check headroom and compare a known-good recording."
-                : receiver.dab?.audioDecoderState === "error"
-                  ? `DAB service decoding error: ${receiver.dab.audioDecoderMessage ?? "inspect programme/codec status"}`
-                  : "Valid DAB service information is available. Select a playable programme; service metadata alone does not establish audible audio."}
-          </p>
-        )}
-        {receiver.session?.mode === "WBFM" && !receiver.rds?.validGroups && (
-          <p>
-            No checked RDS groups yet. Verify tuning and manual gain;
-            pilot/stereo detection does not guarantee RDS.
-          </p>
-        )}
-        <small>
-          Relative sampled levels describe the captured bandwidth, not
-          calibrated RF power or selected-signal SNR.
-        </small>
-        <label className="receiver-auto-center receiver-tool-toggle">
-          <input
-            type="checkbox"
-            checked={continuous}
-            disabled={busy}
-            onChange={(e) => setContinuous(e.currentTarget.checked)}
-          />
-          <span className="receiver-switch-track" aria-hidden="true" />I am
-          using a continuous signal for gain setup
-        </label>
-        <button
-          disabled={
-            busy ||
-            !running ||
-            !continuous ||
-            !["rtl-sdr", "hackrf"].includes(source) ||
-            receiver.session?.rtlInput?.directSampling === "q"
-          }
-          onClick={() =>
-            void execute("gain", (signal) =>
-              runGainSetup(
-                controller,
-                () => pipeline.getInputLevel(),
-                signal,
-                setMessage,
-              ),
-            )
-          }
-        >
-          Set input headroom
-        </button>
-        {operation === "gain" && (
-          <button onClick={() => abort.current?.abort()}>
-            Cancel gain setup
-          </button>
-        )}
-      </details>
-      {source === "rtl-sdr" && (
-        <details>
-          <summary>HF input, converter &amp; antenna power</summary>
-          <label>
-            Declared RTL board
-            <select
-              aria-label="Declared RTL board"
-              disabled={busy || running}
-              value={input.profile}
-              onChange={(e) =>
-                onInput({
-                  ...input,
-                  profile: e.currentTarget.value as RtlInputSettings["profile"],
-                  directSampling: "off",
-                  biasTee: false,
-                })
-              }
-            >
-              <option value="generic">Generic / unknown</option>
-              <option value="nesdr-smart-v5">Nooelec NESDR SMArt v5</option>
-              <option value="rtl-blog-v3">RTL-SDR Blog V3</option>
-              <option value="rtl-blog-v4">RTL-SDR Blog V4</option>
-              <option value="always-on-bias">
-                Always-on hardware bias tee
-              </option>
-            </select>
-          </label>
-          <label>
-            HF input
-            <select
-              aria-label="HF input"
-              value={input.directSampling}
+      <WorkspaceToolDialog
+        title="Reception health"
+        icon="activity"
+        open={healthOpen}
+        onOpenChange={changeHealthOpen}
+        summary={
+          !rawSupported
+            ? "Decoder checks · Raw levels unavailable"
+            : !running
+              ? "Not measured · Receiver stopped"
+              : "Receiving · Open diagnostics"
+        }
+        footer={
+          operation === "gain"
+            ? "Closing cancels guided gain setup."
+            : "Relative input levels · not calibrated RF power or SNR"
+        }
+      >
+        <div className="receiver-tools health-content">
+          <section>
+            <h4>Raw input</h4>
+            <p role="status">
+              {!rawSupported
+                ? "Raw input levels unavailable for this source"
+                : !running
+                  ? "Not measured · Receiver stopped"
+                  : !level
+                    ? "Waiting for fresh raw input measurements"
+                    : "Fresh sampled input"}
+            </p>
+            <dl className="health-metrics">
+              <div>
+                <dt>RMS level</dt>
+                <dd>
+                  {rawSupported && running && level
+                    ? `${level.rmsDb.toFixed(1)} dB relative`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>Peak level</dt>
+                <dd>
+                  {rawSupported && running && level
+                    ? `${level.peakDb.toFixed(1)} dB relative`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>Clipping</dt>
+                <dd>
+                  {rawSupported && running && level
+                    ? `${(level.clippedFraction * 100).toFixed(2)}%`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>DC offset</dt>
+                <dd>
+                  {rawSupported && running && level ? level.dc.toFixed(3) : "—"}
+                </dd>
+              </div>
+            </dl>
+            <p>
+              {!rawSupported
+                ? "Raw input headroom requires RTL-SDR or HackRF live I/Q. Use the decoder integrity checks for this source."
+                : !running
+                  ? "Start RTL/HackRF reception to measure raw input headroom."
+                  : !level
+                    ? "No fresh raw level. Check USB delivery and receiver status."
+                    : level.clippedFraction >= 0.001
+                      ? "Reduce gain or disable the RF amplifier. Strong nearby signals can overload reception."
+                      : level.rmsDb < -35
+                        ? "Low total input level. Check the antenna/band and expected signal; quiet intervals are normal for packets."
+                        : "Input has headroom. If decoding fails, check frequency, rate, bandwidth and decoder lock."}
+            </p>
+            <small>
+              Relative sampled levels describe the captured bandwidth, not
+              calibrated RF power or selected-signal SNR.
+            </small>
+          </section>
+          <section>
+            <h4>Guided gain</h4>
+            <label className="receiver-auto-center receiver-tool-toggle">
+              <input
+                type="checkbox"
+                checked={continuous}
+                disabled={busy}
+                onChange={(e) => setContinuous(e.currentTarget.checked)}
+              />
+              <span className="receiver-switch-track" aria-hidden="true" />I am
+              using a continuous signal for gain setup
+            </label>
+            <button
               disabled={
                 busy ||
-                running ||
-                !["nesdr-smart-v5", "rtl-blog-v3"].includes(input.profile)
+                !running ||
+                !continuous ||
+                !["rtl-sdr", "hackrf"].includes(source) ||
+                receiver.session?.rtlInput?.directSampling === "q"
               }
-              onChange={(e) =>
-                onInput({
-                  ...input,
-                  directSampling: e.currentTarget.value as "off" | "q",
-                  converterOffsetHz: 0,
-                })
+              onClick={() =>
+                void execute("gain", (signal) =>
+                  runGainSetup(
+                    controller,
+                    () => pipeline.getInputLevel(),
+                    signal,
+                    setMessage,
+                  ),
+                )
               }
             >
-              <option value="off">Normal tuner</option>
-              <option value="q">Direct sampling · Q branch</option>
-            </select>
-          </label>
-          <label>
-            Converter offset (Hz)
-            <input
-              aria-label="Converter offset (Hz)"
-              type="number"
-              step="1"
-              min="-1000000000"
-              max="1000000000"
-              value={input.converterOffsetHz}
-              disabled={busy || running || input.directSampling === "q"}
-              onChange={(e) =>
-                onInput({
-                  ...input,
-                  converterOffsetHz: e.currentTarget.valueAsNumber,
-                })
-              }
-            />
-          </label>
-          <small>
-            Device frequency = antenna RF + offset. Example: a 125 MHz
-            upconverter uses +125000000. Stop before changing input; settings
-            apply on Start. Q branch covers 0.1–24 MHz in this profile and can
-            receive aliases; use a suitable HF antenna/filter.
-          </small>
-          {["rtl-blog-v3", "rtl-blog-v4"].includes(input.profile) ? (
+              Set input headroom
+            </button>
+            {operation === "gain" && (
+              <button onClick={() => abort.current?.abort()}>
+                Cancel gain setup
+              </button>
+            )}
+          </section>
+          <section>
+            <h4>Decoder checks</h4>
+            {healthReceiver.session?.mode === "WBFM" && (
+              <>
+                <p role="status">
+                  {healthReceiver.rds?.validGroups
+                    ? `${healthReceiver.rds.validGroups.toLocaleString()} validated RDS groups this session`
+                    : "No checked RDS groups yet. Verify tuning and manual gain."}
+                </p>
+                <p>Pilot/stereo detection does not guarantee RDS.</p>
+              </>
+            )}
+            {healthReceiver.session?.mode === "DAB" && (
+              <p>
+                {healthReceiver.dab?.state !== "synchronized"
+                  ? "DAB has no current synchronization. Check ensemble center, full-band sample rate, antenna placement and gain."
+                  : !healthReceiver.dab?.ficBlockCount
+                    ? "DAB timing is present but valid service information is missing."
+                    : healthReceiver.dab?.audioDecoderState === "error"
+                      ? `DAB service decoding error: ${healthReceiver.dab.audioDecoderMessage ?? "inspect programme/codec status"}`
+                      : "Valid DAB service information is available. Service metadata alone does not establish audible audio."}
+              </p>
+            )}
+            {!["WBFM", "DAB"].includes(healthReceiver.session?.mode ?? "") && (
+              <p>
+                Check the selected decoder and its integrity results in Audio
+                &amp; decode.
+              </p>
+            )}
+          </section>
+          {messageLocation === "acquire" && message && (
+            <p role="status">{message}</p>
+          )}
+        </div>
+      </WorkspaceToolDialog>
+      {source === "rtl-sdr" && (
+        <WorkspaceToolDialog
+          title="RF input & power"
+          icon="sliders"
+          open={inputOpen}
+          onOpenChange={setInputOpen}
+          summary={`${acceptedInput ? "Active: " : "Next connection: "}${inputLabel(shownInput)}${inputPending ? " · Pending changes" : ""}`}
+          footer={
+            inputPending
+              ? "Pending input changes apply on the next explicit Start/connection."
+              : "Input changes require stopped reception."
+          }
+        >
+          <section>
+            <h4>Board profile</h4>
+            <p>
+              Tuner: {receiver.session?.rtlTuner ?? "Unknown"}. Choose the
+              actual board; tuner detection does not identify it.
+            </p>
             <label>
-              <input
-                aria-label="RTL bias tee"
-                type="checkbox"
+              Declared RTL board
+              <select
+                aria-label="Declared RTL board"
                 disabled={busy || running}
-                checked={input.biasTee}
+                value={input.profile}
                 onChange={(e) =>
-                  onInput({ ...input, biasTee: e.currentTarget.checked })
+                  onInput({
+                    ...input,
+                    profile: e.currentTarget
+                      .value as RtlInputSettings["profile"],
+                    directSampling: "off",
+                    biasTee: false,
+                  })
+                }
+              >
+                <option value="generic">Generic / unknown</option>
+                <option value="nesdr-smart-v5">Nooelec NESDR SMArt v5</option>
+                <option value="rtl-blog-v3">RTL-SDR Blog V3</option>
+                <option value="rtl-blog-v4">RTL-SDR Blog V4</option>
+                <option value="always-on-bias">
+                  Always-on hardware bias tee
+                </option>
+              </select>
+            </label>
+          </section>
+          <section>
+            <h4>Input path &amp; converter</h4>
+            <label>
+              HF input
+              <select
+                aria-label="HF input"
+                value={input.directSampling}
+                disabled={
+                  busy ||
+                  running ||
+                  !["nesdr-smart-v5", "rtl-blog-v3"].includes(input.profile)
+                }
+                onChange={(e) =>
+                  onInput({
+                    ...input,
+                    directSampling: e.currentTarget.value as "off" | "q",
+                    converterOffsetHz: 0,
+                  })
+                }
+              >
+                <option value="off">Normal tuner</option>
+                <option value="q">Direct sampling · Q branch</option>
+              </select>
+            </label>
+            <label>
+              Converter offset (Hz)
+              <input
+                aria-label="Converter offset (Hz)"
+                type="number"
+                step="1"
+                min="-1000000000"
+                max="1000000000"
+                value={input.converterOffsetHz}
+                disabled={busy || running || input.directSampling === "q"}
+                onChange={(e) =>
+                  onInput({
+                    ...input,
+                    converterOffsetHz: e.currentTarget.valueAsNumber,
+                  })
                 }
               />
-              Enable antenna power for this connection · 4.5 V, up to 180 mA
             </label>
-          ) : (
-            <p>
-              {input.profile === "always-on-bias"
-                ? "Always-on hardware power cannot be disabled by software."
-                : "Switchable antenna power is unavailable for this declared board."}
-            </p>
-          )}
-          <small>
-            Use only with a compatible powered antenna/LNA. Acknowledged
-            settings do not measure connector voltage. Power is never restored
-            from saved preferences.
-          </small>
-        </details>
+            <small>
+              Device frequency = antenna RF + offset. Example: a 125 MHz
+              upconverter uses +125000000. Stop before changing input; settings
+              apply on Start. Q branch covers 0.1–24 MHz in this profile and can
+              receive aliases; use a suitable HF antenna/filter.
+            </small>
+          </section>
+          <section>
+            <h4>Antenna power</h4>
+            {["rtl-blog-v3", "rtl-blog-v4"].includes(input.profile) ? (
+              <label className="receiver-auto-center receiver-tool-toggle">
+                <input
+                  aria-label="RTL bias tee"
+                  type="checkbox"
+                  disabled={busy || running}
+                  checked={input.biasTee}
+                  onChange={(e) =>
+                    onInput({ ...input, biasTee: e.currentTarget.checked })
+                  }
+                />
+                <span className="receiver-switch-track" aria-hidden="true" />
+                Enable antenna power for this connection · 4.5 V, up to 180 mA
+              </label>
+            ) : (
+              <p>
+                {input.profile === "always-on-bias"
+                  ? "Always-on hardware power cannot be disabled by software."
+                  : "Switchable antenna power is unavailable for this declared board."}
+              </p>
+            )}
+            <small>
+              Use only with a compatible powered antenna/LNA. Acknowledged
+              settings do not measure connector voltage. Power is never restored
+              from saved preferences.
+            </small>
+          </section>
+        </WorkspaceToolDialog>
       )}
       {source === "hackrf" && (
-        <details>
-          <summary>Antenna power</summary>
-          <label className="receiver-auto-center receiver-tool-toggle">
-            <input
-              type="checkbox"
-              aria-label="HackRF antenna power"
-              disabled={busy || !receiver.session?.hackrf}
-              checked={hardware.antennaPowerEnabled}
-              onChange={(e) =>
-                void onHardware({
-                  ...hardware,
-                  antennaPowerEnabled: e.currentTarget.checked,
-                }).catch((error) => setMessage(String(error)))
-              }
-            />
-            <span className="receiver-switch-track" aria-hidden="true" />
-            Enable 3.3 V antenna power · up to 50 mA
-          </label>
-          <small>
-            For a compatible powered antenna/LNA. Separate from RF amplifier
-            gain; accepted command, not measured voltage. Default off on a new
-            connection.
-          </small>
-        </details>
+        <WorkspaceToolDialog
+          title="RF input & power"
+          icon="sliders"
+          open={inputOpen}
+          onOpenChange={setInputOpen}
+          summary={
+            receiver.session?.hackrf
+              ? `Antenna power ${receiver.session.hackrf.captureSettings.antennaPowerEnabled ? "on (acknowledged)" : "off"}`
+              : "Antenna power · Connect first"
+          }
+        >
+          <section>
+            <h4>Antenna power</h4>
+            <label className="receiver-auto-center receiver-tool-toggle">
+              <input
+                type="checkbox"
+                aria-label="HackRF antenna power"
+                disabled={busy || !receiver.session?.hackrf}
+                checked={hardware.antennaPowerEnabled}
+                onChange={(e) =>
+                  void onHardware({
+                    ...hardware,
+                    antennaPowerEnabled: e.currentTarget.checked,
+                  }).catch((error) => setMessage(String(error)))
+                }
+              />
+              <span className="receiver-switch-track" aria-hidden="true" />
+              Enable 3.3 V antenna power · up to 50 mA
+            </label>
+            <small>
+              For a compatible powered antenna/LNA. Separate from RF amplifier
+              gain; accepted command, not measured voltage. Default off on a new
+              connection.
+            </small>
+          </section>
+        </WorkspaceToolDialog>
       )}
       {local &&
         vfoTarget &&
         createPortal(
           <div className="receiver-vfo-tools receiver-tools">
             <details>
-              <summary>Second audio channel · VFO B</summary>
+              <summary>
+                <span>Second audio channel · VFO B</span>
+                <small>
+                  {receiver.secondaryVfo
+                    ? `${(receiver.secondaryVfo.frequencyHz / 1e6).toFixed(3)} MHz · ${receiver.secondaryVfo.mode}`
+                    : "Off"}
+                </small>
+              </summary>
               <label>
                 VFO B frequency (MHz)
                 <input

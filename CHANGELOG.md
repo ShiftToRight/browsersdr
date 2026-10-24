@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+## 1.16.0 — 2026-10-24
+
+- Simplify Receiver setup with on-demand health, RF input/power and Display dialogs; move Antenna guide to the header and make tuning utilities and live metadata more compact.
+- Keep reception health synchronized with current decoder results, preserve visible input state and clarify capture-center and stopped/replay guidance.
+
+- Add matching source-tool buttons, more comfortable padding and button-origin popup motion with responsive placement and reduced-motion support. Align tuning actions and retain the original channel-frequency typography.
+
 ## 1.15.0 — 2026-10-24
 
 - Add reception health metrics and explicit, bounded gain setup using fresh input samples.

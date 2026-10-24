@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { openApplicationView } from "./application-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -9,13 +13,15 @@ async function openPro(page: Page) {
   await page
     .locator('select[aria-label="Signal source"]')
     .selectOption("hackrf");
-  await page.getByText("Device details & settings", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "Mode", exact: true })
     .selectOption("AM");
+  await openDeviceSettings(page);
+
   await page
     .getByRole("combobox", { name: "Sample rate" })
     .selectOption("1024000");
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
 }
 
@@ -28,10 +34,12 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await installHackrfUsb(page);
   await openPro(page);
   await expect(page.locator(".receiver-status")).toContainText("connected");
+  await openDeviceSettings(page);
   await expect(page.getByLabel("RX LNA state")).toHaveValue("16");
   await expect(
     page.getByRole("checkbox", { name: "RF amplifier", exact: true }),
   ).not.toBeChecked();
+  await closeDeviceSettings(page);
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
@@ -45,6 +53,7 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await expect(page.locator(".receiver-session-details")).toContainText(
     "precise channel 4300.000001 MHz",
   );
+  await openDeviceSettings(page);
   await page.getByLabel("RX LNA state").selectOption("33");
   await page.getByLabel("RX VGA gain (dB)").fill("62");
   await page
@@ -53,6 +62,7 @@ test("HackRF real pipeline with mocked USB supports controls, CI8 capture, surve
   await expect(page.locator(".receiver-session-details")).toContainText(
     "accepted LNA code 33, VGA 62 dB, RF amplifier on",
   );
+  await closeDeviceSettings(page);
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   await expect(page.locator(".recording-state")).toContainText(
@@ -173,13 +183,15 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption("hackrf");
-    await page.getByText("Device details & settings", { exact: true }).click();
     await page
       .getByRole("combobox", { name: "Mode", exact: true })
       .selectOption("AM");
+    await openDeviceSettings(page);
+
     await page
       .getByLabel("Sample rate", { exact: false })
       .selectOption(String(rate));
+    await closeDeviceSettings(page);
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(page.locator(".receiver-status")).toContainText("connected");
     await page
@@ -221,6 +233,7 @@ for (const rate of [4_800_000, 9_600_000, 19_200_000]) {
     await expect(page.locator(".receiver-session-details")).toContainText(
       "Precise center 100.000000 MHz · precise channel 101.700000 MHz",
     );
+    await closeDeviceSettings(page);
     await page.getByRole("tab", { name: "Capture & replay" }).click();
     await page
       .getByRole("button", { name: "Start I/Q recording", exact: true })
@@ -287,7 +300,7 @@ test("HackRF gains and rate changes apply during reception without USB reopen", 
   await expect(page.locator(".remote-entry-hint")).toHaveCount(0);
   await expect(
     page
-      .getByRole("combobox", { name: "Sample rate" })
+      .getByLabel("Sample rate", { exact: true })
       .locator('option[value="19200000"]'),
   ).toHaveText("19.200 MS/s");
   await expect(
@@ -308,6 +321,7 @@ test("HackRF gains and rate changes apply during reception without USB reopen", 
     ).__hackrf.device;
     return { lifecycle: [...d.lifecycle], calls: d.calls.length };
   });
+  await openDeviceSettings(page);
   await page.getByLabel("RX LNA state").selectOption("33");
   await expect(page.locator(".receiver-session-details")).toContainText(
     "accepted LNA code 33",
@@ -325,11 +339,13 @@ test("HackRF gains and rate changes apply during reception without USB reopen", 
   await expect(
     page.getByRole("button", { name: "Apply RX settings" }),
   ).toHaveCount(0);
+  await closeDeviceSettings(page);
   await page.getByRole("tab", { name: "Capture & replay" }).click();
   await page.getByRole("button", { name: "Start I/Q recording" }).click();
   await expect(page.locator(".recording-state")).toContainText(
     /(?:0\.[1-9]\d|[1-9]\d*\.\d{2}) \/ (?:32|2048) MiB/,
   );
+  await openDeviceSettings(page);
   for (const rate of [2_400_000, 4_800_000, 9_600_000, 19_200_000, 1_024_000]) {
     await page
       .getByRole("combobox", { name: "Sample rate" })
@@ -342,6 +358,7 @@ test("HackRF gains and rate changes apply during reception without USB reopen", 
       "accepted LNA code 33, VGA 32 dB, RF amplifier on",
     );
   }
+  await closeDeviceSettings(page);
   const after = await page.evaluate(() => {
     const d = (
       window as unknown as {

@@ -192,24 +192,29 @@ export function ReceiverLocationPanel({
       <button
         ref={trigger}
         type="button"
-        className="secondary antenna-site-trigger"
+        className="secondary workspace-tool-trigger antenna-site-trigger"
+        aria-label="Antenna site"
+        aria-describedby={`${id}-summary`}
         aria-haspopup="dialog"
         aria-controls={id}
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
         <AppIcon name="pin" />
-        <span>Antenna site</span>
-        <AppIcon name="overlay" />
+        <span>
+          <strong>Antenna site</strong>
+          <small
+            id={`${id}-summary`}
+            className={`antenna-site-summary${stale ? " is-stale" : ""}`}
+            role="status"
+          >
+            {site
+              ? `${site.label || "Site set"} · ${stale ? "Stale fix" : site.source === "browser" ? "Browser fix" : site.source === "imported" ? "Imported" : "Manual"}`
+              : "Not set · optional"}
+          </small>
+        </span>
+        <span aria-hidden="true">›</span>
       </button>
-      <p
-        className={`antenna-site-summary${stale ? " is-stale" : ""}`}
-        role="status"
-      >
-        {site
-          ? `${site.label || "Site set"} · ${stale ? "Stale fix" : site.source === "browser" ? "Browser fix" : site.source === "imported" ? "Imported" : "Manual"}`
-          : "Not set · optional"}
-      </p>
       {!open && storageError && (
         <p className="antenna-site-storage" role="alert">
           {storageError}

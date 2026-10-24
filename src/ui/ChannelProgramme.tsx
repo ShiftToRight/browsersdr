@@ -64,16 +64,9 @@ export function FmStationSummary({
     controller.subscribe,
     controller.getSnapshot,
   );
-  if (
-    receiver.lifecycle !== "running" ||
-    receiver.session?.mode !== "WBFM" ||
-    receiver.session.source === "synthetic"
-  )
-    return null;
-  if (!receiver.rds?.programmeService) return null;
-  return (
-    <div className="channel-programme" aria-label="FM station">
-      <strong>{receiver.rds.programmeService}</strong>
-    </div>
-  );
+  const current = receiver.lifecycle === "running" && receiver.session?.mode === "WBFM" && receiver.session.source !== "synthetic";
+  const name = current ? receiver.rds?.programmeService : undefined;
+  return <div className="channel-programme" aria-label="FM station" title={name ? `Decoded Programme Service: ${name}. This does not establish transmitter identity.` : "No validated Programme Service text yet"}>
+    <small>RDS</small><strong>{name || "No station text yet"}</strong>
+  </div>;
 }

@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test } from "@playwright/test";
 import { installHackrfUsb } from "./hackrf-usb-fixture";
 import { chooseReceiverMode } from "./application-navigation";
@@ -11,10 +15,11 @@ test("HF Hz precision, signed fine offset and raw clipping warning survive the r
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
   await chooseReceiverMode(page, "RTTY");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await page
     .getByRole("combobox", { name: "Sample rate", exact: true })
     .selectOption("1024000");
+  await closeDeviceSettings(page);
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await channel.fill("10.1008");
   await channel.blur();
@@ -23,6 +28,7 @@ test("HF Hz precision, signed fine offset and raw clipping warning survive the r
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
+  await openDeviceSettings(page);
   const lna = page.getByLabel("RX LNA state");
   expect(
     await lna.evaluate((node: HTMLSelectElement) => {
@@ -38,6 +44,7 @@ test("HF Hz precision, signed fine offset and raw clipping warning survive the r
       );
     }),
   ).toBeGreaterThan(20);
+  await closeDeviceSettings(page);
   await expect(
     page.getByLabel("Receiver center frequency", { exact: true }),
   ).toHaveValue("10.1008");

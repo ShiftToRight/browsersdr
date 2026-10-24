@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test } from "@playwright/test";
 import { installHackrfUsb } from "./hackrf-usb-fixture";
 
@@ -9,10 +13,12 @@ test("FM reception summary stays stable and clears on retune", async ({
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await page
     .getByRole("combobox", { name: "Sample rate", exact: true })
     .selectOption("1024000");
+  await closeDeviceSettings(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })

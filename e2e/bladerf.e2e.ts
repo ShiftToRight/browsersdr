@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { selectBladeRfImage } from "../src/radio/bladerfImages";
@@ -114,16 +118,18 @@ for (const rate of [9_600_000, 19_200_000])
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption("bladerf");
-    await page.getByText("Device details & settings", { exact: true }).click();
-    await expect(page.locator("div.device-setup-details")).toContainText(
-      "no flash writes",
-    );
     await page
       .getByRole("combobox", { name: "Mode", exact: true })
       .selectOption("AM");
+    await openDeviceSettings(page);
+    await expect(page.locator("div.device-setup-details")).toContainText(
+      "no flash writes",
+    );
+
     await page
       .getByLabel("Sample rate", { exact: false })
       .selectOption(String(rate));
+    await closeDeviceSettings(page);
     await page
       .getByRole("button", {
         name: "Connect",
@@ -161,7 +167,9 @@ for (const rate of [9_600_000, 19_200_000])
     if (rate === 9_600_000) {
       const sampleRate = page.getByLabel("Sample rate", { exact: false });
       await expect(sampleRate).toBeEnabled();
+      await openDeviceSettings(page);
       await sampleRate.selectOption("19200000");
+      await closeDeviceSettings(page);
       await page
         .getByRole("button", { name: "Start receiving", exact: true })
         .click();
@@ -172,6 +180,7 @@ for (const rate of [9_600_000, 19_200_000])
         .getByRole("button", { name: "Stop receiving", exact: true })
         .click();
     }
+    await closeDeviceSettings(page);
     await page.getByRole("button", { name: "Disconnect", exact: true }).click();
     const state = await page.evaluate(() => {
       const current = (
@@ -222,8 +231,10 @@ test("bladeRF applies manual gain and switches physical RX inputs on one connect
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("bladerf");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await openDeviceSettings(page);
   const accepted = page.getByLabel("Accepted bladeRF RX settings");
   await expect(accepted).toContainText("RX1");
   await page
@@ -234,12 +245,14 @@ test("bladeRF applies manual gain and switches physical RX inputs on one connect
     .getByRole("button", { name: "Apply bladeRF RX settings", exact: true })
     .click();
   await expect(accepted).toContainText("20 dB readback");
+  await closeDeviceSettings(page);
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Stop receiving", exact: true }),
   ).toBeEnabled();
+  await openDeviceSettings(page);
   for (const rxInput of ["RX2", "RX1"]) {
     await page
       .getByLabel("bladeRF receive input", { exact: true })
@@ -289,6 +302,7 @@ test("bladeRF applies manual gain and switches physical RX inputs on one connect
       }),
     ).toBeEnabled();
   }
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Connect", exact: true }),
@@ -300,7 +314,6 @@ async function selectBladeRf(page: Page) {
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("bladerf");
-  await page.getByText("Device details & settings", { exact: true }).click();
 }
 async function trace(page: Page) {
   return page.evaluate(() => {
@@ -422,6 +435,7 @@ for (const model of ["xA4", "xA5", "xA9"] as const) {
     await page
       .getByRole("button", { name: "Stop receiving", exact: true })
       .click();
+    await closeDeviceSettings(page);
     await page.getByRole("button", { name: "Disconnect", exact: true }).click();
     await page
       .getByRole("tab", { name: "Open recording", exact: true })
@@ -525,12 +539,11 @@ for (const model of ["xA4", "xA5", "xA9"] as const) {
         `Verified and saved official hosted${model} v${image.version}`,
       );
       await page.reload();
-      await page
-        .getByText("Device details & settings", { exact: true })
-        .click();
+      await openDeviceSettings(page);
       await expect(page.locator("div.device-setup-details")).toContainText(
         `hosted${model} v${image.version}`,
       );
+      await closeDeviceSettings(page);
       await page.getByRole("button", { name: "Connect", exact: true }).click();
       await expect(page.locator(".receiver-session-details")).toContainText(
         `volatile hosted${model} v${image.version}`,
@@ -605,6 +618,7 @@ test("corrupt origin-local stored image rejects before programming with native S
       database.close();
     }
   }, image.sha256);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.locator(".receiver-status")).toContainText(
     "saved hostedxA4 0.15.3 image failed verification",

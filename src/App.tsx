@@ -18,6 +18,7 @@ const ModeFrequencyHint = lazy(() => import("./ui/ModeFrequencyHint").then(modul
 const ReceiverDecodePanel = lazy(() => import("./ui/DecodedResults").then(module => ({ default: module.ReceiverDecodePanel })));
 const DecoderWorkspace = lazy(() => import("./ui/DecoderWorkspace").then(module => ({ default: module.DecoderWorkspace })));
 const CommunityCompatibility = lazy(() => import("./ui/CommunityCompatibility").then(module => ({ default: module.CommunityCompatibility })));
+import { WorkspaceToolDialog } from "./ui/WorkspaceToolDialog";
 import { ReceiverLocationPanel, useReceiverLocation } from "./ui/ReceiverLocationPanel";
 import { ReceiverWorkspace, ReceiverSourceOptions } from "./ui/ReceiverWorkspace";
 import { AudioCaptureGuard } from "./ui/AudioCaptureGuard";
@@ -1410,7 +1411,8 @@ export function ReceiverApp({
     else if (view === "explorer" || view === "decoder") setLastWorkspace(view);
   }, [remoteSelected]);
   const openAuxiliaryView = (view: AppView) => {
-    setUtilityTriggerId(undefined);
+    const menu = document.activeElement?.closest(".header-utility-menu")?.querySelector("summary");
+    setUtilityTriggerId(menu?.id || undefined);
     setActiveView(view);
     if (!isUtilityView(view)) requestAnimationFrame(() => document.getElementById("auxiliary-return")?.focus());
   };
@@ -1547,6 +1549,7 @@ export function ReceiverApp({
     );
   const liveSession =
     appliedSession?.source === source ? appliedSession : undefined;
+  const deviceGainDb = liveSession ? liveSession.gainDb : gainDb;
   const liveMode = liveSession?.mode ?? mode;
   const displayedFrequencyHz = liveSession?.selectedChannelFrequencyHz;
   const frequencyPending =
@@ -2063,7 +2066,6 @@ export function ReceiverApp({
     : transitioning || receiver.cleanupRequired || remoteOpening || stationSelectionBusy ? "Wait for the current receiver operation to finish."
     : recordingStatus || exportingRecording || atlasTransferActive || retainedCapturePresent ? "Finish and discard the retained capture before opening a remote receiver."
     : undefined;
-  const remoteAcquireHint = source === "hackrf" && (running || scanActive) ? undefined : remoteBlockedReason;
   const openRemoteReceiver = async (preset?: RemotePreset): Promise<boolean> => {
     if (remoteBlockedReason || recordingStartPending.current || controller.getRecordingStatus() ||
       !["empty", "discarded"].includes(exportCoordinator.getSnapshot().status) || atlasConnection.getSnapshot().transferActive) {
@@ -2674,7 +2676,7 @@ export function ReceiverApp({
         <WorkspaceControls layout={layout} onChange={setLayout} activeView={utilityView ?? activeView}
           onSettings={() => openAuxiliaryView("settings")}
           onHelp={() => openAuxiliaryView("help")}
-          onAntenna={() => openAntennaGuide("antenna-help-trigger")}
+          onAntenna={triggerId => openAntennaGuide(triggerId ?? "antenna-help-trigger")}
           onCompatibility={() => openAuxiliaryView("compatibility")}
           onAbout={() => openAuxiliaryView("about")}
         />
@@ -2769,11 +2771,14 @@ export function ReceiverApp({
                       event.currentTarget.value === "remote" ? void openRemoteReceiver() : void switchSource(event.currentTarget.value as SourceKind)
                     }
                     aria-label="Signal source"
+                    aria-describedby={remoteBlockedReason ? "remote-source-prerequisite" : undefined}
+                    title={remoteBlockedReason ? `Remote receiver: ${remoteBlockedReason}` : undefined}
                   >
                     <ReceiverSourceOptions remoteDisabled={Boolean(remoteBlockedReason)} />
                   </select>
                 </label>
-                {(remoteAcquireHint || remoteEntryIssue) && <p className="remote-entry-hint">{remoteEntryIssue || remoteAcquireHint}</p>}
+                {remoteBlockedReason && <span id="remote-source-prerequisite" className="visually-hidden">Remote receiver: {remoteBlockedReason}</span>}
+                {remoteEntryIssue && <p className="remote-entry-hint" role="status">{remoteEntryIssue}</p>}
                 {(source === "usrp-b205" || source === "bladerf") && (
                   <div className="setup-checklist" aria-label="Setup files">
                     <p className="setup-caption">
@@ -3046,37 +3051,28 @@ export function ReceiverApp({
                     </button>
                   </div>
                 )}
-                <ReceiverLocationPanel key={`antenna:${source}`} value={antennaSite} />
+
                 {source === "replay" && <small>Replay uses the original acquisition site; the current site applies to future live recordings.</small>}
-                {source === "rtl-sdr" && <small className="rtl-tuner">Tuner: {liveSession?.rtlTuner ?? receiver.session?.rtlTuner ?? "Unknown · connect a supported device"}. Board model is not inferred.</small>}
-                <InputClippingWarning pipeline={analysis} session={liveSession} running={running && !remoteSelected} />
-                <Suspense fallback={<small>Loading receiver tools…</small>}><ReceiverExpansionPanel vfoTarget={vfoToolsTarget} watchTarget={watchToolsTarget} active={activeView === "receiver"} controller={controller} pipeline={analysis} receiver={receiver} source={source} input={rtlInput} onInput={setRtlInput} hardware={hardwareSettings} onHardware={applyHardware} favorites={favorites.items} volume={volume} blocked={explorerActive || Boolean(receiver.hardwareSettingsPending) || exportingRecording || atlasTransferActive} onOperationChange={setWatchActive} recordings={eventCaptures} onRecordings={setEventCaptures} /></Suspense>
-                {source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ && <p className="display-note">{RTL_EXPERIMENTAL_RATE_WARNING}</p>}
-                {source === "replay" && loadedReplay && experimentalRtlRecording(loadedReplay.metadata) && <p className="display-note">Recorded experimental RTL-SDR 3.2 MS/s input; hardware sample loss may be unreported.</p>}
                 {caps.requiresUsb && (
-                  <details
-                    className="advanced-settings"
+                  <WorkspaceToolDialog
                     key={source}
+                    title="Device details & settings"
+                    icon="settings"
+                    className="device-settings-trigger"
                     open={sourceAdvancedOpen}
-                    onToggle={(event) =>
-                      setSourceAdvancedOpen(event.currentTarget.open)
-                    }
+                    onOpenChange={setSourceAdvancedOpen}
+                    summary={`${formatSampleRate(liveSession?.actualSampleRateHz ?? sampleRateHz)}${source === "rtl-sdr" && (liveSession?.actualSampleRateHz ?? sampleRateHz) === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ ? " (experimental)" : ""} · ${
+                      caps.gain.kind === "rtl-auto-manual"
+                        ? deviceGainDb === null
+                          ? "Automatic gain"
+                          : `${deviceGainDb.toFixed(1)} dB gain`
+                        : caps.gain.kind === "hackrf-stages"
+                          ? `LNA ${hardwareSettings.rxLnaGainCode} · VGA ${hardwareSettings.rxVgaGainDb} dB`
+                          : source === "bladerf"
+                            ? `${receiver.session?.bladerf?.rxInput ?? bladerfSettings.rxInput} · ${BLADERF_GAIN_MODES[receiver.session?.bladerf?.gainMode ?? bladerfSettings.gainMode].label}`
+                            : "Slow-attack AGC"
+                    }`}
                   >
-                    <summary>
-                      <span className="icon-label"><AppIcon name="settings" />Device details &amp; settings</span>
-                      <small>
-                        {(sampleRateHz / 1_000_000).toFixed(3)} MS/s{source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ ? " (experimental)" : ""} ·{" "}
-                        {caps.gain.kind === "rtl-auto-manual"
-                          ? gainDb === null
-                            ? "automatic gain"
-                            : `${gainDb.toFixed(1)} dB gain`
-                          : caps.gain.kind === "hackrf-stages"
-                            ? `LNA ${hardwareSettings.rxLnaGainCode} · VGA ${hardwareSettings.rxVgaGainDb} dB`
-                            : source === "bladerf"
-                              ? `${receiver.session?.bladerf?.rxInput ?? bladerfSettings.rxInput} · ${BLADERF_GAIN_MODES[receiver.session?.bladerf?.gainMode ?? bladerfSettings.gainMode].label}`
-                              : "slow-attack AGC"}
-                      </small>
-                    </summary>
                     <div className="advanced-settings-body">
                       {source === "hackrf" && <small>{hackrfIdentity?.kind === "hackrf-one"
                         ? "HackRF One · experimental, physical reception unverified. USB API 0x0110; native 9.6 MS/s filtered to a 2.4 MS/s channel. RX gains apply live."
@@ -3331,8 +3327,14 @@ export function ReceiverApp({
                         </div>
                       )}
                     </div>
-                  </details>
+                  </WorkspaceToolDialog>
                 )}
+                <InputClippingWarning pipeline={analysis} session={liveSession} running={running && !remoteSelected} />
+                <Suspense fallback={<small>Loading receiver tools…</small>}><ReceiverExpansionPanel vfoTarget={vfoToolsTarget} watchTarget={watchToolsTarget} active={activeView === "receiver"} controller={controller} pipeline={analysis} receiver={receiver} source={source} input={rtlInput} onInput={setRtlInput} hardware={hardwareSettings} onHardware={applyHardware} favorites={favorites.items} volume={volume} blocked={explorerActive || Boolean(receiver.hardwareSettingsPending) || exportingRecording || atlasTransferActive} onOperationChange={setWatchActive} recordings={eventCaptures} onRecordings={setEventCaptures} /></Suspense>
+                <ReceiverLocationPanel key={`antenna:${source}`} value={antennaSite} />
+                {source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ && <p className="display-note">{RTL_EXPERIMENTAL_RATE_WARNING}</p>}
+                {source === "replay" && loadedReplay && experimentalRtlRecording(loadedReplay.metadata) && <p className="display-note">Recorded experimental RTL-SDR 3.2 MS/s input; hardware sample loss may be unreported.</p>}
+
               </div>
               </div>
               <ThemeDecoration />
@@ -3388,7 +3390,7 @@ export function ReceiverApp({
                 {mode === "DAB" && (
                   <DabStationControl controller={controller} />
                 )}
-                <label>
+                <label className="channel-frequency-field">
                   Channel frequency
                   <span className="unit-input">
                     <input
@@ -3457,6 +3459,7 @@ export function ReceiverApp({
                           : "Applies when reception starts")}
                   </small>
                 </label>
+                {mode === "WBFM" && <FmStationSummary controller={controller} />}
                 <div className="channel-tune-actions">
                 <ActionButton
                   type="button"
@@ -3486,7 +3489,7 @@ export function ReceiverApp({
                 />}
                 </div>
                 {source !== "replay" && source !== "synthetic" && ["DAB", "AIS", "ADS-B", "ACARS", "NAVTEX"].includes(mode) && <Suspense fallback={null}><ModeFrequencyHint mode={mode} frequencyHz={frequencyMhz * 1e6} disabled={transitioning || Boolean(recordingStatus) || exportingRecording || atlasTransferActive} onChoose={hz => { setChannelFrequencyDraft(undefined); setFrequencyMhz(hz / 1e6); if (running) tune(hz); }} /></Suspense>}
-                <button id="antenna-guide-trigger" type="button" className="secondary" aria-haspopup="dialog" onClick={() => openAntennaGuide("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</button>
+                <div className="channel-utility-actions">
                 <SearchOverlay validationKey={JSON.stringify([currentModeSettings, hardwareOptions])} antennaContext={antennaContext} favorites={favorites.items} frequencyHz={displayedFrequencyHz ?? frequencyMhz * 1e6} mode={mode}
                   contextKey={`${source}:${remoteSelected}:${receiver.sessionGeneration}:${mode}:${sampleRateHz}:${frequencyMhz}`}
                   blockedReason={stationUseBlockedReason} onRecall={recallFavorite} onUseStation={useAtlasStation} onFavorite={saveAtlasFavorite}
@@ -3495,9 +3498,7 @@ export function ReceiverApp({
                   onNew={newFavorite} onEdit={(item) => setFavoriteDraft(structuredClone(item))} onCancel={() => setFavoriteDraft(undefined)}
                   onChange={favorites.change} onRecall={recallFavorite} blockedReason={stationUseBlockedReason?.replaceAll("station", "favorite")} saveBlockedReason={saveFavoriteBlockedReason} />
 
-                {mode === "WBFM" && (
-                  <FmStationSummary controller={controller} />
-                )}
+                </div>
                 {source !== "synthetic" &&
                   !["OFF", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(mode) && (
                     <>
@@ -3804,6 +3805,9 @@ export function ReceiverApp({
             onTuneCenter={tuneReceiverCenter}
           />}
           onStatusChange={setSpectrumStatus}
+          receiving={running}
+          replayPaused={replayPaused}
+          replayEnded={source === "replay" && receiver.lifecycle === "idle" && receiver.message.startsWith("Replay reached end of file")}
           onOpenAcquire={() => {
             setActiveView("receiver");
             setLayout((old) => ({ ...old, sourceCollapsed: false }));

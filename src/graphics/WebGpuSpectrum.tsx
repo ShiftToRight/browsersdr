@@ -1,6 +1,7 @@
 import { snapChannelFrequency } from "./channelRaster";
 import type { HoverSpectrumFrame } from "./spectrumHoverMath";
 import { ActionButton } from "../ui/ActionButton";
+import { WorkspaceToolDialog } from "../ui/WorkspaceToolDialog";
 import type { CanvasSpectrum } from "./canvasSpectrum";
 import { SPECTRUM_PALETTES } from "./spectrumPalette";
 import { useTheme } from "../ui/themes";
@@ -64,6 +65,9 @@ export function WebGpuSpectrum({
   onOpenAcquire,
   onOpenDiagnostics,
   active = true,
+  receiving = Boolean(session),
+  replayPaused = false,
+  replayEnded = false,
   tuningControls,
   displaySettings,
   onDisplaySettingsChange,
@@ -71,6 +75,9 @@ export function WebGpuSpectrum({
   displaySettings?: { floorDb: number; rangeDb: number };
   onDisplaySettingsChange?: (settings: { floorDb: number; rangeDb: number }) => void;
   active?: boolean;
+  receiving?: boolean;
+  replayPaused?: boolean;
+  replayEnded?: boolean;
   tuningControls?: ReactNode;
   onStatusChange?: (status: SpectrumDisplayStatus) => void;
   onOpenAcquire?: () => void;
@@ -79,6 +86,8 @@ export function WebGpuSpectrum({
   session?: SourceSessionMetadata;
   onTune?: (frequencyHz: number) => void;
 }) {
+  const [displayOpen, setDisplayOpen] = useState(false);
+  useEffect(() => { if (!active) setDisplayOpen(false); }, [active]);
   const [rasterRegion, setRasterRegion] = useState("general");
   const [snapChannels, setSnapChannels] = useState(() => {
     try { return localStorage.getItem("browsersdr.channel-snap.v1") !== "off"; } catch { return true; }
@@ -876,6 +885,87 @@ export function WebGpuSpectrum({
         <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
           coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
           onPlanChange={setRasterRegion} onHeightChange={setGuideGap} /></Suspense>
+        <WorkspaceToolDialog title="Display settings" icon="sliders" open={displayOpen} onOpenChange={setDisplayOpen} placement="spectrum" className="spectrum-display-trigger" footer="Display changes do not affect receiver gain.">
+          <div className="display-settings">
+        <label className="spectrum-hover-toggle receiver-auto-center receiver-tool-toggle">
+          <input type="checkbox" checked={hoverEnabled} onChange={event => {
+            const enabled = event.currentTarget.checked;
+            setHoverEnabled(enabled);
+            try { localStorage.setItem("browsersdr.spectrum-hover.v1", enabled ? "on" : "off"); } catch { /* Keep the in-tab choice when storage is unavailable. */ }
+          }} /><span className="receiver-switch-track" aria-hidden="true" />
+          Hover frequency guide
+        </label>
+        <label className="display-note receiver-auto-center receiver-tool-toggle">
+          <input type="checkbox" checked={snapChannels} onChange={event => {
+            const enabled = event.currentTarget.checked; setSnapChannels(enabled);
+            try { localStorage.setItem("browsersdr.channel-snap.v1", enabled ? "on" : "off"); } catch { /* Keep in-tab preference. */ }
+          }} /><span className="receiver-switch-track" aria-hidden="true" />
+          Snap spectrum clicks to broadcast channels · {rasterRegion} · Alt-click for free tuning
+        </label>
+        <div className="display-controls">
+          <label>
+            Display renderer
+            <select aria-label="Display renderer" value={renderer} onChange={(event) => {
+              const next = event.currentTarget.value as "webgpu" | "canvas2d";
+              setRenderer(next);
+              setFallbackReason(next === "canvas2d" ? "Compatibility display selected." : "");
+              setFftSize(next === "canvas2d" ? FFT_SIZE : requestedFftSize ?? FFT_SIZE);
+              setDisplayedGeneration(undefined);
+              latestBinsRef.current = undefined;
+              setState({ kind: "checking", message: "Preparing spectrum display…" });
+              setFftMessage(next === "canvas2d" && requestedFftSize ? "Experimental GPU FFT unavailable; using CPU/WASM spectrum frames." : "");
+              setGpuAttempt(attempt => attempt + 1);
+            }}>
+              <option value="webgpu">WebGPU (automatic fallback)</option>
+              <option value="canvas2d">Compatibility (Canvas2D)</option>
+            </select>
+          </label>
+          <label>
+            Floor <output>{floorDb} dB</output>
+            <input
+              type="range"
+              aria-label="Spectrum floor"
+              min="-120"
+              max="-30"
+              step="1"
+              value={floorDb}
+              onChange={(event) => {
+                const value = event.currentTarget.valueAsNumber;
+                floorRef.current = value;
+                changeScaleMode(false);
+                setFloorDb(value);
+                onDisplaySettingsChange?.({ floorDb: value, rangeDb });
+                renderRef.current();
+              }}
+            />
+          </label>
+          <label>
+            Range <output>{rangeDb} dB</output>
+            <input
+              type="range"
+              aria-label="Spectrum range"
+              min="20"
+              max="120"
+              step="1"
+              value={rangeDb}
+              onChange={(event) => {
+                const value = event.currentTarget.valueAsNumber;
+                rangeRef.current = value;
+                changeScaleMode(false);
+                setRangeDb(value);
+                onDisplaySettingsChange?.({ floorDb, rangeDb: value });
+                renderRef.current();
+              }}
+            />
+          </label>
+        </div>
+        <small>
+          <label className="checkbox-label receiver-auto-center receiver-tool-toggle"><input type="checkbox" checked={automaticScale} onChange={event => changeScaleMode(event.currentTarget.checked)} /><span className="receiver-switch-track" aria-hidden="true" />Auto scale on tune or rate change</label>
+          Auto scale fits the current spectrum. Display changes do not affect
+          receiver gain.
+        </small>
+</div>
+        </WorkspaceToolDialog>
       </div>
       <div className="spectrum-display">
         <div
@@ -929,14 +1019,14 @@ export function WebGpuSpectrum({
                     ? "Preparing spectrum display…"
                     : !session
                       ? "Start receiving to see the spectrum"
-                      : "Waiting for signal samples…"}
+                      : replayEnded ? "Replay complete" : replayPaused ? "Replay paused" : !receiving ? "Ready to receive" : "Waiting for signal samples…"}
               </strong>
               <p>
                 {state.kind === "error" || state.kind === "unsupported"
                   ? state.message
                   : !session
                     ? "Connect a receiver or choose the synthetic demo in Receiver."
-                    : "The spectrum will appear when samples reach the display."}
+                    : replayEnded ? "The recording has reached its end. Restart replay to view samples again." : replayPaused ? "Resume replay to continue the spectrum and waterfall." : !receiving ? "Start receiving to show the spectrum and waterfall." : "The spectrum will appear when samples reach the display. If this persists, check input delivery and receiver status."}
               </p>
               <div>
                 {(state.kind === "error" || state.kind === "unsupported") && (
@@ -1060,86 +1150,7 @@ export function WebGpuSpectrum({
           </SpectrumInfo>
         </div>
       </div>
-      <details className="display-settings">
-        <summary>Display settings</summary>
-        <label className="spectrum-hover-toggle">
-          <input type="checkbox" checked={hoverEnabled} onChange={event => {
-            const enabled = event.currentTarget.checked;
-            setHoverEnabled(enabled);
-            try { localStorage.setItem("browsersdr.spectrum-hover.v1", enabled ? "on" : "off"); } catch { /* Keep the in-tab choice when storage is unavailable. */ }
-          }} />
-          Hover frequency guide
-        </label>
-        <label className="display-note">
-          <input type="checkbox" checked={snapChannels} onChange={event => {
-            const enabled = event.currentTarget.checked; setSnapChannels(enabled);
-            try { localStorage.setItem("browsersdr.channel-snap.v1", enabled ? "on" : "off"); } catch { /* Keep in-tab preference. */ }
-          }} />
-          Snap spectrum clicks to broadcast channels · {rasterRegion} · Alt-click for free tuning
-        </label>
-        <div className="display-controls">
-          <label>
-            Display renderer
-            <select aria-label="Display renderer" value={renderer} onChange={(event) => {
-              const next = event.currentTarget.value as "webgpu" | "canvas2d";
-              setRenderer(next);
-              setFallbackReason(next === "canvas2d" ? "Compatibility display selected." : "");
-              setFftSize(next === "canvas2d" ? FFT_SIZE : requestedFftSize ?? FFT_SIZE);
-              setDisplayedGeneration(undefined);
-              latestBinsRef.current = undefined;
-              setState({ kind: "checking", message: "Preparing spectrum display…" });
-              setFftMessage(next === "canvas2d" && requestedFftSize ? "Experimental GPU FFT unavailable; using CPU/WASM spectrum frames." : "");
-              setGpuAttempt(attempt => attempt + 1);
-            }}>
-              <option value="webgpu">WebGPU (automatic fallback)</option>
-              <option value="canvas2d">Compatibility (Canvas2D)</option>
-            </select>
-          </label>
-          <label>
-            Floor <output>{floorDb} dB</output>
-            <input
-              type="range"
-              aria-label="Spectrum floor"
-              min="-120"
-              max="-30"
-              step="1"
-              value={floorDb}
-              onChange={(event) => {
-                const value = event.currentTarget.valueAsNumber;
-                floorRef.current = value;
-                changeScaleMode(false);
-                setFloorDb(value);
-                onDisplaySettingsChange?.({ floorDb: value, rangeDb });
-                renderRef.current();
-              }}
-            />
-          </label>
-          <label>
-            Range <output>{rangeDb} dB</output>
-            <input
-              type="range"
-              aria-label="Spectrum range"
-              min="20"
-              max="120"
-              step="1"
-              value={rangeDb}
-              onChange={(event) => {
-                const value = event.currentTarget.valueAsNumber;
-                rangeRef.current = value;
-                changeScaleMode(false);
-                setRangeDb(value);
-                onDisplaySettingsChange?.({ floorDb, rangeDb: value });
-                renderRef.current();
-              }}
-            />
-          </label>
-        </div>
-        <small>
-          <label className="checkbox-label"><input type="checkbox" checked={automaticScale} onChange={event => changeScaleMode(event.currentTarget.checked)} />Auto scale on tune or rate change</label>
-          Auto scale fits the current spectrum. Display changes do not affect
-          receiver gain.
-        </small>
-      </details>
+
     </section>
   );
 }

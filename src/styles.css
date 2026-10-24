@@ -4222,11 +4222,14 @@ label output {
 
 
 .channel-tune-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
 }
+.channel-tune-actions > .action-hint { width: 100%; min-width: 0; }
+.channel-tune-actions > .action-hint > button { width: 100%; padding-inline: 7px; }
+.channel-tune-actions > .action-hint:only-child, .channel-tune-actions > .center-signal-status { grid-column: 1 / -1; }
 .center-signal-status {
   flex-basis: 100%;
   max-width: 28em;
@@ -4973,7 +4976,7 @@ button:has(> .app-icon) {
 }
 
 /* Optional antenna provenance stays within the collapsible source controls. */
-.antenna-site { border-top: 1px solid var(--border, #314452); padding-top: .5rem; min-width: 0; }
+.antenna-site { min-width: 0; }
 .antenna-site summary { cursor: pointer; font-size: .85rem; }
 .antenna-site-body { display: grid; gap: .5rem; padding-top: .6rem; }
 .antenna-site-body p, .antenna-site-body small { margin: 0; font-size: .78rem; overflow-wrap: anywhere; }
@@ -4987,10 +4990,7 @@ button:has(> .app-icon) {
 .antenna-site-status { color: var(--muted, #a5b7c7); }
 
 /* Source-side site editor: the source column keeps only its trigger and summary. */
-.antenna-site-trigger { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; }
-.antenna-site-trigger > span { flex: 1; }
-.antenna-site-trigger > .app-icon-overlay { width: 13px; }
-.antenna-site-summary, .antenna-site-storage { margin: 5px 0 0; font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }
+.antenna-site-storage { margin: 5px 0 0; font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }
 .antenna-site-summary.is-stale, .antenna-site-stale { color: var(--warning); }
 .antenna-site-panel { inset-inline: 16px auto; --overlay-entry-x: -8px; }
 .antenna-site-panel .antenna-site-body { gap: 14px; padding-top: 2px; }
@@ -5007,19 +5007,23 @@ button:has(> .app-icon) {
 .antenna-site-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .antenna-site-footer > div { display: flex; gap: 7px; margin-left: auto; }
 .antenna-site-footer .antenna-site-clear { background: transparent; border-color: transparent; color: var(--muted); padding-inline: 0; }
-.overlay-motion { --overlay-entry-x: 8px; }
-.antenna-site-panel.overlay-motion { --overlay-entry-x: -8px; }
-.overlay-motion[open] { animation: overlay-arrive 180ms cubic-bezier(.2,.8,.2,1) both; }
-.overlay-motion[open]::backdrop { animation: overlay-backdrop-arrive 180ms ease-out both; }
-.overlay-motion[open][data-closing] { animation: overlay-depart 140ms ease-in both; }
-.overlay-motion[open][data-closing]::backdrop { animation: overlay-backdrop-depart 140ms ease-in both; }
-@keyframes overlay-arrive { from { opacity: 0; transform: translateX(var(--overlay-entry-x)) scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes overlay-depart { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(var(--overlay-entry-x)) scale(.99); } }
+.overlay-motion { transform-origin: 0 0; }
+.overlay-motion[open] { animation: overlay-arrive 280ms cubic-bezier(.2,.8,.2,1) both; }
+.overlay-motion[open] > * { animation: overlay-content-arrive 280ms ease-out both; }
+.overlay-motion[open]::backdrop { animation: overlay-backdrop-arrive 280ms ease-out both; }
+.overlay-motion[open][data-closing] { animation: overlay-depart 200ms cubic-bezier(.4,0,.8,.2) both; }
+.overlay-motion[open][data-closing] > * { animation: overlay-content-depart 200ms ease-in both; }
+.overlay-motion[open][data-closing]::backdrop { animation: overlay-backdrop-depart 200ms ease-in both; }
+@keyframes overlay-arrive { from { transform: var(--overlay-start-transform, var(--overlay-button-transform, none)); } to { transform: none; } }
+@keyframes overlay-depart { from { transform: var(--overlay-close-transform, none); } to { transform: var(--overlay-button-transform, none); } }
+@keyframes overlay-content-arrive { 0%, 25% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes overlay-content-depart { 0% { opacity: 1; } 55%, 100% { opacity: 0; } }
 @keyframes overlay-backdrop-arrive { from { opacity: 0; } to { opacity: 1; } }
 @keyframes overlay-backdrop-depart { from { opacity: 1; } to { opacity: 0; } }
+body:has(.overlay-motion[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
-  .overlay-motion[open], .overlay-motion[open]::backdrop,
-  .overlay-motion[open][data-closing], .overlay-motion[open][data-closing]::backdrop { animation: none; }
+  .overlay-motion[open], .overlay-motion[open] > *, .overlay-motion[open]::backdrop,
+  .overlay-motion[open][data-closing], .overlay-motion[open][data-closing] > *, .overlay-motion[open][data-closing]::backdrop { animation: none; }
 }
 @media (max-width: 600px) { .antenna-site-panel { inset-inline: 8px; } }
 @media (max-width: 380px) { .antenna-site-coordinates { grid-template-columns: minmax(0, 1fr); } }
@@ -5187,3 +5191,30 @@ input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offs
   .monitor-workspace .monitor-table-wrap.monitor-results-scroll { height: min(65dvh, 600px); }
 }
 @media (pointer: coarse) { .monitor-frequency { min-height: 44px; } }
+
+/* Receiver cleanup: everyday controls stay in the workspace; setup is on demand. */
+.channel-utility-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; align-items: start; min-width: 0; }
+.channel-utility-actions > * { min-width: 0; }
+.channel-utility-actions :is(button, .favorites-launcher) { width: 100%; }
+.channel-utility-actions button { padding-inline: 7px; }
+.channel-programme { display: flex; align-items: center; gap: 8px; min-height: 24px; margin: 0; min-width: 0; }
+.channel-programme strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+.channel-programme small { color: var(--muted); }
+.receiver-expansion.receiver-tools { display: contents; }
+.acquire-controls .workspace-tool-trigger { margin: 0; min-height: 56px; padding-block: 10px; }
+.density-compact .acquire-controls .workspace-tool-trigger { min-height: 52px; padding-block: 9px; }
+.acquire-controls .workspace-tool-trigger small { font-size: .72rem; line-height: 1.5; }
+.receiver-vfo-tools summary small { display: block; margin-top: 3px; font-size: .72rem; font-weight: 400; }
+.health-content.receiver-tools { margin: 0; gap: 0; }
+.health-content .receiver-tool-toggle { margin: 8px 0; }
+.workspace-tool-body .display-settings { margin: 0; padding: 0; border: 0; }
+.workspace-tool-body .display-controls { display: grid; grid-template-columns: minmax(0,1fr); }
+.workspace-tool-body .display-controls label { min-width: 0; }
+.workspace-tool-body .spectrum-hover-toggle, .workspace-tool-body .display-note, .workspace-tool-body .checkbox-label { display: flex; align-items: center; gap: 8px; }
+.workspace-tool-body input[type=checkbox] { width: auto; flex: 0 0 auto; min-height: 0; }
+.spectrum-heading .spectrum-display-trigger { width: auto; flex: 0 0 auto; min-height: 32px; padding: 6px 9px; }
+.spectrum-display-trigger > span:last-child { display: none; }
+.workspace-controls .header-antenna-guide { display: inline-flex; gap: 6px; align-items: center; }
+@media (max-width: 700px) { .workspace-controls .header-antenna-guide { display: none; } }
+
+.workspace-controls .header-antenna-guide { white-space: nowrap; }

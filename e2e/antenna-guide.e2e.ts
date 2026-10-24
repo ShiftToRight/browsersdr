@@ -1,5 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { openApplicationView } from "./application-navigation";
+async function openAntennaGuide(page: Page) {
+  if (await page.locator("#antenna-guide-trigger").isVisible())
+    await page.locator("#antenna-guide-trigger").click();
+  else {
+    await page.getByLabel("Help", { exact: true }).click();
+    await page.locator("#antenna-help-trigger").click();
+  }
+}
 
 test("built-in antenna presets choose the right geometry and separate dipole extension from full arms", async ({
   page,
@@ -8,7 +16,7 @@ test("built-in antenna presets choose the right geometry and separate dipole ext
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await channel.fill("100");
   await channel.blur();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -166,7 +174,7 @@ test("mobile named antenna presets save, update, switch, delete, undo and surviv
   await expect(search.getByRole("searchbox")).toHaveValue("fm");
   await page.keyboard.press("Escape");
   await page.reload();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const guide = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -189,7 +197,7 @@ test("ANT500 limits and optional compact experiment survive units and reload wit
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await channel.fill("100");
   await channel.blur();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -267,7 +275,7 @@ test("ANT500 limits and optional compact experiment survive units and reload wit
     "8.7 cm",
   );
   await page.reload();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   await expect(
     dialog.getByLabel("Antenna preset", { exact: true }),
   ).toHaveValue("ant500");
@@ -355,7 +363,7 @@ test("telescopic monopole uses a single whip length and matching diagram, retain
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await channel.fill("100");
   await channel.blur();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -392,7 +400,7 @@ test("telescopic monopole uses a single whip length and matching diagram, retain
   await page.keyboard.press("Escape");
   await expect(channel).toHaveValue("100.000");
   await page.reload();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   await expect(dialog.getByLabel("Antenna type", { exact: true })).toHaveValue(
     "telescopic",
   );
@@ -468,7 +476,7 @@ test("antenna calculator uses selected-channel context, validates dimensions and
   await channel.fill("100");
   await channel.blur();
   expect(antennaRequests).toEqual([]);
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -500,7 +508,7 @@ test("antenna calculator uses selected-channel context, validates dimensions and
   await expect(channel).toHaveValue("100.000");
   await channel.fill("101");
   await channel.blur();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   await expect(input).toHaveValue("1,09 GHz");
   await expect(dialog.getByRole("status")).toContainText("context changed");
   await dialog.getByRole("button", { name: "Use current channel" }).click();
@@ -514,7 +522,7 @@ test("antenna guides expose six setups, satellite geometry and sources, with mob
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?browser-test=1");
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,
@@ -565,7 +573,7 @@ test("antenna guides expose six setups, satellite geometry and sources, with mob
   await close.click();
   await expect(dialog).toBeHidden();
   await page.reload();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   await expect(page.getByLabel("Antenna length units")).toHaveValue("imperial");
 });
 
@@ -618,7 +626,7 @@ test("antenna browsing preserves ongoing synthetic acquisition and I/Q recording
   const status = page.locator(".receiver-status-menu > summary");
   await expect(status).toContainText("Recording");
   const before = await page.locator(".recording-state span").textContent();
-  await page.locator("#antenna-guide-trigger").click();
+  await openAntennaGuide(page);
   const dialog = page.getByRole("dialog", {
     name: "Antenna guide",
     exact: true,

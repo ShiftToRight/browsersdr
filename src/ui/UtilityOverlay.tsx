@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useOverlayDialog } from "./useOverlayDialog";
 import { AppIcon, type AppIconName } from "./AppIcon";
 import "./UtilityOverlay.css";
 
@@ -23,41 +24,33 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const backdropPressed = useRef(false);
-  const returnId = useRef(returnFocusId);
-  returnId.current = returnFocusId;
+  const trigger = useRef<HTMLElement | null>(null);
   const open = view !== null;
-  const selected = pages.find(page => page.view === view) ?? pages[1]!;
+  const lastView = useRef(view);
+  const lastChildren = useRef(children);
+  const [closed, setClosed] = useState(!open);
+  if (open) { lastView.current = view; lastChildren.current = children; }
+  const displayedView = view ?? lastView.current;
+  const selected = pages.find(page => page.view === displayedView) ?? pages[1]!;
   useLayoutEffect(() => {
+    trigger.current = document.getElementById(returnFocusId);
     if (!open) return;
-    const element = dialog.current!;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    setClosed(false);
     const position = () => {
       const bottom = document.querySelector(".app-topbar")?.getBoundingClientRect().bottom ?? 80;
       const top = Math.min(Math.max(bottom + 12, 16), window.innerHeight * 0.25);
-      element.style.setProperty("--utility-top", `${Math.round(top)}px`);
+      dialog.current?.style.setProperty("--utility-top", `${Math.round(top)}px`);
     };
     position();
     const header = document.querySelector(".app-topbar");
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
     if (header) observer?.observe(header);
     window.addEventListener("resize", position);
-    if (element.showModal) element.showModal();
-    else element.setAttribute("open", "");
-    closeButton.current?.focus({ preventScroll: true });
-    const frame = requestAnimationFrame(() => closeButton.current?.focus({ preventScroll: true }));
-    return () => {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", position);
-      if (element.close) element.close();
-      else element.removeAttribute("open");
-      document.body.style.overflow = previousOverflow;
-      document.getElementById(returnId.current)?.focus({ preventScroll: true });
-    };
-  }, [open]);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", position); };
+  }, [open, returnFocusId]);
+  useOverlayDialog(open, dialog, trigger, ".utility-overlay-close", () => setClosed(true));
 
-  return <dialog ref={dialog} className={`utility-overlay${view === "antenna" ? " utility-overlay-antenna" : ""}`} hidden={!open} role="dialog" aria-modal="true" aria-labelledby="utility-overlay-heading"
+  return <dialog ref={dialog} className={`utility-overlay overlay-motion${displayedView === "antenna" ? " utility-overlay-antenna" : ""}`} role="dialog" aria-modal="true" aria-labelledby="utility-overlay-heading"
     onCancel={event => { if (event.target === event.currentTarget) { event.preventDefault(); onDismiss(); } }}
     onPointerDown={event => {
       const bounds = event.currentTarget.getBoundingClientRect();
@@ -83,17 +76,17 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, onViewChan
     }}>
     <header className="utility-overlay-header">
       <span className="utility-overlay-emblem"><AppIcon name={selected.icon} /></span>
-      <div><p className="eyebrow">{view === "settings" ? "Settings" : view === "antenna" ? "Antennas & reception" : "Help"}</p><h2 id="utility-overlay-heading">{selected.label}</h2></div>
+      <div><p className="eyebrow">{displayedView === "settings" ? "Settings" : displayedView === "antenna" ? "Antennas & reception" : "Help"}</p><h2 id="utility-overlay-heading">{selected.label}</h2></div>
       <button ref={closeButton} type="button" className="secondary utility-overlay-close" aria-label="Close utility overlay" onClick={onDismiss}><AppIcon name="close" /></button>
     </header>
-    <nav className="utility-overlay-navigation" aria-label="Utility pages" hidden={view === "antenna"}>
-      {pages.map(page => <button key={page.view} type="button" className="secondary" aria-pressed={view === page.view} aria-controls={`${page.view}-view`}
+    <nav className="utility-overlay-navigation" aria-label="Utility pages" hidden={displayedView === "antenna"}>
+      {pages.map(page => <button key={page.view} type="button" className="secondary" aria-pressed={displayedView === page.view} aria-controls={`${page.view}-view`}
         onClick={() => {
           onViewChange(page.view);
           dialog.current?.querySelector(".utility-overlay-content")?.scrollTo?.({ top: 0 });
         }}><AppIcon name={page.icon} />{page.label}</button>)}
     </nav>
-    <div className="utility-overlay-content">{children}</div>
-    <footer className="utility-overlay-footer">{view === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={onDismiss}>Back to {workspaceLabel}</button></footer>
+    <div className="utility-overlay-content">{open || closed ? children : lastChildren.current}</div>
+    <footer className="utility-overlay-footer">{displayedView === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={onDismiss}>Back to {workspaceLabel}</button></footer>
   </dialog>;
 }

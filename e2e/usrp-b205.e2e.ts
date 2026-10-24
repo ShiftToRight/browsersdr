@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test, type Page } from "@playwright/test";
 
 async function installUsrpb205(page: Page, authorized = false) {
@@ -289,11 +293,12 @@ test("B205-mini mocked browser flow keeps permission synchronous and receive-onl
   await page
     .getByRole("combobox", { name: "Signal source" })
     .selectOption("usrp-b205");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   const sampleRate = page.getByLabel("Sample rate", { exact: false });
   await expect(sampleRate).toBeEnabled();
   await sampleRate.selectOption("9600000");
   await expect(page.locator(".device-setup-details")).toBeVisible();
+  await closeDeviceSettings(page);
   await page
     .getByRole("button", {
       name: "Connect",
@@ -317,12 +322,14 @@ test("B205-mini mocked browser flow keeps permission synchronous and receive-onl
   await expect(sampleRate).toBeDisabled();
   await page.getByRole("button", { name: "Stop receiving" }).click();
   await expect(sampleRate).toBeEnabled();
+  await openDeviceSettings(page);
   await sampleRate.selectOption("19200000");
   await expect(
     page.getByText("Change pending · applies when reception starts", {
       exact: true,
     }),
   ).toBeVisible();
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Start receiving" }).click();
   await expect(page.locator(".receiver-session-details")).toContainText(
     "native 19,200,000 samples/s",

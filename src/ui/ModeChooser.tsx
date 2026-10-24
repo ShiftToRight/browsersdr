@@ -1,10 +1,10 @@
 import {
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
 } from "react";
+import { useOverlayDialog } from "./useOverlayDialog";
 import { createPortal } from "react-dom";
 import {
   LayoutGrid,
@@ -74,19 +74,9 @@ export function ModeChooser(
       : undefined);
   const visible = matchingModes(query, category);
 
-  useLayoutEffect(() => {
-    const panel = dialog.current!;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    panel.showModal();
-    search.current?.focus({ preventScroll: true });
-    return () => {
-      panel.close();
-      document.body.style.overflow = overflow;
-      if (props.trigger.current?.isConnected)
-        props.trigger.current.focus({ preventScroll: true });
-    };
-  }, [props.trigger]);
+  const [open, setOpen] = useState(true);
+  const dismiss = () => setOpen(false);
+  useOverlayDialog(open, dialog, props.trigger, 'input[type="search"]', props.onDismiss);
 
   const togglePin = (mode: ReceiverMode) => {
     setReplacement(undefined);
@@ -115,12 +105,12 @@ export function ModeChooser(
   return createPortal(
     <dialog
       ref={dialog}
-      className="mode-chooser"
+      className="mode-chooser overlay-motion"
       aria-labelledby={`${id}-heading`}
       aria-describedby={`${id}-summary`}
       onCancel={(event) => {
         event.preventDefault();
-        props.onDismiss();
+        dismiss();
       }}
       onPointerDown={(event) => {
         backdropPressed.current =
@@ -132,13 +122,13 @@ export function ModeChooser(
           event.target === event.currentTarget &&
           outside(event)
         )
-          props.onDismiss();
+          dismiss();
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
-          props.onDismiss();
+          dismiss();
           return;
         }
         if (event.key !== "Tab") return;
@@ -164,7 +154,7 @@ export function ModeChooser(
           type="button"
           className="secondary mode-chooser-close"
           aria-label="Close decoder chooser"
-          onClick={props.onDismiss}
+          onClick={dismiss}
         >
           <AppIcon name="close" />
         </button>
@@ -370,7 +360,7 @@ export function ModeChooser(
           )}
         </div>
         <div className="mode-chooser-actions">
-          <button type="button" className="secondary" onClick={props.onDismiss}>
+          <button type="button" className="secondary" onClick={dismiss}>
             Cancel
           </button>
           <button
@@ -384,7 +374,7 @@ export function ModeChooser(
               )
                 return;
               if (selectedMode !== props.value) props.onChange(selectedMode);
-              props.onDismiss();
+              dismiss();
             }}
           >
             Use mode

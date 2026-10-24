@@ -116,12 +116,17 @@ test("declared HF input and converter controls remain passive until connection a
 }) => {
   await installRtl(page);
   await page.goto("/?browser-test=1");
-  await page
-    .getByText("HF input, converter & antenna power", { exact: true })
-    .click();
+  await page.getByRole("button", { name: /^RF input & power/ }).click();
   await page.getByLabel("Declared RTL board").selectOption("nesdr-smart-v5");
   await page.getByLabel("HF input", { exact: true }).selectOption("q");
   await expect(page.getByLabel("Converter offset (Hz)")).toBeDisabled();
+  await page
+    .getByRole("dialog", { name: "RF input & power", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "RF input & power", exact: true }),
+  ).toBeHidden();
   await expect
     .poll(() =>
       page.evaluate(
@@ -137,6 +142,9 @@ test("declared HF input and converter controls remain passive until connection a
   await page
     .getByRole("spinbutton", { name: "Channel frequency", exact: true })
     .fill("4.583");
+  await expect(
+    page.getByRole("spinbutton", { name: "Channel frequency", exact: true }),
+  ).toHaveValue("4.583");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect
     .poll(() =>
@@ -151,8 +159,16 @@ test("declared HF input and converter controls remain passive until connection a
     )
     .toContainEqual(["direct_sampling_method", 2]);
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await page.getByRole("button", { name: /^RF input & power/ }).click();
   await page.getByLabel("HF input", { exact: true }).selectOption("off");
   await page.getByLabel("Converter offset (Hz)").fill("125000000");
+  await page
+    .getByRole("dialog", { name: "RF input & power", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "RF input & power", exact: true }),
+  ).toBeHidden();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect
     .poll(() =>
@@ -264,7 +280,7 @@ test("HackRF power controls issue a deliberate request and reset the saved defau
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await page.getByText("Antenna power", { exact: true }).click();
+  await page.getByRole("button", { name: /^RF input & power/ }).click();
   await page
     .getByRole("checkbox", { name: "HackRF antenna power", exact: true })
     .check();
@@ -291,7 +307,15 @@ test("HackRF power controls issue a deliberate request and reset the saved defau
           .hardwareSettings.antennaPowerEnabled,
     ),
   ).toBe(false);
+  await page
+    .getByRole("dialog", { name: "RF input & power", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "RF input & power", exact: true }),
+  ).toBeHidden();
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await page.getByRole("button", { name: /^RF input & power/ }).click();
   await expect(
     page.getByRole("checkbox", { name: "HackRF antenna power", exact: true }),
   ).not.toBeChecked();
@@ -302,9 +326,7 @@ test("receiver tools remain usable without horizontal overflow on a narrow scree
   await page.setViewportSize({ width: 390, height: 844 });
   await installRtl(page);
   await page.goto("/?browser-test=1");
-  await page
-    .getByText("HF input, converter & antenna power", { exact: true })
-    .click();
+  await page.getByRole("button", { name: /^RF input & power/ }).click();
   await expect(page.getByLabel("Declared RTL board")).toBeVisible();
   await page.screenshot({
     path: "../evidence/receiver-tools-narrow.png",
@@ -404,15 +426,17 @@ test("RF health uses fresh samples and gain setup requires a declared continuous
   page,
 }) => {
   await startRtl(page);
-  await page
-    .getByText("Reception health & guided gain", { exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Reception health/ }).click();
   const setup = page.getByRole("button", {
     name: "Set input headroom",
     exact: true,
   });
   await expect(setup).toBeDisabled();
-  await expect(page.locator(".receiver-expansion")).toContainText("Raw RMS");
+  await expect(
+    page
+      .getByRole("dialog", { name: "Reception health", exact: true })
+      .locator(".health-metrics"),
+  ).toContainText(/-?\d+\.\d dB relative/);
   const gainCount = () =>
     page.evaluate(
       () =>
@@ -431,9 +455,9 @@ test("RF health uses fresh samples and gain setup requires a declared continuous
     })
     .check();
   await setup.click();
-  await expect(page.locator(".receiver-expansion")).toContainText(
-    "Input headroom is in range",
-  );
+  await expect(
+    page.getByRole("dialog", { name: "Reception health", exact: true }),
+  ).toContainText("Input headroom is in range");
   expect(await gainCount()).toBe(before);
 });
 
@@ -452,14 +476,13 @@ test("receiver tools follow workflow placement, typography and theme across desk
   ).toBeVisible();
   await expect(acquire.getByLabel("Watch frequencies (MHz)")).toHaveCount(0);
   await expect(page.locator(".graphics-panel .status-pill")).toHaveCount(0);
-  await page
-    .getByText("Reception health & guided gain", { exact: true })
-    .click();
-  const health = page.locator(".receiver-expansion > details").first();
+  await page.getByRole("button", { name: /^Reception health/ }).click();
+  const health = page.getByRole("dialog", {
+    name: "Reception health",
+    exact: true,
+  });
   const fonts = await health.evaluate((el) => ({
-    heading: parseFloat(
-      getComputedStyle(el.querySelector("summary")!).fontSize,
-    ),
+    heading: parseFloat(getComputedStyle(el.querySelector("h3")!).fontSize),
     body: parseFloat(getComputedStyle(el.querySelector("p")!).fontSize),
   }));
   expect(fonts.body).toBeLessThanOrEqual(fonts.heading);
@@ -475,11 +498,13 @@ test("receiver tools follow workflow placement, typography and theme across desk
     "Amber Field Deck",
     "Vice Afterglow",
   ]) {
+    await health.getByRole("button", { name: "Done", exact: true }).click();
     await page.getByLabel("Settings", { exact: true }).click();
     await page
       .getByRole("combobox", { name: "Theme", exact: true })
       .selectOption({ label: theme });
     await page.getByLabel("Settings", { exact: true }).click();
+    await page.getByRole("button", { name: /^Reception health/ }).click();
     const color = await health
       .locator(".receiver-switch-track")
       .evaluate((el) => ({
@@ -494,6 +519,7 @@ test("receiver tools follow workflow placement, typography and theme across desk
       fullPage: true,
     });
   }
+  await health.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Watch", exact: true }).click();
   await page.getByLabel("Watch frequencies (MHz)").fill("145.5, 145.55");
   await page.getByRole("tab", { name: "Audio & decode", exact: true }).click();

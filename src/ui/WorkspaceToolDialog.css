@@ -1,0 +1,177 @@
+.workspace-tool-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.workspace-tool-trigger > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-tool-trigger strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.workspace-tool-trigger small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.workspace-tool-dialog {
+  position: fixed;
+  inset: 0 auto 0 16px;
+  margin: auto 0;
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(760px, calc(100dvh - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--theme-surface, #101d31);
+  color: var(--ink);
+  box-shadow: 0 16px 60px #0008;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow: hidden;
+  --overlay-entry-x: -8px;
+}
+.workspace-tool-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-tool-dialog:not([open]) {
+  display: none;
+}
+.workspace-tool-dialog::backdrop {
+  background: #02061199;
+}
+.workspace-tool-dialog > header,
+.workspace-tool-dialog > footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  flex: 0 0 auto;
+}
+.workspace-tool-dialog > header {
+  border-bottom: 1px solid var(--line);
+}
+.workspace-tool-dialog h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.workspace-tool-dialog > header button,
+.workspace-tool-dialog > footer button {
+  margin-left: auto;
+}
+.workspace-tool-dialog > footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.workspace-tool-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 14px 16px;
+}
+.workspace-tool-body :is(p, small) {
+  overflow-wrap: anywhere;
+}
+.workspace-tool-body h4 {
+  font-size: 0.8rem;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+.workspace-tool-body section + section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.workspace-tool-body label {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.workspace-tool-body :is(input:not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+}
+/* Device fields retain the source panel label/control size after portalling. */
+.workspace-tool-body .advanced-settings-body label {
+  font-size: 0.8125rem;
+}
+.workspace-tool-body .receiver-tool-toggle {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+.workspace-tool-spectrum {
+  inset-inline: auto 16px;
+}
+.health-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.health-metrics > div {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.health-metrics dt {
+  color: var(--muted);
+}
+.health-metrics dd {
+  margin: 4px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.workspace-tool-body .receiver-tool-toggle input {
+  min-height: 0;
+}
+body:has(.workspace-tool-dialog[open]) {
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .workspace-tool-dialog {
+    inset-inline: 8px;
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .workspace-tool-body :is(input:not([type="checkbox"]), select, textarea) {
+    font-size: 16px;
+  }
+}
+@media (pointer: coarse) {
+  .workspace-tool-dialog
+    :is(button, input:not([type="checkbox"]), select, summary) {
+    min-height: 44px;
+  }
+}
+
+.workspace-tool-body .receiver-auto-center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  gap: 8px;
+  white-space: normal;
+}
+.workspace-tool-body .receiver-auto-center input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-tool-body .advanced-settings-body {
+  margin-top: 0;
+}
+.workspace-tool-body label.checkbox-control {
+  display: flex;
+}

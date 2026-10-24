@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test as base } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -88,10 +92,12 @@ test("19.2 MS/s capture preserves five seconds while a complete live frequency c
       .first()
       .click();
   }
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await page
     .getByRole("combobox", { name: "Sample rate", exact: true })
     .selectOption("19200000");
+  await closeDeviceSettings(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })

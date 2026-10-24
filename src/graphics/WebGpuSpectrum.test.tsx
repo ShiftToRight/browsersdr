@@ -223,20 +223,20 @@ it("retains hidden rows without drawing, throttles status, and caches canvas lay
   expect(host.querySelector(".spectrum-hover-readout")?.textContent).toContain("Paused");
   await act(async () => autoScale.click());
   expect(
-    Array.from(host.querySelectorAll(".display-controls output")).map(
+    Array.from(document.querySelectorAll(".display-controls output")).map(
       (output) => output.textContent,
     ),
   ).toEqual(["-98 dB", "64 dB"]);
   expect(pause.getAttribute("aria-pressed")).toBe("true");
   await act(async () => pause.click());
   expect(pause.textContent).toContain("Pause display");
-  const floor = host.querySelector<HTMLInputElement>('[aria-label="Spectrum floor"]')!;
+  const floor = document.querySelector<HTMLInputElement>('[aria-label="Spectrum floor"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(floor, "-110");
     floor.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const automatic = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(input => input.parentElement?.textContent?.includes("Auto scale on tune or rate change"))!;
-  expect(host.textContent).toContain("Auto scale on tune or rate change");
+  const automatic = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(input => input.parentElement?.textContent?.includes("Auto scale on tune or rate change"))!;
+  expect(document.querySelector(".workspace-tool-dialog")?.textContent).toContain("Auto scale on tune or rate change");
   const sendChanged = async (center: number) => {
     const f = { ...frame(9), centerFrequencyHz: center, bins: new Float32Array(4096).fill(-60) };
     await act(async () => listener(f, [f]));

@@ -1,4 +1,8 @@
 import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
+import {
   openApplicationView,
   chooseReceiverMode,
 } from "./application-navigation";
@@ -616,6 +620,7 @@ test("live RTL rate selection preserves USB and audio ownership and resumes auto
 }) => {
   await installRtlAdapter(page, "normal");
   await gotoApp(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
@@ -623,7 +628,7 @@ test("live RTL rate selection preserves USB and audio ownership and resumes auto
   await expect(page.locator(".receiver-status")).toContainText(
     "Receiving WBFM",
   );
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   const rate = page.getByLabel("Sample rate", { exact: true });
   await expect(rate).toBeEnabled();
   await rate.selectOption("2400000");
@@ -662,6 +667,7 @@ test("live RTL rate selection preserves USB and audio ownership and resumes auto
     suspends: 0,
     rates: [1024000, 1024000, 2400000, 1024000],
   });
+  await closeDeviceSettings(page);
   await page
     .getByRole("button", { name: "Stop receiving", exact: true })
     .click();
@@ -1320,6 +1326,7 @@ test("pending permission is cancelled on unmount and late ownership is released"
 }) => {
   await installRtlAdapter(page, "pending-connect");
   await gotoApp(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.locator(".receiver-status")).toContainText(
     "Choose an RTL-SDR device",
@@ -1363,6 +1370,7 @@ test("failed device close retains the single owner until retry succeeds", async 
 }) => {
   await installRtlAdapter(page, "close-fails-once");
   await gotoApp(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.locator(".receiver-status")).toContainText(
     "RTL-SDR connected",
@@ -1394,6 +1402,7 @@ test("failed device close retains the single owner until retry succeeds", async 
   await expect(page.locator(".receiver-status")).toContainText(
     "Receiver disconnected",
   );
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.locator(".receiver-status")).toContainText(
     "RTL-SDR connected",
@@ -1868,6 +1877,7 @@ test("favorite recall preserves USB ownership and blocks active or retained reco
     ),
   );
   await gotoApp(page);
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
@@ -1912,16 +1922,19 @@ test("favorite recall preserves USB ownership and blocks active or retained reco
   await expect(
     page.getByRole("slider", { name: "CW beat tone", exact: true }),
   ).toHaveValue("750");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   const rate = page.getByLabel("Sample rate", { exact: true });
   await rate.selectOption("2400000");
   await expect(rate).toBeEnabled();
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: /^Favorites/ }).click();
   await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
   await expect(favorites).toBeHidden();
   await expect(rate).toHaveValue("2400000");
+  await openDeviceSettings(page);
   await rate.selectOption("1024000");
   await expect(rate).toBeEnabled();
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: /^Favorites/ }).click();
   await favorites.getByRole("button", { name: "Recall CW fixture" }).click();
   await expect(favorites).toBeHidden();

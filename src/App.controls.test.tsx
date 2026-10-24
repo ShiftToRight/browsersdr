@@ -332,7 +332,7 @@ it("renders the receive-only B205 rates and offers ci16_le SigMF recording", asy
   expect(acquire.textContent).toContain("✓ Firmware verified");
   expect(acquire.textContent).toContain("✓ FPGA image verified");
   expect(
-    acquire.querySelector<HTMLDetailsElement>(".advanced-settings")?.open,
+    document.querySelector(".advanced-settings-body")?.closest("dialog")?.open,
   ).toBe(false);
   expect(acquire.querySelectorAll(".setup-file-verified")).toHaveLength(2);
   expect(acquire.querySelectorAll('input[type="file"]')).toHaveLength(2);
@@ -547,16 +547,14 @@ it("keeps the header quiet and progressively reveals mode-aware settings", async
   ).toBeNull();
 
   const sourceSettings = () =>
-    document.querySelector<HTMLDetailsElement>(
-      ".acquire-stage .advanced-settings",
-    )!;
+    document.querySelector<HTMLButtonElement>(".device-settings-trigger")!;
   const channelSettings = () =>
     document.querySelector<HTMLDetailsElement>(".channel-advanced-settings")!;
-  expect(sourceSettings().open).toBe(false);
+  expect(sourceSettings().getAttribute("aria-expanded")).toBe("false");
   expect(channelSettings().open).toBe(false);
 
   await change(control("Source"), "hackrf");
-  expect(sourceSettings().open).toBe(false);
+  expect(sourceSettings().getAttribute("aria-expanded")).toBe("false");
   await change(control("Mode"), "AM");
   expect(channelSettings().open).toBe(true);
   expect(channelSettings().textContent).toContain("squelch 0.0");

@@ -113,7 +113,7 @@ export function ReceiverTuningControl({
     <div className="receiver-tuning" aria-label="Receiver window tuning">
       <div className="receiver-frequency-controls">
         <label className="receiver-center-field">
-          <span>Receiver</span>
+          <span title="Hardware capture center; the listening channel is set in Channel settings">Capture center</span>
           <span className="unit-input">
             <input
               type="number"

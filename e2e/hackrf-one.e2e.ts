@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test } from "@playwright/test";
 import { installHackrfUsb } from "./hackrf-usb-fixture";
 import { openApplicationView } from "./application-navigation";
@@ -18,14 +22,17 @@ test("shared HackRF selector detects One, runs paced CI8, exports/replays and re
   );
   await expect(source.locator('option[value="hackrf"]')).toHaveCount(1);
   await source.selectOption("hackrf");
-  await page.getByText("Device details & settings", { exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Sample rate" })).toHaveValue(
-    "9600000",
-  );
   await page
     .getByRole("combobox", { name: "Mode", exact: true })
     .selectOption("AM");
+  await openDeviceSettings(page);
+  await expect(page.getByRole("combobox", { name: "Sample rate" })).toHaveValue(
+    "9600000",
+  );
+
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await openDeviceSettings(page);
   await expect(page.getByLabel("RX IF gain (dB)")).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Sample rate" }).locator("option"),
@@ -34,6 +41,7 @@ test("shared HackRF selector detects One, runs paced CI8, exports/replays and re
     page.getByText(/HackRF One · experimental, physical reception unverified/),
   ).toBeVisible();
   await page.getByLabel("RX IF gain (dB)").selectOption("40");
+  await closeDeviceSettings(page);
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();

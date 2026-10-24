@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test } from "@playwright/test";
 import { installHackrfUsb } from "./hackrf-usb-fixture";
 import {
@@ -14,6 +18,7 @@ test("frequency edits survive a delayed real sample-rate transaction without imp
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
@@ -22,7 +27,7 @@ test("frequency edits survive a delayed real sample-rate transaction without imp
   await expect(
     page.getByRole("button", { name: "Stop receiving", exact: true }),
   ).toBeEnabled();
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await page.evaluate(() => {
     const win = window as unknown as {
       __hackrf: { device: USBDevice };
@@ -44,6 +49,7 @@ test("frequency edits survive a delayed real sample-rate transaction without imp
   await page
     .getByRole("combobox", { name: "Sample rate", exact: true })
     .selectOption("4800000");
+  await closeDeviceSettings(page);
   const channel = page.getByLabel("Channel frequency", { exact: true });
   await expect(channel).toBeEnabled();
   await channel.fill("100.1234");

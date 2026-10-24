@@ -1,3 +1,7 @@
+import {
+  openDeviceSettings,
+  closeDeviceSettings,
+} from "./device-settings-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { packetRecordingFixture } from "../src/testing/packetRecordingFixture";
@@ -90,16 +94,18 @@ test("RTL experimental rate persists, switches all rates on one USB owner and le
   page.on("pageerror", (error) => errors.push(error));
   await installRtl(page);
   await page.goto("/?browser-test=1");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   const rate = page.getByLabel("Sample rate", { exact: true });
   await expect(rate).toHaveValue("1024000");
   await expect(rate.locator('option[value="3200000"]')).toHaveText(
     "3.200 MS/s (experimental)",
   );
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
     .click();
+  await openDeviceSettings(page);
   for (const value of [
     "3200000",
     "2400000",
@@ -135,7 +141,7 @@ test("RTL experimental rate persists, switches all rates on one USB owner and le
           .__rtlExperimentalState?.opens,
     ),
   ).toBe(1);
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await closeDeviceSettings(page);
   await expect(
     page.getByText(/Experimental 3.2 MS\/s: samples may be lost/).first(),
   ).toBeVisible();
@@ -147,11 +153,12 @@ test("RTL experimental rate persists, switches all rates on one USB owner and le
   await expect(
     page.getByText(/Experimental 3.2 MS\/s: samples may be lost/).first(),
   ).toBeVisible();
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await expect(rate).toHaveValue("3200000");
   await expect(
     page.getByText(/Experimental 3.2 MS\/s: samples may be lost/).first(),
   ).toBeVisible();
+  await closeDeviceSettings(page);
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("hackrf");
@@ -166,8 +173,9 @@ test("a live rate change finalizes native experimental CU8 with its original rat
 }) => {
   await installRtl(page);
   await page.goto("/?browser-test=1");
-  await page.getByText("Device details & settings", { exact: true }).click();
+  await openDeviceSettings(page);
   await page.getByLabel("Sample rate", { exact: true }).selectOption("3200000");
+  await closeDeviceSettings(page);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
     .getByRole("button", { name: "Start receiving", exact: true })
@@ -189,7 +197,9 @@ test("a live rate change finalizes native experimental CU8 with its original rat
       ),
     )
     .toBeGreaterThan(0);
+  await openDeviceSettings(page);
   await page.getByLabel("Sample rate", { exact: true }).selectOption("2400000");
+  await closeDeviceSettings(page);
   await expect(page.locator(".recording-state")).toContainText(
     "Recording ready",
   );

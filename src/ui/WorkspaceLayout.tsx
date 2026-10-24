@@ -109,7 +109,7 @@ function HeaderMenu({
         }
       }}
     >
-      <summary aria-label={label} title={label}>
+      <summary id={label === "Help" ? "help-menu-trigger" : "settings-menu-trigger"} aria-label={label} title={label}>
         <AppIcon name={icon} />
       </summary>
       <div
@@ -141,7 +141,7 @@ export function WorkspaceControls({
   onChange: Dispatch<SetStateAction<WorkspaceLayout>>;
   onSettings: () => void;
   onHelp: () => void;
-  onAntenna?: () => void;
+  onAntenna?: (triggerId?: string) => void;
   onCompatibility: () => void;
   onAbout: () => void;
   activeView: string;
@@ -173,6 +173,7 @@ export function WorkspaceControls({
           Short screen? Try Compact.
         </span>
       )}
+      {onAntenna && <button id="antenna-guide-trigger" type="button" className="secondary header-antenna-guide" aria-haspopup="dialog" onClick={() => onAntenna("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</button>}
       <HeaderMenu
         label="Settings"
         icon="settings"
@@ -222,7 +223,7 @@ export function WorkspaceControls({
             id="antenna-help-trigger"
             type="button"
             className="secondary"
-            onClick={onAntenna}
+            onClick={() => onAntenna("help-menu-trigger")}
           >
             <AppIcon name="radio" />
             Antenna guide

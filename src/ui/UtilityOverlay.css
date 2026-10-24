@@ -17,7 +17,7 @@
   overflow: hidden;
 }
 .utility-overlay[open] { display: flex; flex-direction: column; }
-.utility-overlay[hidden] { display: none; }
+.utility-overlay:not([open]) { display: none; }
 .utility-overlay-antenna { max-width: 1240px; }
 .utility-overlay-navigation[hidden] { display: none; }
 .utility-overlay::backdrop { background: #02071166; backdrop-filter: blur(5px); }

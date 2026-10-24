@@ -74,7 +74,9 @@ for (const unavailable of [
     await page.keyboard.press("Escape");
     // Automatic fitting can already be exact. Deliberately choose manual
     // bounds so paused Auto scale has a meaningful correction to perform.
-    await page.getByText("Display settings", { exact: true }).click();
+    await page
+      .getByRole("button", { name: "Display settings", exact: true })
+      .click();
     await page
       .getByRole("slider", { name: "Spectrum floor", exact: true })
       .fill("-50");
@@ -84,7 +86,10 @@ for (const unavailable of [
         exact: true,
       }),
     ).not.toBeChecked();
-    await page.getByText("Display settings", { exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "Display settings", exact: true })
+      .getByRole("button", { name: "Done", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Pause display", exact: true })
       .click();
@@ -131,7 +136,9 @@ test("compatibility renderer can be explicitly selected and WebGPU retried witho
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("synthetic");
   await page.getByRole("button", { name: "Start demo", exact: true }).click();
-  await page.getByText("Display settings", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Display settings", exact: true })
+    .click();
   const renderer = page.getByRole("combobox", {
     name: "Display renderer",
     exact: true,
@@ -146,6 +153,13 @@ test("compatibility renderer can be explicitly selected and WebGPU retried witho
     page.getByRole("button", { name: "Pause display", exact: true }),
   ).toBeEnabled();
   await renderer.selectOption("webgpu");
+  await page
+    .getByRole("dialog", { name: "Display settings", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Display settings", exact: true }),
+  ).toBeHidden();
   // The runner may have no adapter; automatic fallback remains a working display.
   await page.locator(".receiver-status-menu > summary").click();
   await expect(

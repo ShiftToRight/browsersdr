@@ -9,9 +9,9 @@ test("Acquire keeps the compact hardware checklist usable across viewport sizes"
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption(source);
-    await expect(acquire.locator(".advanced-settings")).not.toHaveAttribute(
-      "open",
-    );
+    await expect(
+      acquire.locator(".device-settings-trigger"),
+    ).not.toHaveAttribute("aria-expanded", "true");
     await expect(
       acquire.getByRole("button", { name: "Start receiving", exact: true }),
     ).toBeDisabled();

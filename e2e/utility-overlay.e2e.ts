@@ -46,7 +46,7 @@ test("framed utilities retain workspace and settings drafts, contain focus and d
   await expect(overlay).toHaveJSProperty("open", true);
   await page.keyboard.press("Escape");
   await expect(overlay).toBeHidden();
-  await expect(page.locator("#decoder-tab")).toBeFocused();
+  await expect(page.locator("#settings-menu-trigger")).toBeFocused();
   await openApplicationView(page, "Help");
   const bounds = (await overlay.boundingBox())!;
   await page.mouse.move(bounds.x + 80, bounds.y + 35);
@@ -56,7 +56,7 @@ test("framed utilities retain workspace and settings drafts, contain focus and d
   await expect(overlay).toBeVisible();
   await page.mouse.click(2, Math.max(2, bounds.y - 4));
   await expect(overlay).toBeHidden();
-  await expect(page.locator("#decoder-tab")).toBeFocused();
+  await expect(page.locator("#help-menu-trigger")).toBeFocused();
 });
 
 test("opening Help preserves ongoing acquisition and sample capture", async ({
