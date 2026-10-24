@@ -11,6 +11,11 @@ on:
         required: true
         type: string
 
+      release_stamp:
+        description: Optional frozen release identity JSON from the private stamped operator
+        required: false
+        type: string
+
 permissions:
   contents: read
 
@@ -40,6 +45,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Set frozen release identity flags
+        env:
+          BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
+        run: node scripts/browser-stamped-artifact.mjs env
+
       - name: Lint
         run: npm run lint
 
@@ -58,8 +68,10 @@ jobs:
       - name: Run unit and integration tests
         run: npm test -- --reporter=verbose
 
-      - name: Build production bundle
-        run: npm run build:verified
+      - name: Build production bundle once, optionally with frozen release stamps
+        env:
+          BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
+        run: node scripts/browser-stamped-artifact.mjs build
 
       - name: Check initial JavaScript and map byte budgets
         run: npm run test:performance && npm run performance:check
@@ -99,6 +111,11 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Set frozen release identity flags
+        env:
+          BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
+        run: node scripts/browser-stamped-artifact.mjs env
 
       - name: Install Chromium for browser integration tests
         run: npx playwright install --with-deps chromium
@@ -159,6 +176,11 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Set frozen release identity flags
+        env:
+          BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
+        run: node scripts/browser-stamped-artifact.mjs env
 
       - name: Download every browser shard
         uses: actions/download-artifact@v4

@@ -11,17 +11,21 @@ import { createHash } from "node:crypto";
 import { fingerprintCommunityEvidence } from "./community-evidence-fingerprint.mjs";
 import { runBrowserChecks } from "./run-browser-checks.mjs";
 import { sharingCheckProxy } from "./sharing-check-proxy.mjs";
+import { treeHashes } from "./browser-build.mjs";
+import { assertSameIds, digest } from "./browser-coverage.mjs";
+import { verifyStampedCoverage } from "./browser-stamped-artifact.mjs";
 import { runReleaseRisk } from "./browser-release-risk.mjs";
 
 // Run against the actual stamped payload using the exact frozen source's tests.
-const [siteArgument, sourceArgument, mode = "full"] = process.argv.slice(2);
+const [siteArgument, sourceArgument, mode = "full", artifactsArgument] =
+  process.argv.slice(2);
 if (
   !siteArgument ||
   !sourceArgument ||
-  !["full", "access", "risk"].includes(mode)
+  !["full", "access", "risk", "promote"].includes(mode)
 )
   throw new Error(
-    "Usage: check-community-release.mjs SITE FROZEN_SOURCE [full|access|risk]",
+    "Usage: check-community-release.mjs SITE FROZEN_SOURCE [full|access|risk|promote ARTIFACTS]",
   );
 const site = resolve(siteArgument),
   source = resolve(sourceArgument);
@@ -54,6 +58,27 @@ const flags = Object.fromEntries(
 for (const feature of Object.values(policy.features))
   feature.buildContext.flags = flags;
 const fingerprints = fingerprintCommunityEvidence(source, policy);
+const promoted =
+  mode === "promote"
+    ? verifyStampedCoverage(source, resolve(artifactsArgument), metadata)
+    : undefined;
+const testedFiles = promoted ? treeHashes(site) : undefined;
+if (
+  promoted &&
+  JSON.stringify(testedFiles) !== JSON.stringify(promoted.tested.files)
+)
+  throw new Error("Packaged site differs from the tested stamped artifact");
+// Service-dependent cases remain a separate actual API/TURN obligation.
+const serviceInventory = promoted?.production[0].full.filter(
+  (test) => test.file === "live-sharing.e2e.ts",
+);
+if (promoted && !serviceInventory.length)
+  throw new Error("Missing actual-service inventory");
+const normalized = (tests) =>
+  tests.map(({ file, titles, repeat }) => {
+    const identity = { project: "", file, titles, repeat };
+    return { ...identity, id: digest(identity) };
+  });
 const work = resolve(
   process.env.BSD_COMMUNITY_CHECK_OUTPUT ??
     join(source, ".local/community-release-check"),
@@ -71,6 +96,14 @@ const mime = {
   ".webp": "image/webp",
   ".webmanifest": "application/manifest+json",
 };
+if (
+  promoted &&
+  (process.env.BSD_E2E_SHARING_REAL !== "1" ||
+    process.env.BSD_E2E_SHARING_RELAY !== "1")
+)
+  throw new Error(
+    "Promotion requires the actual packaged API and owned TURN relay",
+  );
 const sharingProxy = sharingCheckProxy(process.env, mode !== "access");
 const server = createServer((request, response) => {
   if (sharingProxy(request, response)) return;
@@ -107,7 +140,9 @@ const config = join(work, "playwright.config.mjs");
 const files =
   mode === "access"
     ? ["**/browser.e2e.ts", "**/hackrf.e2e.ts", "**/recovery.e2e.ts"]
-    : undefined;
+    : mode === "promote"
+      ? ["**/live-sharing.e2e.ts"]
+      : undefined;
 const grep =
   mode === "access"
     ? "pending permission is cancelled|failed device close retains|cancelled USB chooser|HackRF real pipeline with mocked USB|HackRF wideband keeps|live RTL rate selection"
@@ -134,6 +169,10 @@ try {
       root: source,
       config,
       output: join(work, "guarded"),
+      inventoryCheck: promoted
+        ? (tests) =>
+            assertSameIds(normalized(serviceInventory), normalized(tests))
+        : undefined,
       env: {
         ...process.env,
         VITE_BUILD_ID: metadata.release,
@@ -148,9 +187,20 @@ try {
     if (
       results.stats.unexpected ||
       results.stats.flaky ||
-      results.stats.expected < (mode === "access" ? 7 : 100)
+      results.stats.expected <
+        (mode === "access"
+          ? 7
+          : mode === "promote"
+            ? serviceInventory.length
+            : 100)
     )
       throw new Error("Incomplete stamped integration results");
+    if (promoted) {
+      verifyStampedCoverage(source, resolve(artifactsArgument), metadata);
+      if (JSON.stringify(treeHashes(site)) !== JSON.stringify(testedFiles))
+        throw new Error("Stamped site changed during actual-service checks");
+    }
+    const allProduction = promoted?.production.flatMap((r) => r.actual);
     const check = {
       checkedAt: new Date().toISOString(),
       features:
@@ -161,9 +211,22 @@ try {
       kind:
         mode === "access"
           ? "Mocked WebUSB connection/ownership integration"
-          : "Full stamped Chromium integration",
-      tests: results.stats.expected,
-      skipped: results.stats.skipped,
+          : promoted
+            ? "Full stamped hosted Chromium plus actual packaged API/TURN integration"
+            : "Full stamped Chromium integration",
+      tests: allProduction
+        ? allProduction.filter((t) => t.results[0].status === "passed").length
+        : results.stats.expected,
+      skipped: allProduction
+        ? allProduction.filter((t) => t.results[0].status === "skipped").length
+        : results.stats.skipped,
+      ...(promoted
+        ? {
+            actualServiceTests: results.stats.expected,
+            testedSiteSha256: digest(testedFiles),
+            buildReceiptSha256: promoted.tested.receiptSha256,
+          }
+        : {}),
     };
     const audit = {
       schemaVersion: 1,

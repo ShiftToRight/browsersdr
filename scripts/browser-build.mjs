@@ -114,7 +114,12 @@ export function writeBuildReceipt(root, path, env = process.env) {
   writeFileSync(path, JSON.stringify(receipt, null, 2) + "\n", { flag: "wx" });
   return receipt;
 }
-export function verifyBuildReceipt(root, path, env = process.env) {
+export function verifyBuildReceipt(
+  root,
+  path,
+  env = process.env,
+  artifact = join(root, "dist"),
+) {
   const receipt = JSON.parse(readFileSync(path));
   if (
     receipt.schemaVersion !== 1 ||
@@ -123,10 +128,7 @@ export function verifyBuildReceipt(root, path, env = process.env) {
     throw new Error(
       "Prebuilt source/tool/build flags changed; build a fresh artifact",
     );
-  if (
-    JSON.stringify(receipt.files) !==
-    JSON.stringify(treeHashes(join(root, "dist")))
-  )
+  if (JSON.stringify(receipt.files) !== JSON.stringify(treeHashes(artifact)))
     throw new Error("Prebuilt artifact bytes or inventory changed");
   return { receiptSha256: hash(readFileSync(path)), files: receipt.files };
 }
