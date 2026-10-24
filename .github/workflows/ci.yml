@@ -1,8 +1,15 @@
 name: CI
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Browser qualification {0}', inputs.qualification_id) || format('CI {0}', github.sha) }}
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      qualification_id:
+        description: Unique UUID from the local qualification request
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,6 +21,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Validate dedicated qualification identity
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          QUALIFICATION_ID: ${{ inputs.qualification_id }}
+        run: python3 -c 'import os, sys, uuid; value = os.environ["QUALIFICATION_ID"]; sys.exit(str(uuid.UUID(value)) != value)'
 
       - name: Check public source boundary
         run: node scripts/check-public-source.mjs
@@ -101,6 +114,24 @@ jobs:
         env:
           BSD_E2E_BUILD_RECEIPT: ${{ matrix.project == 'chromium-production' && 'test-results/browser-build.json' || '' }}
         run: npm run test:e2e:check -- --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --output=test-results/guarded
+
+      - name: Record dedicated qualification runner
+        if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+        env:
+          QUALIFICATION_ID: ${{ inputs.qualification_id }}
+          QUALIFICATION_PROJECT: ${{ matrix.project }}
+          QUALIFICATION_SHARD: ${{ matrix.shard }}
+        run: |
+          python3 - <<'PY'
+          import json, os, socket
+          from pathlib import Path
+          fields = ["GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SHA", "GITHUB_EVENT_NAME", "RUNNER_OS", "RUNNER_ARCH", "QUALIFICATION_ID", "QUALIFICATION_PROJECT", "QUALIFICATION_SHARD"]
+          result = {key: os.environ[key] for key in fields}
+          result["hostname"] = socket.gethostname()
+          target = Path("test-results/guarded/qualification-runner.json")
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps(result, indent=2) + "\n")
+          PY
 
       - name: Upload browser failure artifacts
         if: ${{ always() }}

@@ -2,9 +2,15 @@ import {
   openApplicationView,
   chooseReceiverMode,
 } from "./application-navigation";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test as base, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+
+// Keep the complete receiver-workflow group in a fresh normal browser worker.
+// All hooks, interactions, assertions and existing deadlines remain unchanged.
+const test = base.extend<object, { isolatedReceiverWorkflowWorker: boolean }>({
+  isolatedReceiverWorkflowWorker: [true, { scope: "worker", auto: true }],
+});
 
 const pageErrors = new WeakMap<Page, Error[]>();
 
