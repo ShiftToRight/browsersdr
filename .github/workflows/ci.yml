@@ -1,5 +1,5 @@
 name: CI
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Browser qualification {0}', inputs.qualification_id) || format('CI {0}', github.sha) }}
+run-name: ${{ inputs.promotion_run_id != '' && format('CI promotion {0}', inputs.qualification_id) || github.event_name == 'workflow_dispatch' && format('Browser qualification {0}', inputs.qualification_id) || format('CI {0}', github.sha) }}
 
 on:
   push:
@@ -11,6 +11,11 @@ on:
         required: true
         type: string
 
+      promotion_run_id:
+        description: Optional successful exact-SHA ordinary source run; fresh stability remains required
+        required: false
+        type: string
+
       release_stamp:
         description: Optional frozen release identity JSON from the private stamped operator
         required: false
@@ -18,9 +23,13 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   quality:
+    outputs:
+      promotion: ${{ steps.promotion.outputs.promotion }}
+      promotion_run_id: ${{ steps.promotion.outputs.promotion_run_id }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -79,6 +88,18 @@ jobs:
       - name: Verify static SEO documents and discovery files
         run: node scripts/verify-seo.mjs dist
 
+      - name: Record exact hosted runner and build context
+        run: node scripts/browser-promotion.mjs context
+
+      - name: Verify optional exact-source promotion evidence
+        id: promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BSD_PROMOTION_RUN_ID: ${{ inputs.promotion_run_id }}
+          BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
+          BSD_MAIN_PROMOTION_ENABLED: ${{ vars.BSD_MAIN_PROMOTION_ENABLED }}
+        run: node scripts/browser-promotion.mjs prepare
+
       - name: Retain the exact quality-checked production build
         uses: actions/upload-artifact@v4
         with:
@@ -87,6 +108,8 @@ jobs:
           path: |
             dist/
             test-results/browser-build.json
+            test-results/ci-context.json
+            test-results/promotion-source/
           if-no-files-found: error
           retention-days: 14
 
@@ -121,16 +144,23 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Download the quality-checked production build
-        if: ${{ matrix.project == 'chromium-production' }}
+        if: ${{ matrix.project == 'chromium-production' || needs.quality.outputs.promotion == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: browser-build
           path: .
 
       - name: Run browser integration tests
+        if: ${{ needs.quality.outputs.promotion != 'true' }}
         env:
           BSD_E2E_BUILD_RECEIPT: ${{ matrix.project == 'chromium-production' && 'test-results/browser-build.json' || '' }}
         run: npm run test:e2e:check -- --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --output=test-results/guarded
+
+      - name: Run every required independent promotion stability case
+        if: ${{ needs.quality.outputs.promotion == 'true' }}
+        env:
+          BSD_E2E_BUILD_RECEIPT: ${{ matrix.project == 'chromium-production' && 'test-results/browser-build.json' || '' }}
+        run: node scripts/browser-promotion.mjs stability ${{ matrix.project }} ${{ matrix.shard }}
 
       - name: Record dedicated qualification runner
         if: ${{ always() && github.event_name == 'workflow_dispatch' }}
@@ -160,7 +190,7 @@ jobs:
           retention-days: 14
 
   browser-coverage:
-    needs: browser
+    needs: [quality, browser]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -188,7 +218,21 @@ jobs:
           pattern: browser-check-*
           path: browser-artifacts
 
+      - name: Download current quality artifact and original evidence
+        if: ${{ needs.quality.outputs.promotion == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-build
+          path: .
+
+      - name: Require complete inherited coverage and fresh independent stability
+        if: ${{ needs.quality.outputs.promotion == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/browser-promotion.mjs verify browser-artifacts
+
       - name: Require complete development and production coverage
+        if: ${{ needs.quality.outputs.promotion != 'true' }}
         run: node scripts/verify-browser-shards.mjs browser-artifacts
 
       - name: Merge browser reports
@@ -218,5 +262,6 @@ jobs:
             playwright-report/
             merged-results.json
             browser-artifacts/coverage-summary.json
+            browser-artifacts/promotion-summary.json
           if-no-files-found: error
           retention-days: 14

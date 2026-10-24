@@ -1,0 +1,82 @@
+[
+  {
+    "file": "next-ux.e2e.ts",
+    "title": "frequency edits survive a delayed real sample-rate transaction without implicit retuning",
+    "reason": "Main CI previously exposed a delayed USB startup race."
+  },
+  {
+    "file": "signal-ux.e2e.ts",
+    "title": "19.2 MS/s channel capture completes five seconds while Search opens",
+    "reason": "Main CI previously exposed real-time processing queue capacity failure."
+  },
+  {
+    "file": "public-frequency-capture.e2e.ts",
+    "title": "19.2 MS/s capture preserves five seconds while a complete live frequency catalog is validated and saved",
+    "reason": "Independent high-rate workload and catalog validation."
+  },
+  {
+    "file": "browser.e2e.ts",
+    "title": "live RTL rate selection preserves USB and audio ownership and resumes automatically",
+    "reason": "USB ownership and restart reliability."
+  },
+  {
+    "file": "browser.e2e.ts",
+    "title": "synthetic processing survives StrictMode, stop/restart, source switch, and unmount",
+    "reason": "Worker and lifecycle reliability."
+  },
+  {
+    "file": "browser.e2e.ts",
+    "title": "pending permission is cancelled on unmount and late ownership is released",
+    "reason": "Late USB ownership cleanup."
+  },
+  {
+    "file": "browser.e2e.ts",
+    "title": "failed device close retains the single owner until retry succeeds",
+    "reason": "Failed close and single-owner recovery."
+  },
+  {
+    "file": "packet-decoders.e2e.ts",
+    "title": "APRS worker replay retains validated data at EOF and exports provenance",
+    "reason": "Real worker EOF and frozen export provenance."
+  },
+  {
+    "file": "packet-decoders.e2e.ts",
+    "title": "RS41 worker replay retains validated data at EOF and exports provenance",
+    "reason": "Real worker EOF and frozen export provenance."
+  },
+  {
+    "file": "offline-app.e2e.ts",
+    "title": "cold offline launch retains query state and runs first-use reception and recording",
+    "reason": "Cold offline first-use pipeline."
+  },
+  {
+    "file": "offline-app.e2e.ts",
+    "title": "a prepared update waits for every window while live capture and saved recordings survive",
+    "reason": "Cross-window update and recording preservation."
+  },
+  {
+    "file": "offline-app.e2e.ts",
+    "title": "a corrupt update keeps the complete old version usable offline",
+    "reason": "Corrupt update refusal and retained offline version."
+  },
+  {
+    "file": "decoder-workspace.e2e.ts",
+    "title": "ADS-B replay shows a reported symbol and received track with an inert display toggle",
+    "reason": "Real replay EOF, selection and symbol geometry; original DAB key model regressions also remain in fresh full units."
+  },
+  {
+    "file": "decoder-workspace.e2e.ts",
+    "title": "AIS replay shows a reported symbol and received track with an inert display toggle",
+    "reason": "Real replay EOF, selection and symbol geometry; original DAB key model regressions also remain in fresh full units."
+  },
+  {
+    "file": "text-modems.e2e.ts",
+    "title": "RTTY worker replay, EOF, text export and bounded Decoder messages",
+    "reason": "Real text worker EOF and retained decoder messages."
+  },
+  {
+    "file": "image-cw.e2e.ts",
+    "title": "WEFAX worker replay renders pixels, retains partial EOF image and exports PNG with provenance",
+    "reason": "Real image worker EOF and retained export provenance."
+  }
+]
