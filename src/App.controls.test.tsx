@@ -509,9 +509,12 @@ it("routes passive setup and scoped compatibility evidence to separate help-menu
 
 it("exposes licence, driver provenance, and privacy information in About", async () => {
   await click("About BrowserSDR");
-  expect(document.querySelector<HTMLDivElement>("#about-view")?.hidden).toBe(
-    false,
-  );
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(document.querySelector<HTMLDivElement>("#about-view")?.hidden).toBe(
+      false,
+    );
+  });
   expect(document.body.textContent).toContain("Licences, privacy & provenance");
   expect(document.body.textContent).toContain(
     "Automatic error reporting is on by default",

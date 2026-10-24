@@ -80,8 +80,14 @@ describe("versioned native CI8 capture", () => {
     const { recording } = await hackrfRecordingFixture();
     const metadata = recording.metadata;
     if (metadata.format !== CI8_RECORDING_FORMAT || !metadata.hardware) throw new Error("fixture");
-    for (const patch of [{ rxLnaGainCode: 8 }, { rxVgaGainDb: 3 }, { rfAmplifierEnabled: 1 }, { antennaPowerEnabled: true }, { appliedRateFixed36: "18446744073709551616" }]) {
+    for (const patch of [{ rxLnaGainCode: 8 }, { rxVgaGainDb: 3 }, { rfAmplifierEnabled: 1 }, { antennaPowerEnabled: 1 }, { antennaPowerEnabled: "on" }, { appliedRateFixed36: "18446744073709551616" }]) {
       expect(() => validateRecordingMetadata({ ...metadata, captureSettings: { ...metadata.captureSettings, ...patch } }, recording.data.length)).toThrow();
+    }
+    for (const antennaPowerEnabled of [false, true]) {
+      const powered = { ...metadata, captureSettings: { ...metadata.captureSettings!, antennaPowerEnabled } };
+      const parsed = parseRecording(JSON.stringify(powered), recording.data);
+      expect(parsed.metadata).toEqual(powered);
+      expect(parsed.data).toEqual(recording.data);
     }
     expect(() => validateRecordingMetadata({ ...metadata, hardware: { ...metadata.hardware, usbApiVersion: 1 } }, recording.data.length)).toThrow();
     expect(() => validateRecordingMetadata({ ...metadata, provenanceDetails: { ...metadata.provenanceDetails, hardwareValidation: "validated" } }, recording.data.length)).toThrow();
