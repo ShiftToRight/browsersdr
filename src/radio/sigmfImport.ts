@@ -206,6 +206,7 @@ export async function importSigmfRecording(
       format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: BYTES_PER_COMPLEX_SAMPLE,
       normalization: CU8_NORMALIZATION, gainDb: null,
     }),
+    ...(global["browsersdr:rtl_input"] ? {rtlInput:global["browsersdr:rtl_input"]} : {}),
     ...(receiverLocation ? { receiverLocation } : {}),
     sampleRateHz,
     centerFrequencyHz,

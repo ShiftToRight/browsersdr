@@ -59,6 +59,7 @@ export interface RdsSnapshot {
 
 /** Immutable metadata attached to one acquisition generation. */
 export interface SourceSessionMetadata {
+  rtlInput?: import("./rtlInput").RtlInputSettings;
   source: SourceKind;
   sessionGeneration: number;
   requestedSampleRateHz: number;

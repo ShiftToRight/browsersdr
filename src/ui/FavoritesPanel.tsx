@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
 import { useOverlayDialog } from "./useOverlayDialog";
 import {
-  BOOKMARK_KEY,
   MAX_BOOKMARK_BYTES,
   exportBookmarks,
   importBookmarks,
@@ -14,74 +13,10 @@ import {
 import { defaultModeSettings, RECEIVER_MODES } from "../radio/receiverConfig";
 import { atlasStationUrl } from "../radio/atlasStationNavigation";
 
-function readFavorites(): {
-  items: Bookmark[];
-  message: string;
-  corrupt: boolean;
-} {
-  let saved: string | null;
-  try {
-    saved = localStorage.getItem(BOOKMARK_KEY);
-  } catch {
-    return {
-      items: [],
-      message:
-        "Browser storage is unavailable. Favorites can be used in this tab; export a backup before closing it.",
-      corrupt: false,
-    };
-  }
-  try {
-    return {
-      items: saved ? importBookmarks(saved) : [],
-      message: "",
-      corrupt: false,
-    };
-  } catch {
-    return {
-      items: [],
-      message:
-        "Saved favorites could not be read. Import a valid backup to restore them. Existing browser data has been preserved.",
-      corrupt: true,
-    };
-  }
-}
-export function useFavorites() {
-  const [state, setState] = useState(readFavorites);
-  const latest = useRef(state);
-  latest.current = state;
-  const change = (
-    update: (items: Bookmark[]) => Bookmark[],
-    restore = false,
-  ) => {
-    const old = latest.current;
-    if (old.corrupt && !restore) throw new Error(old.message);
-    const items = importBookmarks(exportBookmarks(update(old.items)));
-    let message = "";
-    try {
-      localStorage.setItem(BOOKMARK_KEY, exportBookmarks(items));
-    } catch {
-      message =
-        "Favorites are available in this tab, but browser storage failed. Export a backup before closing it.";
-    }
-    const next = { items, message, corrupt: false };
-    latest.current = next;
-    setState(next);
-  };
-  useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key === BOOKMARK_KEY || event.key === null) {
-        const next = readFavorites();
-        latest.current = next;
-        setState(next);
-      }
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
-  return { ...state, change };
-}
+export { useFavorites } from "./useFavorites";
 
 export function FavoritesPanel({
+  initialOpen = false,
   items,
   storageMessage,
   draft,
@@ -93,6 +28,7 @@ export function FavoritesPanel({
   blockedReason,
   saveBlockedReason,
 }: {
+  initialOpen?: boolean;
   items: Bookmark[];
   storageMessage: string;
   draft?: Bookmark;
@@ -114,7 +50,7 @@ export function FavoritesPanel({
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const dialogId = useId();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   useEffect(() => {
     if (draft) setOpen(true);
   }, [draft]);

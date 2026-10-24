@@ -66,7 +66,7 @@ export class HackrfProtocol {
       if ((await this.io.input(request, 0, value, 1)).getUint8(0) !== 1) throw new Error("HackRF RX gain setter rejected its value.");
     }
     await this.io.output(17, config.settings.rfAmplifierEnabled ? 1 : 0, 0);
-    await this.io.output(23, 0, 0); await this.io.output(29, 0, 0);
+    await this.io.output(23, config.settings.antennaPowerEnabled ? 1 : 0, 0); await this.io.output(29, 0, 0);
     const session = await this.reported(identity, config, false);
     await this.verifyFpga(session, true);
     return session;
@@ -91,6 +91,8 @@ export class HackrfProtocol {
     }
     if (config.settings.rfAmplifierEnabled !== accepted.rfAmplifierEnabled)
       await this.io.output(17, config.settings.rfAmplifierEnabled ? 1 : 0, 0);
+    if (config.settings.antennaPowerEnabled !== accepted.antennaPowerEnabled)
+      await this.io.output(23, config.settings.antennaPowerEnabled ? 1 : 0, 0);
     if (identity.kind === "hackrf-pro" && !isStableHackrfApi(identity.usbApiVersion))
       return this.reported(identity, config, true);
     const session = structuredClone(previous);
@@ -161,7 +163,7 @@ export class HackrfProtocol {
       if ((await this.io.input(request, 0, gain, 1)).getUint8(0) !== 1) throw new Error("HackRF RX gain setter rejected its value.");
     }
     await this.io.output(17, config.settings.rfAmplifierEnabled ? 1 : 0, 0);
-    await this.io.output(23, 0, 0);
+    await this.io.output(23, config.settings.antennaPowerEnabled ? 1 : 0, 0);
     await this.io.output(29, 0, 0);
   }
   private async configureStable(identity: HackrfIdentity, config: HackrfConfiguration): Promise<HackrfConfiguredSession> {
@@ -169,7 +171,7 @@ export class HackrfProtocol {
     await this.io.output(48, 0x36, 0);
     await this.io.output(1, 0, 0);
     await this.waitStableMode(0);
-    await this.io.output(23, 0, 0);
+    await this.io.output(23, config.settings.antennaPowerEnabled ? 1 : 0, 0);
     await this.io.output(54, 0, 0);
     // Standard 8-bit layout: CTRL=1, RX_DECIM=2, TX_CTRL=3, TX_INTRP=4, TX_PSTEP=5.
     // Direct writes also synchronize firmware's register cache after image loading.
@@ -228,7 +230,7 @@ export class HackrfProtocol {
         || Math.abs(decodeHackrfFixed(val(1), 24) - config.centerFrequencyHz) > 1_000
         || ![0n, 0x40000000n, 0xc0000000n].includes(val(5))
         || val(12) !== BigInt(config.settings.rxLnaGainCode) || val(13) !== BigInt(config.settings.rxVgaGainDb)
-        || val(20) !== 0n || val(21) !== 0n || val(22) !== 1n
+        || val(20) !== BigInt(config.settings.antennaPowerEnabled ? 1 : 0) || val(21) !== 0n || val(22) !== 1n
         || (receiving && val(11) !== BigInt(config.settings.rfAmplifierEnabled ? 1 : 0))) return;
       return registers;
     });

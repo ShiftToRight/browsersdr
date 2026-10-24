@@ -16,6 +16,7 @@ export interface RecordingKernels {
 }
 
 export interface RecordingOptions {
+  vfo?: "A" | "B";
   receiverLocation?: import("./receiverLocation").ReceiverLocation;
   captureCurrentChannel?: boolean;
   storageMode?: "memory" | "opfs";

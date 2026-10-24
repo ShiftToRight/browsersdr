@@ -873,7 +873,6 @@ export function WebGpuSpectrum({
             <h2 id="graphics-heading">Spectrum & waterfall</h2>
           </div>
         </div>
-        <span className={`status-pill status-${state.kind}`}>{state.kind === "ready" ? "Display ready" : state.kind}</span>
         <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
           coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
           onPlanChange={setRasterRegion} onHeightChange={setGuideGap} /></Suspense>

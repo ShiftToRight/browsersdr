@@ -99,10 +99,7 @@ test("favorites save, edit, search, reorder, recall and round trip JSON without 
   await panel
     .getByRole("button", { name: "Move Second up", exact: true })
     .click();
-  expect(await panel.locator("li strong").allTextContents()).toEqual([
-    "Second",
-    "Local FM",
-  ]);
+  await expect(panel.locator("li strong")).toHaveText(["Second", "Local FM"]);
   await panel.getByLabel("Search favorites").fill("local");
   await expect(panel.locator("li")).toHaveCount(1);
   await panel.getByRole("button", { name: "Edit", exact: true }).click();
@@ -115,10 +112,7 @@ test("favorites save, edit, search, reorder, recall and round trip JSON without 
   await panel.getByLabel("Search favorites").fill("");
   await page.reload();
   await page.getByRole("button", { name: /^Favorites/ }).click();
-  expect(await panel.locator("li strong").allTextContents()).toEqual([
-    "Second",
-    "Local FM",
-  ]);
+  await expect(panel.locator("li strong")).toHaveText(["Second", "Local FM"]);
   await expect(panel).toContainText("Personal reception note");
   await panel
     .getByRole("button", { name: "Recall Local FM", exact: true })

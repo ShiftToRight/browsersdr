@@ -242,6 +242,7 @@ export class BladeRfBackend implements ReceiverBackend {
         )
           return;
         validateBladeRfBlock(block, this.configured.details);
+        this.events.captureSamples?.(block.bytes,this.metadata);
         if (this.recorder) {
           if (this.recorder.status().sampleCount === 0)
             this.recorder.setCaptureStartedAt(new Date().toISOString());
@@ -315,6 +316,7 @@ export class BladeRfBackend implements ReceiverBackend {
     this.pipeline.selectDabService(key);
   }
 
+  configureSecondaryVfo(settings?: import("./secondaryVfo").SecondaryVfoSettings) { return this.pipeline.configureSecondaryVfo(settings); }
   setVolume(volume: number): void {
     this.volume = volume;
     this.pipeline.setVolume(volume);
@@ -516,7 +518,7 @@ export class BladeRfBackend implements ReceiverBackend {
       throw new Error("Finish or retrieve the existing recording first.");
     const details = this.configured.details;
     this.recorder = new IqRecorder(
-      { ...this.metadata, actualSampleRateHz: details.acceptedSampleRateHz },
+      options?.vfo === "B" ? this.pipeline.recordingContext({ ...this.metadata, actualSampleRateHz: details.acceptedSampleRateHz },"B") : { ...this.metadata, actualSampleRateHz: details.acceptedSampleRateHz },
       undefined,
       undefined,
       `bladeRF ${details.identity.model} receive-only native SC16 Q11 I/Q bytes unchanged. Host timestamps and sample accounting do not prove hardware continuity.`,

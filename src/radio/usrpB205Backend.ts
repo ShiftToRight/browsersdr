@@ -61,7 +61,7 @@ import {
   LiveReceiverPipeline,
   type LiveReceiverDependencies,
 } from "./liveReceiverPipeline";
-import type { UsrpB205SourceSessionMetadata } from "./types";
+import type { SourceSessionMetadata, UsrpB205SourceSessionMetadata } from "./types";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
 import type { ChannelDiagnostics } from "./widebandChannel";
 import { DEFAULT_USRP_B205_RX_SETTINGS } from "./usrpB205Capabilities";
@@ -106,6 +106,8 @@ export interface UsrpB205PipelinePort extends SampleReceiver {
   reset(): void;
   suspend(): Promise<void>;
   close(): Promise<void>;
+  configureSecondaryVfo?(settings?: import("./secondaryVfo").SecondaryVfoSettings): Promise<void>;
+  recordingContext?(metadata:SourceSessionMetadata,target:"A"|"B"):SourceSessionMetadata;
   setVolume(volume: number): void;
   updateAnalogMode(settings: ReceiverModeSettings): void;
   selectDabService(key: string): void;
@@ -211,6 +213,7 @@ export class Usrpb205Backend implements ReceiverBackend {
       this.pipeline,
       (block) => {
         dependencies.nativeCapture?.(block, this.metadata!);
+        if (this.receiving && this.metadata) this.events.captureSamples?.(block.bytes,this.metadata,block.discontinuityBefore ?? undefined);
         if (!this.recorder) return;
         if (block.discontinuityBefore)
           this.recorder.addGap(block.discontinuityBefore.missingSamples, block.discontinuityBefore.reason);
@@ -662,6 +665,10 @@ export class Usrpb205Backend implements ReceiverBackend {
     return this.result();
   }
 
+  configureSecondaryVfo(settings?: import("./secondaryVfo").SecondaryVfoSettings) {
+    if (!this.pipeline.configureSecondaryVfo) return Promise.reject(new Error("VFO B is unavailable on this pipeline."));
+    return this.pipeline.configureSecondaryVfo(settings);
+  }
   setVolume(volume: number): void {
     this.volume = volume;
     this.pipeline.setVolume(volume);
@@ -682,8 +689,10 @@ export class Usrpb205Backend implements ReceiverBackend {
       throw new Error("USRP B205-mini is not receiving.");
     if (this.recorder || this.completedRecording)
       throw new Error("Finish or retrieve the existing recording first.");
+    if (options?.vfo === "B" && !this.pipeline.recordingContext) throw new Error("VFO B recording is unavailable on this pipeline.");
+    const context = options?.vfo === "B" ? this.pipeline.recordingContext!(this.metadata,"B") : this.metadata;
     this.recorder = new IqRecorder(
-      this.metadata,
+      context,
       undefined,
       undefined,
       "USRP B205-mini receive-only WebUSB capture. Native little-endian Q/I sample words were reordered losslessly to SigMF ci16_le I/Q; amplitudes are uncalibrated.",

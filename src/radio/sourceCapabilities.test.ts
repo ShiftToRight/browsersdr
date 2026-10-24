@@ -78,7 +78,8 @@ describe("source capabilities and requests", () => {
     for (const rxLnaGainCode of [0, 16, 33] as const) {
       for (const rxVgaGainDb of [0, 12, 62]) expect(() => validateHackrfRxSettings({ ...DEFAULT_HACKRF_RX_SETTINGS, rxLnaGainCode, rxVgaGainDb, rfAmplifierEnabled: true })).not.toThrow();
     }
-    for (const patch of [{ rxLnaGainCode: 32 }, { rxLnaGainCode: NaN }, { rxVgaGainDb: 1 }, { rxVgaGainDb: 64 }, { rxVgaGainDb: -2 }, { rxVgaGainDb: 2.5 }, { rxVgaGainDb: Infinity }, { antennaPowerEnabled: true }, { rfAmplifierEnabled: 1 }]) {
+    expect(validateHackrfRxSettings({...DEFAULT_HACKRF_RX_SETTINGS, antennaPowerEnabled:true}).antennaPowerEnabled).toBe(true);
+    for (const patch of [{ rxLnaGainCode: 32 }, { rxLnaGainCode: NaN }, { rxVgaGainDb: 1 }, { rxVgaGainDb: 64 }, { rxVgaGainDb: -2 }, { rxVgaGainDb: 2.5 }, { rxVgaGainDb: Infinity }, { antennaPowerEnabled: "on" }, { rfAmplifierEnabled: 1 }]) {
       expect(() => validateHackrfRxSettings({ ...DEFAULT_HACKRF_RX_SETTINGS, ...patch } as HackrfRxSettings)).toThrow();
     }
     expect(() => validateOptions({ ...options, source: "hackrf", gainDb: null })).toThrow(/stage/);

@@ -25,9 +25,9 @@ test("header keeps receiver, spectrum, and recording states independent across v
   await expect(status.locator("summary").first()).toContainText("Receiving");
   await expect(status.locator("summary").first()).not.toContainText("issue");
   await status.locator("summary").first().click();
-  await expect(
-    status.getByRole("button", { name: /^Spectrum:/ }),
-  ).toContainText("Working");
+  await expect(status.getByRole("button", { name: /^Display:/ })).toContainText(
+    "Working",
+  );
   await expect(status.getByRole("button", { name: /^Audio:/ })).toContainText(
     "Not used",
   );
@@ -51,7 +51,7 @@ test("header keeps receiver, spectrum, and recording states independent across v
   await expect(
     status.getByRole("button", { name: /^Recording:/ }),
   ).toContainText("Ready to download");
-  await status.getByRole("button", { name: /^Spectrum:/ }).click();
+  await status.getByRole("button", { name: /^Display:/ }).click();
   await expect(
     page.getByRole("region", { name: "Diagnostics", exact: true }),
   ).toBeVisible();

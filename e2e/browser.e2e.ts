@@ -1417,9 +1417,13 @@ test("WebGPU absence is an actionable fallback", async ({ page }) => {
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-    "Display ready",
-  );
+  await page.locator(".receiver-status-menu > summary").click();
+  await expect(
+    page
+      .locator(".receiver-health-panel")
+      .getByRole("button", { name: /^Display:/ }),
+  ).toHaveAttribute("aria-label", /Available|Working/);
+  await page.keyboard.press("Escape");
   await openApplicationView(page, "Diagnostics");
   await expect(
     page

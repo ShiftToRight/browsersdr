@@ -14,6 +14,7 @@ export const SIGMF_VERSION = "1.2.6" as const;
 export const SIGMF_RECORDER = "BrowserSDR" as const;
 
 export interface SigmfGlobal {
+  "browsersdr:rtl_input"?: import("./rtlInput").RtlInputSettings;
   "browsersdr:pocsag"?: PocsagSettings;
   "browsersdr:reception"?: import("./receptionEvidence").ReceptionContext;
   "core:datatype": "cu8" | "ci8" | "ci16_le";
@@ -267,6 +268,7 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
       "core:version": SIGMF_VERSION,
       "core:sample_rate": metadata.sampleRateHz,
       "core:recorder": SIGMF_RECORDER,
+      ...(metadata.rtlInput ? {"browsersdr:rtl_input": metadata.rtlInput, "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }] } : {}),
       "core:sha512": await recordingSha512Hex(recording),
       "core:description": describeRecording(recording),
       ...(metadata.mode === "POCSAG" && metadata.pocsag ? {"core:extensions": [{name:"browsersdr" as const,version:"1.0.0" as const,optional:true as const}], "browsersdr:pocsag":metadata.pocsag} : {}),

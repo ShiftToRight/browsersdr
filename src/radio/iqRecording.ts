@@ -1,3 +1,4 @@
+import { normalizeRtlInput } from "./rtlInput";
 import type { PocsagSettings } from "../pocsag/settings";
 import type { TextModemSettings } from "../textmodem/settings";
 import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, RTL_EXPERIMENTAL_CAPTURE_PROVENANCE } from "./rtlSampleRate";
@@ -53,6 +54,7 @@ export interface Cu8RecordingFormat {
 export type RecordingSampleFormat = Cu8RecordingFormat | Ci8RecordingFormat | UsrpB205Ci16RecordingFormat | BladeRfSc16RecordingFormat | ChannelRecordingFormat;
 export const CU8_FORMAT: Cu8RecordingFormat = { format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: 2, normalization: CU8_NORMALIZATION };
 interface CommonRecordingMetadata {
+  rtlInput?: import("./rtlInput").RtlInputSettings;
   receiverLocation?: ReceiverLocation;
   reception?: import("./receptionEvidence").ReceptionContext;
   sampleRateHz: number;
@@ -498,6 +500,7 @@ export class IqRecorder {
         squelch: this.session.squelch,
         ...(this.session.beatToneHz !== undefined ? { beatToneHz: this.session.beatToneHz } : {}),
         ...(this.session.srd !== undefined ? { srd: structuredClone(this.session.srd) } : {}),
+        ...(this.session.rtlInput ? {rtlInput:structuredClone(this.session.rtlInput)} : {}),
         ...(this.session.pocsag !== undefined ? { pocsag: structuredClone(this.session.pocsag) } : {}),
         ...(this.session.textModem !== undefined ? { textModem: structuredClone(this.session.textModem) } : {}),
         ...(this.encoding.format === RECORDING_FORMAT ? { gainDb: this.session.gainDb } : {}),
@@ -608,6 +611,7 @@ export function validateRecordingMetadata(
     if (typeof gap.reason !== "string" || gap.reason.length > 1024) throw new Error("Recording metadata contains an invalid gap reason.");
   }
   if ((metadata.sampleCount! + missingSamples) / metadata.sampleRateHz > 3600) throw new Error("Replay duration including known gaps exceeds one hour.");
+  if (metadata.rtlInput !== undefined) normalizeRtlInput(metadata.rtlInput);
   return structuredClone({ ...metadata, ...(receiverLocation ? { receiverLocation } : {}), ...(settings.srd ? { srd: settings.srd } : {}), ...(settings.textModem ? { textModem: settings.textModem } : {}), ...(settings.pocsag ? {pocsag:settings.pocsag} : {}), ...(survey ? { survey } : {}), knownGaps: metadata.knownGaps.map((gap) => ({ ...gap })) }) as IqRecordingMetadata;
 }
 

@@ -32,7 +32,21 @@ export function ReceiverHealth({
   const running = receiver.lifecycle === "running";
   const noAudio =
     receiver.session?.source === "synthetic" ||
-    ["OFF", "ADS-B", "AIS", "SRD", "POCSAG", "APRS", "RS41", "RTTY", "PSK31", "NAVTEX", "ACARS", "WEFAX", "SSTV"].includes(receiver.session?.mode ?? "");
+    [
+      "OFF",
+      "ADS-B",
+      "AIS",
+      "SRD",
+      "POCSAG",
+      "APRS",
+      "RS41",
+      "RTTY",
+      "PSK31",
+      "NAVTEX",
+      "ACARS",
+      "WEFAX",
+      "SSTV",
+    ].includes(receiver.session?.mode ?? "");
   const graphicsFailed =
     spectrum.kind === "unsupported" || spectrum.kind === "error";
   const readyRecording =
@@ -41,7 +55,9 @@ export function ReceiverHealth({
     {
       label: "Receiver",
       text: running
-        ? receiver.session?.source === "replay" ? "● Replaying" : "● Receiving"
+        ? receiver.session?.source === "replay"
+          ? "● Replaying"
+          : "● Receiving"
         : receiver.lifecycle === "connected"
           ? "✓ Connected"
           : receiver.issue?.code === "selection-cancelled"
@@ -52,7 +68,13 @@ export function ReceiverHealth({
                 ? "Not connected"
                 : receiver.lifecycle.replaceAll("-", " "),
       good: running || receiver.lifecycle === "connected",
-      attention: receiver.issue?.code !== "selection-cancelled" && Boolean(receiver.issue || receiver.cleanupRequired || receiver.lifecycle === "error"),
+      attention:
+        receiver.issue?.code !== "selection-cancelled" &&
+        Boolean(
+          receiver.issue ||
+          receiver.cleanupRequired ||
+          receiver.lifecycle === "error",
+        ),
     },
     {
       label: "Audio",
@@ -82,7 +104,7 @@ export function ReceiverHealth({
           typeof AudioContext === "undefined"),
     },
     {
-      label: "Spectrum",
+      label: compact && includeReceiver ? "Display" : "Spectrum",
       text: graphicsFailed
         ? "Display unavailable"
         : spectrum.paused
@@ -109,7 +131,7 @@ export function ReceiverHealth({
             : spectrum.kind === "ready" && spectrum.hasFrame && running
               ? "Working"
               : spectrum.kind === "ready"
-                ? "Waiting"
+                ? "Ready · waiting"
                 : "Checking",
       attention: graphicsFailed || Boolean(spectrum.stalled && running),
     },
@@ -150,12 +172,14 @@ export function ReceiverHealth({
       Receiver: "radio",
       Audio: "volume",
       Spectrum: "activity",
+      Display: "activity",
       Recording: "record",
     };
     const actions: Record<string, () => void> = {
       Receiver: onReceiver,
       Audio: onReceiver,
       Spectrum: onSpectrum,
+      Display: onSpectrum,
       Recording: onRecording,
     };
     return (
@@ -170,7 +194,7 @@ export function ReceiverHealth({
             <button
               key={item.label}
               type="button"
-              className={`health-indicator${item.attention ? " needs-attention" : item.good ? " is-working" : ""}`}
+              className={`health-indicator secondary${item.attention ? " needs-attention" : item.good && item.label !== "Display" ? " is-working" : ""}`}
               aria-label={`${item.label}: ${item.text}. Review ${item.label.toLowerCase()}.`}
               onClick={actions[item.label]}
             >
@@ -207,9 +231,7 @@ export function ReceiverHealth({
             </p>
             {receiver.issue &&
               receiver.issue.code !== "selection-cancelled" && (
-                <p>
-                  Open receiver status in the header for recovery steps.
-                </p>
+                <p>Open receiver status in the header for recovery steps.</p>
               )}
             <button type="button" onClick={onReceiver}>
               {receiver.cleanupRequired

@@ -1,3 +1,4 @@
+import type { SecondaryVfo, SecondaryVfoSettings } from "./secondaryVfo";
 import { PocsagDigitalReceiver } from "../pocsag/pocsagDigitalReceiver";
 import { pocsagConfiguration } from "../pocsag/settings";
 import type { DigitalInputSampleRateHz } from "../digital/inputRates";
@@ -78,6 +79,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
   private selectedDabServiceKey?: string;
   private selectedDabFrequencyHz?: number;
   private requestedDabServiceKey?: string;
+  private secondary?: SecondaryVfo;
+  private secondaryEpoch = 0;
   private volume = 0;
   private readonly adsb: AdsbReceiver;
   private readonly ais: AisReceiver;
@@ -112,6 +115,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       new AudioPlayer({ newAudioContext: () => this.audioContext }),
       () => audioSourceDescription(this.metadata),
       this.audioContext,
+      () => this.secondary?.settings?.recordAudio !== true,
     );
     this.rds = new RdsMultiplexReceiver((value) => events.rdsChanged(value));
     this.demodulator =
@@ -125,6 +129,21 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.adsb = new AdsbReceiver((value) => events.adsbChanged?.(value));
     this.ais = new AisReceiver((value) => events.aisChanged?.(value));
     this.receiver = new AudioFirstRdsReceiver(this.demodulator, this.rds);
+  }
+  recordingContext(metadata: SourceSessionMetadata, target: "A"|"B"): SourceSessionMetadata {
+    if (target === "A") return metadata;
+    const selected=this.secondary?.settings;
+    if (!this.enabled || !selected) throw new Error("Enable VFO B before selecting it for I/Q recording.");
+    return {...metadata,selectedChannelFrequencyHz:selected.frequencyHz,mode:selected.mode,channelBandwidthHz:selected.bandwidthHz,squelch:selected.squelch,beatToneHz:selected.mode === "CW" ? 600 : undefined,srd:undefined,textModem:undefined,pocsag:undefined};
+  }
+  async configureSecondaryVfo(settings?: SecondaryVfoSettings): Promise<void> {
+    const epoch = ++this.secondaryEpoch;
+    if (!settings) { this.secondary?.stop(); return; }
+    if (!this.enabled || !this.metadata) throw new Error("Start reception before enabling VFO B.");
+    const { SecondaryVfo } = await import("./secondaryVfo");
+    if (epoch !== this.secondaryEpoch || !this.enabled || this.closing) return;
+    this.secondary ??= new SecondaryVfo(this.audioContext, (value, message) => this.events.secondaryVfoChanged?.(value,message), this.dependencies.createChannelWorker);
+    await this.secondary.configure(settings,this.metadata);
   }
   private ensureDabResources() {
     return this.dabResources ??= this.createDabResources();
@@ -241,6 +260,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     if (!this.enabled || block.frequency !== this.centerFrequencyHz) return;
     this.rawAnalysis?.receiveSamples(block);
     if (!this.outputEnabled) return;
+    this.secondary?.receive(block);
     if (this.channel) this.channel.receive(block, this.selectedFrequency);
     else this.receiver.receiveSamples(block);
   }
@@ -251,6 +271,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       return true;
     }
     if (!this.channel) return false;
+    this.secondary?.native(bytes, frequency, "ci8");
     this.analysis?.receiveCi8(bytes, frequency, this.generation!, this.timings);
     this.channel.receiveCi8(bytes, this.selectedFrequency);
     return true;
@@ -267,6 +288,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       return true;
     }
     if (!this.channel) return false;
+    this.secondary?.native(bytes, frequency, "sc16");
     this.analysis?.receiveSc16(
       bytes,
       frequency,
@@ -283,6 +305,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
       return true;
     }
     if (!this.channel) return false;
+    this.secondary?.native(bytes, frequency, "usrp-sc16");
     this.analysis?.receiveUsrpSc16(bytes, frequency, this.generation!, this.timings);
     this.channel.receiveUsrpSc16(bytes, this.selectedFrequency);
     return true;
@@ -341,6 +364,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
     this.metadata = structuredClone(metadata);
+    this.secondary?.retune(metadata);
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
     this.generation = metadata.sessionGeneration;
     this.rawAnalysis = this.analysis?.begin(metadata);
@@ -358,6 +382,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
     this.route(metadata);
     this.centerFrequencyHz = metadata.hardwareCenterFrequencyHz;
     this.metadata = structuredClone(metadata);
+    this.secondary?.retune(metadata);
     this.selectedFrequency = metadata.selectedChannelFrequencyHz;
     if (this.generation === undefined)
       this.rawAnalysis = this.analysis?.begin(metadata);
@@ -369,6 +394,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   /** Reset stateful consumers at a proven source boundary without inventing a
    * loss count or replacing the active acquisition generation. */
   markDiscontinuity(missingSamples: number | null): void {
+    if (this.metadata) this.secondary?.retune(this.metadata);
     if (!this.enabled || !this.metadata) return;
     this.analysis?.markDiscontinuity(missingSamples ?? 0);
     this.player.reset();
@@ -424,6 +450,7 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
 
   private route(metadata: SourceSessionMetadata): void {
+    if (!["AM","NBFM","USB","LSB","CW","WBFM"].includes(metadata.mode)) this.secondary?.stop("VFO B stopped because VFO A left analog audio mode.");
     if (
       metadata.mode !== "DAB" ||
       (this.selectedDabFrequencyHz !== undefined &&
@@ -518,6 +545,8 @@ export class LiveReceiverPipeline implements SampleReceiver {
   }
   /** Synchronous invalidation precedes every hardware await/close. */
   reset(): void {
+    ++this.secondaryEpoch;
+    this.secondary?.close(); this.secondary = undefined;
     this.enabled = false;
     this.outputEnabled = false;
     this.player.reset();

@@ -145,6 +145,7 @@ export class ReplayBackend implements ReceiverBackend {
       squelch: mode.squelch,
       beatToneHz: mode.beatToneHz,
       srd: mode.srd, textModem: mode.textModem, pocsag: mode.pocsag,
+      rtlInput: sourceMetadata.rtlInput,
       gainDb: sourceMetadata.gainDb ?? null,
       ...(sourceMetadata.format !== RECORDING_FORMAT && sourceMetadata.format !== CHANNEL_RECORDING_FORMAT && sourceMetadata.provenanceDetails.originalSource === "hackrf" ? { hackrf: ci8SessionDetails(sourceMetadata as HackrfRecordingFormat) } : {}),
       ...(sourceMetadata.format === BLADERF_SC16_RECORDING_FORMAT ? { bladerf: structuredClone(sourceMetadata.hardware) } : {}),

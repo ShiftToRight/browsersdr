@@ -103,7 +103,7 @@ it("keeps active recording visible while reporting independent audio, spectrum a
   );
   const health = document.querySelector(".receiver-health-summary")!;
   expect(health.textContent).toContain("Receiver: ● Receiving");
-  expect(health.textContent).toContain("Spectrum: Unavailable");
+  expect(health.textContent).toContain("Display: Unavailable");
   expect(health.textContent).toContain("Audio: Suspended");
   expect(health.textContent).toContain("Recording: Recording");
 });

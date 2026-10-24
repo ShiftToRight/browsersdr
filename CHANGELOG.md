@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0 — 2026-10-24
+
+- Add reception health metrics and explicit, bounded gain setup using fresh input samples.
+- Add a second local AM/NBFM/SSB/CW audio VFO inside the captured RF window, with independent controls and selected recording ownership.
+- Add a Watch workspace for channel listening, activity alerts and bounded pre/post-event native I/Q captures with SigMF exports.
+- Add declared compatible RTL Q-branch HF input and converter-aware tuning, recording and replay provenance.
+- Add explicit compatible RTL/HackRF antenna-power controls, acknowledged recording settings and default-OFF saved preferences.
+- Match receiver-tool typography and themed switches, place VFO B under Tune & demodulate, and move quiet display status into the header health popup.
+
 ## 1.14.0 — 2026-10-23
 
 - Redesign Explorer around a spectrum-led workspace with editable monitoring controls, clearer signal inspection, theme consistency and responsive layouts.

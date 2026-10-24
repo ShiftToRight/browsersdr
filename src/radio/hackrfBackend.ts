@@ -132,6 +132,7 @@ export class HackrfBackend implements ReceiverBackend {
     this.adapter = new HackrfSampleAdapter(
       this.pipeline,
       (block) => {
+        if (this.receiving && this.metadata) this.events.captureSamples?.(block.bytes,this.metadata,block.discontinuityBefore ?? undefined);
         if (this.recorder) {
           if (this.recorder.status().sampleCount === 0)
             this.recorder.setCaptureStartedAt(
@@ -252,7 +253,8 @@ export class HackrfBackend implements ReceiverBackend {
       previous.requestedSampleRateHz === selection.rate &&
       previous.rxLnaGainCode === selection.settings.rxLnaGainCode &&
       previous.rxVgaGainDb === selection.settings.rxVgaGainDb &&
-      previous.rfAmplifierEnabled === selection.settings.rfAmplifierEnabled;
+      previous.rfAmplifierEnabled === selection.settings.rfAmplifierEnabled &&
+      previous.antennaPowerEnabled === selection.settings.antennaPowerEnabled;
     if (!same) {
       this.transportSession = await this.transport.configure({
         generation: ++this.transportGeneration,
@@ -362,6 +364,7 @@ export class HackrfBackend implements ReceiverBackend {
   }
   selectDabService(key: string): void { this.pipeline.selectDabService(key); }
 
+  configureSecondaryVfo(settings?: import("./secondaryVfo").SecondaryVfoSettings) { return this.pipeline.configureSecondaryVfo(settings); }
   setVolume(volume: number): void {
     this.volume = volume;
     this.pipeline.setVolume(volume);
@@ -586,7 +589,7 @@ export class HackrfBackend implements ReceiverBackend {
     if (this.recorder || this.completedRecording)
       throw new Error("Finish or retrieve the existing recording first.");
     this.recorder = new IqRecorder(
-      this.metadata,
+      options?.vfo === "B" ? this.pipeline.recordingContext(this.metadata,"B") : this.metadata,
       undefined,
       undefined,
       undefined,

@@ -98,6 +98,7 @@ export const ANALYSIS_MAX_BLOCK_SAMPLES = 262_144;
 export class AnalysisPipeline {
   private readonly inputClipping = new InputClippingMonitor();
   getInputClipping = () => this.inputClipping.getSnapshot();
+  getInputLevel = () => this.inputClipping.getLevel();
   private worker: Worker;
   private recoveryAttempts = 0;
   private disposed = false;

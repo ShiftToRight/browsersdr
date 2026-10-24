@@ -1,3 +1,5 @@
+import { DEFAULT_RTL_INPUT, type RtlInputSettings } from "./radio/rtlInput";
+const ReceiverExpansionPanel = lazy(() => import("./ui/ReceiverExpansionPanel"));
 import { defaultPocsagSettings, type PocsagSettings } from "./pocsag/settings";
 import { isTextMode, defaultTextModemSettings, type TextModemSettings } from "./textmodem/settings";
 const PocsagControls = lazy(() => import("./ui/PocsagControls").then(module => ({default:module.PocsagControls})));
@@ -22,10 +24,11 @@ import { AudioCaptureGuard } from "./ui/AudioCaptureGuard";
 const RemoteReceiver = lazy(() => import("./ui/RemoteReceiver").then(module => ({ default: module.RemoteReceiver })));
 const RemotePresetSharePanel = lazy(() => import("./ui/RemotePresetSharePanel").then(module => ({ default: module.RemotePresetSharePanel })));
 import { hasRemoteShare, type RemotePreset } from "./remote/remotePresets";
-import { SettingsSharePanel } from "./ui/SettingsSharePanel";
+const SettingsSharePanel = lazy(() => import("./ui/SettingsSharePanel").then(module => ({default:module.SettingsSharePanel})));
 const LiveSharePanel = lazy(() => import("./ui/LiveSharePanel").then(module => ({ default: module.LiveSharePanel })));
 import { hasSettingsShare, SETTINGS_SHARE_SCHEMA, sharedSettingsBookmark, type SharedSettings, type SharedDisplay } from "./radio/settingsShare";
-import { FavoritesPanel, useFavorites } from "./ui/FavoritesPanel";
+import { useFavorites } from "./ui/useFavorites";
+import { FavoritesLauncher as FavoritesPanel } from "./ui/FavoritesLauncher";
 import { useWorkspaceLayout, WorkspaceControls } from "./ui/WorkspaceLayout";
 import type { UtilityView } from "./ui/UtilityOverlay";
 const UtilityOverlay = lazy(() => import("./ui/UtilityOverlay").then(module => ({ default: module.UtilityOverlay })));
@@ -167,11 +170,11 @@ import {
   DiagnosticReportCard,
   OPEN_DIAGNOSTIC_REPORT_EVENT,
 } from "./ui/DiagnosticReportCard";
-import { AboutPage } from "./ui/AboutPage";
+const AboutPage = lazy(() => import("./ui/AboutPage").then(module => ({default:module.AboutPage})));
 import { CaptureCandidateLatch, readReceptionCandidate, type ReceptionCandidate } from "./radio/receptionEvidence";
 import { AtlasRecoveryPanel } from "./ui/AtlasRecoveryPanel";
 import { AtlasSavePanel } from "./ui/AtlasSavePanel";
-import { AtlasSettingsPanel } from "./ui/AtlasSettingsPanel";
+const AtlasSettingsPanel = lazy(() => import("./ui/AtlasSettingsPanel").then(module => ({default:module.AtlasSettingsPanel})));
 import { getAtlasConnection } from "./radio/atlasConnection";
 import type { CompatibilityReportContext } from "./diagnostics/compatibilityTypes";
 
@@ -189,7 +192,7 @@ const preferenceStorage = {
 };
 type AppView = "remote" | "receiver" | "decoder" | "explorer" | "settings" | "diagnostics" | "help" | "antenna" | "compatibility" | "about";
 const isUtilityView = (view: AppView): view is UtilityView => view === "settings" || view === "help" || view === "antenna" || view === "compatibility" || view === "about";
-type ReceiverDockView = "decode" | "capture" | "session";
+type ReceiverDockView = "decode" | "capture" | "watch" | "session";
 type ReplayImportFormat = "browsersdr" | "sigmf";
 
 function selectedSigmfModeSettings(mode: ReceiverMode | "") {
@@ -1006,6 +1009,8 @@ export function ReceiverApp({
 }: AppRuntime) {
   const antennaSite = useReceiverLocation("local");
   const [liveShareOpen, setLiveShareOpen] = useState(false);
+  const [incomingShareHash,setIncomingShareHash] = useState(location.hash);
+  useEffect(() => { const update = () => setIncomingShareHash(location.hash); window.addEventListener("hashchange",update); return () => window.removeEventListener("hashchange",update); },[]);
   const [receiver, setReceiver] = useState<ReceiverSnapshot>(() =>
     controller.getSnapshot(),
   );
@@ -1076,12 +1081,34 @@ export function ReceiverApp({
   const [srdSettings, setSrdSettings] = useState<SrdModeSettings>(
     initialPreferences.modeSettings.srd ?? defaultSrdModeSettings(),
   );
+  const [rtlInput, setRtlInput] = useState<RtlInputSettings>(initialPreferences.rtlInput ?? {...DEFAULT_RTL_INPUT});
+  const [eventCaptures, setEventCaptures] = useState<IqRecording[]>([]);
+  useEffect(() => {
+    if (!eventCaptures.length) return;
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [eventCaptures.length]);
   const [gainDb, setGainDb] = useState<number | null>(
     initialPreferences.gainDb ?? null,
   );
+  useEffect(() => {
+    if (rtlInput.directSampling === "q") setGainDb(null);
+  }, [rtlInput.directSampling]);
   const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(
-    initialPreferences.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
+    { ...(initialPreferences.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS), antennaPowerEnabled:false },
   );
+  useEffect(() => {
+    if (receiver.lifecycle !== "idle" && receiver.lifecycle !== "error") return;
+    setRtlInput(old => old.biasTee ? {...old,biasTee:false} : old);
+    setHardwareSettings(old => old.antennaPowerEnabled ? {...old,antennaPowerEnabled:false} : old);
+  }, [source, receiver.lifecycle]);
+  useEffect(() => {
+    const session=receiver.session;
+    if (session?.source === "rtl-sdr") setGainDb(session.gainDb);
+    const accepted=session?.hackrf?.captureSettings;
+    if (accepted) setHardwareSettings({kind:"hackrf",rxLnaGainCode:accepted.rxLnaGainCode,rxVgaGainDb:accepted.rxVgaGainDb,rfAmplifierEnabled:accepted.rfAmplifierEnabled,antennaPowerEnabled:accepted.antennaPowerEnabled});
+  }, [receiver.session]);
   const [bladerfSettings, setBladeRfSettings] = useState<BladeRfRxSettings>(initialPreferences.bladerfSettings ?? { ...DEFAULT_BLADERF_RX_SETTINGS });
   const [usrpSettings, setUsrpSettings] = useState<UsrpB205RxSettings>(
     initialPreferences.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS },
@@ -1101,8 +1128,8 @@ export function ReceiverApp({
         : source === "bladerf"
           ? { bladerfSettings }
           : source === "rtl-sdr"
-            ? { gainDb }
-            : {}, [source, hardwareSettings, usrpSettings, bladerfSettings, gainDb]);
+            ? { gainDb, rtlInput }
+            : {}, [source, hardwareSettings, usrpSettings, bladerfSettings, gainDb, rtlInput]);
   const currentModeSettings = useMemo(
     () => ({
       mode,
@@ -1329,6 +1356,8 @@ export function ReceiverApp({
   );
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>();
   const [captureCurrentChannel, setCaptureCurrentChannel] = useState(false);
+  const [recordingVfo,setRecordingVfo] = useState<"A"|"B">("A");
+  useEffect(() => { if(!receiver.secondaryVfo && !recordingStatus) setRecordingVfo("A"); },[receiver.secondaryVfo,recordingStatus]);
   const [recordingFormat, setRecordingFormat] =
     useState<RecordingExportFormat>(() => { try { const saved=localStorage.getItem("browsersdr-recording-format"); return saved === "sigmf" ? "sigmf" : "browsersdr"; } catch { return "browsersdr"; } });
   useEffect(() => {
@@ -1389,11 +1418,15 @@ export function ReceiverApp({
     useState<CompatibilityDetailView>("modes");
   const [receiverDockView, setReceiverDockView] =
     useState<ReceiverDockView>("decode");
+  const [vfoToolsTarget, setVfoToolsTarget] = useState<HTMLDivElement | null>(null);
+  const [watchToolsTarget, setWatchToolsTarget] = useState<HTMLDivElement | null>(null);
   const receiverDockLarge = layout.dockLarge;
   const setReceiverDockLarge = (update: (old: boolean) => boolean) => setLayout((old) => ({ ...old, dockLarge: update(old.dockLarge) }));
   const receiverDockExpanded = layout.dockExpanded;
   const setReceiverDockExpanded = (update: boolean | ((old: boolean) => boolean)) => setLayout((old) => ({ ...old, dockExpanded: typeof update === "function" ? update(old.dockExpanded) : update }));
-  const [scanActive, setScanActive] = useState(false);
+  const [explorerActive, setScanActive] = useState(false);
+  const [watchActive, setWatchActive] = useState(false);
+  const scanActive = explorerActive || watchActive;
   const [spectrumStatus, setSpectrumStatus] = useState<SpectrumDisplayStatus>({
     kind: "checking",
     hasFrame: false,
@@ -1490,9 +1523,9 @@ export function ReceiverApp({
       return { plan: planChannelCapture({
         actualSampleRateHz: nativeRateHz,
         hardwareCenterFrequencyHz: receiver.session?.hardwareCenterFrequencyHz ?? frequencyMhz * 1_000_000,
-        selectedChannelFrequencyHz: receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000,
-        channelBandwidthHz: receiver.session?.channelBandwidthHz ?? bandwidthHz,
-        mode: receiver.session?.mode ?? mode,
+        selectedChannelFrequencyHz: (recordingVfo === "B" ? receiver.secondaryVfo?.frequencyHz : undefined) ?? receiver.session?.selectedChannelFrequencyHz ?? frequencyMhz * 1_000_000,
+        channelBandwidthHz: (recordingVfo === "B" ? receiver.secondaryVfo?.bandwidthHz : undefined) ?? receiver.session?.channelBandwidthHz ?? bandwidthHz,
+        mode: (recordingVfo === "B" ? receiver.secondaryVfo?.mode : undefined) ?? receiver.session?.mode ?? mode,
         bladerf: receiver.session?.bladerf,
       }) };
     } catch (error) { return { error: error instanceof Error ? error.message : "Channel capture is unavailable." }; }
@@ -1599,7 +1632,8 @@ export function ReceiverApp({
         previous.sessionGeneration === next.sessionGeneration &&
         previous.session === next.session &&
         previous.audioState === next.audioState &&
-        previous.cleanupRequired === next.cleanupRequired
+        previous.cleanupRequired === next.cleanupRequired &&
+        previous.secondaryVfo === next.secondaryVfo && previous.secondaryVfoMessage === next.secondaryVfoMessage
       )
         return;
       previous = next;
@@ -1645,7 +1679,7 @@ export function ReceiverApp({
             ...(source === "hackrf"
               ? { hardwareSettings }
               : source === "rtl-sdr"
-                ? { gainDb }
+                ? { gainDb, rtlInput }
                 : source === "usrp-b205"
                   ? { usrpSettings }
                   : source === "bladerf"
@@ -1669,6 +1703,7 @@ export function ReceiverApp({
     controller,
     frequencyMhz,
     gainDb,
+    rtlInput,
     hardwareSettings,
     mode,
     sampleRateHz,
@@ -1795,6 +1830,7 @@ export function ReceiverApp({
     setFrequencyMhz(next.frequencyHz / 1_000_000);
     setSampleRateHz(next.sampleRateHz);
     setGainDb(next.gainDb ?? null);
+    setRtlInput({...next.rtlInput ?? DEFAULT_RTL_INPUT,biasTee:false});
     setHardwareSettings(
       next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
     );
@@ -1999,7 +2035,7 @@ export function ReceiverApp({
         rxLnaGainCode: accepted.rxLnaGainCode,
         rxVgaGainDb: accepted.rxVgaGainDb,
         rfAmplifierEnabled: accepted.rfAmplifierEnabled,
-        antennaPowerEnabled: false,
+        antennaPowerEnabled: accepted.antennaPowerEnabled,
       });
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
@@ -2148,8 +2184,8 @@ export function ReceiverApp({
     let status: RecordingStatus | undefined;
     try {
       const storageMode = await prepareRecordingStorage();
-      status = controller.startRecording(undefined, { captureCurrentChannel, storageMode, receiverLocation: captureSite });
-      if (status) captureCandidateLatch.begin(receptionCandidate, controller.getSnapshot().session);
+      status = controller.startRecording(undefined, { captureCurrentChannel, storageMode, receiverLocation: captureSite, vfo:recordingVfo });
+      if (status) captureCandidateLatch.begin(recordingVfo === "B" ? undefined : receptionCandidate, controller.getSnapshot().session);
     }
     catch (error) { setRecordingMessage(error instanceof Error ? error.message : "Recording could not start."); return; }
     finally { recordingStartPending.current = false; }
@@ -3014,6 +3050,7 @@ export function ReceiverApp({
                 {source === "replay" && <small>Replay uses the original acquisition site; the current site applies to future live recordings.</small>}
                 {source === "rtl-sdr" && <small className="rtl-tuner">Tuner: {liveSession?.rtlTuner ?? receiver.session?.rtlTuner ?? "Unknown · connect a supported device"}. Board model is not inferred.</small>}
                 <InputClippingWarning pipeline={analysis} session={liveSession} running={running && !remoteSelected} />
+                <Suspense fallback={<small>Loading receiver tools…</small>}><ReceiverExpansionPanel vfoTarget={vfoToolsTarget} watchTarget={watchToolsTarget} active={activeView === "receiver"} controller={controller} pipeline={analysis} receiver={receiver} source={source} input={rtlInput} onInput={setRtlInput} hardware={hardwareSettings} onHardware={applyHardware} favorites={favorites.items} volume={volume} blocked={explorerActive || Boolean(receiver.hardwareSettingsPending) || exportingRecording || atlasTransferActive} onOperationChange={setWatchActive} recordings={eventCaptures} onRecordings={setEventCaptures} /></Suspense>
                 {source === "rtl-sdr" && sampleRateHz === RTL_EXPERIMENTAL_SAMPLE_RATE_HZ && <p className="display-note">{RTL_EXPERIMENTAL_RATE_WARNING}</p>}
                 {source === "replay" && loadedReplay && experimentalRtlRecording(loadedReplay.metadata) && <p className="display-note">Recorded experimental RTL-SDR 3.2 MS/s input; hardware sample loss may be unreported.</p>}
                 {caps.requiresUsb && (
@@ -3092,11 +3129,12 @@ export function ReceiverApp({
                       )}
                       {caps.gain.kind === "rtl-auto-manual" && (
                         <div className="gain-control">
+                          {rtlInput.directSampling === "q" && <small>Q-branch input uses ADC AGC; tuner RF gain does not apply. Check the HF antenna and filtering.</small>}
                           <label>
                             RF gain
                             <select
                               value={gainDb === null ? "auto" : "manual"}
-                              disabled={transitioning}
+                              disabled={transitioning || rtlInput.directSampling === "q"}
                               onChange={(event) =>
                                 applyGain(
                                   event.currentTarget.value === "auto"
@@ -3208,7 +3246,7 @@ export function ReceiverApp({
                           </label>
                           <small>
                             Changes apply immediately while connected. Stage values are requested settings, not calibrated
-                            total gain. Antenna power stays off.
+                            total gain. Antenna power has a separate explicit control.
                           </small>
                           {mode === "DAB" && (
                             <small>
@@ -3487,6 +3525,7 @@ export function ReceiverApp({
                       </label>
                     </>
                   )}
+                <div className="receiver-vfo-host" ref={setVfoToolsTarget} />
                 {mode === "POCSAG" && <Suspense fallback={<p role="status">Loading paging controls…</p>}><PocsagControls settings={pocsagSettings} disabled={Boolean(modeChangeBlockedReason)} onChange={next=>{setPocsagSettings(next); void applyModeSettings({...currentModeSettings,pocsag:next});}} /></Suspense>}
                 {isTextMode(mode) && <Suspense fallback={<p role="status">Loading decoder controls…</p>}><TextModemControls mode={mode} settings={textModemSettings} disabled={Boolean(modeChangeBlockedReason)} onChange={next => {
                   setTextModemSettings(next);
@@ -3787,7 +3826,7 @@ export function ReceiverApp({
               onKeyDown={(event) => {
                 if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
                 event.preventDefault();
-                const views = ["decode", "capture", "session"] as const;
+                const views = ["decode", "capture", "watch", "session"] as const;
                 const current = views.indexOf(receiverDockView);
                 const next = event.key === "Home" ? 0 : event.key === "End" ? views.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
                 const button = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next];
@@ -3821,6 +3860,13 @@ export function ReceiverApp({
                 }}
               >
                 <AppIcon name="record" />Capture & replay
+              </button>
+              <button type="button" id="receiver-watch-tab" role="tab"
+                aria-selected={receiverDockView === "watch"}
+                tabIndex={receiverDockView === "watch" ? 0 : -1}
+                aria-controls="watch-panel"
+                onClick={() => { setReceiverDockView("watch"); setReceiverDockExpanded(true); }}>
+                <AppIcon name="activity" />Watch
               </button>
               <button
                 type="button"
@@ -3861,6 +3907,13 @@ export function ReceiverApp({
             active={receiverDockExpanded && receiverDockView === "decode"}
             onOpenDecoder={() => setActiveView("decoder")}
           /></Suspense>}
+
+          <section id="watch-panel" role="tabpanel"
+            className="control-panel receiver-dock-panel watch-panel"
+            aria-labelledby="receiver-watch-tab"
+            hidden={!receiverDockExpanded || receiverDockView !== "watch"}>
+            <div ref={setWatchToolsTarget} />
+          </section>
 
           <section
             id="capture-panel"
@@ -3961,6 +4014,7 @@ export function ReceiverApp({
                   </span>
                 )}
               </div>
+                <label>I/Q recording channel<select aria-label="I/Q recording channel" value={recordingVfo} disabled={Boolean(recordingStatus) || transitioning} onChange={event=>setRecordingVfo(event.currentTarget.value as "A"|"B")}><option value="A">VFO A</option><option value="B" disabled={!receiver.secondaryVfo}>VFO B · selected channel</option></select></label>
                 <div className="recording-actions">
                 {recordingStatus ? (
                   <button
@@ -4406,10 +4460,10 @@ export function ReceiverApp({
           >
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
             <button id="live-share-trigger" type="button" className="secondary" disabled={remoteSelected} onClick={() => setLiveShareOpen(true)}>Share live audio &amp; spectrum</button>
-            <SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
+            <DeferredWorkspace active={(receiverDockExpanded && receiverDockView === "session") || hasSettingsShare(incomingShareHash)}><SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
               applyBlockedReason={remoteSelected ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
-              onApply={applySharedSettings} />
+              onApply={applySharedSettings} /></DeferredWorkspace>
             <dl className="session-grid">
               <div>
                 <dt>Receiver</dt>
@@ -4543,7 +4597,7 @@ export function ReceiverApp({
           initialFrequencyHz={frequencyMhz * 1_000_000}
           volume={volume}
           recordingBlocked={
-            Boolean(recordingStatus) || exportingRecording || captureSlotBlocked
+            Boolean(recordingStatus) || exportingRecording || captureSlotBlocked || watchActive || Boolean(receiver.secondaryVfo)
           }
           startReceptionForScan={startReceptionForScan}
           onOpenReceiver={() => {
@@ -4556,7 +4610,7 @@ export function ReceiverApp({
           }}
           onScanningChange={setScanActive}
           onCaptureCandidates={captureSurveyCandidates}
-          investigationBlockedReason={modeChangeBlockedReason}
+          investigationBlockedReason={watchActive ? "Stop the active receiver tools operation first." : receiver.secondaryVfo ? "Disable VFO B before Explorer takes the shared receiver." : modeChangeBlockedReason}
           onInvestigate={(frequencyHz, investigationMode) => {
             if (modeChangeBlockedReason || modeUnavailable(investigationMode)) return;
             if (caps.frequency.integerHz) frequencyHz = Math.round(frequencyHz);

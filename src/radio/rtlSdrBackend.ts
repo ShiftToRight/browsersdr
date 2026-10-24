@@ -1,3 +1,5 @@
+import { normalizeRtlInput } from "./rtlInput";
+import type { RtlRfSource } from "./rtlRfSource";
 import { SavedCaptureRds } from "./savedCaptureRds";
 import { RtlIngress } from "./rtlIngress";
 import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, validateRtlAcceptedRate } from "./rtlSampleRate";
@@ -60,7 +62,7 @@ function isDeviceUnavailableError(error: unknown): boolean {
 class IdempotentSource implements SignalSource {
   private closed = false;
   private closeTask?: Promise<void>;
-  constructor(private readonly source: SignalSource) {}
+  constructor(readonly source: SignalSource) {}
   setSampleRate(sampleRate: number) {
     return this.source.setSampleRate(sampleRate);
   }
@@ -458,6 +460,7 @@ export class RtlSdrBackend implements ReceiverBackend {
 
   selectDabService(key: string): void { this.pipeline.selectDabService(key); }
 
+  configureSecondaryVfo(settings?: import("./secondaryVfo").SecondaryVfoSettings) { return this.pipeline.configureSecondaryVfo(settings); }
   setVolume(volume: number): void {
     this.pipeline.setVolume(volume);
   }
@@ -583,6 +586,7 @@ export class RtlSdrBackend implements ReceiverBackend {
   }
 
   setGain(gainDb: number | null): Promise<number | null> {
+    if (this.metadata?.rtlInput?.directSampling === "q" && gainDb !== null) return Promise.reject(new Error("Tuner RF gain does not apply in Q-branch direct sampling; ADC AGC is enabled."));
     const source = this.source;
     if (!source || this.rateTask || this.disconnectRequested)
       return Promise.reject(new Error("Wait for the RTL-SDR operation to finish before changing gain."));
@@ -600,6 +604,7 @@ export class RtlSdrBackend implements ReceiverBackend {
 
   private appendCaptureBytes(input: ArrayBuffer | Uint8Array): void {
     const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (this.receiving && this.metadata) this.events.captureSamples?.(data,{...this.metadata,sessionGeneration:this.sessionGeneration});
     const recorder = this.recorder;
     if (!recorder) return;
     const before = recorder.status().sampleCount;
@@ -614,8 +619,10 @@ export class RtlSdrBackend implements ReceiverBackend {
   ): RecordingStatus {
     if (!this.receiving || !this.metadata)
       throw new Error("RTL-SDR source is not receiving");
+    const base = {...this.metadata,sessionGeneration:this.sessionGeneration};
+    const context = options?.vfo === "B" ? this.pipeline.recordingContext(base,"B") : base;
     this.recorder = new IqRecorder(
-      { ...this.metadata, sessionGeneration: this.sessionGeneration },
+      context,
       undefined,
       undefined,
       undefined,
@@ -624,8 +631,8 @@ export class RtlSdrBackend implements ReceiverBackend {
       preferredRecordingStorageMode(options?.storageMode),
       options,
     );
-    this.captureRds = !options?.captureCurrentChannel && this.metadata.mode === "WBFM"
-      ? new SavedCaptureRds(this.metadata.hardwareCenterFrequencyHz, this.metadata.actualSampleRateHz, this.metadata.selectedChannelFrequencyHz)
+    this.captureRds = !options?.captureCurrentChannel && context.mode === "WBFM"
+      ? new SavedCaptureRds(context.hardwareCenterFrequencyHz, context.actualSampleRateHz, context.selectedChannelFrequencyHz)
       : undefined;
     return this.recorder.status();
   }
@@ -651,6 +658,11 @@ export class RtlSdrBackend implements ReceiverBackend {
     this.modeSettings = normalizeModeSettings(
       options.modeSettings ?? defaultModeSettings("WBFM"),
     );
+    const input = normalizeRtlInput(options.rtlInput);
+    const translated = source.source as RtlRfSource;
+    translated.input = input;
+    const acknowledged = await source.setParameter("direct_sampling_method", input.directSampling === "q" ? 2 : 0);
+    if (acknowledged !== undefined && acknowledged !== (input.directSampling === "q" ? 2 : 0)) throw new Error("RTL input selection was not acknowledged.");
     const requestedSampleRateHz = options.sampleRateHz ?? RTL_SAMPLE_RATE_HZ;
     const actualSampleRateHz = await source.setSampleRate(
       requestedSampleRateHz,
@@ -661,15 +673,16 @@ export class RtlSdrBackend implements ReceiverBackend {
     );
     const gainDb = (await source.setParameter(
       "gain",
-      normalizeGain(options.gainDb ?? null),
+      input.directSampling === "q" ? null : normalizeGain(options.gainDb ?? null),
     )) as number | null;
     await source.setParameter("frequency_correction", 0);
-    await source.setParameter("direct_sampling_method", 0);
-    await source.setParameter("bias_tee", false);
+    const power = await source.setParameter("bias_tee", input.biasTee);
+    if (power !== undefined && power !== input.biasTee) throw new Error("RTL bias tee request was not acknowledged.");
     this.metadata = {
       source: "rtl-sdr",
       requestedSampleRateHz,
       rtlTuner: this.rtlTuner,
+      rtlInput: input,
       actualSampleRateHz,
       hardwareCenterFrequencyHz,
       selectedChannelFrequencyHz: options.channelFrequencyHz,
@@ -688,10 +701,14 @@ export class RtlSdrBackend implements ReceiverBackend {
   private async acquireAndConfigure(
     options: ReceiverStartOptions,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">> {
+    const translator = import("./rtlRfSource");
+    void translator.catch(() => undefined);
     const provided = await this.provider.get();
     const tuner = (provided as SignalSource & { rtlTuner?: SourceSessionMetadata["rtlTuner"] }).rtlTuner;
     this.rtlTuner = tuner === "R820T-family" || tuner === "R828D" ? tuner : undefined;
-    const source = new IdempotentSource(provided);
+    let RtlRfSource: typeof import("./rtlRfSource").RtlRfSource;
+    try { ({RtlRfSource} = await translator); } catch (error) { await provided.close(); throw error; }
+    const source = new IdempotentSource(new RtlRfSource(provided));
     this.source = source;
     this.throwIfDisconnectRequested();
     const metadata = await this.configureConnectedSource(options);

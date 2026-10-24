@@ -1,3 +1,4 @@
+import { normalizeRtlInput, type RtlInputSettings } from "./rtlInput";
 import { DEFAULT_BLADERF_RX_SETTINGS, type BladeRfRxSettings } from "./bladerfSettings";
 import { defaultModeSettings, normalizeModeSettings, validateModeSampleRate, type ReceiverMode, type ReceiverModeSettings } from "./receiverConfig";
 import { channelSampleRate, DEFAULT_HACKRF_RX_SETTINGS, sourceCapabilities, validateSourceConfiguration, type HackrfRxSettings } from "./sourceCapabilities";
@@ -10,6 +11,7 @@ export interface SourcePreferences {
   modeSettings: ReceiverModeSettings;
   sampleRateHz: number;
   gainDb?: number | null;
+  rtlInput?: RtlInputSettings;
   hardwareSettings?: HackrfRxSettings;
   usrpSettings?: UsrpB205RxSettings;
   bladerfSettings?: BladeRfRxSettings;
@@ -34,12 +36,12 @@ export function sourcePreferenceDefaults(source: SourceKind): SourcePreferences 
 }
 function validate(source: SourceKind, value: SourcePreferences): SourcePreferences {
   if (!value || !value.modeSettings || typeof value.sampleRateHz !== "number") throw new Error("Invalid source preferences");
-  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings, bladerfSettings: value.bladerfSettings });
+  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, rtlInput: value.rtlInput, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings, bladerfSettings: value.bladerfSettings });
   if (compatibleSourceRate(source, value.modeSettings.mode, value.sampleRateHz) !== value.sampleRateHz) throw new Error("Incompatible saved rate");
   return { frequencyHz: value.frequencyHz, modeSettings: normalizeModeSettings(value.modeSettings), sampleRateHz: value.sampleRateHz,
     ...(source === "bladerf" ? { bladerfSettings: { ...(value.bladerfSettings ?? DEFAULT_BLADERF_RX_SETTINGS) } } : {}),
-    ...(source === "rtl-sdr" ? { gainDb: value.gainDb ?? null } : {}),
-    ...(source === "hackrf" ? { hardwareSettings: { ...(value.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS) } } : {}),
+    ...(source === "rtl-sdr" ? { gainDb: value.gainDb ?? null, rtlInput: {...normalizeRtlInput(value.rtlInput),biasTee:false} } : {}),
+    ...(source === "hackrf" ? { hardwareSettings: { ...(value.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS), antennaPowerEnabled:false } } : {}),
     ...(source === "usrp-b205" ? { usrpSettings: { ...(value.usrpSettings ?? DEFAULT_USRP_B205_RX_SETTINGS) } } : {}) };
 }
 export function loadSourcePreferences(storage: StorageAccess, source: SourceKind): SourcePreferences {

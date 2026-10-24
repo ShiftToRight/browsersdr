@@ -32,9 +32,13 @@ for (const unavailable of [
       { exact: true },
     );
     await expect(canvas).toBeVisible();
-    await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-      "Display ready",
-    );
+    await page.locator(".receiver-status-menu > summary").click();
+    await expect(
+      page
+        .locator(".receiver-health-panel")
+        .getByRole("button", { name: /^Display:/ }),
+    ).toHaveAttribute("aria-label", /Available|Working/);
+    await page.keyboard.press("Escape");
     await page
       .getByRole("combobox", { name: "Signal source", exact: true })
       .selectOption("synthetic");
@@ -143,9 +147,13 @@ test("compatibility renderer can be explicitly selected and WebGPU retried witho
   ).toBeEnabled();
   await renderer.selectOption("webgpu");
   // The runner may have no adapter; automatic fallback remains a working display.
-  await expect(page.locator(".graphics-panel .status-pill")).toHaveText(
-    "Display ready",
-  );
+  await page.locator(".receiver-status-menu > summary").click();
+  await expect(
+    page
+      .locator(".receiver-health-panel")
+      .getByRole("button", { name: /^Display:/ }),
+  ).toHaveAttribute("aria-label", /Available|Working/);
+  await page.keyboard.press("Escape");
   await expect(
     page.getByRole("button", { name: "Pause display", exact: true }),
   ).toBeEnabled();

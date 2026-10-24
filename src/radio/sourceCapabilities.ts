@@ -1,3 +1,4 @@
+import { normalizeRtlInput, rtlDeviceFrequency } from "./rtlInput";
 import { DEFAULT_BLADERF_RX_SETTINGS, validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
 import type { SourceKind } from "./types";
 import { RTL_SAMPLE_RATES_HZ, RTL_EXPERIMENTAL_SAMPLE_RATE_HZ } from "./rtlSampleRate";
@@ -55,7 +56,7 @@ export interface HackrfRxSettings {
   rxLnaGainCode: HackrfLnaGainCode;
   rxVgaGainDb: number;
   rfAmplifierEnabled: boolean;
-  antennaPowerEnabled: false;
+  antennaPowerEnabled: boolean;
 }
 export const DEFAULT_HACKRF_RX_SETTINGS: Readonly<HackrfRxSettings> = Object.freeze({
   kind: "hackrf", rxLnaGainCode: 16, rxVgaGainDb: 12,
@@ -197,7 +198,7 @@ export function validateHackrfRxSettings(settings: HackrfRxSettings, kind: Hackr
   const codes: readonly number[] = kind === "hackrf-one" ? HACKRF_ONE_LNA_CODES : kind === "unknown" ? [0, 8, 16, 24, 32, 33, 40] : [0, 16, 33];
   if (settings.kind !== "hackrf" || !codes.includes(settings.rxLnaGainCode)) throw new Error(`${hackrfLabel(kind === "unknown" ? undefined : kind)} RX LNA gain code must be ${codes.join(", ")}.`);
   if (!Number.isInteger(settings.rxVgaGainDb) || settings.rxVgaGainDb < 0 || settings.rxVgaGainDb > 62 || settings.rxVgaGainDb % 2 !== 0) throw new Error("HackRF RX VGA gain must be an even integer from 0 to 62 dB.");
-  if (typeof settings.rfAmplifierEnabled !== "boolean" || settings.antennaPowerEnabled !== false) throw new Error("HackRF RF amplifier must be boolean and antenna power must remain off.");
+  if (typeof settings.rfAmplifierEnabled !== "boolean" || typeof settings.antennaPowerEnabled !== "boolean") throw new Error("HackRF RF amplifier must be boolean and antenna power must be boolean.");
   return { ...settings };
 }
 
@@ -272,10 +273,13 @@ export interface SourceConfiguration {
   hardwareSettings?: HackrfRxSettings;
   usrpSettings?: UsrpB205RxSettings;
   bladerfSettings?: BladeRfRxSettings;
+  rtlInput?: import("./rtlInput").RtlInputSettings;
 }
 
 export function validateSourceConfiguration(options: SourceConfiguration): void {
   const source = options.source ?? "rtl-sdr";
+  if (options.rtlInput && source !== "rtl-sdr") throw new Error("RTL input settings require an RTL source.");
+  if (source === "rtl-sdr") rtlDeviceFrequency(options.channelFrequencyHz, normalizeRtlInput(options.rtlInput));
   const caps = sourceCapabilities(source, options.hackrfIdentity);
   if (source !== "bladerf" && options.bladerfSettings !== undefined) throw new Error("bladeRF settings require the bladeRF source.");
   const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));

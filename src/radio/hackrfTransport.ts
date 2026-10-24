@@ -796,6 +796,13 @@ export class HackrfTransport {
               this.diag.lastOffError =
                 error instanceof Error ? error.message : String(error);
             }
+            // Antenna power is a per-connection choice. Attempt OFF before
+            // closing even when reception is already stopped; a USB ack is not
+            // a physical voltage measurement.
+            try {
+              const powerOff = await this.deadline(this.track(device.controlTransferOut(this.setup(23,0,0),new Uint8Array(0))));
+              if(powerOff.status !== "ok" || powerOff.bytesWritten !== 0) throw new Error("HackRF antenna power OFF was not acknowledged.");
+            } catch(error) { this.diag.lastOffError = error instanceof Error ? error.message : String(error); }
             // OFF failure still proceeds to actual close, which owns cancellation.
           }
           await this.track(closeBrowserUsbDevice(device));

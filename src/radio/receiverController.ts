@@ -1,3 +1,4 @@
+import type { SecondaryVfoSettings } from "./secondaryVfo";
 import type { PocsagSnapshot } from "../pocsag/types";
 import type { FmStereoReception } from "./fmStereoReception";
 import { isTextMode } from "../textmodem/settings";
@@ -49,6 +50,7 @@ export const RTL_SAMPLE_RATE_HZ = 1_024_000;
 export { RTL_SAMPLE_RATES_HZ as RTL_SAMPLE_RATE_OPTIONS_HZ } from "./rtlSampleRate";
 
 export interface ReceiverStartOptions {
+  rtlInput?: import("./rtlInput").RtlInputSettings;
   source?: SourceKind;
   channelFrequencyHz: number;
   volume: number;
@@ -61,6 +63,8 @@ export interface ReceiverStartOptions {
 }
 
 export interface ReceiverBackendEvents {
+  captureSamples?(bytes: Uint8Array, session: SourceSessionMetadata, gap?: {missingSamples:number|null;reason:string}): void;
+  secondaryVfoChanged?(settings: SecondaryVfoSettings | undefined, message?: string): void;
   permissionGranted(): void;
   statusChanged?(message: string): void;
   runtimeError(error: unknown): void;
@@ -83,6 +87,7 @@ export interface ReceiverBackendEvents {
 }
 
 export interface ReceiverBackend {
+  configureSecondaryVfo?(settings?: SecondaryVfoSettings): Promise<void>;
   getIngressDiagnostics?(): IngressDiagnostics | undefined;
   getChannelDiagnostics?(): ChannelDiagnostics | undefined;
   /** Optional persistent hardware connection used by RTL-SDR. */
@@ -155,6 +160,8 @@ export type ReceiverBackendFactory = (
 ) => ReceiverBackend;
 
 export interface ReceiverSnapshot {
+  secondaryVfo?: SecondaryVfoSettings;
+  secondaryVfoMessage?: string;
   /** Stabilized recent WBFM reception; undefined while acquiring or outside WBFM. */
   fmStereoReception?: FmStereoReception;
   lifecycle: ReceiverLifecycle;
@@ -214,6 +221,12 @@ export class ReceiverController {
 
   constructor(private readonly createBackend: ReceiverBackendFactory) {}
 
+  private readonly captureListeners = new Set<(bytes: Uint8Array, session: SourceSessionMetadata, gap?: {missingSamples:number|null;reason:string}) => void>();
+  subscribeCaptureSamples(listener: (bytes: Uint8Array, session: SourceSessionMetadata, gap?: {missingSamples:number|null;reason:string}) => void): () => void {
+    if (this.captureListeners.size) throw new Error("An event capture subscriber already owns the raw capture tap.");
+    this.captureListeners.add(listener);
+    return () => { this.captureListeners.delete(listener); };
+  }
   private lastIngress?: IngressDiagnostics;
   getIngressDiagnostics = (): IngressDiagnostics | undefined =>
     this.backend?.getIngressDiagnostics?.() ?? this.lastIngress;
@@ -816,6 +829,12 @@ export class ReceiverController {
     }
   }
 
+  async configureSecondaryVfo(settings?: SecondaryVfoSettings): Promise<void> {
+    if (!this.backend?.configureSecondaryVfo || this.snapshot.lifecycle !== "running") throw new Error("VFO B requires a running local receiver.");
+    if (settings && !["AM","NBFM","USB","LSB","CW","WBFM"].includes(this.snapshot.session?.mode ?? "")) throw new Error("Use an analog audio mode on VFO A before enabling VFO B.");
+    await this.backend.configureSecondaryVfo(settings);
+  }
+
   async setGain(gainDb: number | null): Promise<void> {
     if (
       !["connected", "running"].includes(this.snapshot.lifecycle) ||
@@ -883,7 +902,7 @@ export class ReceiverController {
     }
     const wasRunning = this.snapshot.lifecycle === "running";
     const old = session.hackrf?.captureSettings;
-    if (old && old.rxLnaGainCode === validated.rxLnaGainCode && old.rxVgaGainDb === validated.rxVgaGainDb && old.rfAmplifierEnabled === validated.rfAmplifierEnabled) return;
+    if (old && old.rxLnaGainCode === validated.rxLnaGainCode && old.rxVgaGainDb === validated.rxVgaGainDb && old.rfAmplifierEnabled === validated.rfAmplifierEnabled && old.antennaPowerEnabled === validated.antennaPowerEnabled) return;
     this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
     const generation = wasRunning ? this.generation : ++this.generation;
     this.publish({
@@ -1132,6 +1151,15 @@ export class ReceiverController {
     let backend: ReceiverBackend | undefined = undefined;
     backend = this.createBackend(
       {
+        captureSamples: (bytes,session,gap) => {
+          if (this.backend !== backend || this.snapshot.lifecycle !== "running" || session.sessionGeneration !== this.snapshot.sessionGeneration) return;
+          for (const listener of this.captureListeners) {
+            try { listener(bytes,session,gap); } catch { this.captureListeners.delete(listener); }
+          }
+        },
+        secondaryVfoChanged: (secondaryVfo,secondaryVfoMessage) => {
+          if (this.backend === backend) this.publish({...this.snapshot,secondaryVfo,secondaryVfoMessage});
+        },
         permissionGranted: () => {
           if (this.isCurrent(generation, "requesting-permission"))
             this.publish({
