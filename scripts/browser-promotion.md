@@ -35,6 +35,16 @@ runner image must match the fresh quality build. Custom fixture contexts require
 fresh qualification. Raw archives are retained during verification; downloaded
 code/configuration is never executed.
 
+A successful run cannot hide a failed sibling at the same commit. Before source
+selection, after downloads, at final coverage and during independent audit, inspect
+all same-workflow runs at that SHA. Any ordinary push or explicitly named unstamped
+promotion that was rerun or completed without success blocks acceptance, including
+cancelled/time-limited runs. Qualify a corrected commit rather than repeat the same
+source until green. In-progress first attempts do not qualify as sources and do not
+invalidate completed proof unless they fail before the final history check. This
+cannot predict a failure occurring after acceptance. PR and dedicated stamped runs
+have distinct contexts and retain their own mandatory gates.
+
 `browser-promotion-policy.json` maps known startup, high-rate, lifecycle, EOF,
 geometry and offline-update failures to existing tests. Every named case must
 exist exactly once per target in the full source proof and fresh discovery. Four

@@ -17,6 +17,7 @@ import {
   assertArtifacts,
   assertJobs,
   assertNative,
+  assertNoFailedPeers,
   assertSourceRun,
   browserRunners,
   read,
@@ -226,6 +227,16 @@ function sourceContext(current) {
   };
 }
 
+async function checkHistory(current) {
+  const context = sourceContext(current);
+  const runs = await pages(
+    `/repos/${repository()}/actions/workflows/${current.workflow_id}/runs?head_sha=${context.sha}`,
+    "workflow_runs",
+  );
+  assertNoFailedPeers(runs, context);
+  return runs;
+}
+
 function outputPromotion(id = "") {
   assert(process.env.GITHUB_OUTPUT);
   appendFileSync(
@@ -252,12 +263,9 @@ async function prepare() {
   assert.equal(current.run_attempt, 1);
   assert(["push", "workflow_dispatch"].includes(current.event));
   const context = sourceContext(current);
+  const runs = await checkHistory(current);
   let id = requested;
   if (!id) {
-    const runs = await pages(
-      `/repos/${repository()}/actions/workflows/${current.workflow_id}/runs?event=push&head_sha=${context.sha}`,
-      "workflow_runs",
-    );
     const eligible = runs
       .filter((run) => {
         try {
@@ -331,6 +339,7 @@ async function prepare() {
     fullCoverage: source.coverage,
     expectedFreshIdentities: source.wanted.length,
   });
+  await checkHistory(current);
   outputPromotion(id);
   console.log(
     JSON.stringify({
@@ -420,6 +429,7 @@ async function verify(directory, currentRunId = process.env.GITHUB_RUN_ID) {
     runners.every((id) => !browserRunners(source.jobs).includes(id)),
     "Fresh stability must use independent runner instances",
   );
+  await checkHistory(current);
   const result = {
     schemaVersion: 1,
     kind: "full-source-coverage-plus-independent-stability",
@@ -459,6 +469,7 @@ async function audit(id, output) {
   assert.equal(info.run.status, "completed");
   assert.equal(info.run.conclusion, "success");
   assertJobs(info.jobs, info.run);
+  await checkHistory(info.run);
   await download(info, output);
   assert(
     !existsSync(bundlePath),
@@ -514,6 +525,7 @@ async function audit(id, output) {
     assert.equal(latest.status, "completed");
     assert.equal(latest.conclusion, "success");
     assert.equal(latest.head_sha, process.env.GITHUB_SHA);
+    await checkHistory(info.run);
     const result = {
       schemaVersion: 1,
       kind: "independent-full-ordinary-ci",

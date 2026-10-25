@@ -68,6 +68,44 @@ export function assertSourceRun(
   );
 }
 
+// A green sibling cannot erase known failures or prior attempts at this commit.
+// Dedicated stamped qualification has a different build context and stays separate.
+export function assertNoFailedPeers(
+  runs,
+  { repository, sha, workflowId, currentRunId },
+) {
+  assert(Array.isArray(runs));
+  for (const run of runs) {
+    if (run.head_sha !== sha || run.id === currentRunId) continue;
+    const relevant =
+      run.event === "push" ||
+      (run.event === "workflow_dispatch" &&
+        typeof run.display_title === "string" &&
+        run.display_title.startsWith("CI promotion "));
+    if (!relevant) continue;
+    assert(Number.isSafeInteger(run.id) && run.id > 0);
+    assert.equal(run.workflow_id, workflowId);
+    assert.equal(run.path, ".github/workflows/ci.yml");
+    assert.equal(run.repository?.full_name, repository);
+    assert.equal(run.head_repository?.full_name, repository);
+    assert.equal(run.run_attempt, 1, `Same-commit run ${run.id} was rerun`);
+    assert(
+      run.status === "completed" ||
+        ["queued", "in_progress", "waiting", "requested", "pending"].includes(
+          run.status,
+        ),
+      `Unknown same-commit run status: ${run.status}`,
+    );
+    if (run.status === "completed")
+      assert.equal(
+        run.conclusion,
+        "success",
+        `Same-commit run ${run.id} did not succeed; qualify a corrected commit`,
+      );
+    else assert.equal(run.conclusion, null);
+  }
+}
+
 export function assertJobs(jobs, run) {
   assert.equal(jobs.length, JOBS.length, "Missing/extra jobs");
   assert.deepEqual(jobs.map((job) => job.name).sort(), [...JOBS].sort());

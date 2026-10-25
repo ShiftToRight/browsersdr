@@ -22,6 +22,7 @@ import {
   assertArtifacts,
   assertJobs,
   assertNative,
+  assertNoFailedPeers,
   assertSourceRun,
   expectedStability,
   read,
@@ -126,6 +127,45 @@ test("promotion accepts only complete original same-repository exact-SHA ordinar
     mutate(run);
     assert.throws(() => assertSourceRun(run, context));
   }
+});
+
+test("successful source cannot hide failed, cancelled or rerun same-commit peers", () => {
+  const good = sourceRun();
+  const peer = { ...sourceRun(), id: 101 };
+  assertNoFailedPeers([good, peer], context);
+  for (const change of [
+    { conclusion: "failure" },
+    { conclusion: "cancelled" },
+    { conclusion: "timed_out" },
+    { conclusion: null },
+    { run_attempt: 2 },
+    { path: "other.yml" },
+    { workflow_id: 43 },
+    { repository: { full_name: "other/repo" } },
+    { head_repository: { full_name: "fork/repo" } },
+    { status: "unknown" },
+    {
+      event: "workflow_dispatch",
+      display_title: "CI promotion nonce",
+      conclusion: "failure",
+    },
+  ])
+    assert.throws(() =>
+      assertNoFailedPeers([good, { ...peer, ...change }], context),
+    );
+  for (const change of [
+    { id: context.currentRunId, status: "in_progress", conclusion: null },
+    { status: "queued", conclusion: null },
+    { status: "in_progress", conclusion: null },
+    { head_sha: "b".repeat(40), conclusion: "failure" },
+    { event: "pull_request", conclusion: "failure" },
+    {
+      event: "workflow_dispatch",
+      display_title: "Browser qualification nonce",
+      conclusion: "failure",
+    },
+  ])
+    assertNoFailedPeers([good, { ...peer, ...change }], context);
 });
 
 test("failed, missing, duplicate, rerun and reused-runner jobs are ineligible", () => {
