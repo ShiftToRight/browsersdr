@@ -19,5 +19,5 @@ it("presents intermediate positions even when one GPU frame is slower than the n
  const m=new SurfaceMarkerMotion();m.set([.2],0,false);m.set([.8],0,true);
  expect(m.advance(300)[0]).toBeGreaterThan(.2);expect(m.sample(300)[0]).toBeLessThan(.8);
  expect(m.moving(300)).toBe(true);
- m.advance(600);m.advance(900);expect(m.advance(1200)[0]).toBe(.8);expect(m.moving(1200)).toBe(false);
+ m.advance(600);m.advance(900);expect(m.advance(1200)[0]).toBe(.8);expect(m.moving(1200)).toBe(false);expect(m.advance(2400)).toEqual([.8]);expect(m.moving(2400)).toBe(false);
 });

@@ -29,6 +29,7 @@ export class SurfaceMarkerMotion {
   advance(now: number): number[] {
     if (this.duration) this.start += Math.max(0,now-this.lastFrame-40);
     this.lastFrame = now;
+    if (now >= this.start + this.duration) this.duration = 0;
     return this.sample(now);
   }
   moving(now: number): boolean { return now < this.start + this.duration; }

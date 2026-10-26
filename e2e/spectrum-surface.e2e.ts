@@ -809,6 +809,64 @@ test("actual moving front-row pixels tune to their full-resolution frequency", a
 test("wide-screen channel markers retain a thin antialiased pixel width", async ({
   page,
 }) => {
+  // Read the actual final GPU texture, not the cached terrain or a mock. This
+  // test-only COPY_SRC usage avoids compositor/font/screenshot stalls at 2880px.
+  await page.addInitScript(() => {
+    let device: GPUDevice | undefined,
+      texture: GPUTexture | undefined,
+      format: GPUTextureFormat;
+    const configure = GPUCanvasContext.prototype.configure,
+      getTexture = GPUCanvasContext.prototype.getCurrentTexture,
+      submit = GPUQueue.prototype.submit;
+    GPUCanvasContext.prototype.configure = function (config) {
+      device = config.device;
+      format = config.format;
+      configure.call(this, {
+        ...config,
+        usage: (config.usage ?? 0x10) | 0x1,
+      });
+    };
+    GPUCanvasContext.prototype.getCurrentTexture = function () {
+      texture = getTexture.call(this);
+      return texture;
+    };
+    GPUQueue.prototype.submit = function (commands) {
+      submit.call(this, commands);
+      const request = document.documentElement.dataset.testReadLine;
+      if (!request || !device || !texture || this !== device.queue) return;
+      delete document.documentElement.dataset.testReadLine;
+      const { x, y } = JSON.parse(request) as { x: number; y: number };
+      const buffer = device.createBuffer({
+        size: 256,
+        usage: 0x8 | 0x1,
+      });
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture, origin: { x, y } },
+        { buffer, bytesPerRow: 256 },
+        [24, 1],
+      );
+      submit.call(this, [encoder.finish()]);
+      void buffer
+        .mapAsync(0x1)
+        .then(() => {
+          const pixels = Array.from(
+            new Uint8Array(buffer.getMappedRange()).slice(0, 96),
+          );
+          if (format.startsWith("bgra"))
+            for (let i = 0; i < pixels.length; i += 4)
+              [pixels[i], pixels[i + 2]] = [pixels[i + 2]!, pixels[i]!];
+          document.documentElement.dataset.testLinePixels =
+            JSON.stringify(pixels);
+          buffer.unmap();
+          buffer.destroy();
+        })
+        .catch((error) => {
+          document.documentElement.dataset.testLineError = String(error);
+          buffer.destroy();
+        });
+    };
+  });
   await page.setViewportSize({ width: 2880, height: 1440 });
   const plot = await ready(page, "");
   await page
@@ -824,29 +882,34 @@ test("wide-screen channel markers retain a thin antialiased pixel width", async 
   const top = guide.y + guide.height - box.y,
     height = box.height - top - Math.min((box.height - top) * 0.3, 112);
   const row = box.y + top + ((1 - ny) * height) / 2;
-  // Read a small compositor crop of the actual WebGPU result. Encoding the
-  // entire 2880px plot into a data URL adds unrelated readback/PNG work.
-  const png = await page.screenshot({
-    clip: { x: box.x + box.width / 2 - 12, y: row - 1, width: 24, height: 3 },
-  });
-  const width = await page.evaluate(
-    async (png) => {
-      const bitmap = await createImageBitmap(await (await fetch(png)).blob());
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(bitmap, 0, 0);
-      const { data } = ctx.getImageData(0, 1, canvas.width, 1);
-      let count = 0;
-      for (let x = 0; x < canvas.width; x++) {
-        const i = x * 4;
-        if (data[i]! > 45 && data[i + 1]! > 150 && data[i + 2]! > 190) count++;
-      }
-      return count;
-    },
-    `data:image/png;base64,${png.toString("base64")}`,
-  );
+  const read = await plot.evaluate((canvas: HTMLCanvasElement, row) => {
+    const bounds = canvas.getBoundingClientRect();
+    return {
+      x: Math.floor(canvas.width / 2) - 12,
+      y: Math.round(((row - bounds.y) * canvas.height) / bounds.height),
+      ratio: canvas.width / bounds.width,
+    };
+  }, row);
+  await page.evaluate((read) => {
+    document.documentElement.dataset.testReadLine = JSON.stringify(read);
+  }, read);
+  await page
+    .getByRole("slider", { name: "Front-row frequency tuning", exact: true })
+    .press("ArrowRight");
+  await expect
+    .poll(() => page.locator("html").getAttribute("data-test-line-pixels"))
+    .not.toBeNull();
+  expect(
+    await page.locator("html").getAttribute("data-test-line-error"),
+  ).toBeNull();
+  const pixels = JSON.parse(
+    (await page.locator("html").getAttribute("data-test-line-pixels"))!,
+  ) as number[];
+  let count = 0;
+  for (let i = 0; i < pixels.length; i += 4)
+    if (pixels[i]! > 45 && pixels[i + 1]! > 150 && pixels[i + 2]! > 190)
+      count++;
+  const width = count / read.ratio;
   expect(width).toBeGreaterThan(0.4);
   expect(width).toBeLessThanOrEqual(2.5);
 });
