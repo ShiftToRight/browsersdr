@@ -15,11 +15,14 @@ it.each([145_000_000, 10_000_000, 99_700_000])("plot center uses source frequenc
   const tune = vi.fn();
   const pipeline = { subscribe: () => () => {} } as unknown as AnalysisPipeline;
   try {
-    await act(async () => root.render(<WebGpuSpectrum pipeline={pipeline} session={{ ...SYNTHETIC_DEMO_SESSION, hardwareCenterFrequencyHz: center, selectedChannelFrequencyHz: center }} onTune={tune} />));
+    await act(async () => root.render(<WebGpuSpectrum pipeline={pipeline} session={{ ...SYNTHETIC_DEMO_SESSION, hardwareCenterFrequencyHz: center, selectedChannelFrequencyHz: center - 100_000 }} onTune={tune} />));
     const canvas = element.querySelector("canvas")!;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 100, width: 1000 } as DOMRect);
     await act(async () => canvas.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 600 })));
     expect(tune).toHaveBeenCalledExactlyOnceWith(center);
+    await act(async () => root.render(<WebGpuSpectrum pipeline={pipeline} session={{ ...SYNTHETIC_DEMO_SESSION, hardwareCenterFrequencyHz: center, selectedChannelFrequencyHz: center }} onTune={tune} />));
+    await act(async () => canvas.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 600 })));
+    expect(tune).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => root.unmount()); element.remove();
   }

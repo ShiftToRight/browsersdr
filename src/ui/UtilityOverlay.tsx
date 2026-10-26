@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useOverlayDialog } from "./useOverlayDialog";
 import { AppIcon, type AppIconName } from "./AppIcon";
@@ -83,16 +84,16 @@ export function UtilityOverlay({ view, workspaceLabel, returnFocusId, workspaceF
     <header className="utility-overlay-header">
       <span className="utility-overlay-emblem"><AppIcon name={selected.icon} /></span>
       <div><p className="eyebrow">{displayedView === "settings" ? "Settings" : displayedView === "antenna" ? "Antennas & reception" : "Help"}</p><h2 id="utility-overlay-heading">{selected.label}</h2></div>
-      <button ref={closeButton} type="button" className="secondary utility-overlay-close" aria-label="Close utility overlay" onClick={onDismiss}><AppIcon name="close" /></button>
+      <InstrumentButton ref={closeButton} type="button" className="secondary utility-overlay-close" aria-label="Close utility overlay" onClick={onDismiss}><AppIcon name="close" /></InstrumentButton>
     </header>
     <nav className="utility-overlay-navigation" aria-label="Utility pages" hidden={displayedView === "antenna"}>
-      {pages.map(page => <button key={page.view} type="button" className="secondary" aria-pressed={displayedView === page.view} aria-controls={`${page.view}-view`}
+      {pages.map(page => <InstrumentButton key={page.view} type="button" className="secondary" aria-pressed={displayedView === page.view} aria-controls={`${page.view}-view`}
         onClick={() => {
           onViewChange(page.view);
           dialog.current?.querySelector(".utility-overlay-content")?.scrollTo?.({ top: 0 });
-        }}><AppIcon name={page.icon} />{page.label}</button>)}
+        }}><AppIcon name={page.icon} />{page.label}</InstrumentButton>)}
     </nav>
     <div className="utility-overlay-content">{open || closed ? children : lastChildren.current}</div>
-    <footer className="utility-overlay-footer">{displayedView === "antenna" ? <button type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</button> : <span>{workspaceLabel} stays underneath</span>}<button type="button" className="secondary" onClick={() => { returnToWorkspace.current = true; onDismiss(); }}>Back to {workspaceLabel}</button></footer>
+    <footer className="utility-overlay-footer">{displayedView === "antenna" ? <InstrumentButton type="button" className="secondary" onClick={() => onViewChange("help")}>Help &amp; setup</InstrumentButton> : <span>{workspaceLabel} stays underneath</span>}<InstrumentButton type="button" className="secondary" onClick={() => { returnToWorkspace.current = true; onDismiss(); }}>Back to {workspaceLabel}</InstrumentButton></footer>
   </dialog>;
 }

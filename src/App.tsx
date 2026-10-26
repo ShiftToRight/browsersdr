@@ -1,3 +1,6 @@
+import { InstrumentTabs } from "./ui/InstrumentTabs";
+import { InstrumentRange } from "./ui/InstrumentRange";
+import { InstrumentButton } from "./ui/InstrumentButton";
 import { DEFAULT_RTL_INPUT, type RtlInputSettings } from "./radio/rtlInput";
 const ReceiverExpansionPanel = lazy(() => import("./ui/ReceiverExpansionPanel"));
 import { defaultPocsagSettings, type PocsagSettings } from "./pocsag/settings";
@@ -364,14 +367,14 @@ const SquelchControl = memo(function SquelchControl({
         <span>Strong signals only</span>
       </div>
       <div className="squelch-auto-row">
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           disabled={!running || disabled || autoStatus === "measuring"}
           onClick={autoSet}
         >
           {autoStatus === "measuring" ? "Measuring noise…" : "Auto set"}
-        </button>
+        </InstrumentButton>
         <small>
           {autoStatus === "measuring"
             ? "Keep the channel quiet for two seconds"
@@ -2617,7 +2620,7 @@ export function ReceiverApp({
         <ApplicationBrand />
 
         <nav className="view-tabs" aria-label="Application views">
-          <div role="tablist" aria-label="BrowserSDR views">
+          <InstrumentTabs selected={activeView} aria-label="BrowserSDR views">
             <button
               type="button"
               role="tab"
@@ -2653,7 +2656,7 @@ export function ReceiverApp({
               <span className="icon-label"><AppIcon name="search" />Explorer</span>
               <small>Scan & investigate</small>
             </button>
-          </div>
+          </InstrumentTabs>
           <p>
             {activeView === "receiver" || activeView === "remote"
               ? "Live radio workspace"
@@ -2730,10 +2733,10 @@ export function ReceiverApp({
 
       {activeView !== "receiver" && activeView !== "remote" && activeView !== "explorer" && activeView !== "decoder" && (
         <div className="auxiliary-view-header">
-          <button id="auxiliary-return" type="button" className="secondary" onClick={() => {
+          <InstrumentButton id="auxiliary-return" type="button" className="secondary" onClick={() => {
             setActiveView(lastWorkspace);
             requestAnimationFrame(() => document.getElementById(`${lastWorkspace}-tab`)?.focus());
-          }}>Back to {lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}</button>
+          }}>Back to {lastWorkspace === "receiver" ? "Receiver" : lastWorkspace === "decoder" ? "Decoder" : "Explorer"}</InstrumentButton>
           <span>{activeView === "settings" ? "Integration settings" : activeView === "help" ? "Help & setup" : activeView === "compatibility" ? "Compatibility & tests" : activeView === "about" ? "About BrowserSDR" : "Diagnostics"}</span>
         </div>
       )}
@@ -2756,7 +2759,7 @@ export function ReceiverApp({
             >
               <div className="stage-heading">
                 <StageTitle number="01" label="Acquire" id="acquire-heading" icon="radio" title="Signal source" />
-                <button type="button" className="stage-collapse secondary" aria-label={layout.sourceCollapsed ? "Expand source panel" : "Collapse source panel"} aria-expanded={!layout.sourceCollapsed} aria-controls="source-stage-body" onClick={() => setLayout((old) => ({ ...old, sourceCollapsed: !old.sourceCollapsed }))}>{layout.sourceCollapsed ? "+" : "−"}</button>
+                <InstrumentButton type="button" className="stage-collapse secondary" aria-label={layout.sourceCollapsed ? "Expand source panel" : "Collapse source panel"} aria-expanded={!layout.sourceCollapsed} aria-controls="source-stage-body" onClick={() => setLayout((old) => ({ ...old, sourceCollapsed: !old.sourceCollapsed }))}>{layout.sourceCollapsed ? "+" : "−"}</InstrumentButton>
               </div>
               <div id="source-stage-body" className="stage-body" hidden={layout.sourceCollapsed}>
               <div className="stage-controls acquire-controls">
@@ -2913,7 +2916,7 @@ export function ReceiverApp({
                       {hardwareConnected ||
                       receiver.cleanupRequired ||
                       receiver.lifecycle === "disconnecting" ? (
-                        <button
+                        <InstrumentButton
                           type="button"
                           className="acquire-disconnect secondary"
                           onClick={() => void disconnectReceiver()}
@@ -2924,9 +2927,9 @@ export function ReceiverApp({
                           {receiver.lifecycle === "disconnecting"
                             ? "Disconnecting…"
                             : "Disconnect"}
-                        </button>
+                        </InstrumentButton>
                       ) : (
-                        <button
+                        <InstrumentButton
                           type="button"
                           className={`acquire-connect ${receiver.lifecycle === "connecting" ? "is-connecting" : ""}`}
                           aria-busy={
@@ -2959,11 +2962,11 @@ export function ReceiverApp({
                                   ? "Retry connection"
                                   : "Connect"}
                           </span>
-                        </button>
+                        </InstrumentButton>
                       )}
                     </div>
                     {receiver.issue && receiver.issue.code !== "selection-cancelled" && (
-                      <button
+                      <InstrumentButton
                         type="button"
                         className="acquire-recovery-link secondary"
                         onClick={() => {
@@ -2978,17 +2981,17 @@ export function ReceiverApp({
                         }}
                       >
                         <AppIcon name="help" />Recovery help
-                      </button>
+                      </InstrumentButton>
                     )}
                     {(receiver.lifecycle === "connecting" ||
                       receiver.lifecycle === "requesting-permission") && (
-                      <button
+                      <InstrumentButton
                         type="button"
                         className="acquire-disconnect secondary"
                         onClick={() => void disconnectReceiver()}
                       >
                         <AppIcon name="unplug" />Cancel connection
-                      </button>
+                      </InstrumentButton>
                     )}
                     {source === "usrp-b205" &&
                     receiver.lifecycle === "connecting" ? (
@@ -3005,9 +3008,10 @@ export function ReceiverApp({
                         Connect checks whether an FPGA image is needed.
                       </p>
                     ) : null}
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="acquire-receive"
+                      data-receiving={running || receiver.lifecycle === "tuning"}
                       onClick={
                         running || receiver.lifecycle === "tuning"
                           ? () => void stopReceiver()
@@ -3028,18 +3032,18 @@ export function ReceiverApp({
                           : running || receiver.lifecycle === "tuning"
                             ? "Stop receiving"
                             : "Start receiving"}
-                    </button>
+                    </InstrumentButton>
                   </div>
                 ) : (
                   <div className="transport" aria-label="Receiver transport">
-                    <button
+                    <InstrumentButton
                       type="button"
                       onClick={start}
                       disabled={busy || (source === "replay" && !loadedReplay)}
                     >
                       <AppIcon name="play" />{source === "synthetic" ? "Start demo" : "Start replay"}
-                    </button>
-                    <button
+                    </InstrumentButton>
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       onClick={() => void stopReceiver()}
@@ -3048,7 +3052,7 @@ export function ReceiverApp({
                       }
                     >
                       <AppIcon name="stop" />Stop
-                    </button>
+                    </InstrumentButton>
                   </div>
                 )}
 
@@ -3149,8 +3153,8 @@ export function ReceiverApp({
                                 Requested manual gain{" "}
                                 <output>{gainDb.toFixed(1)} dB</output>
                               </span>
-                              <input
-                                type="range"
+                              <InstrumentRange
+
                                 aria-label="Requested manual gain"
                                 aria-valuetext={`${gainDb.toFixed(1)} decibels`}
                                 min="0"
@@ -3346,7 +3350,7 @@ export function ReceiverApp({
             >
               <div className="stage-heading">
                 <StageTitle number="03" label="Tune & demodulate" id="demodulate-heading" icon="sliders" title="Channel settings" />
-                <button type="button" className="stage-collapse secondary" aria-label={layout.channelCollapsed ? "Expand channel panel" : "Collapse channel panel"} aria-expanded={!layout.channelCollapsed} aria-controls="channel-stage-body" onClick={() => setLayout((old) => ({ ...old, channelCollapsed: !old.channelCollapsed }))}>{layout.channelCollapsed ? "+" : "−"}</button>
+                <InstrumentButton type="button" className="stage-collapse secondary" aria-label={layout.channelCollapsed ? "Expand channel panel" : "Collapse channel panel"} aria-expanded={!layout.channelCollapsed} aria-controls="channel-stage-body" onClick={() => setLayout((old) => ({ ...old, channelCollapsed: !old.channelCollapsed }))}>{layout.channelCollapsed ? "+" : "−"}</InstrumentButton>
               </div>
               <div id="channel-stage-body" className="stage-body" hidden={layout.channelCollapsed}>
               <div className="stage-controls primary-channel-controls">
@@ -3504,13 +3508,13 @@ export function ReceiverApp({
                     <>
                       <label htmlFor="receiver-volume">
                         <span className="icon-label"><AppIcon name={volume === 0 ? "mute" : "volume"} /><span id="receiver-volume-label">Volume</span> <output aria-hidden="true">{Math.round(volume * 100)}%</output></span>
-                        <input
+                        <InstrumentRange
                           className="volume-slider"
                           id="receiver-volume"
                           aria-labelledby="receiver-volume-label"
                           aria-describedby="receiver-volume-help"
                           aria-valuetext={`${Math.round(volume * 100)} percent`}
-                          type="range"
+
                           min="0"
                           max="1"
                           step="0.01"
@@ -3751,8 +3755,8 @@ export function ReceiverApp({
                     <label>
                       Beat tone{" "}
                       <output>{beatToneHz.toLocaleString()} Hz</output>
-                      <input
-                        type="range"
+                      <InstrumentRange
+
                         aria-label="CW beat tone"
                         min={CW_TONE_MIN_HZ}
                         max={CW_TONE_MAX_HZ}
@@ -3823,7 +3827,7 @@ export function ReceiverApp({
           aria-label="Receiver tools"
         >
           <div className="receiver-dock-bar">
-            <div
+            <InstrumentTabs selected={receiverDockView}
               className="receiver-dock-tabs"
               role="tablist"
               aria-label="Receiver tool panels"
@@ -3885,20 +3889,20 @@ export function ReceiverApp({
               >
                 <AppIcon name="file" />Session
               </button>
-            </div>
+            </InstrumentTabs>
             <div className="dock-actions">
-              {receiverDockExpanded && <button type="button" className="secondary dock-size-toggle"
+              {receiverDockExpanded && <InstrumentButton type="button" className="secondary dock-size-toggle"
                 aria-pressed={receiverDockLarge} onClick={() => setReceiverDockLarge((large) => !large)}>
                 <AppIcon name={receiverDockLarge ? "collapse" : "expand"} />{receiverDockLarge ? "Less space" : "More space"}
-              </button>}
-            <button
+              </InstrumentButton>}
+            <InstrumentButton
               type="button"
               className="secondary dock-toggle"
               aria-expanded={receiverDockExpanded}
               onClick={() => setReceiverDockExpanded((expanded) => !expanded)}
             >
               <AppIcon name={receiverDockExpanded ? "collapse" : "expand"} />{receiverDockExpanded ? "Collapse" : "Expand"}
-            </button>
+            </InstrumentButton>
             </div>
           </div>
 
@@ -3949,7 +3953,7 @@ export function ReceiverApp({
                 document.getElementById(next === "record" ? "record-tab" : next === "open" ? "open-recording-tab" : "library-tab")?.focus();
               }}
             >
-              <button
+              <InstrumentButton
                 type="button"
                 role="tab"
                 id="record-tab"
@@ -3959,8 +3963,8 @@ export function ReceiverApp({
                 onClick={() => setCaptureView("record")}
               >
                 <AppIcon name="record" />Record
-              </button>
-              <button
+              </InstrumentButton>
+              <InstrumentButton
                 type="button"
                 role="tab"
                 id="open-recording-tab"
@@ -3970,10 +3974,10 @@ export function ReceiverApp({
                 onClick={() => setCaptureView("open")}
               >
                 <AppIcon name="folder" />Open recording
-              </button>
-              <button type="button" role="tab" id="library-tab" aria-controls="library-panel"
+              </InstrumentButton>
+              <InstrumentButton type="button" role="tab" id="library-tab" aria-controls="library-panel"
                 aria-selected={captureView === "library"} tabIndex={captureView === "library" ? 0 : -1}
-                onClick={() => setCaptureView("library")}>Local library</button>
+                onClick={() => setCaptureView("library")}>Local library</InstrumentButton>
             </div>
               {captureView === "record" && <>
               <div
@@ -4020,13 +4024,13 @@ export function ReceiverApp({
               </div>
                 <div className="recording-actions">
                 {recordingStatus ? (
-                  <button
+                  <InstrumentButton
                     type="button"
                     disabled={exportingRecording}
                     onClick={stopRecording}
                   >
                     <AppIcon name="stop" />Stop recording
-                  </button>
+                  </InstrumentButton>
                 ) : !retainedCapturePresent && (
                   <ActionButton
                     type="button"
@@ -4075,21 +4079,21 @@ export function ReceiverApp({
                 )}
                 {retainedCapture.status === "retry-available" && (
                   <>
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       disabled={exportingRecording}
                       onClick={retryRecordingPreparation}
                     >
                       <AppIcon name="retry" />Retry preparation
-                    </button>
-                    <button
+                    </InstrumentButton>
+                    <InstrumentButton
                       type="button"
                       disabled={exportingRecording}
                       onClick={downloadRecordingFilesDirectly}
                     >
                       <AppIcon name="download" />Download files to disk
-                    </button>
+                    </InstrumentButton>
                   </>
                 )}
                 </div>
@@ -4189,14 +4193,14 @@ export function ReceiverApp({
                 <details className="recording-more">
                   <summary>More options</summary>
                   <div className="recording-controls">
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       disabled={exportingRecording}
                       onClick={() => requestRecordingDownload("separate")}
                     >
                       Download separate files
-                    </button>
+                    </InstrumentButton>
                   </div>
                   <small>
                     Discard closes this prepared view. Browser-storage captures stay in the library until explicitly deleted. Memory fallback captures are lost when discarded or on reload.
@@ -4393,8 +4397,8 @@ export function ReceiverApp({
                     ? "Load SigMF pair"
                     : "Load files"}
                 </ActionButton>
-                {importingReplay && <button type="button" onClick={() => replayImportAbort.current?.abort()}>Cancel replay import</button>}
-                <button
+                {importingReplay && <InstrumentButton type="button" onClick={() => replayImportAbort.current?.abort()}>Cancel replay import</InstrumentButton>}
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   disabled={busy || importingReplay}
@@ -4406,7 +4410,7 @@ export function ReceiverApp({
                   }
                 >
                   <AppIcon name="folder" />Open example recording
-                </button>
+                </InstrumentButton>
               </div>
               <p className="file-message" role="status">
                 {fileMessage}
@@ -4424,12 +4428,12 @@ export function ReceiverApp({
                     const value = Number(event.currentTarget.value); setReplayEndSeconds(value);
                     loadedReplay.replayRange = { startSample: Math.round(replayStartSeconds * loadedReplay.metadata.sampleRateHz), endSample: Math.round(value * loadedReplay.metadata.sampleRateHz) };
                   }} /></label>
-                <button type="button" disabled={running || busy || importingReplay} onClick={() => {
+                <InstrumentButton type="button" disabled={running || busy || importingReplay} onClick={() => {
                   void replayRef.current?.releaseData?.(); replayRef.current = undefined; setLoadedReplay(undefined); setFileMessage("Replay closed.");
-                }}>Close replay</button>
-                <button type="button" disabled={!running || source !== "replay" || Boolean(receiver.cleanupRequired) || Boolean(recordingStatus)} onClick={() => { controller.setReplayPaused(!replayPaused); setReplayPaused(!replayPaused); }}>
+                }}>Close replay</InstrumentButton>
+                <InstrumentButton type="button" disabled={!running || source !== "replay" || Boolean(receiver.cleanupRequired) || Boolean(recordingStatus)} onClick={() => { controller.setReplayPaused(!replayPaused); setReplayPaused(!replayPaused); }}>
                   {replayPaused ? "Resume replay" : "Pause replay"}
-                </button>
+                </InstrumentButton>
               </div>}
 
               </>}</DeferredWorkspace>
@@ -4464,7 +4468,7 @@ export function ReceiverApp({
             hidden={!receiverDockExpanded || receiverDockView !== "session"}
           >
             <h2 id="session-heading" className="visually-hidden">Session details</h2>
-            <button id="live-share-trigger" type="button" className="secondary" disabled={remoteSelected} onClick={() => setLiveShareOpen(true)}>Share live audio &amp; spectrum</button>
+            <InstrumentButton id="live-share-trigger" type="button" className="secondary" disabled={remoteSelected} onClick={() => setLiveShareOpen(true)}>Share live audio &amp; spectrum</InstrumentButton>
             <DeferredWorkspace active={(receiverDockExpanded && receiverDockView === "session") || hasSettingsShare(incomingShareHash)}><Suspense fallback={null}><SettingsSharePanel current={{ schema: SETTINGS_SHARE_SCHEMA, frequencyHz: Math.round(frequencyMhz * 1e6), settings: currentModeSettings, display: { ...spectrumDisplay, compact: layout.compact } }}
               blockedReason={saveFavoriteBlockedReason}
               applyBlockedReason={remoteSelected ? "Return to the local receiver before applying shared settings." : running ? "Stop reception before applying shared settings." : stationUseBlockedReason?.replaceAll("station", "shared settings")}
@@ -4819,7 +4823,7 @@ export function ReceiverApp({
                             COMPATIBILITY_DETAILS,
                           ) as CompatibilityDetailView[]
                         ).map((view) => (
-                          <button
+                          <InstrumentButton
                             type="button"
                             id={`compatibility-${view}-tab`}
                             role="tab"
@@ -4831,7 +4835,7 @@ export function ReceiverApp({
                             key={view}
                           >
                             {COMPATIBILITY_DETAILS[view].label}
-                          </button>
+                          </InstrumentButton>
                         ))}
                       </div>
                       {(
@@ -4920,7 +4924,7 @@ export function ReceiverApp({
                     <details>
                       <summary>Which antenna should I use?</summary>
                       <p>Find starting element lengths, polarization and placement advice for radio, aircraft, ships, balloons and weather satellites.</p>
-                      <button id="antenna-help-link" type="button" className="secondary" onClick={() => { setUtilityTriggerId(undefined); setUtilityView("antenna"); }}>Open antenna guide</button>
+                      <InstrumentButton id="antenna-help-link" type="button" className="secondary" onClick={() => { setUtilityTriggerId(undefined); setUtilityView("antenna"); }}>Open antenna guide</InstrumentButton>
                     </details>
                     <details open>
                       <summary>How do I get started?</summary>

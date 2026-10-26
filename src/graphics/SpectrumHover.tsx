@@ -3,13 +3,15 @@ import { formatFrequencyMHz } from "../ui/frequencyFormat";
 import { sampleSpectrumTrace, type HoverSpectrumFrame } from "./spectrumHoverMath";
 import "./SpectrumHover.css";
 
-export function SpectrumHover({ canvas, frame, guideGap, selectedHz, paused, stalled }: {
+export function SpectrumHover({ canvas, frame, guideGap, selectedHz, paused, stalled, traceOnly = false, traceFraction = .38 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
   frame: RefObject<HoverSpectrumFrame | undefined>;
   guideGap: number;
   selectedHz: number;
   paused: boolean;
   stalled: boolean;
+  traceOnly?: boolean;
+  traceFraction?: number;
 }) {
   const readoutRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<{
@@ -38,7 +40,8 @@ export function SpectrumHover({ canvas, frame, guideGap, selectedHz, paused, sta
       coordinates = key;
       const bounds = node.getBoundingClientRect();
       const x = pointer.x - bounds.left, y = pointer.y - bounds.top;
-      const guideStart = bounds.height * 0.38;
+      const guideStart = bounds.height * traceFraction;
+      if (traceOnly && y >= guideStart) { hide(); return; }
       if (bounds.width <= 0 || bounds.height <= 0 || x < 0 || x > bounds.width || y < 0 || y > bounds.height ||
         (guideGap > 0 && y >= guideStart && y < guideStart + guideGap)) { hide(); return; }
       const fraction = x / bounds.width;
@@ -66,7 +69,7 @@ export function SpectrumHover({ canvas, frame, guideGap, selectedHz, paused, sta
       node.removeEventListener("pointerdown", hide);
       node.removeEventListener("pointercancel", hide);
     };
-  }, [canvas, frame, guideGap]);
+  }, [canvas, frame, guideGap, traceOnly, traceFraction]);
   if (!preview) return null;
   const offset = (preview.frequency - selectedHz) / 1000;
   const width = Math.min(preview.readoutWidth, preview.width - 16);

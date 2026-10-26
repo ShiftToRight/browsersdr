@@ -76,7 +76,10 @@ it("retains inspectable provenance for every curated interval and excludes propo
         expect(source).toBeDefined();
         expect(new URL(source.url).protocol).toBe("https:");
         expect(source.edition).not.toBe("");
-        expect(source.inspected).toMatch(/^2026-10-1[34]$/);
+        expect(source.inspected).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(new Date(source.inspected).toISOString().slice(0, 10)).toBe(
+          source.inspected,
+        );
         if (source.sha256) expect(source.sha256).toMatch(/^[a-f0-9]{64}$/);
       }
     }
@@ -99,14 +102,138 @@ it("preserves gaps and gives the upper band ownership at an exact boundary", () 
   expect(guideSegments(108e6, 109e6, "DE").map(segmentLabel)).toEqual([
     "Air navigation",
   ]);
-  expect(guideSegments(143e6, 147e6, "DE").map(segmentLabel)).toEqual([
+  expect(guideSegments(0.14e6, 0.15e6, "DE").map(segmentLabel)).toEqual([
     "No guide data",
-    "2 m amateur",
-    "No guide data",
+    "Longwave broadcast",
   ]);
   expect(guideSegments(144e6, 146e6, "general").map(segmentLabel)).toEqual([
     "No guide data",
   ]);
+});
+
+it("covers the 868 MHz neighborhood with the official application boundaries", () => {
+  const edges = [
+    862, 863, 865, 868, 868.6, 868.7, 869.2, 869.25, 869.3, 869.4, 869.65,
+    869.7, 870,
+  ].map((mhz) => Math.round(mhz * 1e6));
+  const ids = [
+    "de-srd-862",
+    "de-srd-audio",
+    "de-srd-rfid",
+    "de-srd-868",
+    "de-alarm-8686",
+    "de-srd-8687",
+    "de-social-alarm",
+    "de-alarm-86925",
+    "de-alarm-8693",
+    "de-srd-8694",
+    "de-alarm-86965",
+    "de-srd-8697",
+  ];
+  const segments = guideSegments(862e6, 870e6, "DE");
+  expect(segments.map((s) => s.startHz)).toEqual(edges.slice(0, -1));
+  expect(segments.map((s) => s.endHz)).toEqual(edges.slice(1));
+  expect(segments.map((s) => s.bands.map((b) => b.id))).toEqual(
+    ids.map((id) => [id]),
+  );
+  for (let i = 1; i < edges.length - 1; i++) {
+    const edge = edges[i]!;
+    const at = guideSegments(edge, edge + 1, "DE");
+    expect(at[0]!.bands[0]!.id).toBe(ids[i]);
+    expect(guideSegments(edge - 1, edge, "DE")[0]!.bands[0]!.id).toBe(
+      ids[i - 1],
+    );
+  }
+  expect(segmentLabel(guideSegments(868e6, 868.5e6, "DE")[0]!)).toBe(
+    "SRD / shared uses",
+  );
+  expect(segmentLabel(guideSegments(869.2e6, 869.25e6, "DE")[0]!)).toBe(
+    "SRD / social alarms",
+  );
+  expect(segments.reduce((n, s) => n + s.widthPercent, 0)).toBeCloseTo(100);
+});
+
+it("keeps mobile directions, railway sharing and uncatalogued gaps distinct", () => {
+  const label = (mhz: number) =>
+    segmentLabel(guideSegments(mhz * 1e6, mhz * 1e6 + 1, "DE")[0]!);
+  expect(label(710)).toBe("700 MHz mobile uplink");
+  expect(label(760)).toBe("700 MHz mobile downlink");
+  expect(label(800)).toBe("800 MHz mobile downlink");
+  expect(label(850)).toBe("800 MHz mobile uplink");
+  expect(label(900)).toBe("900 MHz mobile uplink");
+  expect(label(950)).toBe("900 MHz mobile downlink");
+  expect(label(874)).toBe("Railway / military shared");
+  expect(label(879)).toBe("Railway mobile");
+  expect(label(919)).toBe("Railway / military shared");
+  expect(label(924)).toBe("Railway mobile");
+  // The requested audit did not establish a current general application here.
+  expect(label(7000)).toBe("No guide data");
+  expect(guideSegments(868e6, 869e6, "general")[0]!.bands).toEqual([]);
+  expect(guideSegments(868e6, 869e6, "US")[0]!.bands).toEqual([]);
+});
+
+it("adds sourced national context across HF, VHF, UHF and microwave", () => {
+  const cases = [
+    [0.136, "de-lf-amateur"],
+    [0.475, "de-mf-amateur"],
+    [3.6, "de-80m"],
+    [5.36, "de-60m"],
+    [24.95, "de-12m"],
+    [28.5, "de-10m"],
+    [50.5, "de-6m"],
+    [5, "de-time5"],
+    [5.5, "de-hf-aviation"],
+    [156.2, "de-156-marine"],
+    [403.5, "de-400-weather"],
+    [406.05, "de-406-rescue"],
+    [433.92, "de-srd433"],
+    [446.1, "de-pmr446"],
+    [448.425, "de-pager448a"],
+    [1255, "de-1250-amateur"],
+    [1575.42, "de-gnss-l1"],
+    [1695, "de-weather-l"],
+    [1890, "de-dect"],
+    [2530, "de-2600-up"],
+    [2600, "de-2600-tdd"],
+    [2660, "de-2600-down"],
+    [3500, "de-3500-mobile"],
+    [4300, "de-altimeter"],
+    [5200, "de-wlan5150"],
+    [5300, "de-wlan5250"],
+    [5500, "de-wlan5470"],
+    [6000, "de-wlan6"],
+  ] as const;
+  for (const [mhz, id] of cases) {
+    const segment = guideSegments(mhz * 1e6, mhz * 1e6 + 1, "DE")[0]!;
+    expect(
+      segment.bands.map((b) => b.id),
+      `${mhz} MHz`,
+    ).toContain(id);
+  }
+  const shared = guideSegments(433.9e6, 434e6, "DE")[0]!;
+  expect(shared.bands.map((b) => b.id)).toEqual(["70cm", "de-srd433"]);
+  expect(segmentLabel(shared)).toBe("Shared uses");
+  // Expired temporary 4 m amateur permission is not imported as current.
+  expect(guideSegments(70.18e6, 70.19e6, "DE")[0]!.bands).toEqual([]);
+});
+
+it("pins new official editions without rewriting historical source inspections", () => {
+  expect(BAND_GUIDE_SOURCES.DE!.inspected).toBe("2026-10-13");
+  expect(BAND_GUIDE_SOURCES["DE-PLAN-2026"]!.sourceDate).toBe("2026-08");
+  expect(BAND_GUIDE_SOURCES["DE-PLAN-2026"]!.sha256).toBe(
+    "460078ec84536316b038e2f56bec3aceb7205bdb663f19a62d85d6889bacb8cd",
+  );
+  for (const band of GERMAN_GUIDE_BANDS.filter((b) => b.id.startsWith("de-"))) {
+    expect(band.references.some((r) => r.sourceId.startsWith("DE-"))).toBe(
+      true,
+    );
+    for (const ref of band.references) {
+      expect(BAND_GUIDE_SOURCES[ref.sourceId]!.inspected).toBe("2026-10-25");
+      expect(BAND_GUIDE_SOURCES[ref.sourceId]!.sha256).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+    }
+  }
 });
 it("retains overlapping entries rather than assigning one identity", () => {
   const base = GERMAN_GUIDE_BANDS[0]!;

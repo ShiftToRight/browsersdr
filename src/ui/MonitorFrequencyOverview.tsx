@@ -1,3 +1,4 @@
+import { InstrumentRange } from "./InstrumentRange";
 import { RememberedDetails } from "./ExplorerPreferencesUI";
 import { presentationValue, savePresentation } from "./explorerPreferences";
 import "./spectrumActivity.css";
@@ -297,9 +298,9 @@ export function MonitorFrequencyOverview({
             <summary>Display</summary>
             <label>
               Spectrum height
-              <input
+              <InstrumentRange
                 aria-label="Spectrum height"
-                type="range"
+
                 min="160"
                 max="440"
                 step="20"

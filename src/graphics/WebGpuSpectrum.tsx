@@ -1,3 +1,8 @@
+import { channelOnlyDisplayChange, SurfaceMarkerMotion } from "./spectrumDisplaySession";
+import { InstrumentButton } from "../ui/InstrumentButton";
+import type { GpuSpectrumSurface } from "./gpuSpectrumSurface";
+import { surfaceSettings, SURFACE_SETTINGS_KEY, SURFACE_MAX_DIMENSION, SURFACE_TRACE_FRACTION, type SpectrumSurfaceSettings } from "./spectrumSurfaceSettings";
+import "./SpectrumSurface.css";
 import { snapChannelFrequency } from "./channelRaster";
 import type { HoverSpectrumFrame } from "./spectrumHoverMath";
 import { ActionButton } from "../ui/ActionButton";
@@ -8,7 +13,7 @@ import { useTheme } from "../ui/themes";
 import { SpectrumInfo } from "./SpectrumInfo";
 import { spectrumDisplayScale } from "./spectrumDisplayScale";
 import { usePageVisible } from "../ui/usePageVisible";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { frequencyForPixel } from "../dsp/frequencyScale";
 import { FFT_SIZE } from "../dsp/spectrumMath";
@@ -87,6 +92,20 @@ export function WebGpuSpectrum({
   onTune?: (frequencyHz: number) => void;
 }) {
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [surfacePreferences, setSurfacePreferences] = useState(() => {
+    try { return surfaceSettings(JSON.parse(localStorage.getItem(SURFACE_SETTINGS_KEY) ?? "null")); }
+    catch { return surfaceSettings(); }
+  });
+  const surfacePreferencesRef = useRef(surfacePreferences);
+  surfacePreferencesRef.current = surfacePreferences;
+  const [surfaceState, setSurfaceState] = useState("idle");
+  const [surfaceDuration, setSurfaceDuration] = useState(0);
+  const changeSurface = (patch: Partial<SpectrumSurfaceSettings>) => {
+    const next = surfaceSettings({ ...surfacePreferencesRef.current, ...patch });
+    surfacePreferencesRef.current = next;
+    setSurfacePreferences(next);
+    try { localStorage.setItem(SURFACE_SETTINGS_KEY, JSON.stringify(next)); } catch { /* Optional local presentation preference. */ }
+  };
   useEffect(() => { if (!active) setDisplayOpen(false); }, [active]);
   const [rasterRegion, setRasterRegion] = useState("general");
   const [snapChannels, setSnapChannels] = useState(() => {
@@ -114,6 +133,9 @@ export function WebGpuSpectrum({
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const renderRef = useRef<() => void>(() => undefined);
+  const sessionChangeRef = useRef<(next?: SourceSessionMetadata) => void>(() => undefined);
+  const surfacePickRef = useRef<(x:number,y:number,width:number,height:number) => number | undefined>(() => undefined);
+  useLayoutEffect(() => { sessionChangeRef.current(session); }, [session]);
   const scaleCallback = useRef(onDisplaySettingsChange);
   scaleCallback.current = onDisplaySettingsChange;
   const [guideGap, setGuideGap] = useState(0);
@@ -161,6 +183,11 @@ export function WebGpuSpectrum({
     renderRef.current();
   }, [displaySettings]);
   const [renderer, setRenderer] = useState<"webgpu" | "canvas2d">("webgpu");
+  const surfaceActive = surfacePreferences.view === "3d" && surfaceState === "ready" && renderer === "webgpu" && !requestedFftSize;
+  const surfaceCombined = surfaceActive && surfacePreferences.layout === "combined";
+  const surfaceActiveRef = useRef(surfaceActive);
+  surfaceActiveRef.current = surfaceActive;
+  useEffect(() => { renderRef.current(); }, [surfacePreferences, surfaceActive]);
   const [fallbackReason, setFallbackReason] = useState("");
   const [gpuAttempt, setGpuAttempt] = useState(0);
   const latestBinsRef = useRef<Float32Array | undefined>(undefined);
@@ -263,11 +290,23 @@ export function WebGpuSpectrum({
     return { bands, dimmed, summary };
   }, [session]);
 
+  const graphicsGeneration = renderer === "canvas2d" || requestedFftSize ? session?.sessionGeneration : undefined;
   useEffect(() => {
     hoverFrameRef.current = undefined;
     let disposed = false;
     const size = fftSize;
     let canvasDisplay: CanvasSpectrum | undefined;
+    let surface: GpuSpectrumSurface | undefined;
+    let surfaceStarting = false;
+    let surfaceFailed = false;
+    let surfaceStatusAt = -Infinity;
+    let lastSurfaceDraw = -Infinity;
+    let surfaceAnimation: number | undefined;
+    let surfaceSubmissionPending = false;
+    let surfaceRedraw = false;
+    let markerAnimation: number | undefined;
+    let previousSession = sessionRef.current;
+    const markerMotion = new SurfaceMarkerMotion();
     let animationFrame: number | undefined;
     let fft: GpuSpectrum | undefined;
     let gpuTap: GpuAnalysisTap | undefined;
@@ -379,13 +418,49 @@ export function WebGpuSpectrum({
       )
         return;
       try {
-      const ratio = Math.max(1, window.devicePixelRatio || 1);
+      if (surfacePreferencesRef.current.view === "3d" && !requestedFftSize && !surface && !surfaceStarting && !surfaceFailed) {
+        surfaceStarting = true;
+        setSurfaceState("loading");
+        const currentDevice = device;
+        void import("./gpuSpectrumSurface").then(module => module.GpuSpectrumSurface.create(currentDevice, navigator.gpu.getPreferredCanvasFormat(), spectrumBuffer!, size)).then(created => {
+          if (disposed || gpuFailed || device !== currentDevice) { created.dispose(); return; }
+          surface = created;
+          setSurfaceState("ready");
+          render();
+        }).catch(error => {
+          if (!disposed && !gpuFailed) {
+            surfaceFailed = true;
+            setSurfaceState(`3D unavailable — showing 2D. ${error instanceof Error ? error.message : String(error)}`);
+          }
+        });
+      }
+      const useSurface = Boolean(surface && surfaceActiveRef.current);
+      if (useSurface && surfaceSubmissionPending) {
+        surfaceRedraw = true;
+        return;
+      }
+      // Coalesce incoming redraws without touching analysis publication/credits.
+      if (useSurface && !pausedRef.current && performance.now() - lastSurfaceDraw < 1000 / 30) {
+        if (surfaceAnimation === undefined) surfaceAnimation = requestAnimationFrame(() => {
+          surfaceAnimation = undefined;
+          render();
+        });
+        return;
+      }
+      if (surfaceAnimation !== undefined) cancelAnimationFrame(surfaceAnimation);
+      surfaceAnimation = undefined;
+      lastSurfaceDraw = performance.now();
+      const ratio = useSurface ? Math.min(2, Math.max(1, window.devicePixelRatio || 1),
+        SURFACE_MAX_DIMENSION / Math.max(1, cssWidth, cssHeight),
+        device.limits.maxTextureDimension2D / Math.max(1, cssWidth, cssHeight)) : Math.max(1, window.devicePixelRatio || 1);
       const width = Math.min(
         Math.max(1, Math.round(cssWidth * ratio)),
+        useSurface ? SURFACE_MAX_DIMENSION : device.limits.maxTextureDimension2D,
         device.limits.maxTextureDimension2D,
       );
       const height = Math.min(
         Math.max(1, Math.round(cssHeight * ratio)),
+        useSurface ? SURFACE_MAX_DIMENSION : device.limits.maxTextureDimension2D,
         device.limits.maxTextureDimension2D,
       );
       if (canvas.width !== width) canvas.width = width;
@@ -394,10 +469,13 @@ export function WebGpuSpectrum({
       const encoder = device.createCommandEncoder({
         label: "RF spectrum and waterfall commands",
       });
+      const texture = context.getCurrentTexture();
+      const target = texture.createView();
+      if (!(useSurface && surfacePreferencesRef.current.layout === "combined")) {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            view: context.getCurrentTexture().createView(),
+            view: target,
             clearValue: { r: paletteRef.current.background[0], g: paletteRef.current.background[1], b: paletteRef.current.background[2], a: 1 },
             loadOp: "clear",
             storeOp: "store",
@@ -405,16 +483,61 @@ export function WebGpuSpectrum({
         ],
       });
       pass.setBindGroup(0, bindGroup);
-      pass.setPipeline(waterfallPipeline);
-      pass.draw(3);
-      if (latestFrame) {
+      if (!useSurface) {
+        pass.setPipeline(waterfallPipeline);
+        pass.draw(3);
+      }
+      if (latestFrame && !(useSurface && surfacePreferencesRef.current.layout === "combined")) {
+        if (useSurface) {
+          pass.setViewport(0, 0, width, height * SURFACE_TRACE_FRACTION / .38, 0, 1);
+          pass.setScissorRect(0, 0, width, Math.max(1, Math.floor(height * SURFACE_TRACE_FRACTION)));
+        }
         pass.setPipeline(spectrumPipeline);
         pass.draw(size);
         pass.setPipeline(markerPipeline);
         pass.draw(2);
       }
       pass.end();
+      }
+      if (useSurface && surface) {
+        const current = sessionRef.current;
+        const center = latestFrame?.centerFrequencyHz ?? current?.hardwareCenterFrequencyHz ?? 0;
+        const rate = latestFrame?.sampleRateHz ?? current?.actualSampleRateHz ?? 1;
+        const fraction = (hz: number) => .5 + (hz - center) / rate;
+        const edges = current ? channelPassbands(current).flatMap(band => [fraction(band.startFrequencyHz), fraction(band.endFrequencyHz)]) : [];
+        const bands = [edges[0] ?? -10, edges[1] ?? -10, edges[2] ?? -10, edges[3] ?? -10];
+        markerMotion.set([fraction(current?.selectedChannelFrequencyHz ?? center),...bands],performance.now(),false);
+        const markers = markerMotion.advance(performance.now());
+        surface.encode(encoder, texture, width, height, height * (surfacePreferencesRef.current.layout === "combined" ? 0 : SURFACE_TRACE_FRACTION) + guideGapRef.current * height / Math.max(1, cssHeight), (surfacePreferencesRef.current.layout === "combined" ? 112 : 48) * height / Math.max(1, cssHeight),
+          floorRef.current, rangeRef.current, surfacePreferencesRef.current, paletteRef.current,
+          markers[0]!, markers.slice(1), width / Math.max(1,cssWidth));
+        canvas.dataset.surfaceScenes = String(surface.sceneDraws);
+        canvas.dataset.surfaceMarkers = String(surface.markerDraws);
+        canvas.dataset.surfaceMarkerX = String(markers[0]);
+        if (markerMotion.moving(performance.now()) && markerAnimation === undefined) markerAnimation=requestAnimationFrame(() => {
+          markerAnimation=undefined; render();
+        });
+        if (pausedRef.current || performance.now() - surfaceStatusAt > 250) {
+          surfaceStatusAt = performance.now();
+          setSurfaceDuration(surface.history.duration(surfacePreferencesRef.current.seconds));
+        }
+      }
       device.queue.submit([encoder.finish()]);
+      if (useSurface) {
+        surfaceSubmissionPending = true;
+        canvas.dataset.surfacePending = "true";
+        const submittedDevice = device;
+        // Keep at most one terrain submission in flight. Analysis/history keep
+        // accepting bounded rows; a slow GPU draws only the newest held state.
+        void submittedDevice.queue.onSubmittedWorkDone().then(() => {
+          if (disposed || gpuFailed || device !== submittedDevice) return;
+          surfaceSubmissionPending = false;
+          canvas.dataset.surfacePending = "false";
+          if (surfaceRedraw) { surfaceRedraw = false; render(); }
+        }).catch(error => {
+          if (!disposed && !gpuFailed) fallbackToCanvas(`GPU completion failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      } else canvas.dataset.surfacePending = "false";
       if (latestFrame) hoverFrameRef.current = {
         center: latestFrame.centerFrequencyHz, rate: latestFrame.sampleRateHz,
         // Experimental GPU FFT does not expose the plotted bins on the CPU.
@@ -428,8 +551,37 @@ export function WebGpuSpectrum({
     };
     renderRef.current = render;
 
+    surfacePickRef.current = (x,y,width,height) => surface?.pick(x,y,width,height,latestFrame?.bins);
+    sessionChangeRef.current = next => {
+      const old = previousSession;
+      previousSession = next;
+      if (!next || !old || old.sessionGeneration !== next.sessionGeneration ||
+        !channelOnlyDisplayChange(old,next)) {
+        const compatible = channelOnlyDisplayChange(old,next);
+        history.reset(next?.sessionGeneration ?? 0);
+        if (compatible && next && latestFrame) {
+          surface?.history.continueGeneration(next.sessionGeneration);
+          setDisplayedGeneration(next.sessionGeneration);
+          const coordinates = guideCoordinatesRef.current;
+          if (coordinates) { const updated = {...coordinates,generation:next.sessionGeneration}; guideCoordinatesRef.current=updated; setGuideCoordinates(updated); }
+        } else {
+          surface?.reset(); latestFrame=undefined; latestBinsRef.current=undefined;
+          hoverFrameRef.current=undefined; setDisplayedGeneration(undefined); setSurfaceDuration(0);
+        }
+      }
+      if (next && latestFrame) {
+        const fraction = (hz:number) => .5+(hz-latestFrame!.centerFrequencyHz)/latestFrame!.sampleRateHz;
+        const edges=channelPassbands(next).flatMap(band=>[fraction(band.startFrequencyHz),fraction(band.endFrequencyHz)]);
+        markerMotion.set([fraction(next.selectedChannelFrequencyHz),edges[0]??-10,edges[1]??-10,edges[2]??-10,edges[3]??-10],performance.now(),!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      }
+      if (markerAnimation !== undefined) cancelAnimationFrame(markerAnimation);
+      markerAnimation=undefined; render();
+    };
+
     const unsubscribe = pipeline.subscribe((frame, frames) => {
       if (disposed || frame.sessionGeneration !== (sessionRef.current?.sessionGeneration ?? 0)) return;
+      if (!pausedRef.current) surface?.accept(frames);
+      else surface?.history.breakContinuity();
       if (canvasDisplay) {
         if (pausedRef.current) return;
         const accepted = canvasDisplay.accept(frames);
@@ -547,7 +699,7 @@ export function WebGpuSpectrum({
             "This browser could not create a WebGPU canvas context.",
           );
         const format = navigator.gpu.getPreferredCanvasFormat();
-        context.configure({ device, format, alphaMode: "opaque" });
+        context.configure({ device, format, alphaMode: "opaque", usage: 0x10 | 0x2 });
         const module = device.createShaderModule({
           code: spectrumShader(size),
           label: "RF spectrum and waterfall shader",
@@ -768,8 +920,11 @@ export function WebGpuSpectrum({
       disposed = true;
       hoverFrameRef.current = undefined;
       renderRef.current = () => undefined;
+      sessionChangeRef.current = () => undefined; surfacePickRef.current = () => undefined;
+      if (markerAnimation !== undefined) cancelAnimationFrame(markerAnimation);
       unsubscribe();
       if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
+      if (surfaceAnimation !== undefined) cancelAnimationFrame(surfaceAnimation);
       releaseGpuResources(true);
     };
     function fallbackToCanvas(reason: string): void {
@@ -812,6 +967,10 @@ export function WebGpuSpectrum({
     }
     function releaseGpuResources(destroyDevice: boolean): void {
       gpuFailed = true;
+      surface?.dispose();
+      surface = undefined;
+      if (surfaceAnimation !== undefined) cancelAnimationFrame(surfaceAnimation);
+      surfaceAnimation = undefined;
       gpuTap?.dispose();
       detachGpuTap?.();
       fft?.dispose();
@@ -846,25 +1005,34 @@ export function WebGpuSpectrum({
     fallbackReason,
     pipeline,
     requestedFftSize,
-    session?.sessionGeneration,
+    graphicsGeneration,
     fftSize,
   ]);
 
-  const tuneFromClick = (event: MouseEvent<HTMLCanvasElement>) => {
+  const tuneFrequency = (frequency: number, free = false) => {
     if (!session || !onTune) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const frequency = frequencyForPixel(
-      event.clientX - bounds.left,
-      bounds.width,
-      session.hardwareCenterFrequencyHz,
-      session.actualSampleRateHz,
-    );
-    // Use exactly the keyboard-tuning path: source/backend validates the span.
-    const snapped = snapChannels && !event.altKey
+    const snapped = snapChannels && !free
       ? snapChannelFrequency(frequency, session.mode, rasterRegion) : frequency;
-    // Do not snap outside the visible usable channel window at an edge.
     const margin = session.actualSampleRateHz / 2 - session.channelBandwidthHz / 2;
-    onTune(Math.abs(snapped - session.hardwareCenterFrequencyHz) <= margin ? snapped : frequency);
+    const target = Math.abs(snapped - session.hardwareCenterFrequencyHz) <= margin ? snapped : frequency;
+    if (Math.abs(target-session.selectedChannelFrequencyHz) >= .5) onTune(target);
+  };
+  const tuneFromPosition = (event: MouseEvent<HTMLElement>) => {
+    if (!session) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    tuneFrequency(frequencyForPixel(event.clientX - bounds.left, bounds.width,
+      session.hardwareCenterFrequencyHz, session.actualSampleRateHz), event.altKey);
+  };
+  const tuneFromClick = (event: MouseEvent<HTMLCanvasElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (surfaceActiveRef.current && (surfacePreferencesRef.current.layout === "combined" ||
+      event.clientY - bounds.top >= bounds.height * SURFACE_TRACE_FRACTION)) {
+      if (!session || !hasFrame) return;
+      const fraction=surfacePickRef.current(event.clientX-bounds.left,event.clientY-bounds.top,bounds.width,bounds.height);
+      if (fraction !== undefined) tuneFrequency(session.hardwareCenterFrequencyHz+(fraction-.5)*session.actualSampleRateHz,event.altKey);
+      return;
+    }
+    tuneFromPosition(event);
   };
   const updatePaused = () => {
     pausedRef.current = !paused;
@@ -882,19 +1050,33 @@ export function WebGpuSpectrum({
             <h2 id="graphics-heading">Spectrum & waterfall</h2>
           </div>
         </div>
+        <div className="spectrum-view-controls">
+          <div className="spectrum-view-choice" role="group" aria-label="Spectrum view">
+            <InstrumentButton type="button" className="secondary" aria-pressed={surfacePreferences.view === "2d"}
+              onClick={() => changeSurface({ view: "2d" })}>2D waterfall</InstrumentButton>
+            <InstrumentButton type="button" className="secondary" aria-pressed={surfacePreferences.view === "3d"}
+              onClick={() => changeSurface({ view: "3d" })}>3D history</InstrumentButton>
+          </div>
+          {surfacePreferences.view === "3d" && !surfaceActive && <p className="surface-notice" role="status">
+            {renderer === "canvas2d" ? "3D unavailable — showing 2D. A compatible GPU is needed." : requestedFftSize ?
+              "3D unavailable with experimental GPU FFT — showing 2D." : surfaceState.startsWith("3D unavailable") ?
+                "3D unavailable — showing 2D. Retry graphics in Display settings." : "Preparing 3D history…"}
+          </p>}
+        </div>
         <Suspense fallback={null}><BandGuideFeature canvas={canvasRef} width={displayWidth}
           coordinates={validGuideCoordinates} selectedHz={session?.selectedChannelFrequencyHz ?? 0}
           onPlanChange={setRasterRegion} onHeightChange={setGuideGap} /></Suspense>
         <WorkspaceToolDialog title="Display settings" icon="sliders" open={displayOpen} onOpenChange={setDisplayOpen} placement="spectrum" className="spectrum-display-trigger" footer="Display changes do not affect receiver gain.">
           <div className="display-settings">
         <label className="spectrum-hover-toggle receiver-auto-center receiver-tool-toggle">
-          <input type="checkbox" checked={hoverEnabled} onChange={event => {
+          <input type="checkbox" disabled={surfaceCombined} checked={hoverEnabled} onChange={event => {
             const enabled = event.currentTarget.checked;
             setHoverEnabled(enabled);
             try { localStorage.setItem("browsersdr.spectrum-hover.v1", enabled ? "on" : "off"); } catch { /* Keep the in-tab choice when storage is unavailable. */ }
           }} /><span className="receiver-switch-track" aria-hidden="true" />
           Hover frequency guide
         </label>
+        {surfaceCombined && <small>For trace hover readouts, choose the separate spectrum layout.</small>}
         <label className="display-note receiver-auto-center receiver-tool-toggle">
           <input type="checkbox" checked={snapChannels} onChange={event => {
             const enabled = event.currentTarget.checked; setSnapChannels(enabled);
@@ -959,6 +1141,37 @@ export function WebGpuSpectrum({
             />
           </label>
         </div>
+        {surfacePreferences.view === "3d" && <>
+        <label className="surface-layout-setting">3D layout
+          <select aria-label="3D layout" value={surfacePreferences.layout}
+            onChange={event => changeSurface({ layout: event.currentTarget.value as SpectrumSurfaceSettings["layout"] })}>
+            <option value="combined">Combined spectrum & history</option>
+            <option value="separate">Separate spectrum & history</option>
+          </select>
+        </label><div className="surface-settings">
+          <label>History window
+            <select aria-label="3D history window" value={surfacePreferences.seconds} onChange={event => changeSurface({ seconds: Number(event.currentTarget.value) })}>
+              <option value={4}>4 seconds</option><option value={8}>8 seconds</option><option value={10}>10 seconds</option><option value={16}>16 seconds</option>
+            </select>
+          </label>
+          <label>Elevation <output>{surfacePreferences.elevation}°</output>
+            <input type="range" aria-label="3D elevation" min={22} max={60} step={1} value={surfacePreferences.elevation}
+              onChange={event => changeSurface({ elevation: event.currentTarget.valueAsNumber })} />
+          </label>
+          <label>Height <output>{surfacePreferences.height.toFixed(1)}×</output>
+            <input type="range" aria-label="3D height exaggeration" min={.5} max={1.6} step={.1} value={surfacePreferences.height}
+              onChange={event => changeSurface({ height: event.currentTarget.valueAsNumber })} />
+          </label>
+        </div>
+        <label className="checkbox-label receiver-auto-center receiver-tool-toggle surface-depth-toggle">
+          <input type="checkbox" role="switch" aria-label="Depth perspective" checked={surfacePreferences.perspective}
+            onChange={event => changeSurface({ perspective: event.currentTarget.checked })} />
+          <span className="receiver-switch-track" aria-hidden="true" />Depth perspective
+        </label>
+        <small className="surface-depth-help">{surfacePreferences.perspective ? "Older rows recede into the distance. The newest edge uses the full frequency width." : "All rows use the same frequency positions."}</small>
+        <InstrumentButton type="button" className="secondary surface-reset" onClick={() => changeSurface({ elevation: 38, height: 1, perspective: true })}>Reset 3D camera</InstrumentButton>
+        {surfacePreferences.view === "3d" && !surfaceActive && <InstrumentButton type="button" className="secondary surface-reset"
+          onClick={() => { setRenderer("webgpu"); retryGraphics(); }}>Retry graphics</InstrumentButton>}</>}
         <small>
           <label className="checkbox-label receiver-auto-center receiver-tool-toggle"><input type="checkbox" checked={automaticScale} onChange={event => changeScaleMode(event.currentTarget.checked)} /><span className="receiver-switch-track" aria-hidden="true" />Auto scale on tune or rate change</label>
           Auto scale fits the current spectrum. Display changes do not affect
@@ -1001,13 +1214,13 @@ export function WebGpuSpectrum({
           </div>
           {tuningControls}
         </div>
-        <div className={`canvas-frame${guideGap > 0 ? " has-band-guide" : ""}`} style={{"--band-guide-height":`${guideGap}px`} as CSSProperties}>
+        <div className={`canvas-frame${guideGap > 0 ? " has-band-guide" : ""}${surfaceActive ? " surface-active" : ""}${surfaceCombined ? " surface-combined" : ""}`} style={{"--band-guide-height":`${guideGap}px`, "--surface-trace-end":`${surfaceCombined ? 0 : SURFACE_TRACE_FRACTION * 100}%`, minHeight: surfaceActive ? 340 : undefined} as CSSProperties}>
           <canvas
             key={renderer}
             ref={canvasRef}
             width={960}
             height={560}
-            aria-label={`${renderer === "canvas2d" ? "Canvas2D" : "WebGPU"} RF spectrum and waterfall plot; click to tune`}
+            aria-label={surfaceCombined ? "WebGPU combined live spectrum and 3D history; click the spectrum or grid to tune" : surfaceActive ? "WebGPU RF spectrum and 3D history; click the spectrum or grid to tune" : `${renderer === "canvas2d" ? "Canvas2D" : "WebGPU"} RF spectrum and waterfall plot; click to tune`}
             onClick={tuneFromClick}
           />
           {(state.kind !== "ready" || !hasFrame) && (
@@ -1030,32 +1243,32 @@ export function WebGpuSpectrum({
               </p>
               <div>
                 {(state.kind === "error" || state.kind === "unsupported") && (
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary retry-graphics"
                     onClick={retryGraphics}
                   >
                     Retry graphics
-                  </button>
+                  </InstrumentButton>
                 )}
                 {(state.kind === "error" || state.kind === "unsupported") &&
                   onOpenDiagnostics && (
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       onClick={onOpenDiagnostics}
                     >
                       Check diagnostics
-                    </button>
+                    </InstrumentButton>
                   )}
                 {!session && onOpenAcquire && (
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary"
                     onClick={onOpenAcquire}
                   >
                     Open Receiver
-                  </button>
+                  </InstrumentButton>
                 )}
               </div>
             </div>
@@ -1098,8 +1311,33 @@ export function WebGpuSpectrum({
           <span className="plot-label spectrum-label">Spectrum</span>
 
           <span className="plot-label waterfall-label">
-            Waterfall · newest at top
+            {surfaceActive ? `3D history · ${surfaceDuration.toFixed(1)} / ${surfacePreferences.seconds} s · newest at front` : "Waterfall · newest at top"}
           </span>
+          {surfaceActive && <div className="surface-axis" aria-hidden="true">
+            <div className="surface-frequency">{labels.map(tick => <span key={tick.fraction} style={{ left: `${tick.fraction * 100}%`, transform: tick.fraction === 0 ? "none" : tick.fraction === 1 ? "translateX(-100%)" : "translateX(-50%)" }}>{tick.label}</span>)}</div>
+            <span className="surface-age">0 s</span><span className="surface-oldest">Older · {surfacePreferences.seconds} s</span>
+            <span className="surface-power"><span>Height · dB rel.</span><span>{floorDb} … {floorDb + rangeDb}</span></span>
+          </div>}
+          {surfaceCombined && session && hasFrame && <div className="surface-tuning" role="slider" tabIndex={0}
+            aria-label="Front-row frequency tuning" aria-valuemin={session.hardwareCenterFrequencyHz - session.actualSampleRateHz / 2}
+            aria-valuemax={session.hardwareCenterFrequencyHz + session.actualSampleRateHz / 2}
+            aria-valuenow={session.selectedChannelFrequencyHz} aria-valuetext={formatFrequency(session.selectedChannelFrequencyHz)}
+            title="Click to tune · Alt-click for free tuning · Arrow keys: 1 kHz · Shift: 10 kHz"
+            onClick={tuneFromPosition} onKeyDown={event => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) return;
+              event.preventDefault();
+              const center = session.hardwareCenterFrequencyHz, rate = session.actualSampleRateHz;
+              const low = center - rate / 2, high = center + rate / 2;
+              const direction = ["ArrowLeft", "ArrowDown", "PageDown"].includes(event.key) ? -1 : 1;
+              const step = event.key.startsWith("Page") ? 100_000 : event.shiftKey ? 10_000 : 1_000;
+              const hz = event.key === "Home" ? low : event.key === "End" ? high : session.selectedChannelFrequencyHz + direction * step;
+              tuneFrequency(Math.max(low, Math.min(high, hz)), true);
+            }}>
+            <span className="surface-live-caption">Live spectrum · click frequency to tune</span>
+            <span className="surface-live-selected">{formatFrequency(session.selectedChannelFrequencyHz)}</span>
+            <span className="surface-tuning-marker" style={{ left: `${Math.max(0, Math.min(100, markerPositionPercent))}%` }} aria-hidden="true" />
+            <span className="surface-tuning-ticks" aria-hidden="true">{labels.map(tick => <span key={tick.fraction} style={{ left: `${tick.fraction * 100}%`, transform: tick.fraction === 0 ? "none" : tick.fraction === 1 ? "translateX(-100%)" : "translateX(-50%)" }}>{tick.label}</span>)}</span>
+          </div>}
           {paused ? (
             <span className="paused-label">
               Display paused · receiver still running
@@ -1120,6 +1358,7 @@ export function WebGpuSpectrum({
           ) : null}
           <div className="plot-metadata">
             <span className="display-units">Relative dB · not dBm</span>
+            {surfaceActive && <small>Height & colour = relative level</small>}
             {session && (
               <small className="receiver-offset">
                 Channel offset{" "}
@@ -1129,11 +1368,13 @@ export function WebGpuSpectrum({
               </small>
             )}
           </div>
-          {hoverEnabled && visible && hasFrame && state.kind === "ready" && (
+          {hoverEnabled && !surfaceCombined && visible && hasFrame && state.kind === "ready" && (
             <Suspense fallback={null}>
               <SpectrumHover key={`${renderer}:${session?.sessionGeneration}`}
                 canvas={canvasRef} frame={hoverFrameRef} guideGap={guideGap}
                 selectedHz={session?.selectedChannelFrequencyHz ?? 0}
+                traceOnly={surfaceActive}
+                traceFraction={surfaceActive ? SURFACE_TRACE_FRACTION : .38}
                 paused={paused} stalled={stalled} />
             </Suspense>
           )}
@@ -1144,9 +1385,10 @@ export function WebGpuSpectrum({
             <p className="display-note">
               {fftSize}-point Hann FFT ·{" "}
               {renderer === "webgpu" && requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
-              · circular 240-row sample-clock history · relative dB (not dBm) ·
-              click plot to retune · background tabs may resume with marked gaps
+              · {surfaceActive ? `3D: bounded 512-row source-clock history, up to 25 peak-held intervals/s, 1024 peak-pooled columns; ${surfacePreferences.perspective ? "depth perspective; newest edge aligned" : "flat aligned frequency scale"}; gaps are left open; channel-only tuning keeps RF history with a separator (unknown tuning interruption is excluded from the source-time axis)` : "circular 240-row sample-clock history"} · relative dB (not dBm) ·
+              click {surfaceActive ? "spectrum or grid" : "plot"} to retune · background tabs may resume with marked gaps
             </p>
+            {surfaceState.startsWith("3D unavailable") && <p className="display-note">{surfaceState}</p>}
           </SpectrumInfo>
         </div>
       </div>

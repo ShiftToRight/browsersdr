@@ -60,7 +60,12 @@ test("appearance switches while receiving, preserves paused pixels/history, and 
     canvas.toDataURL(),
   );
   const node = await plot.elementHandle();
-  for (const theme of ["field-deck", "vice-afterglow", "classic"]) {
+  for (const theme of [
+    "field-deck",
+    "vice-afterglow",
+    "graphite-studio",
+    "classic",
+  ]) {
     await chooseTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(
@@ -98,11 +103,11 @@ test("appearance switches while receiving, preserves paused pixels/history, and 
       ).toContain("vice-mockup-sprite");
     }
   }
-  await chooseTheme(page, "field-deck");
+  await chooseTheme(page, "graphite-studio");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute(
     "data-theme",
-    "field-deck",
+    "graphite-studio",
   );
   expect(errors).toEqual([]);
 });
@@ -111,7 +116,7 @@ test("both themes fit narrow screens and keyboard menus, with readable auxiliary
   page,
 }) => {
   await page.goto("/");
-  for (const theme of ["field-deck", "vice-afterglow"]) {
+  for (const theme of ["field-deck", "vice-afterglow", "graphite-studio"]) {
     for (const width of [1440, 820, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
       await chooseTheme(page, theme);

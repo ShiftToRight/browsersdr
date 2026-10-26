@@ -1,3 +1,5 @@
+import { InstrumentRange } from "./InstrumentRange";
+import { InstrumentButton } from "./InstrumentButton";
 import {
   useEffect,
   useRef,
@@ -341,7 +343,7 @@ export default function ReceiverExpansionPanel({
               <span className="receiver-switch-track" aria-hidden="true" />I am
               using a continuous signal for gain setup
             </label>
-            <button
+            <InstrumentButton
               disabled={
                 busy ||
                 !running ||
@@ -361,11 +363,11 @@ export default function ReceiverExpansionPanel({
               }
             >
               Set input headroom
-            </button>
+            </InstrumentButton>
             {operation === "gain" && (
-              <button onClick={() => abort.current?.abort()}>
+              <InstrumentButton onClick={() => abort.current?.abort()}>
                 Cancel gain setup
-              </button>
+              </InstrumentButton>
             )}
           </section>
           <section>
@@ -597,7 +599,7 @@ export default function ReceiverExpansionPanel({
                   }
                 />
               </label>
-              <button
+              <InstrumentButton
                 className="secondary"
                 disabled={busy || !receiver.session}
                 onClick={() =>
@@ -608,7 +610,7 @@ export default function ReceiverExpansionPanel({
                 }
               >
                 Copy VFO A frequency
-              </button>
+              </InstrumentButton>
               <label>
                 VFO B mode
                 <select
@@ -662,9 +664,9 @@ export default function ReceiverExpansionPanel({
               </label>
               <label>
                 VFO B volume
-                <input
+                <InstrumentRange
                   aria-label="VFO B volume"
-                  type="range"
+
                   min="0"
                   max="1"
                   step="0.05"
@@ -699,7 +701,7 @@ export default function ReceiverExpansionPanel({
                 <span className="receiver-switch-track" aria-hidden="true" />
                 Use VFO B for audio WAV/rewind
               </label>
-              <button
+              <InstrumentButton
                 disabled={busy || !running}
                 onClick={() =>
                   void controller.configureSecondaryVfo(vfo).catch((error) => {
@@ -709,8 +711,8 @@ export default function ReceiverExpansionPanel({
                 }
               >
                 {receiver.secondaryVfo ? "Apply VFO B" : "Enable VFO B"}
-              </button>
-              <button
+              </InstrumentButton>
+              <InstrumentButton
                 className="secondary"
                 disabled={busy || !running || !receiver.secondaryVfo}
                 onClick={() =>
@@ -721,7 +723,7 @@ export default function ReceiverExpansionPanel({
                 }
               >
                 Disable VFO B
-              </button>
+              </InstrumentButton>
               <p>
                 {receiver.secondaryVfo
                   ? `VFO B receiving ${(receiver.secondaryVfo.frequencyHz / 1e6).toFixed(6)} MHz · ${receiver.secondaryVfo.mode}`
@@ -751,7 +753,7 @@ export default function ReceiverExpansionPanel({
                   event captures.
                 </p>
                 <div className="watch-actions">
-                  <button
+                  <InstrumentButton
                     disabled={
                       busy ||
                       !local ||
@@ -762,11 +764,11 @@ export default function ReceiverExpansionPanel({
                     onClick={startWatch}
                   >
                     Start watching
-                  </button>
+                  </InstrumentButton>
                   {operation === "watch" && (
-                    <button onClick={() => abort.current?.abort()}>
+                    <InstrumentButton onClick={() => abort.current?.abort()}>
                       Stop watching
-                    </button>
+                    </InstrumentButton>
                   )}
                 </div>
               </header>
@@ -790,7 +792,7 @@ export default function ReceiverExpansionPanel({
                     placeholder="145.500, 145.550"
                   />
                 </label>
-                <button
+                <InstrumentButton
                   className="secondary"
                   disabled={busy}
                   onClick={() => {
@@ -816,7 +818,7 @@ export default function ReceiverExpansionPanel({
                   }}
                 >
                   Use Favorites frequencies
-                </button>
+                </InstrumentButton>
                 <small>
                   Entered frequencies use NBFM; Favorites retain their saved
                   mode and settings. Watching revisits channels sequentially;
@@ -928,7 +930,7 @@ export default function ReceiverExpansionPanel({
                 is not protocol or transmitter identification.
               </p>
               {events.length > 0 && (
-                <button
+                <InstrumentButton
                   className="secondary"
                   onClick={() => {
                     void import("../radio/recordingExportFormat")
@@ -952,7 +954,7 @@ export default function ReceiverExpansionPanel({
                   }}
                 >
                   Export activity events JSON
-                </button>
+                </InstrumentButton>
               )}
               {events.length > 0 && (
                 <details>
@@ -974,9 +976,9 @@ export default function ReceiverExpansionPanel({
                     {recording.metadata.durationSeconds.toFixed(3)} s ·{" "}
                     {recording.metadata.stopReason}
                   </span>
-                  <button onClick={() => void downloadCapture(recording)}>
+                  <InstrumentButton onClick={() => void downloadCapture(recording)}>
                     Download event {index + 1} SigMF ZIP
-                  </button>
+                  </InstrumentButton>
                 </div>
               ))}
               {recordings.length > 0 && (
@@ -986,7 +988,7 @@ export default function ReceiverExpansionPanel({
                 </p>
               )}
               {recordings.length > 0 && (
-                <button
+                <InstrumentButton
                   className="secondary"
                   disabled={Boolean(operation)}
                   onClick={() => {
@@ -999,7 +1001,7 @@ export default function ReceiverExpansionPanel({
                   }}
                 >
                   Discard event captures
-                </button>
+                </InstrumentButton>
               )}
               {messageLocation === "watch" && message && (
                 <p role="status">{message}</p>

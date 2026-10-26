@@ -1,3 +1,4 @@
+import { InstrumentButton, InstrumentFace } from "./InstrumentButton";
 import {
   useEffect,
   useRef,
@@ -110,7 +111,7 @@ function HeaderMenu({
       }}
     >
       <summary id={label === "Help" ? "help-menu-trigger" : "settings-menu-trigger"} aria-label={label} title={label}>
-        <AppIcon name={icon} />
+        <InstrumentFace><AppIcon name={icon} /></InstrumentFace>
       </summary>
       <div
         className="header-utility-content"
@@ -153,7 +154,7 @@ export function WorkspaceControls({
       className="workspace-controls"
       aria-label="Layout and application options"
     >
-      <button
+      <InstrumentButton
         ref={compactButton}
         type="button"
         className="secondary"
@@ -167,13 +168,13 @@ export function WorkspaceControls({
         onClick={() => onChange((old) => ({ ...old, compact: !old.compact }))}
       >
         Compact
-      </button>
+      </InstrumentButton>
       {!layout.compact && (
         <span id="compact-layout-hint" className="compact-layout-hint">
           Short screen? Try Compact.
         </span>
       )}
-      {onAntenna && <button id="antenna-guide-trigger" type="button" className="secondary header-antenna-guide" aria-haspopup="dialog" onClick={() => onAntenna("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</button>}
+      {onAntenna && <InstrumentButton id="antenna-guide-trigger" type="button" className="secondary header-antenna-guide" aria-haspopup="dialog" onClick={() => onAntenna("antenna-guide-trigger")}><AppIcon name="radio" />Antenna guide</InstrumentButton>}
       <HeaderMenu
         label="Settings"
         icon="settings"
@@ -186,7 +187,7 @@ export function WorkspaceControls({
             <InstallAppControl />
           </Suspense>
         )}
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           aria-controls="settings-view"
@@ -194,8 +195,8 @@ export function WorkspaceControls({
         >
           <AppIcon name="plug" />
           Integration settings
-        </button>
-        <button
+        </InstrumentButton>
+        <InstrumentButton
           type="button"
           className="secondary"
           title="Reset panel layout and density; receiver settings stay unchanged"
@@ -206,7 +207,7 @@ export function WorkspaceControls({
         >
           <AppIcon name="retry" />
           Reset layout
-        </button>
+        </InstrumentButton>
       </HeaderMenu>
       <HeaderMenu
         label="Help"
@@ -219,7 +220,7 @@ export function WorkspaceControls({
         }
       >
         {onAntenna && (
-          <button
+          <InstrumentButton
             id="antenna-help-trigger"
             type="button"
             className="secondary"
@@ -227,9 +228,9 @@ export function WorkspaceControls({
           >
             <AppIcon name="radio" />
             Antenna guide
-          </button>
+          </InstrumentButton>
         )}
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           aria-controls="compatibility-view"
@@ -237,8 +238,8 @@ export function WorkspaceControls({
         >
           <AppIcon name="activity" />
           Compatibility &amp; tests
-        </button>
-        <button
+        </InstrumentButton>
+        <InstrumentButton
           type="button"
           className="secondary"
           aria-controls="help-view"
@@ -246,8 +247,8 @@ export function WorkspaceControls({
         >
           <AppIcon name="help" />
           Help &amp; setup
-        </button>
-        <button
+        </InstrumentButton>
+        <InstrumentButton
           type="button"
           className="secondary"
           aria-controls="about-view"
@@ -255,7 +256,7 @@ export function WorkspaceControls({
         >
           <AppIcon name="info" />
           About BrowserSDR
-        </button>
+        </InstrumentButton>
       </HeaderMenu>
     </div>
   );

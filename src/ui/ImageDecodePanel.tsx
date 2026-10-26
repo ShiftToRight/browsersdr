@@ -1,3 +1,4 @@
+import { InstrumentRange } from "./InstrumentRange";
 import { useEffect, useRef, useState } from "react";
 import type { ReceiverSnapshot } from "../radio/receiverController";
 import type { ReceivedImage } from "../textmodem/imageTypes";
@@ -47,7 +48,7 @@ export function ImageDecodePanel({ receiver, mode }: { receiver: ReceiverSnapsho
     <div className="image-decoder-canvas-wrap" hidden={!rows}><canvas ref={canvas} role="img" aria-label={`Decoded ${image?.mode ?? "image"}, ${rows} received rows`} /></div>
     {!rows && <p role="status">Waiting for decoded image rows…</p>}
     <div className="image-corrections">
-      <label>Image alignment (%)<input aria-label="Image alignment" type="range" min={-50} max={50} step={0.1} value={alignment} onChange={event => setAlignment(Number(event.target.value))} /><output>{alignment.toFixed(1)}%</output></label>
+      <label>Image alignment (%)<InstrumentRange aria-label="Image alignment"  min={-50} max={50} step={0.1} value={alignment} onChange={event => setAlignment(Number(event.target.value))} /><output>{alignment.toFixed(1)}%</output></label>
       <label>Image slant correction (ppm)<input aria-label="Image slant correction" type="number" min={-5000} max={5000} step={10} value={slant} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && Math.abs(value) <= 5000) setSlant(value); }} /></label>
       <button type="button" className="secondary" onClick={() => { setAlignment(0); setSlant(0); }}>Reset image correction</button>
     </div>

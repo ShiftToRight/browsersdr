@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
@@ -189,7 +190,7 @@ export function ReceiverLocationPanel({
   const stale = Boolean(site && locationIsStale(site, now));
   return (
     <div className="antenna-site">
-      <button
+      <InstrumentButton
         ref={trigger}
         type="button"
         className="secondary workspace-tool-trigger antenna-site-trigger"
@@ -214,7 +215,7 @@ export function ReceiverLocationPanel({
           </small>
         </span>
         <span aria-hidden="true">›</span>
-      </button>
+      </InstrumentButton>
       {!open && storageError && (
         <p className="antenna-site-storage" role="alert">
           {storageError}
@@ -270,29 +271,29 @@ export function ReceiverLocationPanel({
                   : "Local receiver · future recordings"}
               </p>
             </div>
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               aria-label="Close antenna site"
               onClick={dismiss}
             >
               <AppIcon name="close" />
-            </button>
+            </InstrumentButton>
           </header>
           <div className="favorites-body antenna-site-body">
             {!remote && (
               <div className="antenna-site-location-method">
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   disabled={pending}
                   onClick={locate}
                 >
                   <AppIcon name="locate" /> Use my location
-                </button>
+                </InstrumentButton>
                 <p>Use this device if it is beside the receiving antenna.</p>
                 {pending && (
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary"
                     onClick={() => {
@@ -303,7 +304,7 @@ export function ReceiverLocationPanel({
                     }}
                   >
                     Cancel location request
-                  </button>
+                  </InstrumentButton>
                 )}
               </div>
             )}
@@ -411,7 +412,7 @@ export function ReceiverLocationPanel({
           </div>
           <footer className="favorites-footer antenna-site-footer">
             {site && (
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary antenna-site-clear"
                 onClick={() => {
@@ -425,15 +426,15 @@ export function ReceiverLocationPanel({
                 }}
               >
                 Clear site
-              </button>
+              </InstrumentButton>
             )}
             <div>
-              <button type="button" className="secondary" onClick={dismiss}>
+              <InstrumentButton type="button" className="secondary" onClick={dismiss}>
                 Cancel
-              </button>
-              <button type="button" onClick={save}>
+              </InstrumentButton>
+              <InstrumentButton type="button" onClick={save}>
                 Apply site
-              </button>
+              </InstrumentButton>
             </div>
           </footer>
         </dialog>,

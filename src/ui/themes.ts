@@ -5,6 +5,7 @@ export const THEMES = [
   { id: "classic", name: "Midnight Observatory" },
   { id: "field-deck", name: "Amber Field Deck" },
   { id: "vice-afterglow", name: "Vice Afterglow" },
+  { id: "graphite-studio", name: "Graphite Studio" },
 ] as const;
 export type ThemeId = (typeof THEMES)[number]["id"];
 

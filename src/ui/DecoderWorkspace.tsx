@@ -1,3 +1,5 @@
+import { InstrumentRange } from "./InstrumentRange";
+import { InstrumentButton } from "./InstrumentButton";
 import { PocsagPanel } from "./PocsagPanel";
 import { isTextMode } from "../textmodem/settings";
 import { TextDecodePanel } from "./TextDecodePanel";
@@ -288,14 +290,14 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
     <aside className="decoder-inspector" aria-label="Selected decoded record">
       <div className="decoder-inspector-heading">
         <h2>{selected.label}</h2>
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           aria-label="Close record details"
           onClick={closeInspector}
         >
           <AppIcon name="close" />
-        </button>
+        </InstrumentButton>
       </div>
       <p>{selected.summary}</p>
       <p className="decoder-integrity">{selected.integrity}</p>
@@ -363,14 +365,14 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               }
             >
               <td>
-                <button
+                <InstrumentButton
                   type="button"
                   className="decoder-record"
                   aria-pressed={selected?.key === r.key}
                   onClick={(event) => selectRecord(r.key, event.currentTarget)}
                 >
                   <strong>{r.label}</strong>
-                </button>
+                </InstrumentButton>
               </td>
               {columns.map((name) => (
                 <td key={name}>
@@ -413,14 +415,14 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               }
             >
               <td>
-                <button
+                <InstrumentButton
                   type="button"
                   className="decoder-record"
                   aria-pressed={selected?.key === r.key}
                   onClick={(event) => selectRecord(r.key, event.currentTarget)}
                 >
                   <strong>{r.label}</strong>
-                </button>
+                </InstrumentButton>
               </td>
               <td>{r.summary}</td>
               <td>
@@ -437,7 +439,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
   ) : (
     <div className="decoder-record-list" aria-label="Retained decoded records">
       {filtered.map((r) => (
-        <button
+        <InstrumentButton
           type="button"
           key={r.key}
           className="decoder-record"
@@ -447,7 +449,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
           <strong>{r.label}</strong>
           <span>{r.summary}</span>
           <small>{r.clock}</small>
-        </button>
+        </InstrumentButton>
       ))}
     </div>
   );
@@ -509,7 +511,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
             {!satellite && hasReviewData && (
               <>
                 {reviewMode === "POCSAG" && (
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary"
                     onClick={() => {
@@ -521,7 +523,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     }}
                   >
                     Clear displayed messages
-                  </button>
+                  </InstrumentButton>
                 )}
                 <label className="decoder-filter">
                   <span className="visually-hidden">Filter results</span>
@@ -533,7 +535,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     onChange={(event) => setFilter(event.currentTarget.value)}
                   />
                 </label>
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   onClick={freezeDisplay}
@@ -541,7 +543,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 >
                   <AppIcon name={held ? "play" : "pause"} />
                   {held ? "Resume live display" : "Freeze display"}
-                </button>
+                </InstrumentButton>
                 <details
                   className="decoder-export-menu"
                   ref={exportMenu}
@@ -558,7 +560,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                   </summary>
                   <div className="decoder-popover" aria-label="Export options">
                     <p>Retained export includes unfiltered records.</p>
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       disabled={!records.length}
@@ -566,15 +568,15 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     >
                       Export retained{" "}
                       {effectiveView === "messages" ? "messages" : "results"}
-                    </button>
-                    <button
+                    </InstrumentButton>
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       disabled={!selected}
                       onClick={() => exportResults("selected")}
                     >
                       Export selected record
-                    </button>
+                    </InstrumentButton>
                   </div>
                 </details>
               </>
@@ -640,7 +642,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 Apply {reviewMode} to replace {props.configuredMode}.{" "}
                 {props.configurationPreview(reviewMode)}
               </p>
-              <button
+              <InstrumentButton
                 type="button"
                 disabled={Boolean(applyBlocked)}
                 onClick={() => {
@@ -649,7 +651,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 }}
               >
                 Apply {reviewMode}
-              </button>
+              </InstrumentButton>
               {applyBlocked && <p>{applyBlocked}</p>}
             </div>
           )}
@@ -665,9 +667,9 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
               </summary>
               <label htmlFor="decoder-volume">
                 Volume · {Math.round(props.volume * 100)}%
-                <input
+                <InstrumentRange
                   id="decoder-volume"
-                  type="range"
+
                   min="0"
                   max="1"
                   step="0.01"
@@ -677,7 +679,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                   }
                 />
               </label>
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={() => {
@@ -688,7 +690,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 }}
               >
                 {props.volume > 0 ? "Mute audio" : "Unmute audio"}
-              </button>
+              </InstrumentButton>
               {reviewMode === "DAB" && props.serviceControl}
             </details>
           )}
@@ -715,13 +717,13 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                   decoder or image output.
                 </p>
                 {props.remote && <p>{unavailable}</p>}
-                <button
+                <InstrumentButton
                   type="button"
                   disabled={props.remote}
                   onClick={props.onOpenRecording}
                 >
                   Open recording workflow
-                </button>
+                </InstrumentButton>
               </div>
             ) : (
               <>
@@ -750,16 +752,16 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     </p>
                     <div className="decoder-empty-actions">
                       {filter ? (
-                        <button type="button" onClick={() => setFilter("")}>
+                        <InstrumentButton type="button" onClick={() => setFilter("")}>
                           Clear filter
-                        </button>
+                        </InstrumentButton>
                       ) : (
                         <>
-                          <button type="button" onClick={props.onOpenReceiver}>
+                          <InstrumentButton type="button" onClick={props.onOpenReceiver}>
                             <AppIcon name="radio" />
                             Open Receiver
-                          </button>
-                          <button
+                          </InstrumentButton>
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             disabled={props.remote}
@@ -767,7 +769,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                           >
                             <AppIcon name="folder" />
                             Open I/Q recording
-                          </button>
+                          </InstrumentButton>
                         </>
                       )}
                     </div>
@@ -792,7 +794,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                                 Show tracks
                               </label>
                             )}
-                            <button
+                            <InstrumentButton
                               type="button"
                               className="secondary"
                               onClick={() =>
@@ -801,7 +803,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                             >
                               <AppIcon name="crosshair" />
                               Fit targets
-                            </button>
+                            </InstrumentButton>
                           </div>
                           <PositionMap
                             receiverLocation={props.receiverLocation}
@@ -853,16 +855,16 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                       role="group"
                       aria-label="Result presentation"
                     >
-                      <button
+                      <InstrumentButton
                         type="button"
                         className="secondary"
                         aria-pressed={effectiveView === "results"}
                         onClick={() => setView({ format, value: "results" })}
                       >
                         Results
-                      </button>
+                      </InstrumentButton>
                       {hasMessages && (
-                        <button
+                        <InstrumentButton
                           type="button"
                           className="secondary"
                           aria-pressed={effectiveView === "messages"}
@@ -873,22 +875,22 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                             : reviewMode === "SRD"
                               ? "Bursts"
                               : "Messages"}
-                        </button>
+                        </InstrumentButton>
                       )}
                       {supportsMap && (
-                        <button
+                        <InstrumentButton
                           type="button"
                           className="secondary"
                           aria-pressed={geographic}
                           onClick={() => setView({ format, value: "map" })}
                         >
                           Map & results
-                        </button>
+                        </InstrumentButton>
                       )}
                     </div>
                   )}
                   {geographic && filtered.length > 0 && (
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary decoder-tray-toggle"
                       aria-expanded={!trayCollapsed}
@@ -897,7 +899,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                     >
                       <AppIcon name={trayCollapsed ? "expand" : "collapse"} />
                       {trayCollapsed ? "Show results" : "Hide results"}
-                    </button>
+                    </InstrumentButton>
                   )}
                 </div>
                 {geographic && filtered.length > 0 && results}
@@ -957,15 +959,15 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
             )}
             {(hasReviewData || satellite) && (
               <nav aria-label="Decoder handoffs">
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   onClick={props.onOpenReceiver}
                 >
                   <AppIcon name="radio" />
                   Open Receiver
-                </button>
-                <button
+                </InstrumentButton>
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   disabled={props.remote}
@@ -973,7 +975,7 @@ export function DecoderWorkspace(props: DecoderWorkspaceProps) {
                 >
                   <AppIcon name="folder" />
                   Open I/Q recording
-                </button>
+                </InstrumentButton>
               </nav>
             )}
           </footer>

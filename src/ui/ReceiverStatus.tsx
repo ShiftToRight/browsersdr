@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ComponentProps, type ReactNode } from "react";
 import { ReceiverHealth } from "./ReceiverHealth";
 import { AppIcon } from "./AppIcon";
+import { InstrumentFace } from "./InstrumentButton";
 
 export function ReceiverStatus({
   children,
@@ -86,6 +87,7 @@ export function ReceiverStatus({
         }}
       >
         <summary aria-label={`Receiver status: ${label}`}>
+          <InstrumentFace>
           <span
             className={`receiver-status-label${issues ? " needs-attention" : recording || receiver.lifecycle === "running" || receiver.lifecycle === "connected" ? " is-working" : ""}`}
             aria-live="polite"
@@ -94,6 +96,7 @@ export function ReceiverStatus({
             {label}
           </span>
           <AppIcon name="expand" />
+          </InstrumentFace>
         </summary>
         <div
           className="receiver-health-panel"

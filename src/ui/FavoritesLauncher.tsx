@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { lazy, useState, type ComponentProps } from "react";
 import type { FavoritesPanel as Panel } from "./FavoritesPanel";
 import { DeferredWorkspace } from "./DeferredWorkspace";
@@ -12,7 +13,7 @@ export function FavoritesLauncher(props: ComponentProps<typeof Panel>) {
   if (!visited && !props.draft)
     return (
       <>
-        <button
+        <InstrumentButton
           className="favorite-launcher secondary"
           type="button"
           aria-haspopup="dialog"
@@ -21,7 +22,7 @@ export function FavoritesLauncher(props: ComponentProps<typeof Panel>) {
         >
           <AppIcon name="star" /> Favorites <span>{props.items.length}</span>
           {props.storageMessage && <AppIcon name="alert" />}
-        </button>
+        </InstrumentButton>
         {props.storageMessage && (
           <p className="favorite-storage-warning" role="alert">
             {props.storageMessage}

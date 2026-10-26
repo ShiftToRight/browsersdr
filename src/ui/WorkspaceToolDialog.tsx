@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AppIcon, type AppIconName } from "./AppIcon";
@@ -32,7 +33,7 @@ export function WorkspaceToolDialog({
   useOverlayDialog(open, dialog, trigger, "[data-tool-close]");
   return (
     <>
-      <button
+      <InstrumentButton
         ref={trigger}
         type="button"
         className={`secondary workspace-tool-trigger ${className}`}
@@ -47,7 +48,7 @@ export function WorkspaceToolDialog({
           {summary && <small>{summary}</small>}
         </span>
         <span aria-hidden="true">›</span>
-      </button>
+      </InstrumentButton>
       {createPortal(
         <dialog
           ref={dialog}
@@ -91,7 +92,7 @@ export function WorkspaceToolDialog({
         >
           <header>
             <h3 id={`${id}-heading`}>{title}</h3>
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               data-tool-close
@@ -99,18 +100,18 @@ export function WorkspaceToolDialog({
               onClick={() => onOpenChange(false)}
             >
               <AppIcon name="close" />
-            </button>
+            </InstrumentButton>
           </header>
           <div className="workspace-tool-body">{children}</div>
           <footer>
             {footer && <span>{footer}</span>}
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               onClick={() => onOpenChange(false)}
             >
               Done
-            </button>
+            </InstrumentButton>
           </footer>
         </dialog>,
         document.body,

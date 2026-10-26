@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import {
   lazy,
   Suspense,
@@ -95,7 +96,7 @@ export function ModeSelector(props: ModeSelectorProps) {
             </option>
           ))}
         </select>
-        <button
+        <InstrumentButton
           ref={trigger}
           type="button"
           className="secondary mode-selector-more"
@@ -105,7 +106,7 @@ export function ModeSelector(props: ModeSelectorProps) {
         >
           <AppIcon name="sliders" />
           More modes…
-        </button>
+        </InstrumentButton>
       </div>
       {props.status}
       {props.blockedReason && (

@@ -1,3 +1,4 @@
+import { InstrumentRange } from "./InstrumentRange";
 import { AudioCapturePanel } from "./AudioCaptureSection";
 import { RemoteLocationPanel } from "./ReceiverLocationPanel";
 import {
@@ -778,8 +779,8 @@ function RemoteReceiverView({
           <div className="remote-audio-controls">
             <label className="remote-volume">
               Volume
-              <input
-                type="range"
+              <InstrumentRange
+
                 min="0"
                 max="100"
                 value={Math.round(volume * 100)}

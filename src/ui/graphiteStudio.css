@@ -1,0 +1,341 @@
+/* Graphite Studio: anthracite instrument bays and physical controls.
+   The button/input node remains stationary; decoration owns all travel. */
+:root[data-theme="graphite-studio"] {
+  color-scheme: dark;
+  --ink: #f0f0f0; --muted: #bdc5cc; --dim: #b0bbc4;
+  --cyan: #86c5ff; --cyan-soft: #c1e2ff; --violet: #c3c3c3; --stellar: #f1f1f1;
+  --line: #3d464e; --line-bright: #959595;
+  --success: #82d6a1; --danger: #ffaaaa; --warning: #ebc07a;
+  --secondary-background: #2c3238; --selected-background: #333c45;
+  --disabled-background: #20252a; --disabled-color: #9c9c9c;
+  --scrollbar-thumb: #6b6b6b; --scrollbar-track: #181818;
+  --theme-surface: #191e23; --theme-ink: #f0f0f0; --theme-muted: #b9b9b9;
+  --workspace-panel: var(--graphite-grain), linear-gradient(135deg, #2c3238, #20252a 55%, #1b2025);
+  --graphite-cap: var(--graphite-grain), linear-gradient(160deg, #515a63 0%, #3d464e 28%, #30373e 85%, #343c43);
+  --graphite-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='.075'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23g)' d='M0 0h160v160H0z'/%3E%3C/svg%3E");
+  --graphite-cap-ink: #f4f6f8;
+  --graphite-light-cap: linear-gradient(155deg, #fefefe, #e5e5e5 45%, #c4c4c4);
+  --graphite-well: linear-gradient(180deg, #090c10, #14191e);
+  --graphite-key-edge: #6f7b86;
+  --graphite-key-bevel: inset .5px .5px .5px #fafafa44, inset -.5px -1px 1px #10182088;
+  --graphite-key-shadow: 1px 2px 3px #00000055, 3px 6px 10px #00000066;
+  --graphite-base-shadow: 2px 3px 6px #00000077;
+  --graphite-pressed-shadow: 1px 2px 4px #00000066;
+  --graphite-down: cubic-bezier(.3, 0, .65, 1);
+  --graphite-return: cubic-bezier(.16, 1, .3, 1);
+}
+:root[data-theme="graphite-studio"] body {
+  background: radial-gradient(ellipse at 0 0, #343e4855, transparent 65%), #171c21;
+}
+:root[data-theme="graphite-studio"] body::before { display: none; }
+/* The workspace is the page, not another rounded enclosure around the bays. */
+:root[data-theme="graphite-studio"] .app-shell {
+  width: 100%; max-width: none; margin: 0; padding: 12px;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+@media (min-width: 1181px) and (min-height: 900px) {
+  :root[data-theme="graphite-studio"] .receiver-workspace { height: 100dvh; }
+}
+@media (min-width: 1181px) and (min-height: 640px) and (max-height: 899px) {
+  :root[data-theme="graphite-studio"] .receiver-workspace.density-compact { height: 100dvh; }
+}
+:root[data-theme="graphite-studio"] .app-topbar {
+  background: var(--graphite-grain), linear-gradient(130deg, #454f58, #2a3138 45%, #191e23);
+  border: 1px solid #141414; border-radius: 10px;
+  padding: 9px 10px 10px;
+  box-shadow: inset 0 1px 0 #fdfdfd25, 2px 4px 7px #00000055, 5px 8px 16px #00000033;
+  backdrop-filter: none;
+}
+:root[data-theme="graphite-studio"] .brand-logo { filter: grayscale(1) brightness(1.8) drop-shadow(1px 2px 2px #00000077); }
+:root[data-theme="graphite-studio"] .brand-name { text-shadow: 1px 2px 2px #00000077; }
+:root[data-theme="graphite-studio"] .brand-tagline { color: var(--muted); }
+:root[data-theme="graphite-studio"] :is(.signal-stage, .graphics-panel, .diagnostics-panel, .capabilities-panel, .help-panel) {
+  background: var(--workspace-panel); border-color: #101419; border-radius: 9px;
+  box-shadow: inset 0 1px 0 #cecece1a, inset 0 -1px 0 #00000088, 0 1px 0 #73737342;
+  backdrop-filter: none;
+}
+:root[data-theme="graphite-studio"] :is(.stage-heading, .spectrum-heading) {
+  border-bottom-color: #101010;
+}
+:root[data-theme="graphite-studio"] .stage-heading > span {
+  color: #c4c4c4; background: #191e23; border-color: #4c4c4c;
+  box-shadow: inset 0 2px 3px #00000088, 0 1px 0 #ffffff08;
+}
+:root[data-theme="graphite-studio"] .stage-heading p { color: #c0c0c0; }
+:root[data-theme="graphite-studio"] .graphics-panel { background: var(--graphite-grain), linear-gradient(145deg, #252c32, #191f25); }
+:root[data-theme="graphite-studio"] .canvas-frame {
+  --theme-surface: #0a0a0a;
+  background: #0a0a0a; border: 1px solid #0a0a0a; border-radius: 6px;
+  box-shadow: 0 0 0 3px #383838, 0 0 0 4px #090c10,
+    0 1px 0 5px #84848455, inset 0 3px 8px #000000cc;
+}
+:root[data-theme="graphite-studio"] .spectrum-toolbar {
+  background: linear-gradient(180deg, #303840, #252c32); border-color: #161616;
+  box-shadow: inset 0 1px 0 #e1e1e115, 0 1px 0 #64646444;
+}
+:root[data-theme="graphite-studio"] :is(.marker-label, .passband-legend) {
+  background: #14191ee8; color: #d4e9e5; border-color: #656565;
+}
+:root[data-theme="graphite-studio"] .passband-band { border-color: #99c6cc; background: #bdbdbd0e; box-shadow: none; }
+:root[data-theme="graphite-studio"] .passband-dim { background: #00000022; }
+:root[data-theme="graphite-studio"] :is(.receiver-dock, .decoder-toolbar, .decoder-stage) {
+  border-color: #0f0f0f; background: var(--graphite-grain), linear-gradient(145deg, #2c3238, #1c2329);
+  box-shadow: inset 0 1px 0 #e3e3e31c, 2px 4px 8px #00000055;
+}
+:root[data-theme="graphite-studio"] .receiver-dock-panel { background: transparent; box-shadow: none; }
+:root[data-theme="graphite-studio"] :is(.receiver-dock-bar, .decoder-tray-heading) {
+  background: var(--graphite-grain), linear-gradient(180deg, #333c45, #272f36); border-color: #141414;
+}
+
+/* Neutral fallback for controls not requiring a separate cap component. */
+:root[data-theme="graphite-studio"] button.secondary {
+  color: var(--ink); background: var(--graphite-cap); border-color: var(--graphite-key-edge); text-shadow: 0 1px 1px #00000088;
+  box-shadow: var(--graphite-key-bevel), inset 0 -3px 1px #0c0c0c, var(--graphite-key-shadow);
+}
+:root[data-theme="graphite-studio"] button:not(:disabled):hover { filter: brightness(1.08); transform: none; border-color: #9b9b9b; }
+:root[data-theme="graphite-studio"] button:not(:disabled):active { transform: none; }
+:root[data-theme="graphite-studio"] button:not(.secondary):not([role="tab"]):not(:disabled):not(.decoder-record):not(.monitor-frequency):not(.band-guide-segment) {
+  background: var(--graphite-light-cap); color: #1f1f1f; border-color: #ebebeb;
+  box-shadow: var(--graphite-key-bevel), inset 0 -3px 1px #687580, var(--graphite-key-shadow);
+}
+:root[data-theme="graphite-studio"] button.destructive { color: #ffb5a7; border-color: #707070; background: linear-gradient(#3e3e3e, #262626); }
+/* One movable light cap in a continuous recessed selector. */
+:root[data-theme="graphite-studio"] .instrument-tabs {
+  position: relative; isolation: isolate; padding: 4px; gap: 2px;
+  background: var(--graphite-well); border: 1px solid #080b0e; border-radius: 24px;
+  box-shadow: inset 0 3px 5px #000b, 0 1px 0 #a8b9c633;
+}
+:root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"] {
+  position: relative; z-index: 1; min-height: 36px; padding: 7px 12px;
+  color: #c8d0d7; background: transparent; border-color: transparent; border-radius: 20px;
+  box-shadow: none; white-space: nowrap; flex: 1 0 auto; filter: none; transform: none;
+}
+:root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"][aria-selected="true"] {
+  color: #17212a; background: transparent; border-color: transparent; box-shadow: none;
+}
+:root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"]:not([aria-selected="true"]):not(:disabled):hover { color: #fff; background: #c0dcff10; }
+:root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"]:disabled { opacity: .45; }
+:root[data-theme="graphite-studio"] .instrument-tabs-indicator {
+  position: absolute; pointer-events: none; left: 0; top: 0; z-index: 0;
+  width: var(--tab-width, 0px); height: var(--tab-height, 0px);
+  transform: translate(var(--tab-x, 0px), var(--tab-y, 0px));
+  background: var(--graphite-light-cap); border: 1px solid #f1f4f7; border-radius: 20px;
+  box-shadow: inset 0 1px #fff, inset 0 -2px 1px #8e9ba8, 1px 2px 3px #19232c88, 3px 5px 8px #00000066;
+  opacity: 0;
+}
+:root[data-theme="graphite-studio"] .instrument-tabs[data-tabs-ready] > .instrument-tabs-indicator {
+  opacity: 1; transition: transform 220ms var(--graphite-return), width 220ms var(--graphite-return), height 220ms var(--graphite-return);
+}
+
+/* Stable native base, independently moving face and printed legends. */
+:where(.instrument-key) { position: relative; }
+:root[data-theme="graphite-studio"] :is(.header-utility-menu > summary, .receiver-status-menu > summary) { position: relative; }
+:root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary) {
+  isolation: isolate;
+  background: transparent !important; border-color: transparent !important;
+  box-shadow: none !important; color: var(--graphite-cap-ink);
+  transform: none; filter: none;
+}
+:root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::before,
+:root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::after {
+  content: ""; display: block; position: absolute; pointer-events: none; border-radius: inherit;
+}
+:root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::after {
+  inset: 3px 0 0; z-index: -2; background: #0c0c0c; border: 1px solid #060606;
+  box-shadow: var(--graphite-base-shadow);
+}
+:root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::before {
+  inset: 0 0 4px; z-index: -1;
+  background: var(--graphite-cap); border: 1px solid var(--graphite-key-edge);
+  box-shadow: var(--graphite-key-bevel), inset 0 -2px 1px #00000044, var(--graphite-key-shadow);
+  transition: transform 180ms var(--graphite-return), box-shadow 180ms var(--graphite-return), filter 120ms ease;
+}
+:root[data-theme="graphite-studio"] .instrument-key-face {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  gap: 7px; min-width: 0; width: 100%; transform: translateY(-2px);
+  text-shadow: 0 1px 1px #00000088;
+  transition: transform 180ms var(--graphite-return);
+}
+:root[data-theme="graphite-studio"] .instrument-key-face .app-icon { flex-shrink: 0; }
+:root[data-theme="graphite-studio"] .instrument-key-face > .icon-label { justify-content: center; }
+:root[data-theme="graphite-studio"] .workspace-tool-trigger > .instrument-key-face { text-align: left; justify-content: flex-start; }
+:root[data-theme="graphite-studio"] .workspace-tool-trigger .instrument-key-face > span:first-of-type { flex: 1; min-width: 0; }
+:root[data-theme="graphite-studio"] .workspace-tool-trigger .instrument-key-face > span:last-child { flex: 0 0 auto; }
+:root[data-theme="graphite-studio"] .workspace-tool-trigger .instrument-key-face small { color: #cbcbcb; }
+:root[data-theme="graphite-studio"] :is(.view-tabs, .receiver-dock-tabs) .instrument-key-face { white-space: nowrap; }
+:root[data-theme="graphite-studio"] .receiver-status-menu .instrument-key-face { justify-content: space-between; }
+:root[data-theme="graphite-studio"] :is(.instrument-key:not(:disabled):hover, .header-utility-menu > summary:hover, .receiver-status-menu > summary:hover)::before { filter: brightness(1.1); }
+:root[data-theme="graphite-studio"] :is(.instrument-key:not(:disabled):active, .instrument-key[data-key-pressed], .header-utility-menu > summary:active, .receiver-status-menu > summary:active)::before {
+  transform: translateY(2.5px); box-shadow: var(--graphite-key-bevel), var(--graphite-pressed-shadow);
+  transition-duration: 65ms; transition-timing-function: var(--graphite-down);
+}
+:root[data-theme="graphite-studio"] :is(.instrument-key:not(:disabled):active, .instrument-key[data-key-pressed], .header-utility-menu > summary:active, .receiver-status-menu > summary:active) > .instrument-key-face {
+  transform: translateY(.5px); transition-duration: 65ms; transition-timing-function: var(--graphite-down);
+}
+:root[data-theme="graphite-studio"] :is(.instrument-key[aria-selected="true"], .instrument-key[aria-pressed="true"], .instrument-key.studio-primary, .instrument-key:not(.secondary):not([role="tab"])) {
+  --graphite-cap: var(--graphite-light-cap); --graphite-cap-ink: #191f25;
+}
+:root[data-theme="graphite-studio"] :is(.instrument-key[aria-selected="true"], .instrument-key[aria-pressed="true"], .instrument-key.studio-primary, .instrument-key:not(.secondary):not([role="tab"])) .instrument-key-face { text-shadow: 0 1px #ffffffe0; }
+:root[data-theme="graphite-studio"] .instrument-key:disabled { color: #a8a8a8; --graphite-cap: linear-gradient(#30373e, #262626) !important; }
+:root[data-theme="graphite-studio"] .instrument-key:disabled::before { border-color: #454f58; box-shadow: inset 0 1px #c6c6c612, 1px 2px 4px #00000044; }
+:root[data-theme="graphite-studio"] .instrument-key:disabled .instrument-key-face { text-shadow: none !important; }
+:root[data-theme="graphite-studio"] .instrument-key.destructive { --graphite-cap: linear-gradient(#4f4f4f, #2a2a2a); --graphite-cap-ink: #ffc5af; }
+:root[data-theme="graphite-studio"] :is(button, summary):focus-visible { outline: 2px solid #dcdcdc; outline-offset: 3px; }
+:root[data-theme="graphite-studio"] .header-utility-content .instrument-key { text-align: left; }
+:root[data-theme="graphite-studio"] .header-utility-content .instrument-key-face { justify-content: flex-start; }
+:root[data-theme="graphite-studio"] .app-topbar :is(.header-utility-menu, .receiver-status-menu) > summary::after { display: block; transform: none; content: ""; }
+:root[data-theme="graphite-studio"] .receiver-status-menu[open] .instrument-key-face > .app-icon { transform: rotate(180deg); }
+
+/* Deep fields, separated from the case by a black lip and lower reflection. */
+:root[data-theme="graphite-studio"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .unit-input) {
+  color: #f2f2f2; background: var(--graphite-well); border-color: #0b0b0b;
+  box-shadow: inset 0 3px 5px #000000cc, inset 1px 0 2px #000000aa, 0 1px 0 #bcbcbc55;
+}
+:root[data-theme="graphite-studio"] .unit-input input { background: transparent; box-shadow: none; }
+:root[data-theme="graphite-studio"] .unit-input span { color: #cecece; }
+:root[data-theme="graphite-studio"] select option { background: #252c32; }
+:root[data-theme="graphite-studio"] input::placeholder { color: #b5b5b5; }
+:root[data-theme="graphite-studio"] :is(input, select, textarea):focus, :root[data-theme="graphite-studio"] .unit-input:focus-within {
+  border-color: #bebebe; box-shadow: inset 0 2px 4px #000000bb, 0 0 0 2px #dadada55;
+}
+:root[data-theme="graphite-studio"] .unit-input input:focus { box-shadow: none; }
+:root[data-theme="graphite-studio"] :is(input, select, textarea):disabled { color: var(--disabled-color); background: var(--disabled-background); }
+:root[data-theme="graphite-studio"] .channel-frequency-field {
+  border-radius: 8px; padding: 10px; background: var(--graphite-grain), linear-gradient(135deg, #424242, #252e36);
+  border: 1px solid #191919; box-shadow: inset 0 1px #dddddd22, 1px 3px 5px #00000055;
+}
+
+/* Native fader input is the sole interactive surface; cap/scale are decorative. */
+:root[data-theme="graphite-studio"] .instrument-range { position: relative; display: block; width: 100%; height: 38px; min-width: 0; }
+:root[data-theme="graphite-studio"] .instrument-range-rail {
+  position: absolute; left: 12px; right: 12px; top: 13px; height: 9px;
+  background: #080808; border: 1px solid #080808; border-radius: 4px;
+  box-shadow: inset 0 3px 3px #000000dd, 0 1px 0 #d9d9d977; overflow: hidden;
+}
+:root[data-theme="graphite-studio"] .instrument-range-fill {
+  display: block; height: 100%; width: calc(var(--fader-position) * 100%);
+  background: linear-gradient(#999999, #6a6a6a); transition: width 100ms var(--graphite-return);
+}
+:root[data-theme="graphite-studio"] .instrument-range-scale {
+  position: absolute; left: 12px; right: 12px; top: 29px; height: 5px;
+  background: repeating-linear-gradient(90deg, #bcbcbc 0 1px, transparent 1px 25%);
+  border-right: 1px solid #bcbcbc; opacity: .7;
+}
+:root[data-theme="graphite-studio"] .instrument-range-cap {
+  position: absolute; top: 4px; left: calc(12px + (100% - 24px) * var(--fader-position));
+  width: 24px; height: 25px; transform: translateX(-50%); border-radius: 4px;
+  background: linear-gradient(180deg, #f1f1f1, #b3b3b3 17%, #797979 49%, #b2b2b2 70%, #cecece);
+  border: 1px solid #d9d9d9;
+  box-shadow: inset 1px 1px #ffffffe0, inset -1px -1px #434343, 1px 2px 2px #151b20aa, 3px 6px 9px #00000077;
+  transition: left 100ms var(--graphite-return), transform 160ms var(--graphite-return), box-shadow 160ms var(--graphite-return);
+  pointer-events: none;
+}
+:root[data-theme="graphite-studio"] .instrument-range-cap > span {
+  display: block; width: 2px; height: 15px; margin: 4px auto;
+  background: #252e36; box-shadow: 1px 0 #f8f8f899;
+}
+:root[data-theme="graphite-studio"] .instrument-range[data-gripped] .instrument-range-cap {
+  transform: translate(-50%, 1.5px); box-shadow: inset 1px 1px #ffffff99, 1px 2px 3px #151b2088, 2px 3px 5px #00000066;
+  transition: transform 70ms var(--graphite-down), box-shadow 70ms var(--graphite-down);
+}
+:root[data-theme="graphite-studio"] .instrument-range[data-gripped] .instrument-range-fill { transition: none; }
+:root[data-theme="graphite-studio"] .instrument-range > input[type="range"] {
+  position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0;
+  border: 0; background: transparent; box-shadow: none; opacity: 0; appearance: none;
+  cursor: ew-resize;
+}
+:root[data-theme="graphite-studio"] .instrument-range > input::-webkit-slider-runnable-track { height: 9px; background: transparent; border: 0; }
+:root[data-theme="graphite-studio"] .instrument-range > input::-webkit-slider-thumb { appearance: none; width: 24px; height: 25px; margin-top: -8px; border: 0; }
+:root[data-theme="graphite-studio"] .instrument-range > input::-moz-range-track { height: 9px; background: transparent; border: 0; }
+:root[data-theme="graphite-studio"] .instrument-range > input::-moz-range-thumb { width: 24px; height: 25px; border: 0; }
+:root[data-theme="graphite-studio"] .instrument-range:has(input:focus-visible) { outline: 2px solid #dcdcdc; outline-offset: 2px; border-radius: 5px; }
+:root[data-theme="graphite-studio"] .instrument-range[data-disabled] { opacity: .6; }
+:root[data-theme="graphite-studio"] .instrument-range[data-disabled] input { cursor: not-allowed; }
+:root[data-theme="graphite-studio"] .instrument-range:dir(rtl) .instrument-range-cap { left: calc(12px + (100% - 24px) * (1 - var(--fader-position))); }
+:root[data-theme="graphite-studio"] .instrument-range:dir(rtl) .instrument-range-fill { margin-left: auto; }
+:root[data-theme="graphite-studio"] .receiver-switch-track {
+  background: #090c10; border-color: #131313; box-shadow: inset 0 2px 3px #000000cc, 0 1px #e6e6e655;
+}
+:root[data-theme="graphite-studio"] .receiver-auto-center input:checked + .receiver-switch-track { background: #454545; }
+:root[data-theme="graphite-studio"] .receiver-auto-center .receiver-switch-track::after {
+  background: linear-gradient(#fcfcfc, #b1b1b1); box-shadow: 1px 2px 3px #00000088;
+  transition: transform 160ms var(--graphite-return), background-color 120ms ease;
+}
+:root[data-theme="graphite-studio"] .receiver-status-label.is-working .receiver-status-dot {
+  background: #8ee2a3; box-shadow: 0 0 0 2px #191919, 0 0 7px #79dd8899;
+}
+:root[data-theme="graphite-studio"] :is(.workspace-tool-dialog, .utility-overlay, .mode-chooser, .band-guide-dialog, .header-utility-content, .receiver-health-panel, .decoder-popover, .favorites-panel, .antenna-site-panel, .search-panel) {
+  background: var(--graphite-grain), linear-gradient(135deg, #39434d, #242c33 50%, #191f25); border-color: #808080;
+  box-shadow: inset 1px 1px 0 #f5f5f533, inset -1px -1px 0 #0b0b0b, 2px 5px 9px #00000066, 10px 22px 46px #00000088;
+}
+:root[data-theme="graphite-studio"] :is(.utility-overlay-header, .workspace-tool-dialog > header) { background: #d6d6d609; border-color: #767676; }
+:root[data-theme="graphite-studio"] dialog::backdrop { background: #0d0d0d99; }
+:root[data-theme="graphite-studio"] :is(.decoder-record-list .decoder-record, .decoder-target-table .decoder-record, .monitor-frequency, .mode-chooser-card-select) { background: transparent; color: var(--ink); box-shadow: none; text-shadow: none; }
+:root[data-theme="graphite-studio"] .decoder-record[aria-pressed="true"] { background: var(--selected-background); box-shadow: inset 3px 0 #d2d2d2; }
+:root[data-theme="graphite-studio"] .theme-picker-swatches[data-preview="graphite-studio"] i { background: #191e23; }
+:root[data-theme="graphite-studio"] .theme-picker-swatches[data-preview="graphite-studio"] i:nth-child(2) { background: #474747; }
+:root[data-theme="graphite-studio"] .theme-picker-swatches[data-preview="graphite-studio"] i:nth-child(3) { background: #e5e5e5; }
+:root[data-theme="graphite-studio"] .theme-picker-swatches[data-preview="graphite-studio"] i:nth-child(4) { background: #b1b1b1; }
+@media (max-width: 820px) {
+  :root[data-theme="graphite-studio"] .app-shell { padding: 8px; }
+  :root[data-theme="graphite-studio"] .app-topbar { padding: 8px; }
+}
+@media (pointer: coarse) {
+  :root[data-theme="graphite-studio"] .instrument-range { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="graphite-studio"] :is(.instrument-key, summary)::before,
+  :root[data-theme="graphite-studio"] .instrument-key-face,
+  :root[data-theme="graphite-studio"] :is(.instrument-range-cap, .instrument-range-fill, .instrument-tabs-indicator),
+  :root[data-theme="graphite-studio"] .receiver-switch-track::after { transition: none !important; }
+}
+@media (forced-colors: active) {
+  :root[data-theme="graphite-studio"] :is(button.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary) { border: 1px solid ButtonText !important; background: ButtonFace !important; color: ButtonText; }
+  :root[data-theme="graphite-studio"] :is(.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::before,
+  :root[data-theme="graphite-studio"] :is(.instrument-key, .header-utility-menu > summary, .receiver-status-menu > summary)::after { display: none !important; }
+  :root[data-theme="graphite-studio"] .instrument-key-face { text-shadow: none; transform: none; transition: none; }
+  :root[data-theme="graphite-studio"] :is(.instrument-range-cap, .instrument-range-scale, .instrument-range-rail) { display: none; }
+  :root[data-theme="graphite-studio"] .instrument-range > input[type="range"] { opacity: 1; appearance: auto; }
+  :root[data-theme="graphite-studio"] .instrument-range > input::-webkit-slider-thumb { appearance: auto; }
+  :root[data-theme="graphite-studio"] .brand-logo { filter: none; }
+  :root[data-theme="graphite-studio"] .instrument-tabs-indicator { display: none; }
+  :root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"][aria-selected="true"] { color: HighlightText; background: Highlight; }
+}
+
+/* Blue is reserved for the next primary action, focus and useful readouts. */
+:root[data-theme="graphite-studio"] :is(.acquire-connect, .acquire-receive:not([data-receiving="true"]), .transport > .instrument-key:not(.secondary), .studio-primary, .channel-tune-actions > .action-hint:first-child .instrument-key):not(:disabled) {
+  --graphite-cap: linear-gradient(165deg, #a2d6ff, #69abe3 50%, #5792c5);
+  --graphite-cap-ink: #0b2133;
+}
+:root[data-theme="graphite-studio"] :is(.channel-stage-body output, .channel-frequency-field .unit-input > span) { color: #a3d2ff; }
+:root[data-theme="graphite-studio"] :is(button, summary):focus-visible,
+:root[data-theme="graphite-studio"] .instrument-range:has(input:focus-visible) { outline-color: #8bc9ff; }
+:root[data-theme="graphite-studio"] .receiver-auto-center input:checked + .receiver-switch-track { background: #345c7b; }
+:root[data-theme="graphite-studio"] .instrument-range-fill { background: linear-gradient(#86bce6, #4e7fa6); }
+/* Every key uses the same finish; disabled state reduces relief/contrast only. */
+:root[data-theme="graphite-studio"] .instrument-key:disabled::after { box-shadow: 1px 2px 3px #00000044; }
+:root[data-theme="graphite-studio"] .instrument-key:disabled::before { box-shadow: inset 0 1px #c6d6e012, 1px 2px 4px #00000044; }
+@media (max-width: 480px) {
+  :root[data-theme="graphite-studio"] .receiver-dock-tabs.instrument-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-radius: 22px; }
+  :root[data-theme="graphite-studio"] .receiver-dock-tabs.instrument-tabs > [role="tab"] { min-width: 0; white-space: normal; }
+}
+@media (pointer: coarse) {
+  :root[data-theme="graphite-studio"] .instrument-tabs > [role="tab"] { min-height: 44px; }
+}
+
+:root[data-theme="graphite-studio"] .acquire-receive[data-receiving="true"] {
+  --graphite-cap: var(--graphite-grain), linear-gradient(155deg, #424a52, #30373e);
+  --graphite-cap-ink: #ffd69a;
+}
+:root[data-theme="graphite-studio"] .acquire-receive[data-receiving="true"] .instrument-key-face { text-shadow: 0 1px 1px #0008; }
+:root[data-theme="graphite-studio"] .channel-tune-actions .instrument-key { min-height: 38px; height: auto; }
+:root[data-theme="graphite-studio"] .channel-tune-actions .instrument-key-face { line-height: 1.35; }
+
+/* Native disclosure markers need room alongside compact dock labels. */
+:root[data-theme="graphite-studio"] .receiver-dock-panel :is(.decoder-details, .audio-capture-panel) > summary { padding-right: 22px; }
+
+/* Status already has a real chevron; reserve no extra space for a legacy marker. */
+:root[data-theme="graphite-studio"] .receiver-status-menu > summary { padding-right: 10px; }
+/* Legacy counter selectors must not mute the entire newly wrapped key legend. */
+:root[data-theme="graphite-studio"] :is(.favorites-trigger, .remote-favorites-trigger) > .instrument-key-face { margin-left: 0; color: inherit; }
+:root[data-theme="graphite-studio"] :is(.favorites-trigger, .remote-favorites-trigger) > .instrument-key-face > span { color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import {
   useId,
   useLayoutEffect,
@@ -72,13 +73,13 @@ export function ActionButton({
         if (event.key === "Escape") setActive(false);
       }}
     >
-      <button
+      <InstrumentButton
         {...props}
         aria-describedby={showHint ? hintId : props["aria-describedby"]}
       >
         {icon && <AppIcon name={icon} />}
         {children}
-      </button>
+      </InstrumentButton>
       {showHint &&
         createPortal(
           <span

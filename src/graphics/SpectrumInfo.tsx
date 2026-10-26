@@ -1,3 +1,4 @@
+import { InstrumentButton } from "../ui/InstrumentButton";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { AppIcon } from "../ui/AppIcon";
 
@@ -43,7 +44,7 @@ export function SpectrumInfo({ children }: { children: ReactNode }) {
           setOpen(false);
       }}
     >
-      <button
+      <InstrumentButton
         ref={trigger}
         type="button"
         className="spectrum-info-button"
@@ -55,7 +56,7 @@ export function SpectrumInfo({ children }: { children: ReactNode }) {
         onClick={() => setOpen((value) => !value)}
       >
         <AppIcon name="info" />
-      </button>
+      </InstrumentButton>
       {open && (
         <div
           ref={panel}
@@ -67,7 +68,7 @@ export function SpectrumInfo({ children }: { children: ReactNode }) {
         >
           <div className="spectrum-info-heading">
             <h3 id={`${id}-heading`}>FFT &amp; display details</h3>
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               onClick={() => {
@@ -76,7 +77,7 @@ export function SpectrumInfo({ children }: { children: ReactNode }) {
               }}
             >
               Close
-            </button>
+            </InstrumentButton>
           </div>
           {children}
         </div>

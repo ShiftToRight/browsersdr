@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppIcon } from "./AppIcon";
@@ -105,7 +106,7 @@ export function FavoritesPanel({
   );
   return (
     <>
-      <button
+      <InstrumentButton
         ref={trigger}
         type="button"
         className="favorites-trigger secondary"
@@ -116,7 +117,7 @@ export function FavoritesPanel({
       >
         <AppIcon name="star" /> Favorites <span>{items.length}</span>
         {storageMessage && <AppIcon name="alert" />}
-      </button>
+      </InstrumentButton>
       {!open && storageMessage && (
         <p className="favorite-storage-warning" role="alert">
           {storageMessage}
@@ -173,14 +174,14 @@ export function FavoritesPanel({
               <h3 id={`${dialogId}-heading`}>Favorites</h3>
               <p>{items.length} saved · in this browser</p>
             </div>
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               aria-label="Close Favorites"
               onClick={() => setOpen(false)}
             >
               <AppIcon name="close" />
-            </button>
+            </InstrumentButton>
           </header>
           <div className="favorites-body">
             <p
@@ -200,7 +201,7 @@ export function FavoritesPanel({
                   placeholder="Name, frequency or tag"
                 />
               </label>
-              <button
+              <InstrumentButton
                 type="button"
                 aria-label="Save current channel"
                 disabled={Boolean(saveBlockedReason)}
@@ -211,7 +212,7 @@ export function FavoritesPanel({
                 }}
               >
                 <AppIcon name="plus" /> Save current
-              </button>
+              </InstrumentButton>
               {saveBlockedReason && (
                 <p className="display-note">{saveBlockedReason}</p>
               )}
@@ -265,7 +266,7 @@ export function FavoritesPanel({
                           </span>
                         </div>
                         <div className="favorite-actions">
-                          <button
+                          <InstrumentButton
                             type="button"
                             disabled={recalling || Boolean(blockedReason)}
                             title={blockedReason}
@@ -290,8 +291,8 @@ export function FavoritesPanel({
                             }}
                           >
                             Recall
-                          </button>
-                          <button
+                          </InstrumentButton>
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             onClick={() => {
@@ -300,7 +301,7 @@ export function FavoritesPanel({
                             }}
                           >
                             Edit
-                          </button>
+                          </InstrumentButton>
                         </div>
                       </div>
                       <details className="favorite-details">
@@ -337,7 +338,7 @@ export function FavoritesPanel({
                           </small>
                         )}
                         <div className="favorite-actions">
-                          <button
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             aria-label={`Move ${item.name} up`}
@@ -362,8 +363,8 @@ export function FavoritesPanel({
                             }
                           >
                             ↑
-                          </button>
-                          <button
+                          </InstrumentButton>
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             aria-label={`Move ${item.name} down`}
@@ -388,8 +389,8 @@ export function FavoritesPanel({
                             }
                           >
                             ↓
-                          </button>
-                          <button
+                          </InstrumentButton>
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             aria-label={`Delete ${item.name}`}
@@ -404,7 +405,7 @@ export function FavoritesPanel({
                             }
                           >
                             Delete
-                          </button>
+                          </InstrumentButton>
                         </div>
                       </details>
                     </li>
@@ -419,21 +420,21 @@ export function FavoritesPanel({
               className="favorite-actions favorites-backup"
               hidden={Boolean(draft)}
             >
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={exportBackup}
                 disabled={!items.length}
               >
                 Export favorites
-              </button>
-              <button
+              </InstrumentButton>
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={() => file.current?.click()}
               >
                 Import favorites
-              </button>
+              </InstrumentButton>
               <input
                 ref={file}
                 hidden
@@ -622,10 +623,10 @@ function FavoriteEditor({
         />
       </label>
       <div className="favorite-actions favorite-wide-field">
-        <button type="submit">Save favorite</button>
-        <button type="button" className="secondary" onClick={onCancel}>
+        <InstrumentButton type="submit">Save favorite</InstrumentButton>
+        <InstrumentButton type="button" className="secondary" onClick={onCancel}>
           Back to favorites
-        </button>
+        </InstrumentButton>
       </div>
       {error && <p role="alert">{error}</p>}
     </form>

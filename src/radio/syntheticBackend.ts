@@ -1,6 +1,7 @@
 import type { RecordingOptions } from "./channelRecording";
 import type { AnalysisPipeline } from "../dsp/analysisPipeline";
 import { SyntheticComplexTone, SYNTHETIC_DEMO_SESSION } from "../testing/syntheticTone";
+import { SyntheticHistorySignal } from "../testing/syntheticHistorySignal";
 import type { ReceiverBackend, ReceiverBackendEvents, ReceiverStartOptions } from "./receiverController";
 import type { SourceSessionMetadata } from "./types";
 import type { SampleReceiver } from "@jtarrio/signals/radio/sample_receiver.js";
@@ -51,22 +52,26 @@ export class SyntheticBackend implements ReceiverBackend {
     const receiver = this.analysis.begin(metadata);
     this.receiver = receiver;
     receiver.setSampleRate(metadata.actualSampleRateHz);
+    const historyDemo = new URLSearchParams(window.location.search).get("demo") === "history";
+    const historySignal = historyDemo ? new SyntheticHistorySignal() : undefined;
+    const blockSize = historyDemo ? 16_384 : DEMO_BLOCK_SIZE;
     const generate = () => {
       if (this.stopped) return;
-      const primary = this.positive.generate(DEMO_BLOCK_SIZE);
-      const secondary = this.negative.generate(DEMO_BLOCK_SIZE);
-      for (let index = 0; index < DEMO_BLOCK_SIZE; index += 1) {
+      const primary = this.positive.generate(blockSize);
+      const secondary = this.negative.generate(blockSize);
+      for (let index = 0; index < blockSize; index += 1) {
         const sweepOffsetHz = 340_000 * Math.sin(2 * Math.PI * this.sweepClock / (metadata.actualSampleRateHz * 6));
         this.sweepPhase += 2 * Math.PI * sweepOffsetHz / metadata.actualSampleRateHz;
         this.sweepClock += 1;
         primary.I[index] = (primary.I[index] ?? 0) + (secondary.I[index] ?? 0) + 0.32 * Math.cos(this.sweepPhase);
         primary.Q[index] = (primary.Q[index] ?? 0) + (secondary.Q[index] ?? 0) + 0.32 * Math.sin(this.sweepPhase);
       }
+      historySignal?.mix(primary.I, primary.Q, metadata.actualSampleRateHz);
       receiver.receiveSamples({ I: primary.I, Q: primary.Q, frequency: this.metadata?.hardwareCenterFrequencyHz ?? metadata.hardwareCenterFrequencyHz });
       this.recorder?.appendNormalized({ I: primary.I, Q: primary.Q });
     };
     generate();
-    this.timer = window.setInterval(generate, 20);
+    this.timer = window.setInterval(generate, historyDemo ? 16 : 20);
     return metadata;
   }
 

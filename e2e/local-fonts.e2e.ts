@@ -54,7 +54,12 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/?browser-test=1");
-    for (const theme of ["classic", "field-deck", "vice-afterglow"]) {
+    for (const theme of [
+      "classic",
+      "field-deck",
+      "vice-afterglow",
+      "graphite-studio",
+    ]) {
       await page.getByLabel("Settings", { exact: true }).click();
       await page
         .getByRole("combobox", { name: "Theme", exact: true })

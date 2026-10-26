@@ -1,4 +1,5 @@
 import international from "./band-guide-plans.json";
+import germany from "./band-guide-germany.json";
 
 export type BandGuidePlan =
   keyof typeof international.profiles | "DE" | "general";
@@ -33,6 +34,7 @@ export const BAND_GUIDE_SOURCE = {
 };
 export const BAND_GUIDE_SOURCES: Readonly<Record<string, GuideSource>> = {
   ...international.sources,
+  ...germany.sources,
   DE: {
     ...BAND_GUIDE_SOURCE,
     edition: "Curated FreqV reference; publication date not established",
@@ -251,6 +253,7 @@ export const GERMAN_GUIDE_BANDS: readonly GuideBand[] = [
     "shared",
     "Rows 302–303 and notes 10/26: mobile, radiolocation, WLAN/SRD; amateur use in part. This does not identify a protocol.",
   ),
+  ...(germany.bands as readonly GuideBand[]),
 ];
 
 export const BAND_GUIDE_GROUPS = [
@@ -266,7 +269,7 @@ export const BAND_GUIDE_PLANS = {
     label: "Germany",
     group: "Europe",
     scope:
-      "Selected German FreqV reference intervals; national footnotes and shared uses apply.",
+      "Selected German allocations and applications from FreqV, the August 2026 Bundesnetzagentur plan and cited application instruments; national qualifications and shared uses apply.",
     bands: GERMAN_GUIDE_BANDS,
   },
   ...international.profiles,

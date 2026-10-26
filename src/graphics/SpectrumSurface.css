@@ -1,0 +1,59 @@
+.spectrum-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spectrum-view-choice { display: flex; flex-wrap: wrap; gap: 4px; }
+.spectrum-view-choice button { min-height: 34px; padding: 5px 10px; font-size: .78rem; }
+.spectrum-view-choice button[aria-pressed="true"] { border-color: var(--cyan); color: var(--ink); }
+.surface-notice { flex-basis: 100%; margin: 0; max-width: 64ch; color: var(--muted); font-size: .78rem; }
+.surface-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 16px; margin-top: 16px; }
+.surface-settings label { display: grid; grid-template-columns: 1fr auto; }
+.surface-settings input { grid-column: 1 / -1; min-height: 28px; padding: 0; }
+.surface-settings input, .surface-settings select { width: 100%; }
+.surface-reset { margin-top: 8px; }
+.surface-depth-toggle { margin-top: 16px; }
+.surface-depth-help { display: block; margin-top: 5px; color: var(--muted); }
+.canvas-frame.surface-active .passband-layer { bottom: calc(100% - var(--surface-trace-end)); }
+.canvas-frame.surface-active :is(.receiver-center-line, .selected-frequency-line) { bottom: calc(100% - var(--surface-trace-end)); }
+.canvas-frame.surface-active .frequency-rule { bottom: calc(101% - var(--surface-trace-end)); left: 0; right: 0; }
+.canvas-frame.surface-active .spectrum-hover { bottom: calc(100% - var(--surface-trace-end)); overflow: hidden; }
+.canvas-frame.surface-active .band-guide-strip { top: var(--surface-trace-end); }
+.canvas-frame.surface-active span.waterfall-label { top: calc(var(--surface-trace-end) + var(--band-guide-height, 0px) + 6px); }
+.surface-axis { position: absolute; z-index: 3; pointer-events: none; inset: calc(var(--surface-trace-end) + var(--band-guide-height, 0px)) 0 48px; color: var(--muted); font: .7rem "IBM Plex Mono", monospace; }
+.surface-frequency { position: absolute; inset: auto 0 9% 0; }
+.surface-frequency span { position: absolute; bottom: 0; white-space: nowrap; }
+.surface-age { position: absolute; bottom: 14%; right: 2px; }
+.surface-oldest { position: absolute; right: 12%; top: 22%; }
+.surface-power { position: absolute; top: 15%; left: 8px; display: grid; gap: 4px; }
+.canvas-frame.surface-active .plot-metadata { bottom: 7px; }
+@media(max-width: 600px) {
+  .surface-settings { grid-template-columns: 1fr; }
+  .canvas-frame.surface-active .passband-legend { display: none; }
+  .surface-axis { font-size: .68rem; }
+  .surface-power { left: 4px; }
+  .surface-notice { overflow-wrap: anywhere; }
+}
+@media(forced-colors: active) {
+  .surface-axis { color: CanvasText; background: transparent; }
+}
+
+.surface-layout-setting { display: grid; gap: 6px; margin-top: 16px; }
+.canvas-frame.surface-combined :is(.passband-layer,.receiver-center-line,.selected-frequency-line,.frequency-rule,.spectrum-label,.marker-label,.passband-legend,.surface-frequency) { display: none; }
+.surface-combined .surface-axis { bottom: 112px; }
+.surface-combined .spectrum-info-button { bottom: 0; }
+.surface-tuning { position: absolute; z-index: 5; bottom: 56px; left: 0; right: 0; height: 48px; cursor: crosshair; touch-action: manipulation; border-top: 1px solid var(--muted); border-bottom: 1px solid var(--muted); background: var(--theme-surface, #020719); color: var(--ink); font: .7rem "IBM Plex Mono",monospace; }
+.surface-tuning:hover { border-color: var(--cyan); }
+.surface-tuning:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.surface-live-caption { position: absolute; left: 8px; top: 4px; }
+.surface-live-selected { position: absolute; right: 8px; top: 4px; }
+.surface-tuning-ticks { position: absolute; left: 0; right: 0; bottom: 3px; }
+.surface-tuning-ticks span { position: absolute; bottom: 0; white-space: nowrap; }
+.surface-tuning-marker { position: absolute; top: -5px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--cyan); transform: translateX(-50%); }
+@media(max-width:600px) { .surface-live-caption { font-size: .62rem; max-width: 58%; } .surface-live-selected { font-size: .65rem; } .surface-tuning { font-size: .65rem; } }
+
+@media(max-width:600px) {
+  .surface-combined .plot-metadata { gap: 0 8px; line-height: 1.2; }
+  .surface-combined .plot-metadata :is(.display-units,.receiver-offset) { font-size: .7rem; line-height: 1.2; }
+  .surface-combined .plot-metadata > small:not(.receiver-offset) { display: none; }
+}
+
+.canvas-frame.surface-active canvas { cursor: crosshair; }
+.surface-tuning-marker { transition: left 160ms ease-in-out; }
+@media(prefers-reduced-motion:reduce) { .surface-tuning-marker { transition: none; } }

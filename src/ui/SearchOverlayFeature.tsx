@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import {
   readFrequencySourceMode,
   saveFrequencySourceMode,
@@ -99,7 +100,7 @@ function FrequencyRows({
           </a>{" "}
           · Reviewed {row.reviewedOn}
         </p>
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           onClick={() =>
@@ -107,7 +108,7 @@ function FrequencyRows({
           }
         >
           Preview {row.frequencyHz / 1e6} MHz with {previewMode}
-        </button>
+        </InstrumentButton>
       </article>
     );
   });
@@ -214,13 +215,13 @@ function StationReferences({
         total.
       </p>
       {state.status === "idle" && (
-        <button
+        <InstrumentButton
           type="button"
           className="secondary"
           onClick={() => void pager.load()}
         >
           Show references for {station.name}
-        </button>
+        </InstrumentButton>
       )}
       {state.status === "loading" && (
         <p role="status">Loading published references…</p>
@@ -230,13 +231,13 @@ function StationReferences({
         (state.restart ? (
           <p>Search Atlas again to refresh this station and its references.</p>
         ) : (
-          <button
+          <InstrumentButton
             type="button"
             className="secondary"
             onClick={() => void pager.retry()}
           >
             Retry references
-          </button>
+          </InstrumentButton>
         ))}
       {state.status === "ready" && (
         <>
@@ -287,7 +288,7 @@ function StationReferences({
                 </a>
                 {candidate ? (
                   <div className="discovery-actions">
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       onClick={() =>
@@ -300,8 +301,8 @@ function StationReferences({
                       }
                     >
                       Preview {reference.frequency_hz / 1e6} MHz
-                    </button>
-                    <button
+                    </InstrumentButton>
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       onClick={() => {
@@ -320,7 +321,7 @@ function StationReferences({
                       }}
                     >
                       Save station favorite
-                    </button>
+                    </InstrumentButton>
                   </div>
                 ) : (
                   <p>
@@ -335,22 +336,22 @@ function StationReferences({
             className="discovery-actions"
             aria-label="Public reference pages"
           >
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               disabled={!state.previous}
               onClick={() => void pager.previous()}
             >
               Previous references
-            </button>
-            <button
+            </InstrumentButton>
+            <InstrumentButton
               type="button"
               className="secondary"
               disabled={!state.next}
               onClick={() => void pager.next()}
             >
               Next references
-            </button>
+            </InstrumentButton>
           </nav>
         </>
       )}
@@ -691,7 +692,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
   };
   return (
     <>
-      <button
+      <InstrumentButton
         ref={trigger}
         type="button"
         className="secondary discovery-trigger"
@@ -701,7 +702,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
         onClick={() => setOpen(true)}
       >
         <AppIcon name="search" /> Search
-      </button>
+      </InstrumentButton>
       {createPortal(
         <dialog
           ref={dialog}
@@ -757,19 +758,19 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                         : "Local guides, approved Atlas references and your favorites"}
                     </p>
                   </div>
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary"
                     aria-label="Close Search"
                     onClick={close}
                   >
                     <AppIcon name="close" />
-                  </button>
+                  </InstrumentButton>
                 </header>
                 <div className="favorites-body discovery-body">
                   {antenna ? (
                     <>
-                      <button
+                      <InstrumentButton
                         type="button"
                         ref={(node) => {
                           node?.focus();
@@ -792,7 +793,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                         }}
                       >
                         ← Back to Search
-                      </button>
+                      </InstrumentButton>
                       <Suspense
                         fallback={<p role="status">Opening antenna guide…</p>}
                       >
@@ -909,13 +910,13 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                         )}
                         {parsed.error && <p role="alert">{parsed.error}</p>}
                         <div className="discovery-actions">
-                          <button
+                          <InstrumentButton
                             type="submit"
                             disabled={state.status === "loading"}
                           >
                             Search Atlas
-                          </button>
-                          <button
+                          </InstrumentButton>
+                          <InstrumentButton
                             type="button"
                             className="secondary"
                             onClick={() => {
@@ -926,7 +927,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                             }}
                           >
                             Clear search
-                          </button>
+                          </InstrumentButton>
                         </div>
                       </form>
                       {props.blockedReason && (
@@ -977,7 +978,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                             </p>
                           )}
                           <div className="discovery-actions">
-                            <button
+                            <InstrumentButton
                               type="button"
                               disabled={!!previewError || applying}
                               onClick={() => void apply()}
@@ -985,14 +986,14 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                               {applying
                                 ? "Checking and applying…"
                                 : "Apply to receiver"}
-                            </button>
-                            <button
+                            </InstrumentButton>
+                            <InstrumentButton
                               type="button"
                               className="secondary"
                               onClick={invalidate}
                             >
                               Cancel preview
-                            </button>
+                            </InstrumentButton>
                           </div>
                         </section>
                       )}
@@ -1046,7 +1047,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                               lookup.
                             </p>
                           )}
-                          <button
+                          <InstrumentButton
                             type="button"
                             disabled={catalogLoading}
                             onClick={() => {
@@ -1055,7 +1056,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                             }}
                           >
                             Refresh frequency catalog
-                          </button>
+                          </InstrumentButton>
                           {!catalogLoading &&
                             catalog &&
                             !sharedFrequencies.length && (
@@ -1131,7 +1132,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                   : `${parsed.frequencyHz / 1e6} MHz`}
                               </h4>
                               <p>{parsed.notice}</p>
-                              <button
+                              <InstrumentButton
                                 type="button"
                                 className="secondary"
                                 onClick={() =>
@@ -1150,7 +1151,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                 {parsed.block
                                   ? "DAB block"
                                   : `frequency with ${props.mode}`}
-                              </button>
+                              </InstrumentButton>
                             </article>
                           )}
                           {!guides.length &&
@@ -1170,7 +1171,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                   item.mode === guide.mode &&
                                   guide.mode !== undefined,
                               ) && (
-                                <button
+                                <InstrumentButton
                                   type="button"
                                   className="secondary"
                                   onClick={(event) => {
@@ -1194,7 +1195,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                   }}
                                 >
                                   Antenna setup for {guide.name}
-                                </button>
+                                </InstrumentButton>
                               )}
                               <p className="display-note">
                                 {guide.match} ·{" "}
@@ -1210,7 +1211,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                               {guide.mode &&
                                 guide.id !== "dab" &&
                                 guide.id !== "atis" && (
-                                  <button
+                                  <InstrumentButton
                                     type="button"
                                     className="secondary"
                                     onClick={() =>
@@ -1225,7 +1226,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                     }
                                   >
                                     Preview {guide.name}
-                                  </button>
+                                  </InstrumentButton>
                                 )}
                             </article>
                           ))}
@@ -1261,7 +1262,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                             </p>
                           )}
                           {state.status === "error" && (
-                            <button
+                            <InstrumentButton
                               type="button"
                               className="secondary"
                               onClick={() => {
@@ -1270,7 +1271,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                               }}
                             >
                               Retry station page
-                            </button>
+                            </InstrumentButton>
                           )}
                           {state.status === "ready" && (
                             <>
@@ -1341,7 +1342,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                 className="discovery-actions"
                                 aria-label="Public station pages"
                               >
-                                <button
+                                <InstrumentButton
                                   type="button"
                                   className="secondary"
                                   disabled={!state.previous}
@@ -1351,8 +1352,8 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                   }}
                                 >
                                   Previous stations
-                                </button>
-                                <button
+                                </InstrumentButton>
+                                <InstrumentButton
                                   type="button"
                                   className="secondary"
                                   disabled={!state.next}
@@ -1362,7 +1363,7 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                   }}
                                 >
                                   Next stations
-                                </button>
+                                </InstrumentButton>
                               </nav>
                             </>
                           )}
@@ -1385,13 +1386,13 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                                 {item.frequencyHz / 1e6} MHz ·{" "}
                                 {item.settings.mode}
                               </p>
-                              <button
+                              <InstrumentButton
                                 type="button"
                                 className="secondary"
                                 onClick={() => choose(item)}
                               >
                                 Preview favorite {item.name}
-                              </button>
+                              </InstrumentButton>
                             </article>
                           ))}
                         </section>
@@ -1403,9 +1404,9 @@ export function SearchOverlayFeature(props: SearchOverlayProps) {
                   <span className="display-note">
                     Query and filters are retained when closed.
                   </span>
-                  <button type="button" className="secondary" onClick={close}>
+                  <InstrumentButton type="button" className="secondary" onClick={close}>
                     Close Search
-                  </button>
+                  </InstrumentButton>
                 </footer>
               </>
             )}

@@ -1,3 +1,4 @@
+import { InstrumentRange } from "./InstrumentRange";
 import { useEffect, useRef, useState } from "react";
 import { ShareGuest, initialPeerStats } from "../sharing/peerSession";
 import type { SharedState } from "../sharing/protocol";
@@ -68,7 +69,7 @@ export default function LiveGuest() {
       <p className="display-note">{stale ? "Spectrum waiting or stale" : "Live RF spectrum"} · host CPU/WASM analysis · 1024 bins · up to 20 rows/s · relative power. Gaps are marked; network delivery is not RF continuity evidence.</p>
       <div className="live-share-actions"><button type="button" disabled={!hasAudio || listening} onClick={() => void listen()}>Listen</button>
         <button type="button" className="secondary" disabled={!listening} onClick={() => { audio.current?.pause(); setListening(false); }}>Mute</button>
-        <label className="live-share-volume">Your volume<input type="range" aria-label="Guest volume" min="0" max="1" step=".01" value={volume} onChange={event => { const v = Number(event.target.value); setVolume(v); if (audio.current) audio.current.volume = v; }} /></label>
+        <label className="live-share-volume">Your volume<InstrumentRange  aria-label="Guest volume" min="0" max="1" step=".01" value={volume} onChange={event => { const v = Number(event.target.value); setVolume(v); if (audio.current) audio.current.volume = v; }} /></label>
         <span>{listening ? "Listening" : "Audio off"}</span></div>
       <audio ref={audio} aria-label="Shared receiver audio" onPause={() => setListening(false)} />
       <dl className="live-share-stats"><div><dt>Spectrum rows received</dt><dd data-testid="share-received-frames">{stats.frames}</dd></div>

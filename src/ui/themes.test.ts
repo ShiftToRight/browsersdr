@@ -6,7 +6,7 @@ afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); setTheme("classic"
 it("retains safe defaults for old, malformed and unavailable preference storage", () => {
   for (const value of [null, "", "unknown", "{broken}", "prototype", 123]) expect(parseTheme(value)).toBe("classic");
   expect(readTheme({ getItem: () => { throw new Error("blocked"); } })).toBe("classic");
-  for (const value of ["field-deck", "vice-afterglow"]) expect(parseTheme(value)).toBe(value);
+  for (const value of ["field-deck", "vice-afterglow", "graphite-studio"]) expect(parseTheme(value)).toBe(value);
 });
 it("applies and persists appearance, follows cross-tab removal, and tolerates blocked writes", () => {
   localStorage.setItem(THEME_KEY, "field-deck");

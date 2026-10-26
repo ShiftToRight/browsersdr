@@ -1,0 +1,2381 @@
+{
+  "sources": {
+    "DE-PLAN-2026": {
+      "title": "Bundesnetzagentur German frequency plan",
+      "url": "https://data.bundesnetzagentur.de/Bundesnetzagentur/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/202608_Frequenzplan.pdf",
+      "edition": "August 2026; individual entry revision dates retained in references",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "460078ec84536316b038e2f56bec3aceb7205bdb663f19a62d85d6889bacb8cd",
+      "sourceDate": "2026-08"
+    },
+    "DE-SRD-2025": {
+      "title": "Bundesnetzagentur SRD general assignment",
+      "url": "https://www.bundesnetzagentur.de/DE/Fachthemen/Telekommunikation/Frequenzen/Allgemeinzuteilungen/_DL/vfg91_2025.pdf?__blob=publicationFile&v=3",
+      "edition": "Vfg. 91/2025; November 2025; Tables 2 and 3",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "78155c01308262d9c47e7f29f9756fcbd1d9f36a80f0cb37c33bf7f7ade2e8f2",
+      "sourceDate": "2025-11"
+    },
+    "DE-PMSE-2026": {
+      "title": "Bundesnetzagentur wireless microphone assignment",
+      "url": "https://www.bundesnetzagentur.de/DE/Fachthemen/Telekommunikation/Frequenzen/Allgemeinzuteilungen/_DL/Mikrofone/vfg37_2026.pdf?__blob=publicationFile&v=3",
+      "edition": "Vfg. 37/2026; April 2026",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "f95db3f16ca71c9a6014733b43d890803132744b42872977c72f9457fbe91da4",
+      "sourceDate": "2026-04-15"
+    },
+    "DE-WLAN5": {
+      "title": "Bundesnetzagentur 5 GHz WAS/WLAN assignment",
+      "url": "https://www.bundesnetzagentur.de/DE/Fachthemen/Telekommunikation/Frequenzen/Allgemeinzuteilungen/_DL/MobilfunkDectWlanCBFunk/vfg136_2022.pdf?__blob=publicationFile&v=2",
+      "edition": "Vfg. 136/2022, amended by Vfg. 49/2023",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "38c07015451b7ed4883e365e7b896bae83570215f46e28e03663ff10adb4b341"
+    },
+    "DE-WLAN6": {
+      "title": "Bundesnetzagentur 6 GHz WAS/WLAN assignment",
+      "url": "https://www.bundesnetzagentur.de/DE/Fachthemen/Telekommunikation/Frequenzen/Allgemeinzuteilungen/_DL/MobilfunkDectWlanCBFunk/vfg76_2025.pdf?__blob=publicationFile&v=5",
+      "edition": "Vfg. 76/2025",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "3c4a40f107f1a7528c5b891eeacbe2d5b8346b42b07b0871a8b08c2e05fee365"
+    },
+    "DE-AFUV": {
+      "title": "German amateur radio conditions (AFuV Annex 1)",
+      "url": "https://www.gesetze-im-internet.de/afuv_2005/anlage_1.html",
+      "edition": "Annex 1; BGBl. 2024 I No. 175; consolidated page inspected 25 October 2026",
+      "inspected": "2026-10-25",
+      "method": "Publication bytes; selected rows and qualifications inspected",
+      "sha256": "6a5a4f87e87fd1e4866ca0c0b6906db965496de1389b09431185a848f8c2a05a"
+    }
+  },
+  "bands": [
+    {
+      "id": "de-srd-862",
+      "startHz": 862000000,
+      "endHz": 863000000,
+      "label": "SRD / shared uses",
+      "category": "shared",
+      "notes": "Short-range reference uses. Shared applications have different bandwidth, access and duty-cycle conditions; no protocol is identified. RFID and broadband data have additional channel/category restrictions.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 87; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251001"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-audio",
+      "startHz": 863000000,
+      "endHz": 865000000,
+      "label": "SRD / wireless audio",
+      "category": "shared",
+      "notes": "Short-range reference uses. Shared applications have different bandwidth, access and duty-cycle conditions; no protocol is identified. RFID and broadband data have additional channel/category restrictions.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 46a/46b/84; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-rfid",
+      "startHz": 865000000,
+      "endHz": 868000000,
+      "label": "SRD / RFID",
+      "category": "shared",
+      "notes": "Short-range reference uses. Shared applications have different bandwidth, access and duty-cycle conditions; no protocol is identified. RFID and broadband data have additional channel/category restrictions.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 47/47a/47b/84; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-868",
+      "startHz": 868000000,
+      "endHz": 868600000,
+      "label": "SRD / shared uses",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 48; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-alarm-8686",
+      "startHz": 868600000,
+      "endHz": 868700000,
+      "label": "SRD / alarms",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 49; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-8687",
+      "startHz": 868700000,
+      "endHz": 869200000,
+      "label": "SRD / shared uses",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 50; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-social-alarm",
+      "startHz": 869200000,
+      "endHz": 869250000,
+      "label": "SRD / social alarms",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 51; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-alarm-86925",
+      "startHz": 869250000,
+      "endHz": 869300000,
+      "label": "SRD / alarms",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 52; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-alarm-8693",
+      "startHz": 869300000,
+      "endHz": 869400000,
+      "label": "SRD / alarms",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 53; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-8694",
+      "startHz": 869400000,
+      "endHz": 869650000,
+      "label": "SRD / shared uses",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 54; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-alarm-86965",
+      "startHz": 869650000,
+      "endHz": 869700000,
+      "label": "SRD / alarms",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 55; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-srd-8697",
+      "startHz": 869700000,
+      "endHz": 870000000,
+      "label": "SRD / shared uses",
+      "category": "shared",
+      "notes": "The detailed application slice coexists with broad SRD context. Consult the cited application conditions; this is not an exclusive allocation or a detected signal.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2, band 56a/56b; category-specific access conditions apply"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251004; Stand MÄRZ 2022; broad SRD context"
+        }
+      ]
+    },
+    {
+      "id": "de-700-bos-low",
+      "startHz": 698000000,
+      "endHz": 703000000,
+      "label": "Public service / military",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A002; Stand MÄRZ 2022; PDF page 341"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A003; Stand MÄRZ 2022; PDF page 342"
+        }
+      ]
+    },
+    {
+      "id": "de-700-up",
+      "startHz": 703000000,
+      "endHz": 733000000,
+      "label": "700 MHz mobile uplink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A004; Stand MÄRZ 2022; PDF page 342"
+        }
+      ]
+    },
+    {
+      "id": "de-700-bos-gap",
+      "startHz": 733000000,
+      "endHz": 736000000,
+      "label": "Public service / military",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A005; Stand MÄRZ 2022; PDF page 342"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A006; Stand MÄRZ 2022; PDF page 343"
+        }
+      ]
+    },
+    {
+      "id": "de-700-bos-high",
+      "startHz": 753000000,
+      "endHz": 758000000,
+      "label": "Public service / military",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A007; Stand MÄRZ 2022; PDF page 343"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A008; Stand MÄRZ 2022; PDF page 343"
+        }
+      ]
+    },
+    {
+      "id": "de-700-down",
+      "startHz": 758000000,
+      "endHz": 788000000,
+      "label": "700 MHz mobile downlink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A009; Stand MÄRZ 2022; PDF page 344"
+        }
+      ]
+    },
+    {
+      "id": "de-700-bos-edge",
+      "startHz": 788000000,
+      "endHz": 790000000,
+      "label": "Public service / military",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A010; Stand MÄRZ 2022; PDF page 344"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 249A011; Stand MÄRZ 2022; PDF page 344"
+        }
+      ]
+    },
+    {
+      "id": "de-800-bos",
+      "startHz": 790000000,
+      "endHz": 791000000,
+      "label": "Public service / shared",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 250001; Stand MÄRZ 2022; PDF page 345"
+        }
+      ]
+    },
+    {
+      "id": "de-800-up",
+      "startHz": 832000000,
+      "endHz": 862000000,
+      "label": "800 MHz mobile uplink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 250005; Stand MÄRZ 2022; PDF page 346"
+        }
+      ]
+    },
+    {
+      "id": "de-800-down",
+      "startHz": 791000000,
+      "endHz": 821000000,
+      "label": "800 MHz mobile downlink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 250003; Stand MÄRZ 2022; PDF page 345"
+        }
+      ]
+    },
+    {
+      "id": "de-900-up",
+      "startHz": 880000000,
+      "endHz": 915000000,
+      "label": "900 MHz mobile uplink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251008; Stand MÄRZ 2022; PDF page 349"
+        }
+      ]
+    },
+    {
+      "id": "de-900-down",
+      "startHz": 925000000,
+      "endHz": 960000000,
+      "label": "900 MHz mobile downlink",
+      "category": "shared",
+      "notes": "National application block; paired range is recorded in the official entry. Uplink/downlink describes the conventional terrestrial mobile direction, not a detected technology, operator or occupancy.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251011; Stand MÄRZ 2022; PDF page 350"
+        }
+      ]
+    },
+    {
+      "id": "de-870-military",
+      "startHz": 870000000,
+      "endHz": 873000000,
+      "label": "Military / shared uses",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251006; Stand MÄRZ 2022; PDF page 348"
+        }
+      ]
+    },
+    {
+      "id": "de-873-rail",
+      "startHz": 873000000,
+      "endHz": 876000000,
+      "label": "Railway / military shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251006; Stand MÄRZ 2022; PDF page 348"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251007; Stand MÄRZ 2022; PDF page 348"
+        }
+      ]
+    },
+    {
+      "id": "de-876-rail",
+      "startHz": 876000000,
+      "endHz": 880000000,
+      "label": "Railway mobile",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251007; Stand MÄRZ 2022; PDF page 348"
+        }
+      ]
+    },
+    {
+      "id": "de-915-military",
+      "startHz": 915000000,
+      "endHz": 918000000,
+      "label": "Military / shared uses",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251009; Stand MÄRZ 2022; PDF page 349"
+        }
+      ]
+    },
+    {
+      "id": "de-918-rail",
+      "startHz": 918000000,
+      "endHz": 921000000,
+      "label": "Railway / military shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251009; Stand MÄRZ 2022; PDF page 349"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251010; Stand MÄRZ 2022; PDF page 349"
+        }
+      ]
+    },
+    {
+      "id": "de-921-rail",
+      "startHz": 921000000,
+      "endHz": 925000000,
+      "label": "Railway mobile",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 251010; Stand MÄRZ 2022; PDF page 349"
+        }
+      ]
+    },
+    {
+      "id": "de-audio821",
+      "startHz": 821500000,
+      "endHz": 823000000,
+      "label": "Wireless audio / shared",
+      "category": "shared",
+      "notes": "PMSE audio; national exceptions and equipment categories apply.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 band 94"
+        }
+      ]
+    },
+    {
+      "id": "de-audio823",
+      "startHz": 823000000,
+      "endHz": 826000000,
+      "label": "Wireless audio / shared",
+      "category": "shared",
+      "notes": "PMSE audio; national exceptions and equipment categories apply.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 band 94 and Table 3 D94"
+        }
+      ]
+    },
+    {
+      "id": "de-audio826",
+      "startHz": 826000000,
+      "endHz": 832000000,
+      "label": "Wireless audio / shared",
+      "category": "shared",
+      "notes": "PMSE audio; national exceptions and equipment categories apply.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 band 95"
+        }
+      ]
+    },
+    {
+      "id": "de-audio1785",
+      "startHz": 1785000000,
+      "endHz": 1805000000,
+      "label": "Wireless audio / shared",
+      "category": "shared",
+      "notes": "PMSE audio; national exceptions and equipment categories apply. The national D96 entry extends to 1805 MHz; the harmonized row ends at 1804.8 MHz.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 band 96 and Table 3 D96"
+        }
+      ]
+    },
+    {
+      "id": "de-audio694",
+      "startHz": 694000000,
+      "endHz": 698000000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 5"
+        }
+      ]
+    },
+    {
+      "id": "de-audio736",
+      "startHz": 736000000,
+      "endHz": 753000000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 6"
+        }
+      ]
+    },
+    {
+      "id": "de-audio1350",
+      "startHz": 1350000000,
+      "endHz": 1400000000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 7"
+        }
+      ]
+    },
+    {
+      "id": "de-audio32",
+      "startHz": 32475000,
+      "endHz": 34325000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 1"
+        }
+      ]
+    },
+    {
+      "id": "de-audio34",
+      "startHz": 34530000,
+      "endHz": 34950000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 2"
+        }
+      ]
+    },
+    {
+      "id": "de-audio36",
+      "startHz": 36610000,
+      "endHz": 38125000,
+      "label": "Wireless microphones / shared",
+      "category": "shared",
+      "notes": "Professional-production conditions apply to band 5 (expires 31 December 2030). Band 7 is indoor-only. Other listed bands expire 31 March 2036; shared-service protection conditions apply.",
+      "references": [
+        {
+          "sourceId": "DE-PMSE-2026",
+          "section": "Table 1, band 3"
+        }
+      ]
+    },
+    {
+      "id": "de-lf-amateur",
+      "startHz": 135700,
+      "endHz": 137800,
+      "label": "2200 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 19003; Stand MÄRZ 2022; PDF page 36"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-mf-amateur",
+      "startHz": 472000,
+      "endHz": 479000,
+      "label": "630 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 28001; Stand MÄRZ 2022; PDF page 41"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 28002; Stand MÄRZ 2022; PDF page 41"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 28003; Stand MÄRZ 2022; PDF page 42"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-160m-shared-low",
+      "startHz": 1850000,
+      "endHz": 1890000,
+      "label": "160 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 38001; Stand MÄRZ 2022; PDF page 47"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 38002; Stand MÄRZ 2022; PDF page 47"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 38003; Stand MÄRZ 2022; PDF page 48"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 38004; Stand MÄRZ 2022; PDF page 48"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-160m-shared-high",
+      "startHz": 1890000,
+      "endHz": 2000000,
+      "label": "160 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 39001; Stand MÄRZ 2022; PDF page 49"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 39002; Stand MÄRZ 2022; PDF page 49"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 39003; Stand MÄRZ 2022; PDF page 49"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 39004; Stand MÄRZ 2022; PDF page 50"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-80m",
+      "startHz": 3500000,
+      "endHz": 3800000,
+      "label": "80 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 59002; Stand MÄRZ 2022; PDF page 65"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 59003; Stand MÄRZ 2022; PDF page 65"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 59004; Stand MÄRZ 2022; PDF page 66"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-60m",
+      "startHz": 5351500,
+      "endHz": 5366500,
+      "label": "60 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 75*001; Stand MÄRZ 2022; PDF page 77"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 75*002; Stand MÄRZ 2022; PDF page 77"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 75*003; Stand MÄRZ 2022; PDF page 77"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-12m",
+      "startHz": 24890000,
+      "endHz": 24990000,
+      "label": "12 m amateur",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 168001; Stand MÄRZ 2022; PDF page 134"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 168002; Stand MÄRZ 2022; PDF page 135"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-10m",
+      "startHz": 28000000,
+      "endHz": 29700000,
+      "label": "10 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 182001; Stand MÄRZ 2022; PDF page 149"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 182002; Stand MÄRZ 2022; PDF page 149"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 182003; Stand MÄRZ 2022; PDF page 150"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 182004; Stand MÄRZ 2022; PDF page 150"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-6m",
+      "startHz": 50000000,
+      "endHz": 52000000,
+      "label": "6 m amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 195A001; Stand MÄRZ 2022; PDF page 176"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 195A002; Stand MÄRZ 2022; PDF page 176"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 195A003; Stand MÄRZ 2022; PDF page 176"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-75m-broadcast",
+      "startHz": 3950000,
+      "endHz": 4000000,
+      "label": "75 m broadcast",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 62002; Stand MÄRZ 2022; PDF page 67"
+        }
+      ]
+    },
+    {
+      "id": "de-41m-extension",
+      "startHz": 7350000,
+      "endHz": 7450000,
+      "label": "41 m broadcast / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 89002; Stand MÄRZ 2022; PDF page 87"
+        }
+      ]
+    },
+    {
+      "id": "de-16m-broadcast",
+      "startHz": 17480000,
+      "endHz": 17900000,
+      "label": "16 m broadcast / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 140003; Stand MÄRZ 2022; PDF page 119"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 141001; Stand MÄRZ 2022; PDF page 119"
+        }
+      ]
+    },
+    {
+      "id": "de-15m-broadcast",
+      "startHz": 18900000,
+      "endHz": 19020000,
+      "label": "15 m broadcast / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 148003; Stand MÄRZ 2022; PDF page 123"
+        }
+      ]
+    },
+    {
+      "id": "de-11m-broadcast",
+      "startHz": 25670000,
+      "endHz": 26100000,
+      "label": "11 m broadcast / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 176002; Stand MÄRZ 2022; PDF page 140"
+        }
+      ]
+    },
+    {
+      "id": "de-time20k",
+      "startHz": 19950,
+      "endHz": 20050,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 6001; Stand MÄRZ 2022; PDF page 25"
+        }
+      ]
+    },
+    {
+      "id": "de-time2m5",
+      "startHz": 2498000,
+      "endHz": 2502000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 49001; Stand MÄRZ 2022; PDF page 58"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 50001; Stand MÄRZ 2022; PDF page 58"
+        }
+      ]
+    },
+    {
+      "id": "de-time5",
+      "startHz": 4995000,
+      "endHz": 5005000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 71001; Stand MÄRZ 2022; PDF page 74"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 72001; Stand MÄRZ 2022; PDF page 74"
+        }
+      ]
+    },
+    {
+      "id": "de-time10",
+      "startHz": 9995000,
+      "endHz": 10005000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 101001; Stand MÄRZ 2022; PDF page 94"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 102001; Stand MÄRZ 2022; PDF page 94"
+        }
+      ]
+    },
+    {
+      "id": "de-time15",
+      "startHz": 14990000,
+      "endHz": 15010000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 128001; Stand MÄRZ 2022; PDF page 113"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 129001; Stand MÄRZ 2022; PDF page 113"
+        }
+      ]
+    },
+    {
+      "id": "de-time20",
+      "startHz": 19990000,
+      "endHz": 20010000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 152001; Stand MÄRZ 2022; PDF page 124"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 153001; Stand MÄRZ 2022; PDF page 125"
+        }
+      ]
+    },
+    {
+      "id": "de-time25",
+      "startHz": 24990000,
+      "endHz": 25010000,
+      "label": "Time / frequency reference",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 169001; Stand MÄRZ 2022; PDF page 135"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 170001; Stand MÄRZ 2022; PDF page 135"
+        }
+      ]
+    },
+    {
+      "id": "de-mf-maritime",
+      "startHz": 495000,
+      "endHz": 505000,
+      "label": "Maritime radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 30001; Stand MÄRZ 2022; PDF page 43"
+        }
+      ]
+    },
+    {
+      "id": "de-mf-navtex",
+      "startHz": 505000,
+      "endHz": 526500,
+      "label": "Maritime / navigation",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 31001; Stand MÄRZ 2022; PDF page 43"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 31002; Stand MÄRZ 2022; PDF page 43"
+        }
+      ]
+    },
+    {
+      "id": "de-hf-weather",
+      "startHz": 2025000,
+      "endHz": 2045000,
+      "label": "Meteorological aids / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 41005; Stand MÄRZ 2022; PDF page 53"
+        }
+      ]
+    },
+    {
+      "id": "de-hf-maritime",
+      "startHz": 4000000,
+      "endHz": 4063000,
+      "label": "Maritime / fixed shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 63001; Stand MÄRZ 2022; PDF page 68"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 63002; Stand MÄRZ 2022; PDF page 68"
+        }
+      ]
+    },
+    {
+      "id": "de-hf-aviation",
+      "startHz": 5480000,
+      "endHz": 5680000,
+      "label": "HF aviation",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 77001; Stand MÄRZ 2022; PDF page 79"
+        }
+      ]
+    },
+    {
+      "id": "de-138-military",
+      "startHz": 138000000,
+      "endHz": 144000000,
+      "label": "Military mobile",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 210001; Stand MÄRZ 2022; PDF page 201"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 210002; Stand MÄRZ 2022; PDF page 202"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 210003; Stand MÄRZ 2022; PDF page 202"
+        }
+      ]
+    },
+    {
+      "id": "de-146-business",
+      "startHz": 146000000,
+      "endHz": 146360000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 212001; Stand MÄRZ 2022; PDF page 203"
+        }
+      ]
+    },
+    {
+      "id": "de-146-rail",
+      "startHz": 146360000,
+      "endHz": 146920000,
+      "label": "Railway radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 212003; Stand MÄRZ 2022; PDF page 204"
+        }
+      ]
+    },
+    {
+      "id": "de-147-business",
+      "startHz": 146920000,
+      "endHz": 148000000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 212004; Stand MÄRZ 2022; PDF page 204"
+        }
+      ]
+    },
+    {
+      "id": "de-150-business",
+      "startHz": 150050000,
+      "endHz": 150800000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 215002; Stand MÄRZ 2022; PDF page 209"
+        }
+      ]
+    },
+    {
+      "id": "de-151-business",
+      "startHz": 151360000,
+      "endHz": 153000000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 215014; Stand MÄRZ 2022; PDF page 213"
+        }
+      ]
+    },
+    {
+      "id": "de-153-business",
+      "startHz": 153740000,
+      "endHz": 155400000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 215022; Stand MÄRZ 2022; PDF page 216"
+        }
+      ]
+    },
+    {
+      "id": "de-156-marine",
+      "startHz": 156000000,
+      "endHz": 156487500,
+      "label": "Marine / inland waterways",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 215029; Stand MÄRZ 2022; PDF page 219"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 215030; Stand MÄRZ 2022; PDF page 219"
+        }
+      ]
+    },
+    {
+      "id": "de-157-marine",
+      "startHz": 156837500,
+      "endHz": 157187500,
+      "label": "Marine / inland waterways",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 219002; Stand MÄRZ 2022; PDF page 223"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 219003; Stand MÄRZ 2022; PDF page 224"
+        }
+      ]
+    },
+    {
+      "id": "de-162-marine",
+      "startHz": 161987500,
+      "endHz": 162012500,
+      "label": "Marine / satellite shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 221002; Stand MÄRZ 2022; PDF page 240"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 221003; Stand MÄRZ 2022; PDF page 241"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 221004; Stand MÄRZ 2022; PDF page 241"
+        }
+      ]
+    },
+    {
+      "id": "de-162-business",
+      "startHz": 162040000,
+      "endHz": 164820000,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223002; Stand MÄRZ 2022; PDF page 243"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223003; Stand MÄRZ 2022; PDF page 243"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223004; Stand MÄRZ 2022; PDF page 244"
+        }
+      ]
+    },
+    {
+      "id": "de-165-bos",
+      "startHz": 165200000,
+      "endHz": 165700000,
+      "label": "Public service radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223017; Stand MÄRZ 2022; PDF page 248"
+        }
+      ]
+    },
+    {
+      "id": "de-167-bos",
+      "startHz": 167550000,
+      "endHz": 169390000,
+      "label": "Public service radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223035; Stand MÄRZ 2022; PDF page 256"
+        }
+      ]
+    },
+    {
+      "id": "de-169-bos",
+      "startHz": 169800000,
+      "endHz": 170300000,
+      "label": "Public service radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223042; Stand MÄRZ 2022; PDF page 258"
+        }
+      ]
+    },
+    {
+      "id": "de-172-bos",
+      "startHz": 172150000,
+      "endHz": 173990000,
+      "label": "Public service radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 223069; Stand MÄRZ 2022; PDF page 269"
+        }
+      ]
+    },
+    {
+      "id": "de-328-navigation",
+      "startHz": 328600000,
+      "endHz": 335400000,
+      "label": "Air navigation",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 233001; Stand MÄRZ 2022; PDF page 278"
+        }
+      ]
+    },
+    {
+      "id": "de-380-bos",
+      "startHz": 380000000,
+      "endHz": 399900000,
+      "label": "Public service / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 234003; Stand MÄRZ 2022; PDF page 279"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 235002; Stand MÄRZ 2022; PDF page 280"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 236002; Stand MÄRZ 2022; PDF page 281"
+        }
+      ]
+    },
+    {
+      "id": "de-400-weather",
+      "startHz": 400150000,
+      "endHz": 406000000,
+      "label": "Weather satellite / aids",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 239004; Stand MÄRZ 2022; PDF page 284"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 239005; Stand MÄRZ 2022; PDF page 284"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 240003; Stand MÄRZ 2022; PDF page 285"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 240004; Stand MÄRZ 2022; PDF page 285"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 241002; Stand MÄRZ 2022; PDF page 286"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 241003; Stand MÄRZ 2022; PDF page 286"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 242001; Stand MÄRZ 2022; PDF page 287"
+        }
+      ]
+    },
+    {
+      "id": "de-406-rescue",
+      "startHz": 406000000,
+      "endHz": 406100000,
+      "label": "Satellite search / rescue",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 243001; Stand MÄRZ 2022; PDF page 287"
+        }
+      ]
+    },
+    {
+      "id": "de-406-bos",
+      "startHz": 406100000,
+      "endHz": 410000000,
+      "label": "Public service / radio astronomy",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 244001; Stand MÄRZ 2022; PDF page 287"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 244002; Stand MÄRZ 2022; PDF page 288"
+        }
+      ]
+    },
+    {
+      "id": "de-410-business",
+      "startHz": 410000000,
+      "endHz": 420000000,
+      "label": "Business / trunked radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 245003; Stand MÄRZ 2022; PDF page 289"
+        }
+      ]
+    },
+    {
+      "id": "de-420-business",
+      "startHz": 420000000,
+      "endHz": 430000000,
+      "label": "Business / trunked radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 246004; Stand MÄRZ 2022; PDF page 291"
+        }
+      ]
+    },
+    {
+      "id": "de-440-business",
+      "startHz": 440000000,
+      "endHz": 443000000,
+      "label": "Business / trunked radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248001; Stand MÄRZ 2022; PDF page 294"
+        }
+      ]
+    },
+    {
+      "id": "de-443-business",
+      "startHz": 443000000,
+      "endHz": 443593750,
+      "label": "Business radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248003; Stand MÄRZ 2022; PDF page 295"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248004; Stand MÄRZ 2022; PDF page 295"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248005; Stand MÄRZ 2022; PDF page 295"
+        }
+      ]
+    },
+    {
+      "id": "de-443-bos",
+      "startHz": 443593750,
+      "endHz": 444969750,
+      "label": "Public service radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248006; Stand MÄRZ 2022; PDF page 296"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248007; Stand MÄRZ 2022; PDF page 296"
+        }
+      ]
+    },
+    {
+      "id": "de-450-mobile",
+      "startHz": 450000000,
+      "endHz": 455740000,
+      "label": "450 MHz mobile / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248029; Stand MÄRZ 2022; PDF page 305"
+        }
+      ]
+    },
+    {
+      "id": "de-460-mobile",
+      "startHz": 460000000,
+      "endHz": 465740000,
+      "label": "450 MHz paired mobile / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248067; Stand MÄRZ 2022; PDF page 321"
+        }
+      ]
+    },
+    {
+      "id": "de-pager448a",
+      "startHz": 448412500,
+      "endHz": 448437500,
+      "label": "Paging / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248017; Stand MÄRZ 2022; PDF page 300"
+        }
+      ]
+    },
+    {
+      "id": "de-pager448b",
+      "startHz": 448462500,
+      "endHz": 448487500,
+      "label": "Paging / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248019; Stand MÄRZ 2022; PDF page 301"
+        }
+      ]
+    },
+    {
+      "id": "de-pager466",
+      "startHz": 466062500,
+      "endHz": 466087500,
+      "label": "Paging / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248081; Stand MÄRZ 2022; PDF page 328"
+        }
+      ]
+    },
+    {
+      "id": "de-457-rail",
+      "startHz": 457400000,
+      "endHz": 458320000,
+      "label": "Railway radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248057; Stand MÄRZ 2022; PDF page 317"
+        }
+      ]
+    },
+    {
+      "id": "de-467-rail",
+      "startHz": 467400000,
+      "endHz": 468320000,
+      "label": "Railway radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248100; Stand MÄRZ 2022; PDF page 335"
+        }
+      ]
+    },
+    {
+      "id": "de-1240-amateur",
+      "startHz": 1240000000,
+      "endHz": 1250000000,
+      "label": "23 cm amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 255001; Stand MÄRZ 2022; PDF page 354"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 255002; Stand MÄRZ 2022; PDF page 354"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 255003; Stand MÄRZ 2022; PDF page 355"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 255004; Stand MÄRZ 2022; PDF page 355"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-1250-amateur",
+      "startHz": 1250000000,
+      "endHz": 1260000000,
+      "label": "23 cm amateur / navigation",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 256001; Stand MÄRZ 2022; PDF page 356"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 256002; Stand MÄRZ 2022; PDF page 356"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 256003; Stand MÄRZ 2022; PDF page 356"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 256004; Stand MÄRZ 2022; PDF page 357"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 256005; Stand MÄRZ 2022; PDF page 357"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-1260-amateur",
+      "startHz": 1260000000,
+      "endHz": 1300000000,
+      "label": "23 cm amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 257002; Stand MÄRZ 2022; PDF page 358"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 257003; Stand MÄRZ 2022; PDF page 358"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 257004; Stand MÄRZ 2022; PDF page 358"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 257005; Stand MÄRZ 2022; PDF page 359"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-gnss-l1",
+      "startHz": 1559000000,
+      "endHz": 1610000000,
+      "label": "Satellite navigation / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 273001; Stand MÄRZ 2022; PDF page 373"
+        }
+      ]
+    },
+    {
+      "id": "de-weather-l",
+      "startHz": 1675000000,
+      "endHz": 1710000000,
+      "label": "Weather satellite / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 287002; Stand MÄRZ 2022; PDF page 387"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 288001; Stand MÄRZ 2022; PDF page 388"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 288005; Stand MÄRZ 2022; PDF page 389"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 289003; Stand MÄRZ 2022; PDF page 390"
+        }
+      ]
+    },
+    {
+      "id": "de-1800-up",
+      "startHz": 1710000000,
+      "endHz": 1785000000,
+      "label": "1800 MHz mobile uplink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 290001; Stand MÄRZ 2022; PDF page 390"
+        }
+      ]
+    },
+    {
+      "id": "de-1800-down",
+      "startHz": 1805000000,
+      "endHz": 1880000000,
+      "label": "1800 MHz mobile downlink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 290006; Stand MÄRZ 2022; PDF page 392"
+        }
+      ]
+    },
+    {
+      "id": "de-dect",
+      "startHz": 1880000000,
+      "endHz": 1900000000,
+      "label": "DECT",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 290007; Stand MÄRZ 2022; PDF page 392"
+        }
+      ]
+    },
+    {
+      "id": "de-2100-up",
+      "startHz": 1920000000,
+      "endHz": 1980000000,
+      "label": "2100 MHz mobile uplink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 290011; Stand MÄRZ 2022; PDF page 394"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 291001; Stand MÄRZ 2022; PDF page 394"
+        }
+      ]
+    },
+    {
+      "id": "de-2100-down",
+      "startHz": 2110000000,
+      "endHz": 2170000000,
+      "label": "2100 MHz mobile downlink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 295001; Stand MÄRZ 2022; PDF page 397"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 296001; Stand MÄRZ 2022; PDF page 398"
+        }
+      ]
+    },
+    {
+      "id": "de-s-space",
+      "startHz": 2025000000,
+      "endHz": 2110000000,
+      "label": "Space research / telemetry",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 294001; Stand MÄRZ 2022; PDF page 396"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 294004; Stand MÄRZ 2022; PDF page 397"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 294005; Stand MÄRZ 2022; PDF page 397"
+        }
+      ]
+    },
+    {
+      "id": "de-s-space-down",
+      "startHz": 2200000000,
+      "endHz": 2290000000,
+      "label": "Space research / telemetry",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 298001; Stand MÄRZ 2022; PDF page 399"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 298004; Stand MÄRZ 2022; PDF page 400"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 298005; Stand MÄRZ 2022; PDF page 400"
+        }
+      ]
+    },
+    {
+      "id": "de-13cm",
+      "startHz": 2320000000,
+      "endHz": 2400000000,
+      "label": "13 cm amateur / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 301002; Stand MÄRZ 2022; PDF page 402"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-radar2700",
+      "startHz": 2700000000,
+      "endHz": 2900000000,
+      "label": "Air traffic radar / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 311002; Stand MÄRZ 2022; PDF page 416"
+        }
+      ]
+    },
+    {
+      "id": "de-radar2900",
+      "startHz": 2900000000,
+      "endHz": 3100000000,
+      "label": "Marine radar / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 312001; Stand MÄRZ 2022; PDF page 417"
+        }
+      ]
+    },
+    {
+      "id": "de-3400-mobile",
+      "startHz": 3400000000,
+      "endHz": 3475000000,
+      "label": "Mobile / amateur shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 315001; Stand MÄRZ 2022; PDF page 420"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 315002; Stand MÄRZ 2022; PDF page 420"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 315005; Stand MÄRZ 2022; PDF page 421"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-3500-mobile",
+      "startHz": 3475000000,
+      "endHz": 3600000000,
+      "label": "Mobile / fixed links",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 316001; Stand MÄRZ 2022; PDF page 422"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 316004; Stand MÄRZ 2022; PDF page 423"
+        }
+      ]
+    },
+    {
+      "id": "de-3700-mobile",
+      "startHz": 3600000000,
+      "endHz": 3800000000,
+      "label": "Mobile / fixed / satellite",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 317001; Stand MÄRZ 2022; PDF page 424"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 317002; Stand MÄRZ 2022; PDF page 424"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 317003; Stand MÄRZ 2022; PDF page 424"
+        }
+      ]
+    },
+    {
+      "id": "de-3900-mobile",
+      "startHz": 3800000000,
+      "endHz": 4200000000,
+      "label": "Fixed / satellite / broadband",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 318001; Stand MÄRZ 2022; PDF page 425"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 318002; Stand MÄRZ 2022; PDF page 425"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 318003; Stand AUGUST 2026; PDF page 425"
+        }
+      ]
+    },
+    {
+      "id": "de-altimeter",
+      "startHz": 4200000000,
+      "endHz": 4400000000,
+      "label": "Aircraft radar / avionics",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 319001; Stand MÄRZ 2022; PDF page 426"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 319002; Stand MÄRZ 2022; PDF page 426"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 319003; Stand MÄRZ 2022; PDF page 426"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 319004; Stand MÄRZ 2022; PDF page 427"
+        }
+      ]
+    },
+    {
+      "id": "de-radar5350",
+      "startHz": 5350000000,
+      "endHz": 5470000000,
+      "label": "Radar / Earth exploration",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 330001; Stand MÄRZ 2022; PDF page 440"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 330002; Stand MÄRZ 2022; PDF page 440"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 331001; Stand MÄRZ 2022; PDF page 441"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 331002; Stand MÄRZ 2022; PDF page 442"
+        }
+      ]
+    },
+    {
+      "id": "de-weather-radar",
+      "startHz": 5600000000,
+      "endHz": 5650000000,
+      "label": "Weather radar / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 333004; Stand MÄRZ 2022; PDF page 445"
+        }
+      ]
+    },
+    {
+      "id": "de-srd5g8",
+      "startHz": 5725000000,
+      "endHz": 5875000000,
+      "label": "5.8 GHz SRD / shared",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 335001; Stand MÄRZ 2022; PDF page 447"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 336001; Stand MÄRZ 2022; PDF page 449"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 337001; Stand MÄRZ 2022; PDF page 451"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 338001; Stand MÄRZ 2022; PDF page 453"
+        }
+      ]
+    },
+    {
+      "id": "de-2600-up",
+      "startHz": 2500000000,
+      "endHz": 2570000000,
+      "label": "2.6 GHz mobile uplink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 305001; Stand MÄRZ 2022; PDF page 411"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 306001; Stand MÄRZ 2022; PDF page 412"
+        }
+      ]
+    },
+    {
+      "id": "de-2600-tdd",
+      "startHz": 2570000000,
+      "endHz": 2620000000,
+      "label": "2.6 GHz mobile unpaired",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 306001; Stand MÄRZ 2022; PDF page 412"
+        }
+      ]
+    },
+    {
+      "id": "de-2600-down",
+      "startHz": 2620000000,
+      "endHz": 2690000000,
+      "label": "2.6 GHz mobile downlink",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 306001; Stand MÄRZ 2022; PDF page 412"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 307001; Stand MÄRZ 2022; PDF page 413"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 308001; Stand MÄRZ 2022; PDF page 413"
+        }
+      ]
+    },
+    {
+      "id": "de-5g8-amateur",
+      "startHz": 5650000000,
+      "endHz": 5850000000,
+      "label": "6 cm amateur / shared",
+      "category": "shared",
+      "notes": "Secondary amateur context. Satellite use and direction differ within the range; WLAN, radiolocation and other uses share portions of it.",
+      "references": [
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A, rows 25–29; B, conditions 9/13/17"
+        },
+        {
+          "sourceId": "DE-AFUV",
+          "section": "Annex 1 A (band table) and B (additional conditions); licence class and secondary-use restrictions apply"
+        }
+      ]
+    },
+    {
+      "id": "de-srd433",
+      "startHz": 433050000,
+      "endHz": 434790000,
+      "label": "433 MHz SRD / shared",
+      "category": "shared",
+      "notes": "Short-range applications share spectrum with amateur and radiolocation uses. German Table 3 exceptions differ from harmonized Table 2 conditions.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 bands 44a/44b/45c; Table 3 D44a/D44b/D45c"
+        }
+      ]
+    },
+    {
+      "id": "de-pmr446",
+      "startHz": 446000000,
+      "endHz": 446200000,
+      "label": "PMR446 / shared",
+      "category": "shared",
+      "notes": "PMR446 application slice within shared land-mobile spectrum; this does not establish a channel, modulation or receiver capability.",
+      "references": [
+        {
+          "sourceId": "DE-SRD-2025",
+          "section": "Table 2 band 83"
+        },
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entries 248009 and 248011; Stand MÄRZ 2022"
+        }
+      ]
+    },
+    {
+      "id": "de-445-business",
+      "startHz": 445000000,
+      "endHz": 446000000,
+      "label": "Business / trunked radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248009; Stand MÄRZ 2022; PDF page 297"
+        }
+      ]
+    },
+    {
+      "id": "de-446-business",
+      "startHz": 446200000,
+      "endHz": 448000000,
+      "label": "Business / trunked radio",
+      "category": "shared",
+      "notes": "Reference use only; source qualifications and other shared uses apply.",
+      "references": [
+        {
+          "sourceId": "DE-PLAN-2026",
+          "section": "Entry 248009; Stand MÄRZ 2022; PDF page 297"
+        }
+      ]
+    },
+    {
+      "id": "de-wlan5150",
+      "startHz": 5150000000,
+      "endHz": 5250000000,
+      "label": "5 GHz WLAN / shared",
+      "category": "shared",
+      "notes": "Indoor and limited outdoor conditions vary by equipment and installation; do not apply the older national-plan indoor-only summary to every device.",
+      "references": [
+        {
+          "sourceId": "DE-WLAN5",
+          "section": "Table 1"
+        }
+      ]
+    },
+    {
+      "id": "de-wlan5250",
+      "startHz": 5250000000,
+      "endHz": 5350000000,
+      "label": "5 GHz WLAN / shared",
+      "category": "shared",
+      "notes": "Indoor-only, with DFS/TPC or specified equivalent mitigation; exclusions apply to vehicles, trains and aircraft.",
+      "references": [
+        {
+          "sourceId": "DE-WLAN5",
+          "section": "Table 2"
+        }
+      ]
+    },
+    {
+      "id": "de-wlan5470",
+      "startHz": 5470000000,
+      "endHz": 5725000000,
+      "label": "5 GHz WLAN / shared",
+      "category": "shared",
+      "notes": "Indoor/outdoor conditions, DFS/TPC and protection of radar systems apply.",
+      "references": [
+        {
+          "sourceId": "DE-WLAN5",
+          "section": "Table 3"
+        }
+      ]
+    },
+    {
+      "id": "de-wlan6",
+      "startHz": 5945000000,
+      "endHz": 6425000000,
+      "label": "6 GHz WLAN / shared",
+      "category": "shared",
+      "notes": "Only the cited national lower-6-GHz range is included. Indoor/VLP equipment classes and conditions differ; no extension to the US upper-6-GHz band is implied.",
+      "references": [
+        {
+          "sourceId": "DE-WLAN6",
+          "section": "Technical conditions for low-power indoor and very-low-power devices"
+        }
+      ]
+    }
+  ]
+}

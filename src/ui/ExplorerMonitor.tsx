@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { PreferenceStatus, RememberedDetails } from "./ExplorerPreferencesUI";
 import {
   readPreference,
@@ -623,7 +624,7 @@ export function ExplorerMonitor({
     </ActionButton>
   );
   const stopAction = busy && (
-    <button
+    <InstrumentButton
       type="button"
       className="secondary"
       onClick={() => {
@@ -634,7 +635,7 @@ export function ExplorerMonitor({
       }}
     >
       Stop monitoring
-    </button>
+    </InstrumentButton>
   );
   const transport = (
     <div className="monitor-actions monitor-transport">
@@ -664,14 +665,14 @@ export function ExplorerMonitor({
         </ActionButton>
       )}
       {busy && (
-        <button
+        <InstrumentButton
           type="button"
           className="studio-primary"
           onClick={pause}
           title="Pause the entire discovery and analysis cycle"
         >
           Pause monitoring
-        </button>
+        </InstrumentButton>
       )}
     </div>
   );
@@ -719,15 +720,15 @@ export function ExplorerMonitor({
             and failed visits are unobserved.
           </p>
           <div className="monitor-actions">
-            <button
+            <InstrumentButton
               type="button"
               className="secondary"
               disabled={busy}
               onClick={() => update(setMonitorBaseline(session))}
             >
               Set comparison baseline
-            </button>
-            <button
+            </InstrumentButton>
+            <InstrumentButton
               type="button"
               className="secondary"
               onClick={() =>
@@ -739,8 +740,8 @@ export function ExplorerMonitor({
               }
             >
               History JSON
-            </button>
-            <button
+            </InstrumentButton>
+            <InstrumentButton
               type="button"
               className="secondary"
               onClick={() =>
@@ -752,10 +753,10 @@ export function ExplorerMonitor({
               }
             >
               History CSV
-            </button>
+            </InstrumentButton>
             {session.targets && (
               <>
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   onClick={() =>
@@ -767,7 +768,7 @@ export function ExplorerMonitor({
                   }
                 >
                   Targets CSV
-                </button>
+                </InstrumentButton>
               </>
             )}
           </div>
@@ -807,13 +808,13 @@ export function ExplorerMonitor({
               <strong>{sourceLabel}</strong>
             </div>
             {!receiver.session && onOpenReceiver && (
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={onOpenReceiver}
               >
                 Open Receiver
-              </button>
+              </InstrumentButton>
             )}
           </div>
 
@@ -868,7 +869,7 @@ export function ExplorerMonitor({
                   Applying starts a new history with these settings. Export the
                   current history first to keep it.
                 </small>
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   disabled={blocked}
@@ -885,7 +886,7 @@ export function ExplorerMonitor({
                   }}
                 >
                   Restore active settings
-                </button>
+                </InstrumentButton>
                 <ActionButton
                   className="studio-primary"
                   disabled={
@@ -941,13 +942,13 @@ export function ExplorerMonitor({
             >
               {transport}
               {manualAnalysisBusy && (
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary monitor-stop-analysis"
                   onClick={pause}
                 >
                   Stop signal analysis
-                </button>
+                </InstrumentButton>
               )}
             </MonitorStatusCard>
           </div>
@@ -1276,7 +1277,7 @@ export function ExplorerMonitor({
                   ?.focus();
               }}
             >
-              <button
+              <InstrumentButton
                 type="button"
                 role="tab"
                 id="monitor-signals-tab"
@@ -1286,8 +1287,8 @@ export function ExplorerMonitor({
                 onClick={() => setResultView("signals")}
               >
                 Signals <span>{signals.length}</span>
-              </button>
-              <button
+              </InstrumentButton>
+              <InstrumentButton
                 type="button"
                 role="tab"
                 id="monitor-targets-tab"
@@ -1303,7 +1304,7 @@ export function ExplorerMonitor({
                       session.snapshot.profile.bands.length)
                     : draftTargets.length}
                 </span>
-              </button>
+              </InstrumentButton>
             </div>
             <div
               className="monitor-signals-panel"
@@ -1409,7 +1410,7 @@ export function ExplorerMonitor({
                               {analysisById.get(s.id)!.result!.label}
                             </strong>
                           )}
-                          <button
+                          <InstrumentButton
                             type="button"
                             className="monitor-frequency"
                             ref={(element) => {
@@ -1423,7 +1424,7 @@ export function ExplorerMonitor({
                             }}
                           >
                             {frequency(s.frequencyHz)}
-                          </button>
+                          </InstrumentButton>
                           <small>
                             {Math.round(s.bandwidthHz).toLocaleString()} Hz
                             {s.lowerEdgeClipped || s.upperEdgeClipped
@@ -1676,14 +1677,14 @@ export function ExplorerMonitor({
                   </p>
                   <h4>{frequency(detail.frequencyHz)}</h4>
                 </div>
-                <button
+                <InstrumentButton
                   type="button"
                   className="secondary"
                   autoFocus
                   onClick={closeDetails}
                 >
                   Close details
-                </button>
+                </InstrumentButton>
               </div>
               {detailAnalysis && (
                 <div className="studio-decoded-evidence">
@@ -1816,7 +1817,7 @@ export function ExplorerMonitor({
                 ● Detected · ○ Not detected during a valid visit. Confirmation
                 does not identify a transmitter.
               </small>
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary monitor-add-target"
                 disabled={busy || analysisBusy || blocked}
@@ -1838,7 +1839,7 @@ export function ExplorerMonitor({
                 }}
               >
                 Add signal to Custom monitor
-              </button>
+              </InstrumentButton>
               {detailAnalysis?.result?.suggestedMode && (
                 <ActionButton
                   className="studio-primary"

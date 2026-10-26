@@ -1,3 +1,5 @@
+import { InstrumentRange } from "./InstrumentRange";
+import { InstrumentButton } from "./InstrumentButton";
 import { ExplorerSavedSetups, type ExplorerSetup } from "./ExplorerSavedSetups";
 import { RememberedDetails } from "./ExplorerPreferencesUI";
 import type { MonitorSession } from "../radio/signalMonitor";
@@ -1256,30 +1258,30 @@ export function SpectrumExplorer({
           </label>
         </div>
         <div className="band-editor-actions">
-          <button
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || analysisBusy}
             onClick={saveBand}
           >
             Save band
-          </button>
-          <button
+          </InstrumentButton>
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || profile.bands.length >= 64}
             onClick={addBand}
           >
             Add custom
-          </button>
-          <button
+          </InstrumentButton>
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || profile.bands.length <= 1}
             onClick={removeBand}
           >
             Remove
-          </button>
+          </InstrumentButton>
         </div>
         <p className="display-note">
           Save band to apply edits to band-plan and full-survey scans.
@@ -1319,7 +1321,7 @@ export function SpectrumExplorer({
               }
             />
           </label>
-          <button
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || !receiverLocation}
@@ -1339,7 +1341,7 @@ export function SpectrumExplorer({
             }}
           >
             Use receiver site
-          </button>
+          </InstrumentButton>
           <small>
             Copy the chosen antenna site explicitly. Profile and result exports
             include these coordinates.
@@ -1429,7 +1431,7 @@ export function SpectrumExplorer({
           </label>
         </div>
         <div className="survey-actions">
-          <button
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || analysisBusy}
@@ -1442,15 +1444,15 @@ export function SpectrumExplorer({
             }
           >
             Export profile
-          </button>
-          <button
+          </InstrumentButton>
+          <InstrumentButton
             type="button"
             className="secondary"
             disabled={scanning || capturing || analysisBusy}
             onClick={() => profileInputRef.current?.click()}
           >
             Import profile
-          </button>
+          </InstrumentButton>
           <input
             ref={profileInputRef}
             hidden
@@ -1736,9 +1738,9 @@ export function SpectrumExplorer({
                       : "Connect a receiver in Receiver to scan."}
               </small>
               {!receiver.session && onOpenReceiver && (
-                <button type="button" onClick={onOpenReceiver}>
+                <InstrumentButton type="button" onClick={onOpenReceiver}>
                   Open Receiver
-                </button>
+                </InstrumentButton>
               )}
             </div>
             <label>
@@ -1896,7 +1898,7 @@ export function SpectrumExplorer({
                 {(scanning || capturing) && (
                   <>
                     {" "}
-                    <button
+                    <InstrumentButton
                       type="button"
                       className="secondary"
                       disabled={!scanning && !capturing}
@@ -1906,7 +1908,7 @@ export function SpectrumExplorer({
                       }}
                     >
                       {scanning ? "Pause scan" : "Cancel capture"}
-                    </button>{" "}
+                    </InstrumentButton>{" "}
                   </>
                 )}
               </div>
@@ -1937,8 +1939,8 @@ export function SpectrumExplorer({
               </label>
               <label>
                 Dwell per window <output>{dwellMs} ms</output>
-                <input
-                  type="range"
+                <InstrumentRange
+
                   aria-label="Dwell per window"
                   aria-valuetext={`${dwellMs} milliseconds`}
                   min={MIN_DWELL_MS}
@@ -1951,8 +1953,8 @@ export function SpectrumExplorer({
               </label>
               <label>
                 Detection threshold <output>{thresholdDb} dB</output>
-                <input
-                  type="range"
+                <InstrumentRange
+
                   aria-label="Detection threshold"
                   aria-valuetext={`${thresholdDb} decibels`}
                   min="1"

@@ -1,11 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-async function startGuide(page: import("@playwright/test").Page) {
+async function startGuide(
+  page: import("@playwright/test").Page,
+  frequency = "108.1",
+) {
   await page.goto("/");
   await page
     .getByRole("combobox", { name: "Signal source", exact: true })
     .selectOption("synthetic");
-  await page.getByLabel("Channel frequency", { exact: true }).fill("108.1");
+  await page.getByLabel("Channel frequency", { exact: true }).fill(frequency);
   await page.getByRole("button", { name: "Start demo", exact: true }).click();
   await expect(page.locator(".band-guide-strip")).toBeVisible();
 }
@@ -83,6 +86,95 @@ test("band guide follows accepted RF coordinates and inspection never tunes", as
   await expect(
     strip.getByRole("button", { name: /^FM broadcast/ }),
   ).toBeVisible();
+});
+
+for (const [frequency, label, source] of [
+  ["868.3", "SRD / shared uses", "Bundesnetzagentur SRD general assignment"],
+  ["900", "900 MHz mobile uplink", "Bundesnetzagentur German frequency plan"],
+  ["1890", "DECT", "Bundesnetzagentur German frequency plan"],
+  [
+    "5200",
+    "5 GHz WLAN / shared",
+    "Bundesnetzagentur 5 GHz WAS/WLAN assignment",
+  ],
+]) {
+  test(`German guide at ${frequency} MHz retains official context without tuning on inspection`, async ({
+    page,
+  }) => {
+    await startGuide(page, frequency);
+    const center = page.getByLabel("Receiver center frequency", {
+      exact: true,
+    });
+    const channel = page.getByLabel("Channel frequency", { exact: true });
+    const accepted = await center.inputValue();
+    const acceptedChannel = await channel.inputValue();
+    const strip = page.locator(".band-guide-strip");
+    const segment = strip.getByRole("button", {
+      name: new RegExp(`^${label}`),
+    });
+    await expect(segment.first()).toBeVisible();
+    await segment.first().focus();
+    await segment.first().press("Enter");
+    const dialog = page.getByRole("dialog", { name: label, exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("link", { name: source, exact: true }).first(),
+    ).toBeVisible();
+    await expect(dialog).toContainText("inspected 2026-10-25");
+    await expect(dialog).toContainText("does not identify a received signal");
+    await expect(center).toHaveValue(accepted);
+    await expect(channel).toHaveValue(acceptedChannel);
+    await dialog.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(segment.first()).toBeFocused();
+  });
+}
+
+test("German alarm slices remain inspectable on small touch screens", async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await startGuide(page, "869.22");
+  const center = page.getByLabel("Receiver center frequency", { exact: true });
+  const accepted = await center.inputValue();
+  expect((await page.locator(".band-guide-strip").boundingBox())!.height).toBe(
+    44,
+  );
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page
+      .getByRole("button", { name: "Band guide details", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Band guide details",
+      exact: true,
+    });
+    await expect(
+      dialog.getByRole("heading", { name: "SRD / social alarms", exact: true }),
+    ).toBeVisible();
+    await expect(dialog).toContainText("869.200 MHz");
+    await expect(dialog).toContainText("869.250 MHz");
+    await expect(dialog).toContainText("Table 2, band 51");
+    await expect(center).toHaveValue(accepted);
+    const bounds = (await dialog.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("guide-alarms-mobile.png"),
+  });
+  await context.close();
 });
 
 test("band guide preference persists and uncovered ranges remain honest", async ({

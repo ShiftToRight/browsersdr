@@ -1,3 +1,4 @@
+import { InstrumentRange } from "./InstrumentRange";
 import { useState } from "react";
 import {
   RTTY_PRESETS,
@@ -76,7 +77,7 @@ export function TextModemControls({
       {mode === "CW-TEXT" && <>
         <label>CW text speed (WPM)<input aria-label="CW text speed" type="number" min={5} max={60} step={1} value={cw.wpm} onChange={e => { const value = Number(e.target.value); if (value >= 5 && value <= 60) onChange({ ...settings, cw: { ...cw, wpm: value } }); }} /></label>
         <label className="checkbox-label"><input type="checkbox" checked={cw.autoSpeed} onChange={e => onChange({ ...settings, cw: { ...cw, autoSpeed: e.target.checked } })} />Track CW speed</label>
-        <label>CW relative threshold<input aria-label="CW relative threshold" type="range" min={0.1} max={0.8} step={0.05} value={cw.threshold} onChange={e => onChange({ ...settings, cw: { ...cw, threshold: Number(e.target.value) } })} /><output>{cw.threshold.toFixed(2)}</output></label>
+        <label>CW relative threshold<InstrumentRange aria-label="CW relative threshold"  min={0.1} max={0.8} step={0.05} value={cw.threshold} onChange={e => onChange({ ...settings, cw: { ...cw, threshold: Number(e.target.value) } })} /><output>{cw.threshold.toFixed(2)}</output></label>
       </>}
       {mode === "RTTY" && (
         <>

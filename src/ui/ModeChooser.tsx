@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import {
   useId,
   useRef,
@@ -150,14 +151,14 @@ export function ModeChooser(
     >
       <header className="mode-chooser-header">
         <h2 id={`${id}-heading`}>Choose a decoder</h2>
-        <button
+        <InstrumentButton
           type="button"
           className="secondary mode-chooser-close"
           aria-label="Close decoder chooser"
           onClick={dismiss}
         >
           <AppIcon name="close" />
-        </button>
+        </InstrumentButton>
       </header>
       <div className="mode-chooser-search">
         <AppIcon name="search" />
@@ -179,7 +180,7 @@ export function ModeChooser(
           {MODE_CATEGORIES.map((name) => {
             const Icon = categoryIcons[name];
             return (
-              <button
+              <InstrumentButton
                 key={name}
                 type="button"
                 className="secondary"
@@ -188,7 +189,7 @@ export function ModeChooser(
               >
                 <Icon size={18} aria-hidden="true" />
                 <span>{name}</span>
-              </button>
+              </InstrumentButton>
             );
           })}
         </nav>
@@ -217,7 +218,7 @@ export function ModeChooser(
                   key={mode}
                   className={`mode-chooser-card${selectedMode === mode ? " is-selected" : ""}`}
                 >
-                  <button
+                  <InstrumentButton
                     type="button"
                     className="secondary mode-chooser-card-select"
                     aria-label={`Select ${info.label}`}
@@ -249,8 +250,8 @@ export function ModeChooser(
                         aria-hidden="true"
                       />
                     )}
-                  </button>
-                  <button
+                  </InstrumentButton>
+                  <InstrumentButton
                     type="button"
                     className="secondary mode-chooser-pin"
                     aria-label={`${pinned ? "Unpin" : "Pin"} ${info.label}${pinned ? "" : " to quick list"}`}
@@ -265,7 +266,7 @@ export function ModeChooser(
                     ) : (
                       <Pin size={17} aria-hidden="true" />
                     )}
-                  </button>
+                  </InstrumentButton>
                 </article>
               );
             })}
@@ -301,7 +302,7 @@ export function ModeChooser(
                   ))}
                 </select>
               </label>
-              <button
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={() => {
@@ -317,14 +318,14 @@ export function ModeChooser(
                 }}
               >
                 Replace pin
-              </button>
-              <button
+              </InstrumentButton>
+              <InstrumentButton
                 type="button"
                 className="secondary"
                 onClick={() => setReplacement(undefined)}
               >
                 Cancel pin
-              </button>
+              </InstrumentButton>
             </div>
           )}
         <div className="mode-chooser-pin-settings">
@@ -332,7 +333,7 @@ export function ModeChooser(
             Pin adds a mode to the quick list; unpin removes it. Saved in this
             browser.
           </span>
-          <button
+          <InstrumentButton
             type="button"
             className="secondary"
             onClick={() => {
@@ -341,7 +342,7 @@ export function ModeChooser(
             }}
           >
             Reset quick list
-          </button>
+          </InstrumentButton>
         </div>
         {props.storageIssue && <p role="status">{props.storageIssue}</p>}
       </div>
@@ -360,10 +361,10 @@ export function ModeChooser(
           )}
         </div>
         <div className="mode-chooser-actions">
-          <button type="button" className="secondary" onClick={dismiss}>
+          <InstrumentButton type="button" className="secondary" onClick={dismiss}>
             Cancel
-          </button>
-          <button
+          </InstrumentButton>
+          <InstrumentButton
             type="button"
             disabled={Boolean(blocked)}
             onClick={() => {
@@ -378,7 +379,7 @@ export function ModeChooser(
             }}
           >
             Use mode
-          </button>
+          </InstrumentButton>
         </div>
       </footer>
     </dialog>,

@@ -1,3 +1,4 @@
+import { InstrumentButton } from "./InstrumentButton";
 import { lazy, memo, Suspense, useMemo, useRef, useState } from "react";
 import { AppIcon } from "./AppIcon";
 import type { SearchOverlayProps } from "./SearchOverlayFeature";
@@ -48,7 +49,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
     [],
   );
   const trigger = (
-    <button
+    <InstrumentButton
       type="button"
       className="secondary discovery-trigger"
       aria-haspopup="dialog"
@@ -58,7 +59,7 @@ export function SearchOverlay(props: SearchOverlayProps) {
     >
       <AppIcon name="search" />
       {loaded ? " Opening search…" : " Search"}
-    </button>
+    </InstrumentButton>
   );
   return loaded ? (
     <Suspense fallback={trigger}>

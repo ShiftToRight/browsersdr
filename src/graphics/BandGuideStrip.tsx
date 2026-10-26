@@ -122,7 +122,7 @@ export function BandGuide({
             </header>
             <p className="band-guide-context">
               {guide.plan === "DE"
-                ? "Germany · curated allocation guide"
+                ? "Germany · curated reference guide"
                 : `${BAND_GUIDE_PLANS[guide.plan].label} · curated reference guide`}
             </p>
             <p>{BAND_GUIDE_PLANS[guide.plan].scope}</p>
