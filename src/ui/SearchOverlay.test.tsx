@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, afterEach, expect, it, vi } from "vitest";
 import { publicStationFixture as fixture } from "../testing/publicStationFixture";
 import { SearchOverlay, type SearchOverlayProps } from "./SearchOverlay";
 import {
@@ -12,6 +12,15 @@ let root: Root, host: HTMLDivElement, props: SearchOverlayProps;
 const id = "00000000-0000-4000-8000-000000000001";
 let detail = structuredClone(fixture.details[id]!);
 let calls: string[];
+// Compile lazy feature/guide fixtures before the behavioral case deadline.
+// The overlay still mounts closed and every network/apply assertion stays real.
+// Cold production module loading is covered by the independent browser suite.
+beforeAll(async () => {
+  await Promise.all([
+    import("./SearchOverlayFeature"),
+    import("../radio/sharedFrequencyGuides"),
+  ]);
+});
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("requestAnimationFrame", (fn: () => void) => {
