@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an optional persistence spectrum with a rolling frequency/level occurrence display, saved history windows through one minute, compact Display settings, adjustable colour saturation and observed-spectrum hover guides. Preserve compatible channel history while tuning. Keep the current trace visible and support Canvas2D without WebGPU.
+
 ## 1.16.0 — 2026-10-24
 
 - Simplify Receiver setup with on-demand health, RF input/power and Display dialogs; move Antenna guide to the header and make tuning utilities and live metadata more compact.

@@ -1,3 +1,6 @@
+import type { CanvasPersistence } from "./canvasPersistence";
+import type { PersistenceHistory } from "./persistenceHistory";
+import "./PersistenceSpectrum.css";
 import { channelOnlyDisplayChange, SurfaceMarkerMotion } from "./spectrumDisplaySession";
 import { InstrumentButton } from "../ui/InstrumentButton";
 import type { GpuSpectrumSurface } from "./gpuSpectrumSurface";
@@ -27,6 +30,7 @@ import { channelPassbands, formatPassbandWidth } from "./channelPassband";
 import { formatFrequencyMHz } from "../ui/frequencyFormat";
 import { spectrumFrequencyTicks } from "./spectrumFrequencyTicks";
 import { lazy, Suspense, type CSSProperties } from "react";
+const PersistenceHover = lazy(() => import("./PersistenceHover"));
 const SpectrumHover = lazy(() => import("./SpectrumHover").then(module => ({ default: module.SpectrumHover })));
 const BandGuideFeature = lazy(() => import("./BandGuideFeature").then(module => ({default:module.BandGuideFeature})));
 
@@ -98,6 +102,19 @@ export function WebGpuSpectrum({
   });
   const surfacePreferencesRef = useRef(surfacePreferences);
   surfacePreferencesRef.current = surfacePreferences;
+  const persistenceActive = surfacePreferences.view === "persistence" && !gpuFftSize();
+  const persistenceHistoryRef = useRef<PersistenceHistory | undefined>(undefined);
+  const persistenceClearRef = useRef<() => void>(() => undefined);
+  const persistenceSummaryRef = useRef<HTMLSpanElement>(null);
+  const [persistenceSeconds, setPersistenceSeconds] = useState(() => {
+    try { const v = Number(localStorage.getItem("browsersdr.persistence-window.v1")); return [4, 10, 16, 30, 60].includes(v) ? v : 10; }
+    catch { return 10; }
+  });
+  const [persistenceColourCeiling, setPersistenceColourCeiling] = useState(() => {
+    try { const v = Number(localStorage.getItem("browsersdr.persistence-colour-ceiling.v1")); return [5, 10, 25, 50, 100].includes(v) ? v : 50; }
+    catch { return 50; }
+  });
+  useEffect(() => { renderRef.current(); }, [persistenceSeconds, persistenceColourCeiling]);
   const [surfaceState, setSurfaceState] = useState("idle");
   const [surfaceDuration, setSurfaceDuration] = useState(0);
   const changeSurface = (patch: Partial<SpectrumSurfaceSettings>) => {
@@ -206,8 +223,8 @@ export function WebGpuSpectrum({
   guideGapRef.current = guideGap;
   useEffect(() => { renderRef.current(); }, [guideGap]);
   useEffect(() => {
-    onStatusChange?.({ kind: state.kind, hasFrame, paused, stalled, renderer });
-  }, [state.kind, hasFrame, paused, stalled, renderer, onStatusChange]);
+    onStatusChange?.({ kind: state.kind, hasFrame, paused, stalled, renderer: persistenceActive ? "canvas2d" : renderer });
+  }, [state.kind, hasFrame, paused, stalled, renderer, persistenceActive, onStatusChange]);
   useEffect(() => {
     const timer = setInterval(() => setStalled(Boolean(session && hasFrame && !paused && performance.now() - lastFrameAt.current > 3_000)), 1_000);
     return () => clearInterval(timer);
@@ -290,12 +307,13 @@ export function WebGpuSpectrum({
     return { bands, dimmed, summary };
   }, [session]);
 
-  const graphicsGeneration = renderer === "canvas2d" || requestedFftSize ? session?.sessionGeneration : undefined;
+  const graphicsGeneration = !persistenceActive && (renderer === "canvas2d" || requestedFftSize) ? session?.sessionGeneration : undefined;
   useEffect(() => {
     hoverFrameRef.current = undefined;
     let disposed = false;
     const size = fftSize;
-    let canvasDisplay: CanvasSpectrum | undefined;
+    let canvasDisplay: CanvasSpectrum | CanvasPersistence | undefined;
+    let persistenceDisplay: CanvasPersistence | undefined;
     let surface: GpuSpectrumSurface | undefined;
     let surfaceStarting = false;
     let surfaceFailed = false;
@@ -382,6 +400,10 @@ export function WebGpuSpectrum({
               floorRef.current, rangeRef.current, paletteRef.current,
               guideGapRef.current,
             );
+            if (persistenceDisplay && persistenceSummaryRef.current) {
+              const h = persistenceDisplay.history;
+              persistenceSummaryRef.current.textContent = `${h.count} observed spectra · ${h.duration.toFixed(1)} s span${h.gaps ? " · gaps excluded" : ""}${h.limited ? " · capacity limited" : ""}`;
+            }
             if (latestFrame) hoverFrameRef.current = {
               center: latestFrame.centerFrequencyHz, rate: latestFrame.sampleRateHz,
               bins: latestFrame.bins, columns: Math.min(canvasRef.current?.width ?? 1, FFT_SIZE),
@@ -559,6 +581,8 @@ export function WebGpuSpectrum({
         !channelOnlyDisplayChange(old,next)) {
         const compatible = channelOnlyDisplayChange(old,next);
         history.reset(next?.sessionGeneration ?? 0);
+        if (compatible && next) persistenceHistoryRef.current?.continueGeneration(next.sessionGeneration);
+        else persistenceHistoryRef.current?.reset(next?.sessionGeneration ?? 0);
         if (compatible && next && latestFrame) {
           surface?.history.continueGeneration(next.sessionGeneration);
           setDisplayedGeneration(next.sessionGeneration);
@@ -634,14 +658,25 @@ export function WebGpuSpectrum({
     async function initialize() {
       const initializationStarted = performance.now();
       const canvas = canvasRef.current;
-      if (renderer === "canvas2d") {
+      if (renderer === "canvas2d" || persistenceActive) {
         try {
-          const { CanvasSpectrum } = await import("./canvasSpectrum");
           if (disposed) return;
           if (!canvas) throw new Error("Spectrum canvas is unavailable.");
           const canvasContext = canvas.getContext("2d", { alpha: false });
           if (!canvasContext) throw new Error("This browser could not create a Canvas2D context.");
-          canvasDisplay = new CanvasSpectrum(canvasContext, sessionRef.current?.sessionGeneration ?? 0);
+          if (persistenceActive) {
+            const { CanvasPersistence } = await import("./canvasPersistence");
+            if (disposed) return;
+            persistenceDisplay = new CanvasPersistence(canvasContext, persistenceHistoryRef.current?.latest?.sessionGeneration === sessionRef.current?.sessionGeneration ? persistenceHistoryRef.current : undefined);
+            persistenceHistoryRef.current = persistenceDisplay.history;
+            canvasDisplay = persistenceDisplay;
+            latestFrame = persistenceDisplay.history.latest;
+            persistenceClearRef.current = () => { persistenceDisplay?.history.clear(); render(); };
+          } else {
+            const { CanvasSpectrum } = await import("./canvasSpectrum");
+            if (disposed) return;
+            canvasDisplay = new CanvasSpectrum(canvasContext, sessionRef.current?.sessionGeneration ?? 0);
+          }
           cssWidth = canvas.clientWidth;
           setDisplayWidth(cssWidth);
           cssHeight = canvas.clientHeight;
@@ -921,6 +956,7 @@ export function WebGpuSpectrum({
       hoverFrameRef.current = undefined;
       renderRef.current = () => undefined;
       sessionChangeRef.current = () => undefined; surfacePickRef.current = () => undefined;
+      persistenceClearRef.current = () => undefined;
       if (markerAnimation !== undefined) cancelAnimationFrame(markerAnimation);
       unsubscribe();
       if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
@@ -1006,6 +1042,7 @@ export function WebGpuSpectrum({
     pipeline,
     requestedFftSize,
     graphicsGeneration,
+    persistenceActive,
     fftSize,
   ]);
 
@@ -1056,7 +1093,10 @@ export function WebGpuSpectrum({
               onClick={() => changeSurface({ view: "2d" })}>2D waterfall</InstrumentButton>
             <InstrumentButton type="button" className="secondary" aria-pressed={surfacePreferences.view === "3d"}
               onClick={() => changeSurface({ view: "3d" })}>3D history</InstrumentButton>
+            <InstrumentButton type="button" className="secondary" aria-pressed={surfacePreferences.view === "persistence"}
+              onClick={() => changeSurface({ view: "persistence" })}>Persistence</InstrumentButton>
           </div>
+          {surfacePreferences.view === "persistence" && !persistenceActive && <p className="surface-notice" role="status">Persistence unavailable with experimental GPU FFT — showing 2D. Select the normal analysis path to use observed CPU/WASM spectra.</p>}
           {surfacePreferences.view === "3d" && !surfaceActive && <p className="surface-notice" role="status">
             {renderer === "canvas2d" ? "3D unavailable — showing 2D. A compatible GPU is needed." : requestedFftSize ?
               "3D unavailable with experimental GPU FFT — showing 2D." : surfaceState.startsWith("3D unavailable") ?
@@ -1087,7 +1127,7 @@ export function WebGpuSpectrum({
         <div className="display-controls">
           <label>
             Display renderer
-            <select aria-label="Display renderer" value={renderer} onChange={(event) => {
+            <select aria-label="Display renderer" disabled={persistenceActive} value={persistenceActive ? "canvas2d" : renderer} onChange={(event) => {
               const next = event.currentTarget.value as "webgpu" | "canvas2d";
               setRenderer(next);
               setFallbackReason(next === "canvas2d" ? "Compatibility display selected." : "");
@@ -1102,6 +1142,7 @@ export function WebGpuSpectrum({
               <option value="canvas2d">Compatibility (Canvas2D)</option>
             </select>
           </label>
+          {persistenceActive && <small>Persistence uses Canvas2D with the normal CPU/WASM spectrum stream. Other views retain their renderer preference.</small>}
           <label>
             Floor <output>{floorDb} dB</output>
             <input
@@ -1141,6 +1182,20 @@ export function WebGpuSpectrum({
             />
           </label>
         </div>
+        {persistenceActive && <div className="persistence-settings" aria-label="Persistence controls">
+          <div className="persistence-settings-row">
+            <label>History window <select aria-label="Persistence history window" value={persistenceSeconds} onChange={event => {
+              const seconds = Number(event.currentTarget.value); setPersistenceSeconds(seconds);
+              try { localStorage.setItem("browsersdr.persistence-window.v1", String(seconds)); } catch { /* Optional display preference. */ }
+            }}><option value={4}>4 seconds</option><option value={10}>10 seconds</option><option value={16}>16 seconds</option><option value={30}>30 seconds</option><option value={60}>1 minute</option></select></label>
+            <label>Colour saturation <select aria-label="Persistence colour saturation" value={persistenceColourCeiling} onChange={event => {
+              const ceiling = Number(event.currentTarget.value); setPersistenceColourCeiling(ceiling);
+              try { localStorage.setItem("browsersdr.persistence-colour-ceiling.v1", String(ceiling)); } catch { /* Optional display preference. */ }
+            }}>{[5, 10, 25, 50, 100].map(value => <option key={value} value={value}>Red at {value}%</option>)}</select></label>
+            <InstrumentButton type="button" className="secondary" onClick={() => persistenceClearRef.current()} disabled={!hasFrame}>Clear persistence</InstrumentButton>
+          </div>
+          <small>Red marks bins at or above the selected occurrence percentage. Colour changes keep the measured counts. Clear keeps the latest spectrum; a longer window fills as observations arrive.</small>
+        </div>}
         {surfacePreferences.view === "3d" && <>
         <label className="surface-layout-setting">3D layout
           <select aria-label="3D layout" value={surfacePreferences.layout}
@@ -1214,13 +1269,19 @@ export function WebGpuSpectrum({
           </div>
           {tuningControls}
         </div>
-        <div className={`canvas-frame${guideGap > 0 ? " has-band-guide" : ""}${surfaceActive ? " surface-active" : ""}${surfaceCombined ? " surface-combined" : ""}`} style={{"--band-guide-height":`${guideGap}px`, "--surface-trace-end":`${surfaceCombined ? 0 : SURFACE_TRACE_FRACTION * 100}%`, minHeight: surfaceActive ? 340 : undefined} as CSSProperties}>
+        {persistenceActive && <div className="persistence-summary">
+          <span>{persistenceSeconds === 60 ? "1 min" : `${persistenceSeconds} s`} window</span>
+          <span ref={persistenceSummaryRef}>No observed spectra</span>
+        </div>}
+        <div className={`canvas-frame${guideGap > 0 ? " has-band-guide" : ""}${surfaceActive ? " surface-active" : ""}${surfaceCombined ? " surface-combined" : ""}${persistenceActive ? " persistence-active" : ""}`} style={{"--band-guide-height":`${guideGap}px`, "--surface-trace-end":`${surfaceCombined ? 0 : SURFACE_TRACE_FRACTION * 100}%`, minHeight: persistenceActive ? 480 : surfaceActive ? 340 : undefined} as CSSProperties}>
           <canvas
-            key={renderer}
+            key={`${renderer}:${persistenceActive ? "persistence" : "standard"}`}
             ref={canvasRef}
+            data-persistence-window={persistenceActive ? persistenceSeconds : undefined}
+            data-persistence-colour-ceiling={persistenceActive ? persistenceColourCeiling / 100 : undefined}
             width={960}
             height={560}
-            aria-label={surfaceCombined ? "WebGPU combined live spectrum and 3D history; click the spectrum or grid to tune" : surfaceActive ? "WebGPU RF spectrum and 3D history; click the spectrum or grid to tune" : `${renderer === "canvas2d" ? "Canvas2D" : "WebGPU"} RF spectrum and waterfall plot; click to tune`}
+            aria-label={persistenceActive ? "Canvas2D live spectrum and persistence density; click frequency to tune" : surfaceCombined ? "WebGPU combined live spectrum and 3D history; click the spectrum or grid to tune" : surfaceActive ? "WebGPU RF spectrum and 3D history; click the spectrum or grid to tune" : `${renderer === "canvas2d" ? "Canvas2D" : "WebGPU"} RF spectrum and waterfall plot; click to tune`}
             onClick={tuneFromClick}
           />
           {(state.kind !== "ready" || !hasFrame) && (
@@ -1308,11 +1369,18 @@ export function WebGpuSpectrum({
               </span>
             </>
           ) : null}
-          <span className="plot-label spectrum-label">Spectrum</span>
+          <span className="plot-label spectrum-label">{persistenceActive ? "Latest spectrum" : "Spectrum"}</span>
 
           <span className="plot-label waterfall-label">
-            {surfaceActive ? `3D history · ${surfaceDuration.toFixed(1)} / ${surfacePreferences.seconds} s · newest at front` : "Waterfall · newest at top"}
+            {persistenceActive ? "Persistence · level versus frequency" : surfaceActive ? `3D history · ${surfaceDuration.toFixed(1)} / ${surfacePreferences.seconds} s · newest at front` : "Waterfall · newest at top"}
           </span>
+          {persistenceActive && <>
+            <div className="persistence-axis" aria-label={`Persistence level scale: ${floorDb} to ${floorDb + rangeDb} relative dB`}>
+              <span>{floorDb + rangeDb}</span><span>{floorDb + rangeDb / 2} dB rel.</span><span>{floorDb}</span>
+            </div>
+            <div className="persistence-frequency" aria-hidden="true">{labels.map(tick => <span key={tick.fraction} style={{left: `${tick.fraction * 100}%`, transform: tick.fraction === 0 ? "none" : tick.fraction === 1 ? "translateX(-100%)" : "translateX(-50%)"}}>{tick.label}</span>)}</div>
+            <div className="persistence-key"><span>Rare · 0%</span><i aria-hidden="true" /><span>Frequent · ≥{persistenceColourCeiling}%</span><strong>Colour = observed occurrence</strong></div>
+          </>}
           {surfaceActive && <div className="surface-axis" aria-hidden="true">
             <div className="surface-frequency">{labels.map(tick => <span key={tick.fraction} style={{ left: `${tick.fraction * 100}%`, transform: tick.fraction === 0 ? "none" : tick.fraction === 1 ? "translateX(-100%)" : "translateX(-50%)" }}>{tick.label}</span>)}</div>
             <span className="surface-age">0 s</span><span className="surface-oldest">Older · {surfacePreferences.seconds} s</span>
@@ -1368,12 +1436,16 @@ export function WebGpuSpectrum({
               </small>
             )}
           </div>
+          {hoverEnabled && persistenceActive && visible && hasFrame && state.kind === "ready" && <Suspense fallback={null}>
+            <PersistenceHover key={`${session?.sessionGeneration}:${persistenceSeconds}:${floorDb}:${rangeDb}`} canvas={canvasRef} history={persistenceHistoryRef} guideGap={guideGap} />
+          </Suspense>}
           {hoverEnabled && !surfaceCombined && visible && hasFrame && state.kind === "ready" && (
             <Suspense fallback={null}>
               <SpectrumHover key={`${renderer}:${session?.sessionGeneration}`}
                 canvas={canvasRef} frame={hoverFrameRef} guideGap={guideGap}
                 selectedHz={session?.selectedChannelFrequencyHz ?? 0}
                 traceOnly={surfaceActive}
+                traceReadoutOnly={persistenceActive}
                 traceFraction={surfaceActive ? SURFACE_TRACE_FRACTION : .38}
                 paused={paused} stalled={stalled} />
             </Suspense>
@@ -1381,11 +1453,11 @@ export function WebGpuSpectrum({
           <SpectrumInfo>
             <p className="diagnostic-message">{state.message}</p>
             {fftMessage && <p className="display-note">{fftMessage}</p>}
-            {renderer === "canvas2d" && <p className="display-note">Compatibility display · CPU/WASM analysis · peak-preserving 1024-column waterfall.</p>}
+            {renderer === "canvas2d" && !persistenceActive && <p className="display-note">Compatibility display · CPU/WASM analysis · peak-preserving 1024-column waterfall.</p>}
             <p className="display-note">
               {fftSize}-point Hann FFT ·{" "}
               {renderer === "webgpu" && requestedFftSize ? "4-frame power average" : "~40 ms power average"}{" "}
-              · {surfaceActive ? `3D: bounded 512-row source-clock history, up to 25 peak-held intervals/s, 1024 peak-pooled columns; ${surfacePreferences.perspective ? "depth perspective; newest edge aligned" : "flat aligned frequency scale"}; gaps are left open; channel-only tuning keeps RF history with a separator (unknown tuning interruption is excluded from the source-time axis)` : "circular 240-row sample-clock history"} · relative dB (not dBm) ·
+              · {persistenceActive ? "Persistence: Canvas2D frequency/level histogram of observed averaged display spectra; 512 frequency columns use peak pooling within each spectrum, 128 level bins; retained quarter-dB levels, up to 2048 spectra in the source-clock window. Colour uses a square-root occurrence scale with the labelled red threshold; percentages refer to observed spectra, not transmitter airtime or guaranteed capture. Gaps are excluded; channel-only tuning preserves history and excludes unknown tune time. Incompatible RF settings reset the histogram. Clear history leaves the latest trace. Returning to a longer window fills from retained observations." : surfaceActive ? `3D: bounded 512-row source-clock history, up to 25 peak-held intervals/s, 1024 peak-pooled columns; ${surfacePreferences.perspective ? "depth perspective; newest edge aligned" : "flat aligned frequency scale"}; gaps are left open; channel-only tuning keeps RF history with a separator (unknown tuning interruption is excluded from the source-time axis)` : "circular 240-row sample-clock history"} · relative dB (not dBm) ·
               click {surfaceActive ? "spectrum or grid" : "plot"} to retune · background tabs may resume with marked gaps
             </p>
             {surfaceState.startsWith("3D unavailable") && <p className="display-note">{surfaceState}</p>}

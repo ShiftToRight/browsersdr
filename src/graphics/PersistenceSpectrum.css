@@ -1,0 +1,186 @@
+.persistence-settings {
+  margin-block: 16px;
+}
+.persistence-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 16px;
+  margin-bottom: 6px;
+}
+.persistence-settings-row label {
+  display: grid;
+  gap: 6px;
+}
+.workspace-tool-body .persistence-settings-row :is(select, button) {
+  width: auto;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+.persistence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.persistence-active {
+  --persistence-footer: 90px;
+}
+.graphics-panel .spectrum-display .canvas-frame.persistence-active > canvas {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+}
+.persistence-active .passband-layer {
+  bottom: calc(62% - var(--band-guide-height, 0px));
+}
+.persistence-active .passband-legend {
+  display: none;
+}
+.persistence-axis {
+  position: absolute;
+  pointer-events: none;
+  z-index: 3;
+  top: calc(38% + var(--band-guide-height, 0px) + 30px);
+  bottom: var(--persistence-footer);
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--ink);
+  font:
+    0.7rem "IBM Plex Mono",
+    monospace;
+  text-shadow: 0 1px 3px var(--theme-surface, #020719);
+}
+.persistence-axis span {
+  background: var(--theme-surface, #020719);
+  padding: 1px 3px;
+}
+.persistence-frequency {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--persistence-footer) - 24px);
+  height: 18px;
+  color: var(--ink);
+  font:
+    0.7rem "IBM Plex Mono",
+    monospace;
+}
+.persistence-frequency span {
+  position: absolute;
+  white-space: nowrap;
+}
+.persistence-key {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  left: 8px;
+  right: 8px;
+  bottom: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  color: var(--ink);
+  font-size: 0.73rem;
+}
+.persistence-key i {
+  width: 84px;
+  height: 9px;
+  background: linear-gradient(
+    90deg,
+    rgb(10, 40, 170),
+    rgb(0, 205, 235),
+    rgb(255, 222, 35),
+    rgb(255, 55, 20)
+  );
+}
+.persistence-key strong {
+  font-weight: 500;
+}
+.persistence-active .plot-metadata {
+  bottom: 7px;
+}
+.persistence-active .frequency-rule {
+  display: none;
+}
+.persistence-active .marker-label {
+  top: 40px;
+}
+.persistence-active .paused-label {
+  top: calc(38% - 36px);
+  bottom: auto;
+  left: auto;
+  right: 8px;
+  transform: none;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+.persistence-hover {
+  position: absolute;
+  z-index: 8;
+  pointer-events: none;
+  display: grid;
+  gap: 3px;
+  width: 250px;
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--theme-surface, #020719);
+  color: var(--ink);
+  font-size: 0.73rem;
+}
+.persistence-hover strong {
+  font-weight: 500;
+  font-family: "IBM Plex Mono", monospace;
+}
+@media (max-width: 600px) {
+  .persistence-active {
+    --persistence-footer: 110px;
+    min-height: 420px;
+  }
+  .persistence-summary {
+    padding-inline: 8px;
+  }
+  .persistence-key {
+    bottom: 46px;
+  }
+  .persistence-key strong {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .persistence-active .plot-metadata {
+    gap: 0 8px;
+    line-height: 1.2;
+  }
+  .persistence-active .plot-metadata :is(.display-units, .receiver-offset) {
+    font-size: 0.7rem;
+  }
+}
+@media (forced-colors: active) {
+  .persistence-axis,
+  .persistence-frequency,
+  .persistence-key {
+    color: CanvasText;
+  }
+  .persistence-axis span {
+    background: Canvas;
+  }
+}
+
+@media (pointer: coarse) {
+  .workspace-tool-body .persistence-settings-row :is(select, button) {
+    min-height: 44px;
+  }
+}
