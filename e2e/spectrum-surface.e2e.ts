@@ -35,6 +35,39 @@ async function canvasPng(plot: Locator) {
   return Buffer.from(png.split(",")[1]!, "base64");
 }
 
+// Initialize the configured software GPU before any application fixture runs.
+// This is one real adapter request, never a retry of an application assertion.
+// GL finish synchronizes the cold driver process; an unavailable GPU fails setup.
+test.beforeAll(async ({ browser }, info) => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL("/robots.txt", info.project.use.baseURL).href);
+    const adapter = await page.evaluate(async () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const gl = canvas.getContext("webgl2");
+      if (!gl) return { compositor: false, available: false, architecture: "" };
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.finish();
+      const gpu = await navigator.gpu?.requestAdapter();
+      return {
+        compositor: true,
+        available: Boolean(gpu),
+        architecture: gpu?.info.architecture ?? "",
+      };
+    });
+    expect(adapter).toEqual({
+      compositor: true,
+      available: true,
+      architecture: "swiftshader",
+    });
+  } finally {
+    await context.close();
+  }
+});
+
 async function start(page: Page, layout = "separate") {
   if (layout)
     await page.addInitScript((layout) => {
