@@ -7,6 +7,7 @@
 - Add an optional persistence spectrum with a rolling frequency/level occurrence display, saved history windows through one minute, compact Display settings, adjustable colour saturation and observed-spectrum hover guides. Preserve compatible channel history while tuning. Keep the current trace visible and support Canvas2D without WebGPU.
 
 - Add switchable 3D spectrum history with perspective controls, direct frequency picking and channel markers that move while compatible RF history stays visible.
+- Keep the 3D history duration frozen when pausing while a GPU draw is still pending.
 - Add the Graphite Studio theme and matching instrument controls.
 - Expand the German band guide with sourced frequency-use entries and documented coverage limits.
 - Validate HackRF VGA gain drafts before applying settings, retaining the supported 0–62 dB range in 2 dB steps.

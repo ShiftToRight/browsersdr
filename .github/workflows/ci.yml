@@ -116,6 +116,10 @@ jobs:
   browser:
     needs: quality
     runs-on: ubuntu-latest
+    # Playwright 1.63.0 / Ubuntu Noble, with the lockfile's browsers preinstalled.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host --init
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -140,11 +144,19 @@ jobs:
           BSD_RELEASE_STAMP: ${{ inputs.release_stamp }}
         run: node scripts/browser-stamped-artifact.mjs env
 
-      - name: Install Chromium for browser integration tests
-        run: npx playwright install --with-deps chromium
+      - name: Verify the pinned preinstalled browser runtime
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { existsSync } from "node:fs";
+          import { chromium } from "@playwright/test";
+          assert.equal(process.version, "v22.23.1");
+          assert(chromium.executablePath().startsWith("/ms-playwright/"));
+          assert(existsSync(chromium.executablePath()));
+          console.log(JSON.stringify({ node: process.version, chromium: chromium.executablePath(), preinstalled: true }));
+          NODE
 
-      # 3D tests pin Chromium's bundled SwiftShader ICD for ANGLE and WebGPU.
-      # A second system driver is unnecessary and adds unbounded package setup.
+      # 3D tests select the bundled SwiftShader ICD for both ANGLE and WebGPU.
 
       - name: Download the quality-checked production build
         if: ${{ matrix.project == 'chromium-production' || needs.quality.outputs.promotion == 'true' }}
