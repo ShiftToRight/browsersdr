@@ -289,6 +289,33 @@ it("exposes independent Pro stages, validates gain drafts before commands and sh
     antennaPowerEnabled: false,
   });
 });
+it("discards invalid VGA drafts on blur or Enter before and after connecting", async () => {
+  await change(control("Source"), "hackrf");
+  vi.useFakeTimers();
+  for (const connected of [false, true]) {
+    if (connected) await click("Connect");
+    for (const value of ["-2", "64", "999", "3", "1.5", ""]) {
+      for (const finish of ["blur", "enter"]) {
+        await change(control("RX VGA gain"), value);
+        expect(control("RX VGA gain").getAttribute("aria-invalid")).toBe("true");
+        await act(async () => control("RX VGA gain").dispatchEvent(finish === "blur"
+          ? new FocusEvent("focusout", { bubbles: true })
+          : new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+        expect(control("RX VGA gain").value).toBe("12");
+        expect(hardwareCalls).toBe(0);
+      }
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(180); });
+    expect(hardwareCalls).toBe(0);
+  }
+  for (const value of ["62", "0"]) {
+    await change(control("RX VGA gain"), value);
+    expect(control("RX VGA gain").getAttribute("aria-invalid")).toBe("false");
+    await act(async () => { await vi.advanceTimersByTimeAsync(180); });
+    expect(controller.getSnapshot().session?.hackrf?.captureSettings.rxVgaGainDb).toBe(Number(value));
+  }
+  expect(hardwareCalls).toBe(2);
+});
 it("applies a complete VGA edit once and cancels deferred updates on Stop", async () => {
   await change(control("Source"), "hackrf");
   await click("Connect");

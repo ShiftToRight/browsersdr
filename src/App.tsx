@@ -1102,6 +1102,11 @@ export function ReceiverApp({
   const [hardwareSettings, setHardwareSettings] = useState<HackrfRxSettings>(
     { ...(initialPreferences.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS), antennaPowerEnabled:false },
   );
+  const [hackrfVgaDraft, setHackrfVgaDraft] = useState(String(hardwareSettings.rxVgaGainDb));
+  const [hackrfVgaInvalid, setHackrfVgaInvalid] = useState(false);
+  useEffect(() => {
+    setHackrfVgaDraft(String(hardwareSettings.rxVgaGainDb));
+  }, [hardwareSettings.rxVgaGainDb]);
   useEffect(() => {
     if (receiver.lifecycle !== "idle" && receiver.lifecycle !== "error") return;
     setRtlInput(old => old.biasTee ? {...old,biasTee:false} : old);
@@ -3206,22 +3211,36 @@ export function ReceiverApp({
                               min={caps.gain.vgaMinimumDb}
                               max={caps.gain.vgaMaximumDb}
                               step={caps.gain.vgaStepDb}
-                              value={hardwareSettings.rxVgaGainDb}
+                              required
+                              value={hackrfVgaDraft}
+                              aria-invalid={hackrfVgaInvalid}
+                              aria-describedby="hackrf-vga-help"
                               disabled={transitioning || exportingRecording || atlasTransferActive}
                               onChange={(event) => {
+                                setHackrfVgaDraft(event.currentTarget.value);
+                                clearTimeout(hackrfVgaTimer.current);
+                                const valid = event.currentTarget.validity.valid;
+                                setHackrfVgaInvalid(!valid);
+                                if (!valid) return;
                                 const next = { ...hardwareSettings, rxVgaGainDb: event.currentTarget.valueAsNumber };
                                 setHardwareSettings(next);
-                                clearTimeout(hackrfVgaTimer.current);
                                 // Allow a complete multi-digit edit before a USB
                                 // acknowledgement briefly disables the controls.
-                                if (event.currentTarget.validity.valid) hackrfVgaTimer.current = setTimeout(() => {
+                                hackrfVgaTimer.current = setTimeout(() => {
                                   hackrfVgaTimer.current = undefined;
                                   void applyHardware(next);
                                 }, 150);
                               }}
-                              onBlur={(event) => { if (!event.currentTarget.validity.valid) void applyHardware(); }}
-                              onKeyDown={(event) => { if (event.key === "Enter") void applyHardware(); }}
+                              onBlur={(event) => { if (!event.currentTarget.validity.valid) setHackrfVgaDraft(String(hardwareSettings.rxVgaGainDb)); }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter") return;
+                                if (!event.currentTarget.validity.valid) setHackrfVgaDraft(String(hardwareSettings.rxVgaGainDb));
+                                else void applyHardware();
+                              }}
                             />
+                            <small id="hackrf-vga-help" role={hackrfVgaInvalid ? "alert" : undefined}>
+                              {hackrfVgaInvalid ? "VGA gain must be an even integer from 0 to 62 dB." : "0–62 dB, in 2 dB steps."}
+                            </small>
                           </label>
                           <label className="checkbox-control hackrf-amplifier-control">
                             <span>RF amplifier</span>
