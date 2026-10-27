@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 import {
   openDisplaySettings,
   closeDisplaySettings,
@@ -8,6 +8,9 @@ import {
 // not establish physical GPU performance or hardware RF/audio acceptance.
 test.use({
   launchOptions: {
+    // Bound Mesa's compositor threads independently of the host CPU count.
+    // Real WGSL, rasterization, canvas size and pixel assertions stay intact.
+    env: { ...process.env, LP_NUM_THREADS: "2" },
     args: [
       "--enable-unsafe-webgpu",
       "--enable-features=Vulkan",
@@ -18,6 +21,15 @@ test.use({
     ],
   },
 });
+
+// Read the complete rendered GPU canvas directly. Compositor screenshots can
+// stall on software Vulkan; decoding the PNG preserves full pixel comparisons.
+async function canvasPng(plot: Locator) {
+  const png = await plot.evaluate((canvas: HTMLCanvasElement) =>
+    canvas.toDataURL(),
+  );
+  return Buffer.from(png.split(",")[1]!, "base64");
+}
 
 async function start(page: Page, layout = "separate") {
   if (layout)
@@ -52,7 +64,26 @@ test.afterEach(({ page }) => expect(pageErrors.get(page)).toEqual([]));
 
 async function ready(page: Page, layout = "separate") {
   await start(page, layout);
-  await expect(page.locator(".canvas-frame")).toHaveClass(/surface-active/);
+  try {
+    await expect(page.locator(".canvas-frame")).toHaveClass(/surface-active/);
+  } catch (error) {
+    // Preserve the original failure and deadline; expose the real fallback
+    // reason so an unavailable adapter cannot look like a pixel assertion.
+    try {
+      await page
+        .getByRole("button", { name: "FFT & display details", exact: true })
+        .click({ timeout: 1000 });
+      console.error(
+        "3D display initialization:",
+        await page
+          .getByRole("dialog", { name: "FFT & display details", exact: true })
+          .innerText({ timeout: 1000 }),
+      );
+    } catch {
+      /* Keep the original assertion failure. */
+    }
+    throw error;
+  }
   await expect
     .poll(async () =>
       Number(
@@ -73,17 +104,17 @@ test("real terrain preserves paused pixels through 2D and 3D view switches", asy
     .getByRole("button", { name: "Pause display", exact: true })
     .click();
   await expect(plot).toHaveAttribute("data-surface-pending", "false");
-  const frozen = await plot.screenshot();
+  const frozen = await canvasPng(plot);
   expect(frozen.length).toBeGreaterThan(15000);
   await expect
-    .poll(async () => (await plot.screenshot()).equals(frozen))
+    .poll(async () => (await canvasPng(plot)).equals(frozen))
     .toBe(true);
   await page.getByRole("button", { name: "2D waterfall", exact: true }).click();
   await expect(page.locator(".canvas-frame")).not.toHaveClass(/surface-active/);
   await page.getByRole("button", { name: "3D history", exact: true }).click();
   await expect(page.locator(".canvas-frame")).toHaveClass(/surface-active/);
   await expect
-    .poll(async () => (await plot.screenshot()).equals(frozen))
+    .poll(async () => (await canvasPng(plot)).equals(frozen))
     .toBe(true);
 });
 
@@ -242,7 +273,7 @@ test("paused camera and history redraws preserve the source and saved preference
     .getByRole("button", { name: "Pause display", exact: true })
     .click();
   await expect(plot).toHaveAttribute("data-surface-pending", "false");
-  const frozen = await plot.screenshot();
+  const frozen = await canvasPng(plot);
   await openDisplaySettings(page);
   await page
     .getByLabel("3D history window", { exact: true })
@@ -255,7 +286,7 @@ test("paused camera and history redraws preserve the source and saved preference
     .fill("1.4");
   await closeDisplaySettings(page);
   await expect
-    .poll(async () => (await plot.screenshot()).equals(frozen))
+    .poll(async () => (await canvasPng(plot)).equals(frozen))
     .toBe(false);
   await expect(
     page.getByRole("button", { name: "Resume display", exact: true }),
@@ -333,13 +364,13 @@ for (const theme of [
       .locator(".header-utility-menu")
       .filter({ has: page.getByLabel("Settings", { exact: true }) });
     {
-      const before = await plot.screenshot();
+      const before = await canvasPng(plot);
       if (!(await settingsMenu.evaluate((e) => e.hasAttribute("open"))))
         await page.getByLabel("Settings", { exact: true }).click();
       await page.getByLabel("Theme", { exact: true }).selectOption(theme);
       await page.getByLabel("Theme", { exact: true }).press("Escape");
       await expect
-        .poll(async () => (await plot.screenshot()).equals(before))
+        .poll(async () => (await canvasPng(plot)).equals(before))
         .toBe(false);
       await expect(page.locator(".canvas-frame")).toHaveClass(/surface-active/);
     }

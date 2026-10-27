@@ -143,6 +143,11 @@ jobs:
       - name: Install Chromium for browser integration tests
         run: npx playwright install --with-deps chromium
 
+      # ANGLE's Vulkan backend needs a software Vulkan ICD on GPU-less runners.
+      # Playwright installs the loader but does not install the Mesa driver.
+      - name: Install software Vulkan driver for real 3D browser tests
+        run: sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+
       - name: Download the quality-checked production build
         if: ${{ matrix.project == 'chromium-production' || needs.quality.outputs.promotion == 'true' }}
         uses: actions/download-artifact@v4
