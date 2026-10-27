@@ -1,8 +1,20 @@
-import { expect, test, type Page, type Locator } from "@playwright/test";
+import {
+  chromium,
+  expect,
+  test,
+  type Page,
+  type Locator,
+} from "@playwright/test";
+import { dirname, join } from "node:path";
 import {
   openDisplaySettings,
   closeDisplaySettings,
 } from "./display-settings-navigation";
+
+const softwareVulkanIcd = join(
+  dirname(chromium.executablePath()),
+  "vk_swiftshader_icd.json",
+);
 
 // Executes real WGSL and rasterization on a software adapter in CI. This does
 // not establish physical GPU performance or hardware RF/audio acceptance.
@@ -12,9 +24,19 @@ test.use({
   // https://playwright.dev/docs/browsers#chromium-new-headless-mode
   channel: "chromium",
   launchOptions: {
-    // Bound Mesa's compositor threads independently of the host CPU count.
-    // Real WGSL, rasterization, canvas size and pixel assertions stay intact.
-    env: { ...process.env, LP_NUM_THREADS: "2" },
+    // Use the same bundled Vulkan driver for ANGLE and WebGPU on Linux.
+    // Mixing Mesa compositing with SwiftShader can drop the first Dawn instance.
+    // This selects a driver before launch; no adapter or test retry is involved.
+    env: {
+      ...process.env,
+      LP_NUM_THREADS: "2",
+      ...(process.platform === "linux"
+        ? {
+            VK_ICD_FILENAMES: softwareVulkanIcd,
+            VK_DRIVER_FILES: softwareVulkanIcd,
+          }
+        : {}),
+    },
     args: [
       "--enable-unsafe-webgpu",
       "--enable-features=Vulkan",
