@@ -7,6 +7,10 @@ import {
 // Executes real WGSL and rasterization on a software adapter in CI. This does
 // not establish physical GPU performance or hardware RF/audio acceptance.
 test.use({
+  // Use full Chromium headless for real GPU canvas tests. The headless shell
+  // stalls creating a page after native-size Vulkan canvases are torn down.
+  // https://playwright.dev/docs/browsers#chromium-new-headless-mode
+  channel: "chromium",
   launchOptions: {
     // Bound Mesa's compositor threads independently of the host CPU count.
     // Real WGSL, rasterization, canvas size and pixel assertions stay intact.
