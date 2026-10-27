@@ -60,7 +60,23 @@ test.beforeEach(({ page }) => {
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
 });
-test.afterEach(({ page }) => expect(pageErrors.get(page)).toEqual([]));
+test.afterEach(async ({ page }) => {
+  // Stop the synthetic producer and drain its last real GPU submission before
+  // closing the context. Otherwise the next page can inherit expensive driver
+  // cleanup from a live, large-canvas test and spend its deadline in newPage.
+  try {
+    const stop = page.getByRole("button", { name: "Stop", exact: true });
+    if ((await stop.isVisible()) && (await stop.isEnabled())) {
+      await stop.click();
+      await expect(stop).toBeDisabled();
+    }
+    const plot = page.locator(".canvas-frame canvas");
+    if (await plot.count())
+      await expect(plot).not.toHaveAttribute("data-surface-pending", "true");
+  } finally {
+    expect(pageErrors.get(page)).toEqual([]);
+  }
+});
 
 async function ready(page: Page, layout = "separate") {
   await start(page, layout);
@@ -319,6 +335,10 @@ test("3D view and camera preferences restore without starting acquisition", asyn
     .getByRole("switch", { name: "Depth perspective", exact: true })
     .uncheck();
   await closeDisplaySettings(page);
+  await expect(page.locator(".canvas-frame canvas")).not.toHaveAttribute(
+    "data-surface-pending",
+    "true",
+  );
   await page.reload();
   await expect(
     page.getByRole("button", { name: "3D history", exact: true }),
@@ -426,98 +446,6 @@ test("large 3D canvases retain native detail and proportional bounded backing", 
     dimensions.cssRatio,
     2,
   );
-});
-
-test("a saved 3D request safely resolves to real Canvas2D when WebGPU is absent", async ({
-  page,
-}) => {
-  await page.addInitScript(() =>
-    Object.defineProperty(navigator, "gpu", {
-      configurable: true,
-      value: undefined,
-    }),
-  );
-  await start(page);
-  await expect(page.locator(".surface-notice")).toContainText(
-    "3D unavailable — showing 2D",
-  );
-  await expect(page.locator(".canvas-frame")).not.toHaveClass(/surface-active/);
-  const canvas = page.getByLabel(
-    "Canvas2D RF spectrum and waterfall plot; click to tune",
-    { exact: true },
-  );
-  await expect
-    .poll(() => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL().length))
-    .toBeGreaterThan(20000);
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toBeEnabled();
-});
-
-test("a rejected terrain shader leaves the existing 2D GPU display working", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const create = GPUDevice.prototype.createShaderModule;
-    GPUDevice.prototype.createShaderModule = function (descriptor) {
-      return create.call(
-        this,
-        descriptor.label === "3D spectrum history WGSL"
-          ? { ...descriptor, code: "invalid terrain shader" }
-          : descriptor,
-      );
-    };
-  });
-  await start(page);
-  await expect(page.locator(".surface-notice")).toContainText(
-    "3D unavailable — showing 2D",
-  );
-  await expect(
-    page.getByLabel("WebGPU RF spectrum and waterfall plot; click to tune", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Pause display", exact: true }),
-  ).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toBeEnabled();
-});
-
-test("a lost GPU device returns 3D to Canvas2D without stopping the source", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const request = GPUAdapter.prototype.requestDevice;
-    GPUAdapter.prototype.requestDevice = async function (descriptor) {
-      const device = await request.call(this, descriptor);
-      (
-        window as unknown as { surfaceTestDevice: GPUDevice }
-      ).surfaceTestDevice = device;
-      return device;
-    };
-  });
-  await ready(page);
-  await page.evaluate(() =>
-    (
-      window as unknown as { surfaceTestDevice: GPUDevice }
-    ).surfaceTestDevice.destroy(),
-  );
-  await expect(page.locator(".surface-notice")).toContainText(
-    "3D unavailable — showing 2D",
-  );
-  await expect(
-    page.getByLabel("Canvas2D RF spectrum and waterfall plot; click to tune", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "Pause display", exact: true }),
-  ).toBeEnabled();
 });
 
 test("combined default draws the full-resolution live front spectrum on the GPU", async ({
@@ -943,4 +871,98 @@ test("wide-screen channel markers retain a thin antialiased pixel width", async 
   const width = count / read.ratio;
   expect(width).toBeGreaterThan(0.4);
   expect(width).toBeLessThanOrEqual(2.5);
+});
+
+// Keep deliberate adapter/shader/device failure injection after normal GPU
+// rendering so a destroyed driver device cannot delay the next live fixture.
+test("a saved 3D request safely resolves to real Canvas2D when WebGPU is absent", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "gpu", {
+      configurable: true,
+      value: undefined,
+    }),
+  );
+  await start(page);
+  await expect(page.locator(".surface-notice")).toContainText(
+    "3D unavailable — showing 2D",
+  );
+  await expect(page.locator(".canvas-frame")).not.toHaveClass(/surface-active/);
+  const canvas = page.getByLabel(
+    "Canvas2D RF spectrum and waterfall plot; click to tune",
+    { exact: true },
+  );
+  await expect
+    .poll(() => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL().length))
+    .toBeGreaterThan(20000);
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeEnabled();
+});
+
+test("a rejected terrain shader leaves the existing 2D GPU display working", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const create = GPUDevice.prototype.createShaderModule;
+    GPUDevice.prototype.createShaderModule = function (descriptor) {
+      return create.call(
+        this,
+        descriptor.label === "3D spectrum history WGSL"
+          ? { ...descriptor, code: "invalid terrain shader" }
+          : descriptor,
+      );
+    };
+  });
+  await start(page);
+  await expect(page.locator(".surface-notice")).toContainText(
+    "3D unavailable — showing 2D",
+  );
+  await expect(
+    page.getByLabel("WebGPU RF spectrum and waterfall plot; click to tune", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Pause display", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeEnabled();
+});
+
+test("a lost GPU device returns 3D to Canvas2D without stopping the source", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const request = GPUAdapter.prototype.requestDevice;
+    GPUAdapter.prototype.requestDevice = async function (descriptor) {
+      const device = await request.call(this, descriptor);
+      (
+        window as unknown as { surfaceTestDevice: GPUDevice }
+      ).surfaceTestDevice = device;
+      return device;
+    };
+  });
+  await ready(page);
+  await page.evaluate(() =>
+    (
+      window as unknown as { surfaceTestDevice: GPUDevice }
+    ).surfaceTestDevice.destroy(),
+  );
+  await expect(page.locator(".surface-notice")).toContainText(
+    "3D unavailable — showing 2D",
+  );
+  await expect(
+    page.getByLabel("Canvas2D RF spectrum and waterfall plot; click to tune", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Pause display", exact: true }),
+  ).toBeEnabled();
 });

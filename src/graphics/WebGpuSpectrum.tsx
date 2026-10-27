@@ -457,6 +457,13 @@ export function WebGpuSpectrum({
         });
       }
       const useSurface = Boolean(surface && surfaceActiveRef.current);
+      // Freeze the accepted source-clock extent immediately on Pause, even
+      // when an earlier GPU submission is still completing. Later camera or
+      // layout redraws must not reveal a newer duration for the same history.
+      if (useSurface && surface && (pausedRef.current || performance.now() - surfaceStatusAt > 250)) {
+        surfaceStatusAt = performance.now();
+        setSurfaceDuration(surface.history.duration(surfacePreferencesRef.current.seconds));
+      }
       if (useSurface && surfaceSubmissionPending) {
         surfaceRedraw = true;
         return;
@@ -539,10 +546,6 @@ export function WebGpuSpectrum({
         if (markerMotion.moving(performance.now()) && markerAnimation === undefined) markerAnimation=requestAnimationFrame(() => {
           markerAnimation=undefined; render();
         });
-        if (pausedRef.current || performance.now() - surfaceStatusAt > 250) {
-          surfaceStatusAt = performance.now();
-          setSurfaceDuration(surface.history.duration(surfacePreferencesRef.current.seconds));
-        }
       }
       device.queue.submit([encoder.finish()]);
       if (useSurface) {
