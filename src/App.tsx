@@ -1,7 +1,9 @@
+import { DEFAULT_AIRSPY_SETTINGS, type AirspySettings } from "./radio/airspySettings";
 import { InstrumentTabs } from "./ui/InstrumentTabs";
 import { InstrumentRange } from "./ui/InstrumentRange";
 import { InstrumentButton } from "./ui/InstrumentButton";
 import { DEFAULT_RTL_INPUT, type RtlInputSettings } from "./radio/rtlInput";
+const AirspyControls = lazy(() => import("./ui/AirspyControls").then(module => ({ default: module.AirspyControls })));
 const ReceiverExpansionPanel = lazy(() => import("./ui/ReceiverExpansionPanel"));
 import { defaultPocsagSettings, type PocsagSettings } from "./pocsag/settings";
 import { isTextMode, defaultTextModemSettings, type TextModemSettings } from "./textmodem/settings";
@@ -63,7 +65,7 @@ import { DabStationControl, FmStationSummary } from "./ui/ChannelProgramme";
 import { ReceiverHealth } from "./ui/ReceiverHealth";
 import { AppIcon, type AppIconName } from "./ui/AppIcon";
 import { ReceiverStatus } from "./ui/ReceiverStatus";
-import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate } from "./radio/sourceCapabilities";
+import { SOURCE_RECORDING_DESCRIPTIONS, isWidebandRate, channelSampleRate } from "./radio/sourceCapabilities";
 import { RTL_EXPERIMENTAL_SAMPLE_RATE_HZ, RTL_EXPERIMENTAL_RATE_WARNING, experimentalRtlRecording } from "./radio/rtlSampleRate";
 import {
   memo,
@@ -424,7 +426,7 @@ function capabilities(dabPlusAudioAvailable: boolean | null): Capability[] {
       label: "WebUSB API",
       available: webUsb,
       detail: webUsb
-        ? "RTL-SDR, HackRF, bladeRF and USRP B205-mini access available"
+        ? "RTL-SDR, HackRF, Airspy, bladeRF and USRP B205-mini access available"
         : "Required for live hardware; use a WebUSB-compatible browser",
     },
     {
@@ -711,7 +713,7 @@ function DiagnosticsPanel({
         : "manual"
       : null,
     firmwareVersion:
-      receiver.session?.hackrf?.capabilities.identity.firmwareVersion ??
+      receiver.session?.airspy?.identity.firmware ?? receiver.session?.hackrf?.capabilities.identity.firmwareVersion ??
       (receiver.session?.bladerf
         ? `${receiver.session.bladerf.identity.firmware.major}.${receiver.session.bladerf.identity.firmware.minor}`
         : null),
@@ -1118,19 +1120,27 @@ export function ReceiverApp({
     const accepted=session?.hackrf?.captureSettings;
     if (accepted) setHardwareSettings({kind:"hackrf",rxLnaGainCode:accepted.rxLnaGainCode,rxVgaGainDb:accepted.rxVgaGainDb,rfAmplifierEnabled:accepted.rfAmplifierEnabled,antennaPowerEnabled:accepted.antennaPowerEnabled});
   }, [receiver.session]);
+  const [airspySettings, setAirspySettings] = useState<AirspySettings>({ ...(initialPreferences.airspySettings ?? DEFAULT_AIRSPY_SETTINGS), biasTee: false });
   const [bladerfSettings, setBladeRfSettings] = useState<BladeRfRxSettings>(initialPreferences.bladerfSettings ?? { ...DEFAULT_BLADERF_RX_SETTINGS });
   const [usrpSettings, setUsrpSettings] = useState<UsrpB205RxSettings>(
     initialPreferences.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS },
   );
+  useEffect(() => { if (["idle", "error"].includes(receiver.lifecycle)) setAirspySettings(old => old.biasTee ? { ...old, biasTee: false } : old); }, [source, receiver.lifecycle]);
   const [sampleRateHz, setSampleRateHz] = useState(
     initialPreferences.sampleRateHz,
   );
+  useEffect(() => {
+    const session = receiver.session;
+    if (session?.source !== "airspy" || !session.airspy || receiver.lifecycle !== "connected") return;
+    setSampleRateHz(session.requestedSampleRateHz);
+    setAirspySettings({ ...session.airspy.settings });
+  }, [receiver.session, receiver.lifecycle]);
   const hackrfVgaTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(hackrfVgaTimer.current), [source, controller]);
   const hackrfIdentity = receiver.session?.source === "hackrf" ? receiver.session.hackrf?.capabilities.identity : undefined;
   const caps = sourceCapabilities(source, hackrfIdentity);
   const hardwareOptions = useMemo(() =>
-    source === "hackrf"
+    source === "airspy" ? { airspySettings } : source === "hackrf"
       ? { hardwareSettings }
       : source === "usrp-b205"
         ? { usrpSettings }
@@ -1138,7 +1148,7 @@ export function ReceiverApp({
           ? { bladerfSettings }
           : source === "rtl-sdr"
             ? { gainDb, rtlInput }
-            : {}, [source, hardwareSettings, usrpSettings, bladerfSettings, gainDb, rtlInput]);
+            : {}, [source, airspySettings, hardwareSettings, usrpSettings, bladerfSettings, gainDb, rtlInput]);
   const currentModeSettings = useMemo(
     () => ({
       mode,
@@ -1370,7 +1380,7 @@ export function ReceiverApp({
   const [recordingFormat, setRecordingFormat] =
     useState<RecordingExportFormat>(() => { try { const saved=localStorage.getItem("browsersdr-recording-format"); return saved === "sigmf" ? "sigmf" : "browsersdr"; } catch { return "browsersdr"; } });
   useEffect(() => {
-    if (source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT)) setRecordingFormat("sigmf");
+    if (source === "airspy" || source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT)) setRecordingFormat("sigmf");
   }, [source, loadedReplay]);
   const [exportingRecording, setExportingRecording] = useState(false);
   const { exportCoordinator, retainedCapture, setRetainedCapture } = useCaptureRetention(recordingStatus);
@@ -1494,7 +1504,7 @@ export function ReceiverApp({
       validateSourceFrequency(
         source,
         frequencyMhz * 1_000_000,
-        source === "hackrf" || source === "bladerf" || source === "usrp-b205"
+        source === "airspy" || source === "hackrf" || source === "bladerf" || source === "usrp-b205"
           ? bandwidthHz
           : 0,
         hackrfIdentity,
@@ -1509,7 +1519,7 @@ export function ReceiverApp({
     high: loadedReplay.metadata.centerFrequencyHz + loadedReplay.metadata.sampleRateHz / 2,
   } : undefined;
   const encoding =
-    captureCurrentChannel && source !== "usrp-b205" && source !== "bladerf" && !(source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? "ci8" : source === "usrp-b205" || source === "bladerf"
+    captureCurrentChannel && source !== "airspy" && source !== "usrp-b205" && source !== "bladerf" && !(source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? "ci8" : source === "airspy" || source === "usrp-b205" || source === "bladerf"
       ? "ci16_le"
       : source === "hackrf"
         ? "ci8"
@@ -1541,7 +1551,7 @@ export function ReceiverApp({
     } catch (error) { return { error: error instanceof Error ? error.message : "Channel capture is unavailable." }; }
   })();
   const captureRateHz = captureCurrentChannel && channelCapturePreview.plan ? channelCapturePreview.plan.outputSampleRateHz : nativeRateHz;
-  const captureBytesPerSample = source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? 4 : 2;
+  const captureBytesPerSample = source === "airspy" || source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.bytesPerComplexSample === 4) ? 4 : 2;
   const modeUnavailable = (candidate: ReceiverMode) =>
     sourceModeUnavailableReason(
       source,
@@ -1687,7 +1697,7 @@ export function ReceiverApp({
             channelFrequencyHz: frequencyMhz * 1_000_000,
             volume,
             modeSettings: currentModeSettings,
-            ...(source === "hackrf"
+            ...(source === "airspy" ? { airspySettings } : source === "hackrf"
               ? { hardwareSettings }
               : source === "rtl-sdr"
                 ? { gainDb, rtlInput }
@@ -1726,6 +1736,7 @@ export function ReceiverApp({
     usrpFirmwareChecked,
     usrpFirmwareRef,
     usrpSettings,
+    airspySettings,
     bladerfSettings,
     volume,
   ]);
@@ -1846,6 +1857,7 @@ export function ReceiverApp({
       next.hardwareSettings ?? { ...DEFAULT_HACKRF_RX_SETTINGS },
     );
     setUsrpSettings(next.usrpSettings ?? { ...DEFAULT_USRP_B205_RX_SETTINGS });
+    setAirspySettings({ ...(next.airspySettings ?? DEFAULT_AIRSPY_SETTINGS), biasTee: false });
     setBladeRfSettings(next.bladerfSettings ?? { ...DEFAULT_BLADERF_RX_SETTINGS });
     setSourceAdvancedOpen(false);
     if (nextSource === "replay") {
@@ -2019,6 +2031,15 @@ export function ReceiverApp({
     await controller.configureSampleRate(nextRate);
     const accepted = controller.getSnapshot().session;
     if (accepted?.source === source) setSampleRateHz(accepted.requestedSampleRateHz);
+    const completed = controller.takeCompletedRecording();
+    if (completed) retainCompletedRecording(completed);
+    setRecordingStatus(controller.getRecordingStatus());
+  };
+
+  const applyAirspyHardware = async () => {
+    await controller.configureAirspy(airspySettings);
+    const accepted = controller.getSnapshot().session?.airspy?.settings;
+    if (accepted) setAirspySettings({ ...accepted });
     const completed = controller.takeCompletedRecording();
     if (completed) retainCompletedRecording(completed);
     setRecordingStatus(controller.getRecordingStatus());
@@ -2561,7 +2582,7 @@ export function ReceiverApp({
     bandwidthHz: activeSession?.channelBandwidthHz ?? bandwidthHz,
     squelch: activeSession?.squelch ?? squelch,
     gainMode:
-      activeSession?.source === "hackrf" || source === "hackrf"
+      activeSession?.source === "airspy" || source === "airspy" || activeSession?.source === "hackrf" || source === "hackrf"
         ? "staged"
         : activeSession?.source === "usrp-b205" || source === "usrp-b205"
           ? "slow-attack-agc"
@@ -2589,7 +2610,7 @@ export function ReceiverApp({
       activeHackrfSettings?.antennaPowerEnabled ??
       (source === "hackrf" ? hardwareSettings.antennaPowerEnabled : null),
     firmwareVersion:
-      activeSession?.hackrf?.capabilities.identity.firmwareVersion ??
+      activeSession?.airspy?.identity.firmware ?? activeSession?.hackrf?.capabilities.identity.firmwareVersion ??
       (activeSession?.usrpB205
         ? `${activeSession.usrpB205.capabilities.firmware.major}.${activeSession.usrpB205.capabilities.firmware.minor}`
         : null) ??
@@ -3077,6 +3098,7 @@ export function ReceiverApp({
                           : `${deviceGainDb.toFixed(1)} dB gain`
                         : caps.gain.kind === "hackrf-stages"
                           ? `LNA ${hardwareSettings.rxLnaGainCode} · VGA ${hardwareSettings.rxVgaGainDb} dB`
+                          : source === "airspy" ? `${airspySettings.gainMode} gain · ${airspySettings.conversionFilter} filter`
                           : source === "bladerf"
                             ? `${receiver.session?.bladerf?.rxInput ?? bladerfSettings.rxInput} · ${BLADERF_GAIN_MODES[receiver.session?.bladerf?.gainMode ?? bladerfSettings.gainMode].label}`
                             : "Slow-attack AGC"
@@ -3093,12 +3115,12 @@ export function ReceiverApp({
                           <select
                             aria-label="Sample rate"
                             value={sampleRateHz}
-                            disabled={transitioning || (running && source !== "rtl-sdr" && source !== "hackrf") || exportingRecording || atlasTransferActive}
+                            disabled={transitioning || (running && source !== "rtl-sdr" && source !== "hackrf" && source !== "airspy") || exportingRecording || atlasTransferActive}
                             onChange={(event) =>
                               void applySampleRate(Number(event.currentTarget.value))
                             }
                           >
-                            {caps.rates.valuesHz.map((rate) => (
+                            {(source === "airspy" && receiver.session?.airspy ? receiver.session.airspy.identity.sampleRates : caps.rates.valuesHz).map((rate) => (
                               <option
                                 key={rate}
                                 value={rate}
@@ -3123,7 +3145,7 @@ export function ReceiverApp({
                               </small>
                             )}
                           {source === "hackrf" && <small>Change rate while receiving; reception resumes automatically after a brief gap. An active recording finishes before switching.</small>}
-                          {source !== "hackrf" && <small>
+                          {source !== "hackrf" && source !== "airspy" && <small>
                             {source === "bladerf"
                                 ? "All supported bladeRF 2.0 Micro variants use native SC16 Q11 at 2.4, 4.8, 9.6 or experimental 19.2 MS/s. Stop reception to change rate without disconnecting; wideband SC16 is filtered to a 2.4 MS/s channel."
                                 : source === "usrp-b205"
@@ -3132,6 +3154,7 @@ export function ReceiverApp({
                           </small>}
                         </label>
                       )}
+                      {source === "airspy" && <Suspense fallback={null}><AirspyControls settings={airspySettings} onChange={setAirspySettings} onApply={() => void applyAirspyHardware()} connected={hardwareConnected} busy={transitioning || exportingRecording || atlasTransferActive} accepted={receiver.session?.airspy} /></Suspense>}
                       {caps.gain.kind === "rtl-auto-manual" && (
                         <div className="gain-control">
                           {rtlInput.directSampling === "q" && <small>Q-branch input uses ADC AGC; tuner RF gain does not apply. Check the HF antenna and filtering.</small>}
@@ -4142,7 +4165,7 @@ export function ReceiverApp({
                       )
                     }
                   >
-                    {source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT) ? (
+                    {source === "airspy" || source === "usrp-b205" || source === "bladerf" || (source === "replay" && loadedReplay?.metadata.format === BLADERF_SC16_RECORDING_FORMAT) ? (
                       <option value="sigmf">
                         SigMF ci16_le (.sigmf-data + .sigmf-meta)
                       </option>
@@ -4550,7 +4573,7 @@ export function ReceiverApp({
                       ? receiver.session.gainDb === null
                         ? "automatic gain"
                         : `${receiver.session.gainDb.toFixed(1)} dB requested gain`
-                      : receiver.session.hackrf
+                      : receiver.session.airspy ? `${receiver.session.airspy.settings.gainMode} gain · 12-bit ADC converted to I/Q` : receiver.session.hackrf
                         ? `accepted LNA code ${receiver.session.hackrf.captureSettings.rxLnaGainCode}, VGA ${receiver.session.hackrf.captureSettings.rxVgaGainDb} dB, RF amplifier ${receiver.session.hackrf.captureSettings.rfAmplifierEnabled ? "on" : "off"}`
                         : receiver.session.bladerf
                           ? `${receiver.session.bladerf.rxInput ?? "RX1"} · ${BLADERF_GAIN_MODES[receiver.session.bladerf.gainMode].label}${receiver.session.bladerf.gainMode === "manual" ? ` · ${receiver.session.bladerf.acceptedGainDb} dB gain readback` : ""}`
@@ -4565,11 +4588,10 @@ export function ReceiverApp({
                       receiver.session.usrpB205?.effectiveSampleRateHz ??
                       receiver.session.bladerf?.effectiveSampleRateHz ??
                       receiver.session.hackrf?.effectiveSampleRateHz ??
-                      (isWidebandRate(receiver.session.actualSampleRateHz)
-                        ? 2_400_000
-                        : receiver.session.actualSampleRateHz)
+                      channelSampleRate(receiver.session.actualSampleRateHz)
                     ).toLocaleString()}{" "}
                     samples/s
+                    {receiver.session.airspy && ` · device ${receiver.session.airspy.deviceSampleRateHz.toLocaleString()} samples/s · output ${receiver.session.airspy.outputSampleRateHz.toLocaleString()} complex samples/s · ${receiver.session.airspy.adcSampleRateHz.toLocaleString()} real ADC samples/s · ${receiver.session.airspy.settings.conversionFilter} FIR · decimation ${receiver.session.airspy.settings.decimation} · nominal clock, USB-acknowledged settings; hardware sample loss unknown`}
                     {receiver.session.hackrf &&
                       ` · native ${receiver.session.hackrf.nativeSampleRateHz.toLocaleString()} samples/s CI8 · ${receiver.session.hackrf.rateEvidence === "requested-and-acknowledged" ? "nominal rate; USB-acknowledged settings" : "firmware-reported rate/settings"} · firmware ${receiver.session.hackrf.capabilities.identity.firmwareVersion} (per-run clock accuracy unverified)`}
                     {receiver.session.bladerf &&

@@ -1267,3 +1267,25 @@ for (const [mode, feature] of [["WEFAX", "wefax"], ["SSTV", "sstv"], ["CW-TEXT",
     } finally { s.database.close(); }
   });
 }
+
+test("Airspy reports preserve their receiver family and reject mismatched source IDs", () => {
+  const report = communityFixture({
+    setup: {
+      ...communityFixture().setup,
+      source: "airspy",
+      hardwareId: "airspy-unknown",
+      rateHz: 2500000,
+      nativeRateHz: 2500000,
+      protocolProfile: null,
+      firmwareVersion: null, // The frontend omits non-semver firmware strings in public reports.
+    },
+  });
+  assert.equal(validateCommunityReport(report), null);
+  assert.notEqual(validateCommunityReport({ ...report, setup: { ...report.setup, hardwareId: "synthetic" } }), null);
+  const service = communityService();
+  try {
+    assert.equal(service.community.accept(report).status, 202);
+  } finally {
+    service.database.close();
+  }
+});

@@ -29,7 +29,7 @@ export function parseState(text: string): SharedState | undefined {
   try {
     const v = JSON.parse(text) as SharedState;
     if (v?.type !== "state" || typeof v.running !== "boolean" || !Number.isSafeInteger(v.generation) || v.generation < 0 ||
-      !["none", "synthetic", "rtl-sdr", "hackrf", "bladerf", "usrp-b205", "replay"].includes(v.source) ||
+      !["none", "synthetic", "airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205", "replay"].includes(v.source) ||
       typeof v.mode !== "string" || v.mode.length > 24 || ![v.frequencyHz, v.centerHz, v.rateHz].every(n => Number.isFinite(n) && n >= 0 && n <= 10e9)) return;
     return { type: "state", generation: v.generation, running: v.running, source: v.source, mode: v.mode,
       frequencyHz: v.frequencyHz, centerHz: v.centerHz, rateHz: v.rateHz };

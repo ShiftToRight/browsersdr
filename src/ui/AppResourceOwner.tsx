@@ -4,8 +4,11 @@ import { ReceiverController } from "../radio/receiverController";
 import type { IqRecording } from "../radio/iqRecording";
 import type { VerifiedUsrpB205Image } from "../radio/usrpB205Images";
 import type { VerifiedUsrpB205Firmware } from "../radio/usrpB205Firmware";
-import { createHackrfBackend } from "../radio/hackrfBackend";
-import { createBladeRfBackend } from "../radio/bladerfBackend";
+import { lazyUsbBackend } from "../radio/lazyUsbBackend";
+import { AIRSPY_USB_FILTER } from "../radio/airspySettings";
+import { BLADERF_USB_FILTER } from "../radio/bladerfProtocol";
+import { HACKRF_USB_FILTER } from "../radio/hackrfProtocol";
+
 import { createUsrpb205Backend } from "../radio/usrpB205Backend";
 import { createUsrpB205WorkerSession } from "../radio/usrpB205WorkerSession";
 import { createRtlSdrBackend } from "../radio/rtlSdrBackend";
@@ -64,20 +67,12 @@ export function AppResourceOwner({
                 })(),
               generation,
             )
+          : options.source === "airspy"
+            ? lazyUsbBackend(async () => new (await import("../radio/airspyBackend")).AirspyBackend(events, analysis, generation, testConfig?.airspyDependencies), AIRSPY_USB_FILTER, testConfig?.airspyDependencies?.usb)
           : options.source === "hackrf"
-            ? createHackrfBackend(
-                events,
-                analysis,
-                generation,
-                testConfig?.hackrfDependencies,
-              )
+            ? lazyUsbBackend(async () => (await import("../radio/hackrfBackend")).createHackrfBackend(events, analysis, generation, testConfig?.hackrfDependencies), HACKRF_USB_FILTER, testConfig?.hackrfDependencies?.usb)
             : options.source === "bladerf"
-              ? createBladeRfBackend(
-                  events,
-                  analysis,
-                  generation,
-                  testConfig?.bladerfDependencies,
-                )
+              ? lazyUsbBackend(async () => (await import("../radio/bladerfBackend")).createBladeRfBackend(events, analysis, generation, testConfig?.bladerfDependencies), BLADERF_USB_FILTER, testConfig?.bladerfDependencies?.usb)
               : options.source === "usrp-b205"
                 ? createUsrpb205Backend(events, analysis, generation, {
                     ...testConfig?.usrpB205Dependencies,

@@ -1,3 +1,4 @@
+import { AIRSPY_RECORDING_FORMAT } from "./airspyRecording";
 import { validateReceiverLocation, type ReceiverLocation } from "./receiverLocation";
 import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
 import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
@@ -188,7 +189,7 @@ export async function importSigmfRecording(
   if (byteLength % bytesPerComplexSample) throw new Error("SigMF dataset is truncated: CI16 requires complete I/Q word pairs.");
   const extension = global["browsersdr:sample_format"];
   const nativeFormat = encoding === "ci16_le" || (extension && typeof extension === "object" && (extension as JsonObject).format === CHANNEL_RECORDING_FORMAT) ? object(extension, "sample format/scaling") : undefined;
-  if (nativeFormat && nativeFormat.format !== BLADERF_SC16_RECORDING_FORMAT && nativeFormat.format !== CI16_RECORDING_FORMAT && nativeFormat.format !== CHANNEL_RECORDING_FORMAT)
+  if (nativeFormat && nativeFormat.format !== AIRSPY_RECORDING_FORMAT && nativeFormat.format !== BLADERF_SC16_RECORDING_FORMAT && nativeFormat.format !== CI16_RECORDING_FORMAT && nativeFormat.format !== CHANNEL_RECORDING_FORMAT)
     throw new Error("SigMF CI16 needs a supported explicit sample format/scaling; Q11 is never inferred.");
   const sampleCount = byteLength / bytesPerComplexSample;
   const { centerFrequencyHz, captureStartedAt, knownGaps } = captureDetails(root.captures, sampleCount);

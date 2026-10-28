@@ -159,6 +159,7 @@
               "enum": [
                 "rtl-sdr",
                 "hackrf",
+                "airspy",
                 "bladerf",
                 "usrp-b205",
                 "replay",
@@ -171,6 +172,7 @@
                 "rtl-blog-v3",
                 "rtl-blog-v4",
                 "rtl-unknown",
+                "airspy-unknown",
                 "hackrf-one",
                 "hackrf-pro",
                 "bladerf-xa4",

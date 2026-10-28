@@ -31,7 +31,7 @@ export function ReceiverSourceOptions({
 }) {
   return (
     <>
-      {(["rtl-sdr", "hackrf", "bladerf", "usrp-b205"] as const).map(
+      {(["rtl-sdr", "hackrf", "airspy", "bladerf", "usrp-b205"] as const).map(
         (source) => (
           <option key={source} value={source}>
             {sourceCapabilities(source).label} device

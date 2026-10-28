@@ -342,6 +342,7 @@ export const COMMUNITY_HARDWARE = {
   "rtl-blog-v3": "rtl-sdr",
   "rtl-blog-v4": "rtl-sdr",
   "rtl-unknown": "rtl-sdr",
+  "airspy-unknown": "airspy",
   "hackrf-pro": "hackrf",
   "hackrf-one": "hackrf",
   "bladerf-xa4": "bladerf",

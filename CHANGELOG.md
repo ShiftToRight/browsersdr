@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.18.0 — 2026-10-28
+
+- Add experimental Airspy R2 / Mini reception with firmware-advertised sample rates, full Linearity/Sensitivity gain presets, manual LNA/mixer/VGA stages, independent AGC, explicit bias-tee power, 12-bit USB packing and frequency correction.
+- Add standard and Sharp real-ADC conversion filters and filtered decimation through 64, with precise device/ADC/output clocks and converted 16-bit I/Q capture, SigMF export and replay.
+- Keep 10 MS/s processing bounded with SIMD channel resampling and coordinated USB/worker handoff; preserve filter response and expose failures instead of silently discarding input.
+- Load optional USB receiver drivers on demand while preserving the USB chooser gesture, cancellation and startup size budget.
+
 ## 1.17.0 — 2026-10-27
 
 - Add an optional persistence spectrum with a rolling frequency/level occurrence display, saved history windows through one minute, compact Display settings, adjustable colour saturation and observed-spectrum hover guides. Preserve compatible channel history while tuning. Keep the current trace visible and support Canvas2D without WebGPU.

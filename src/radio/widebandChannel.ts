@@ -2,6 +2,7 @@ import {
   WasmHalfBandStage as HalfBandStage,
   CHANNEL_MAX_SAMPLES,
 } from "./wasmHalfBand";
+import { isAirspyRate } from "./airspySettings";
 export {
   WasmHalfBandStage as HalfBandStage,
   CHANNEL_MAX_SAMPLES,
@@ -288,7 +289,7 @@ export class WidebandChannelWorker {
         ? CHANNEL_USRP_SC16_MAX_SAMPLES
         : native === "sc16"
           ? CHANNEL_SC16_MAX_SAMPLES
-          : CHANNEL_MAX_SAMPLES;
+          : isAirspyRate(sampleRateHz) ? 16_384 : CHANNEL_MAX_SAMPLES;
     const slots =
       (((CHANNEL_WORKER_SLOTS * sampleRateHz) / WIDEBAND_RATE) *
         CHANNEL_MAX_SAMPLES) /

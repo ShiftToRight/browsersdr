@@ -1,3 +1,4 @@
+import { validateAirspySettings, type AirspySettings } from "./airspySettings";
 import type { SecondaryVfoSettings } from "./secondaryVfo";
 import type { PocsagSnapshot } from "../pocsag/types";
 import type { FmStereoReception } from "./fmStereoReception";
@@ -50,6 +51,7 @@ export const RTL_SAMPLE_RATE_HZ = 1_024_000;
 export { RTL_SAMPLE_RATES_HZ as RTL_SAMPLE_RATE_OPTIONS_HZ } from "./rtlSampleRate";
 
 export interface ReceiverStartOptions {
+  airspySettings?: AirspySettings;
   rtlInput?: import("./rtlInput").RtlInputSettings;
   source?: SourceKind;
   channelFrequencyHz: number;
@@ -63,6 +65,7 @@ export interface ReceiverStartOptions {
 }
 
 export interface ReceiverBackendEvents {
+  captureSamplesRequested?(): boolean;
   captureSamples?(bytes: Uint8Array, session: SourceSessionMetadata, gap?: {missingSamples:number|null;reason:string}): void;
   secondaryVfoChanged?(settings: SecondaryVfoSettings | undefined, message?: string): void;
   permissionGranted(): void;
@@ -143,6 +146,7 @@ export interface ReceiverBackend {
     settings: HackrfRxSettings,
     sessionGeneration: number,
   ): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
+  configureAirspy?(settings: AirspySettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   configureBladeRf?(settings: BladeRfRxSettings, sessionGeneration: number): Promise<Omit<SourceSessionMetadata, "sessionGeneration">>;
   startRecording?(survey?: SurveyCaptureContext, options?: RecordingOptions): RecordingStatus;
   stopRecording?(
@@ -410,6 +414,7 @@ export class ReceiverController {
       if (preserveConnection && backend) {
         await backend.stop();
         if (pendingRate) stoppedMetadata = { ...await pendingRate, sessionGeneration: generation };
+        if (stoppedMetadata?.airspy) stoppedMetadata = { ...stoppedMetadata, airspy: { ...stoppedMetadata.airspy, settings: { ...stoppedMetadata.airspy.settings, biasTee: false } } };
       }
       else await this.cleanupBackend(backend);
       if (generation === this.generation) {
@@ -535,7 +540,7 @@ export class ReceiverController {
     };
     const tuneOptions = { autoRecenter: this.autoRecenter, ...options };
     validateSourceRoute(session.source, modeSettings, session.actualSampleRateHz, channelFrequencyHz, session.hackrf?.capabilities.identity);
-    const requiresCenter = ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
+    const requiresCenter = ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(session.source)
       && !isWidebandRate(session.actualSampleRateHz) && ["DAB", "ADS-B"].includes(modeSettings.mode);
     if (requiresCenter && tuneOptions.centerFrequencyHz === undefined && tuneOptions.autoRecenter)
       tuneOptions.centerFrequencyHz = channelFrequencyHz;
@@ -547,7 +552,7 @@ export class ReceiverController {
       throw new Error(`${modeSettings.mode} requires the receiver center to match the channel at this sample rate.`);
     if (plan.hardwareRetuneRequired)
       validateSourceFrequency(session.source, plan.hardwareCenterFrequencyHz,
-        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0, session.hackrf?.capabilities.identity);
+        ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0, session.hackrf?.capabilities.identity);
     return tuneOptions;
   }
 
@@ -605,7 +610,7 @@ export class ReceiverController {
     const backend = this.backend;
     const session = this.snapshot.session;
     if (this.snapshot.lifecycle !== "running" || !backend?.configureSampleRate ||
-        !session || !["rtl-sdr", "hackrf"].includes(session.source) || this.snapshot.hardwareSettingsPending) return;
+        !session || !["rtl-sdr", "hackrf", "airspy"].includes(session.source) || this.snapshot.hardwareSettingsPending) return;
     if (sampleRateHz === session.requestedSampleRateHz) return;
     const tuneOptions = { autoRecenter: this.autoRecenter };
     try {
@@ -619,6 +624,7 @@ export class ReceiverController {
           srd: session.srd, textModem: session.textModem, pocsag: session.pocsag,
         },
         ...(session.source === "rtl-sdr" ? { gainDb: session.gainDb } : {}),
+        airspySettings: session.airspy?.settings,
         hardwareSettings: session.hackrf?.captureSettings,
         hackrfIdentity: session.hackrf?.capabilities.identity,
       });
@@ -638,7 +644,7 @@ export class ReceiverController {
       textModem: undefined, textModemWorker: undefined, modemImage: undefined,
       pocsag: undefined, pocsagWorker: undefined, aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
       lifecycle: "tuning",
-      message: `Switching ${session.source === "hackrf" ? "HackRF" : "RTL-SDR"} to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
+      message: `Switching ${sourceCapabilities(session.source).label} to ${(sampleRateHz / 1_000_000).toFixed(3)} MS/s…`,
       sessionGeneration: generation,
       session: { ...session, sessionGeneration: generation },
       audioState: this.snapshot.audioState,
@@ -673,7 +679,7 @@ export class ReceiverController {
       validateSourceFrequency(
         this.snapshot.session.source,
         centerFrequencyHz,
-        this.snapshot.session.source === "hackrf" ||
+        this.snapshot.session.source === "airspy" || this.snapshot.session.source === "hackrf" ||
           this.snapshot.session.source === "bladerf" ||
           this.snapshot.session.source === "usrp-b205"
           ? this.snapshot.session.actualSampleRateHz
@@ -928,6 +934,53 @@ export class ReceiverController {
     }
   }
 
+  async configureAirspy(settings: AirspySettings): Promise<void> {
+    const backend = this.backend;
+    const session = this.snapshot.session;
+    if (
+      !backend ||
+      !session ||
+      !["connected", "running"].includes(this.snapshot.lifecycle)
+    )
+      return;
+    let validated: AirspySettings;
+    try {
+      if (session.source !== "airspy" || !backend.configureAirspy)
+        throw new Error("This source does not support Airspy RX settings.");
+      validated = validateAirspySettings(settings);
+      validateSourceConfiguration({ source: "airspy", channelFrequencyHz: session.selectedChannelFrequencyHz, sampleRateHz: session.requestedSampleRateHz, modeSettings: { mode: session.mode, bandwidthHz: session.channelBandwidthHz, squelch: session.squelch, beatToneHz: session.beatToneHz, srd: session.srd, textModem: session.textModem, pocsag: session.pocsag }, airspySettings: validated });
+      planChannelTune(session.hardwareCenterFrequencyHz, session.selectedChannelFrequencyHz, session.requestedSampleRateHz / validated.decimation, session.channelBandwidthHz, { autoRecenter: false });
+    } catch (error) {
+      this.publishCommandFailure(error);
+      return;
+    }
+    const wasRunning = this.snapshot.lifecycle === "running";
+    this.captureCompletedRecording(backend.stopRecording?.("metadata-change"));
+    const generation = ++this.generation;
+    this.publish({
+      ...this.snapshot,
+      textModem: undefined, textModemWorker: undefined, modemImage: undefined,
+      pocsag: undefined, pocsagWorker: undefined, aprs: undefined, aprsWorker: undefined, rs41: undefined, rs41Worker: undefined,
+      lifecycle: "tuning",
+      sessionGeneration: generation,
+      message: "Applying Airspy RX settings…",
+    });
+    try {
+      const metadata = await backend.configureAirspy!(validated, generation);
+      if (this.backend !== backend || this.generation !== generation) return;
+      if (wasRunning) this.publishRunning(metadata, generation);
+      else
+        this.publishConnected(
+          metadata,
+          generation,
+          "Airspy RX settings accepted.",
+        );
+    } catch (error) {
+      if (this.backend === backend && this.generation === generation)
+        await this.failBackend(backend, error);
+    }
+  }
+
   async configureBladeRf(settings: BladeRfRxSettings): Promise<void> {
     const backend = this.backend;
     const session = this.snapshot.session;
@@ -1151,6 +1204,7 @@ export class ReceiverController {
     let backend: ReceiverBackend | undefined = undefined;
     backend = this.createBackend(
       {
+        captureSamplesRequested: () => this.captureListeners.size > 0,
         captureSamples: (bytes,session,gap) => {
           if (this.backend !== backend || this.snapshot.lifecycle !== "running" || session.sessionGeneration !== this.snapshot.sessionGeneration) return;
           for (const listener of this.captureListeners) {

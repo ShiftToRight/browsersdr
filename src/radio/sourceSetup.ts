@@ -1,3 +1,4 @@
+import { AIRSPY_USB_FILTER } from "./airspySettings";
 import type { SourceKind } from "./types";
 import { HACKRF_USB_FILTER } from "./hackrfProtocol";
 import { BLADERF_USB_FILTER } from "./bladerfProtocol";
@@ -12,7 +13,7 @@ export function usbDeviceMatchesSource(
   source: SourceKind,
 ): boolean {
   const filters =
-    source === "hackrf"
+    source === "airspy" ? [AIRSPY_USB_FILTER] : source === "hackrf"
       ? [HACKRF_USB_FILTER]
       : source === "bladerf"
         ? [BLADERF_USB_FILTER]

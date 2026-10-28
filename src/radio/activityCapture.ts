@@ -1,3 +1,4 @@
+import { airspyRecordingFormat } from "./airspyRecording";
 import {
   IqRecorder,
   CU8_FORMAT,
@@ -46,6 +47,7 @@ export class ActivityCapture {
       );
   }
   private format(session: SourceSessionMetadata): RecordingSampleFormat {
+    if (session.airspy) return airspyRecordingFormat(session.airspy);
     if (session.hackrf) return hackrfRecordingFormat(session.hackrf);
     if (session.bladerf) return bladeRfSc16RecordingFormat(session.bladerf);
     if (session.usrpB205) return usrpB205Ci16RecordingFormat(session.usrpB205);
@@ -70,6 +72,7 @@ export class ActivityCapture {
         session.channelBandwidthHz,
         session.gainDb,
         session.rtlInput,
+        session.airspy,
         session.hackrf?.captureSettings,
         session.bladerf?.rxSettings,
       ]);
@@ -144,7 +147,7 @@ export class ActivityCapture {
       session,
       start,
       Math.min(EVENT_CAPTURE_MAX_BYTES, EVENT_RUN_MAX_BYTES - this.total),
-      "Activity-triggered native I/Q. Pre-trigger duration is bounded by an 8 MiB ring; timestamp is a host estimate. Unsampled sweep intervals are absent.",
+      "Activity-triggered I/Q (Airspy input is converted from real ADC samples). Pre-trigger duration is bounded by an 8 MiB ring; timestamp is a host estimate. Unsampled sweep intervals are absent.",
       undefined,
       format,
       "memory",
@@ -175,7 +178,8 @@ export class ActivityCapture {
     bytes: Uint8Array,
     session: SourceSessionMetadata,
   ) {
-    if (session.source === "hackrf") recorder.appendCi8(bytes);
+    if (session.source === "airspy") recorder.appendCi16(bytes);
+    else if (session.source === "hackrf") recorder.appendCi8(bytes);
     else if (session.source === "bladerf") recorder.appendBladeRfSc16(bytes);
     else if (session.source === "usrp-b205") recorder.appendUsrpSc16(bytes);
     else recorder.appendCu8(bytes);

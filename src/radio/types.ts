@@ -1,7 +1,7 @@
 import type { PocsagSettings } from "../pocsag/settings";
 import type { TextModemSettings } from "../textmodem/settings";
 export type SourceKind =
-  "synthetic" | "rtl-sdr" | "hackrf" | "bladerf" | "usrp-b205" | "replay";
+  "synthetic" | "rtl-sdr" | "hackrf" | "airspy" | "bladerf" | "usrp-b205" | "replay";
 import type {
   HackrfRxSettings,
   HackrfSessionDetails,
@@ -59,6 +59,7 @@ export interface RdsSnapshot {
 
 /** Immutable metadata attached to one acquisition generation. */
 export interface SourceSessionMetadata {
+  airspy?: import("./airspySettings").AirspySessionDetails;
   rtlInput?: import("./rtlInput").RtlInputSettings;
   source: SourceKind;
   sessionGeneration: number;

@@ -108,7 +108,7 @@ export async function runChannelWatch(options: {
   if (
     original.lifecycle !== "running" ||
     !initial ||
-    !["rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(initial.source) ||
+    !["airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(initial.source) ||
     controller.getRecordingStatus()
   )
     throw new Error(

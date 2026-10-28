@@ -8,6 +8,8 @@ import {
   type ChannelWorkerOutput,
 } from "../radio/widebandChannel";
 import { createWasmChannel, warmChannelFilter } from "../radio/wasmChannel";
+import { isAirspyRate } from "../radio/airspySettings";
+import { AirspyChannelFilter } from "../radio/airspyChannel";
 let filter: {
   reset(offset: number): void;
   process(I: Float32Array, Q: Float32Array): number;
@@ -33,7 +35,7 @@ self.onmessage = (event: MessageEvent<ChannelWorkerInput>) => {
         const nextRate = message.sampleRateHz ?? 4_800_000;
         if (nextRate !== rate) {
           filter.dispose?.();
-          filter = await createWasmChannel(nextRate);
+          filter = isAirspyRate(nextRate) ? new AirspyChannelFilter(nextRate) : await createWasmChannel(nextRate);
           rate = nextRate;
         }
         filter.reset(message.offsetHz);

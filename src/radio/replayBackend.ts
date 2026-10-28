@@ -1,3 +1,5 @@
+import type { AirspyChannelFilter } from "./airspyChannel";
+import { isAirspyRate } from "./airspySettings";
 import { PocsagDigitalReceiver } from "../pocsag/pocsagDigitalReceiver";
 import { pocsagConfiguration } from "../pocsag/settings";
 import type { DigitalInputSampleRateHz } from "../digital/inputRates";
@@ -8,6 +10,7 @@ import { STREAMING_RECORDING_MAX_BYTES } from "./recordingSpool";
 import { recordingDataByteLength } from "./iqRecording";
 import { CHANNEL_RECORDING_FORMAT } from "./channelRecording";
 import type { RecordingOptions } from "./channelRecording";
+import { AIRSPY_RECORDING_FORMAT } from "./airspyRecording";
 import { BLADERF_SC16_RECORDING_FORMAT } from "./bladerfRecording";
 import { PcmBatchPlayer } from "./pcmBatchPlayer";
 import { createWasmChannel, type WasmChannelFilter } from "./wasmChannel";
@@ -52,7 +55,7 @@ export class ReplayBackend implements ReceiverBackend {
   private readonly player: PcmBatchPlayer;
   private readonly demodulator: SharedWbfmDemodulator;
   private receiver?: AudioFirstRdsReceiver;
-  private channel?: WidebandChannelFilter | WasmChannelFilter;
+  private channel?: WidebandChannelFilter | WasmChannelFilter | AirspyChannelFilter;
   private ended = false;
   private rawAnalysis?: SampleReceiver;
   private outputEnabled = true;
@@ -148,6 +151,7 @@ export class ReplayBackend implements ReceiverBackend {
       rtlInput: sourceMetadata.rtlInput,
       gainDb: sourceMetadata.gainDb ?? null,
       ...(sourceMetadata.format !== RECORDING_FORMAT && sourceMetadata.format !== CHANNEL_RECORDING_FORMAT && sourceMetadata.provenanceDetails.originalSource === "hackrf" ? { hackrf: ci8SessionDetails(sourceMetadata as HackrfRecordingFormat) } : {}),
+      ...(sourceMetadata.format === AIRSPY_RECORDING_FORMAT ? { airspy: structuredClone(sourceMetadata.airspy) } : {}),
       ...(sourceMetadata.format === BLADERF_SC16_RECORDING_FORMAT ? { bladerf: structuredClone(sourceMetadata.hardware) } : {}),
       sampleFormat: "planar-f32-iq-normalized",
     };
@@ -164,7 +168,7 @@ export class ReplayBackend implements ReceiverBackend {
     if (analogMode) this.demodulator.setMode(analogMode);
     this.demodulator.setCwToneFrequency(mode.beatToneHz ?? 600);
     const nativeOffset = metadata.selectedChannelFrequencyHz - metadata.hardwareCenterFrequencyHz;
-    this.channel ??= isWidebandRate(metadata.actualSampleRateHz) ? new WidebandChannelFilter(nativeOffset, metadata.actualSampleRateHz) : undefined;
+    this.channel ??= isAirspyRate(metadata.actualSampleRateHz) ? new (await import("./airspyChannel")).AirspyChannelFilter(metadata.actualSampleRateHz) : isWidebandRate(metadata.actualSampleRateHz) ? new WidebandChannelFilter(nativeOffset, metadata.actualSampleRateHz) : undefined;
     this.channel?.reset(nativeOffset);
     const frequencyOffsetHz = this.channel ? 0 : nativeOffset;
     this.prepareSrd(metadata, frequencyOffsetHz);

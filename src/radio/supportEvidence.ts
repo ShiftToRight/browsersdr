@@ -352,6 +352,15 @@ export const DESKTOP_SUPPORT_SCOPE =
 
 export const SUPPORT_EVIDENCE = [
   {
+    source: "Airspy R2 / Mini",
+    configuration: "R2 2.5 / 10 MS/s; Mini 3 / 6 MS/s; firmware-advertised rates only",
+    status: "experimental",
+    kind: "Software checks and attached R2-profile RF reception",
+    date: "2026-10-28",
+    scope: "Gain presets/stages, AGC, packing, FIR/decimation, frequency correction, explicit bias tee and converted 16-bit I/Q capture/replay. Attached R2-rate-profile USB checks at both rates, packed and unpacked; over 71 seconds of Chrome 10 MS/s WBFM/RDS and continuous waterfall with zero reported application input/display skips.",
+    limits: "HF+ uses a different protocol. No owner-confirmed audible audio, physical Mini, long-duration, electrical bias-tee or per-mode RF acceptance. USB payload has no sample counter; hardware continuity is unknown. Converted I/Q is not unchanged ADC bytes.",
+  },
+  {
     source: "Synthetic demo / file replay",
     configuration: "Generated data · desktop Chrome",
     status: "available",

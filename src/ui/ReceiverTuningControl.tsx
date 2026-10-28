@@ -51,7 +51,7 @@ export function ReceiverTuningControl({
         : undefined;
   const requiresCenter =
     session &&
-    ["hackrf", "bladerf", "usrp-b205"].includes(session.source) &&
+    ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(session.source) &&
     !isWidebandRate(session.actualSampleRateHz) &&
     ["DAB", "ADS-B"].includes(session.mode);
   let invalid: string | undefined;
@@ -60,7 +60,7 @@ export function ReceiverTuningControl({
       validateSourceFrequency(
         session.source,
         requestedHz,
-        ["hackrf", "bladerf", "usrp-b205"].includes(session.source)
+        ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(session.source)
           ? session.actualSampleRateHz
           : 0,
         session.hackrf?.capabilities.identity,
@@ -89,7 +89,7 @@ export function ReceiverTuningControl({
   if (session && channelHz !== undefined) {
     try {
       validateSourceFrequency(session.source, channelHz,
-        ["hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0,
+        ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(session.source) ? session.actualSampleRateHz : 0,
         session.hackrf?.capabilities.identity);
       planChannelTune(centerHz, channelHz, session.actualSampleRateHz, session.channelBandwidthHz,
         { centerFrequencyHz: channelHz });

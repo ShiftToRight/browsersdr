@@ -138,6 +138,7 @@ export function monitorContext(
     source: receiver.source,
     rate: receiver.actualSampleRateHz,
     gain: receiver.gainDb,
+    airspy: receiver.airspy ? { rate: receiver.airspy.deviceSampleRateHz, settings: { ...receiver.airspy.settings, biasTee: false } } : undefined,
     hackrf: receiver.hackrf
       ? {
           identity: receiver.hackrf.capabilities.identity,
@@ -765,7 +766,7 @@ export function validateMonitorSession(value: unknown): MonitorSession {
     !number(r.channelBandwidthHz) ||
     !number(r.squelch) ||
     !(r.gainDb === null || number(r.gainDb)) ||
-    !["synthetic", "rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(
+    !["synthetic", "airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(
       r.source,
     )
   )

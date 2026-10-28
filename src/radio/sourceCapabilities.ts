@@ -1,4 +1,5 @@
 import { normalizeRtlInput, rtlDeviceFrequency } from "./rtlInput";
+import { AIRSPY_SAMPLE_RATES, airspyChannelRate, isAirspyRate, DEFAULT_AIRSPY_SETTINGS, validateAirspySettings, type AirspySettings } from "./airspySettings";
 import { DEFAULT_BLADERF_RX_SETTINGS, validateBladeRfRxSettings, type BladeRfRxSettings } from "./bladerfSettings";
 import type { SourceKind } from "./types";
 import { RTL_SAMPLE_RATES_HZ, RTL_EXPERIMENTAL_SAMPLE_RATE_HZ } from "./rtlSampleRate";
@@ -34,8 +35,8 @@ export const HACKRF_SAMPLE_RATES_HZ = [1_024_000, 2_400_000, 4_800_000, 9_600_00
 export const BLADERF_SAMPLE_RATES_HZ = [2_400_000, 4_800_000, 9_600_000, 19_200_000] as const;
 export type BladeRfSampleRateHz = typeof BLADERF_SAMPLE_RATES_HZ[number];
 export type HackrfSampleRateHz = typeof HACKRF_SAMPLE_RATES_HZ[number];
-export const isWidebandRate = (rate: number): boolean => rate === 4_800_000 || rate === 9_600_000 || rate === 19_200_000;
-export const channelSampleRate = (nativeRate: number): number => isWidebandRate(nativeRate) ? 2_400_000 : nativeRate;
+export const isWidebandRate = (rate: number): boolean => rate === 4_800_000 || rate === 9_600_000 || rate === 19_200_000 || isAirspyRate(rate);
+export const channelSampleRate = (nativeRate: number): number => isAirspyRate(nativeRate) ? airspyChannelRate(nativeRate) : isWidebandRate(nativeRate) ? 2_400_000 : nativeRate;
 export const hackrfDecimationExponent = (rate: number): number => rate === 1_024_000 ? 5 : rate === 2_400_000 ? 4 : rate === 4_800_000 ? 3 : rate === 9_600_000 ? 2 : 1;
 export const hackrfDecimationFactor = (rate: number): 2 | 4 | 8 | 16 | 32 => rate === 1_024_000 ? 32 : rate === 2_400_000 ? 16 : rate === 4_800_000 ? 8 : rate === 9_600_000 ? 4 : 2;
 export type HostResampling = { kind: "none"; numerator: 1; denominator: 1 }
@@ -139,11 +140,18 @@ export interface SourceCapabilities {
     | { readonly kind: "hackrf-stages"; readonly lnaCodes: readonly HackrfLnaGainCode[]; readonly vgaMinimumDb: number; readonly vgaMaximumDb: number; readonly vgaStepDb: number; readonly antennaPowerEnabled: false }
     | { readonly kind: "usrp-fixed-agc"; readonly mode: "slow_agc"; readonly exposedGainDb: false }
     | { readonly kind: "bladerf-rx" }
+    | { readonly kind: "airspy-stages" }
     | { readonly kind: "none" };
 }
 
 const legacyFrequency = { minimumHz: Number.MIN_VALUE, maximumHz: Number.MAX_SAFE_INTEGER, integerHz: false, limitsDiscoveredAtTune: false };
 const sourceDefaults: Record<SourceKind, SourceCapabilities> = {
+  airspy: {
+    source: "airspy", label: "Airspy R2 / Mini", requiresUsb: true, persistentConnection: true,
+    frequency: { minimumHz: 24_000_000, maximumHz: 1_800_000_000, integerHz: true, limitsDiscoveredAtTune: false },
+    rates: { kind: "choices", valuesHz: AIRSPY_SAMPLE_RATES, defaultHz: 2_500_000 }, modes: RECEIVER_MODES,
+    gain: { kind: "airspy-stages" },
+  },
   "rtl-sdr": {
     source: "rtl-sdr", label: "RTL-SDR", requiresUsb: true, persistentConnection: true,
     frequency: { ...legacyFrequency, limitsDiscoveredAtTune: true },
@@ -250,10 +258,12 @@ export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSe
   const caps = sourceCapabilities(source, identity);
   if (!caps.modes.includes(settings.mode)) throw new Error(`${settings.mode} is unavailable with ${caps.label}.`);
   if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) throw new Error("Enter a valid sample rate.");
-  validateModeSampleRate(settings.mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
+  if (source === "airspy" && settings.bandwidthHz > channelSampleRate(sampleRateHz) * .9) throw new Error("Airspy decimation leaves too little filtered channel bandwidth for this mode. Reduce decimation.");
+  validateModeSampleRate(settings.mode, source === "airspy" || source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(sampleRateHz) : sampleRateHz);
   if (source === "hackrf" && identity?.kind === "hackrf-one" && sampleRateHz !== 9_600_000) throw new Error("HackRF One requires 9.6 MS/s native acquisition.");
   // Keep legacy analog behavior; hardware routes require the full guarded passband.
-  if (source === "hackrf" || source === "bladerf" || source === "usrp-b205") {
+  if (source === "airspy" || source === "hackrf" || source === "bladerf" || source === "usrp-b205") {
+    if (source === "airspy" && !isAirspyRate(sampleRateHz)) throw new Error("Unsupported Airspy acquisition/decimation rate.");
     if (source === "bladerf" && !BLADERF_SAMPLE_RATES_HZ.includes(sampleRateHz as BladeRfSampleRateHz)) throw new Error("bladeRF 2.0 Micro rate must be 2.4, 4.8, 9.6 or 19.2 MS/s.");
     if (source === "hackrf" && !HACKRF_SAMPLE_RATES_HZ.some((rate) => Math.abs(rate - sampleRateHz) <= 1)) throw new Error("HackRF acquisition rate must match a supported nominal rate within 1 Hz.");
     if (source === "usrp-b205" && !USRP_B205_SAMPLE_RATES_HZ.includes(sampleRateHz as 4_800_000 | 9_600_000 | 19_200_000))
@@ -264,6 +274,7 @@ export function validateSourceRoute(source: SourceKind, settings: ReceiverModeSe
 }
 
 export interface SourceConfiguration {
+  airspySettings?: AirspySettings;
   source?: SourceKind;
   hackrfIdentity?: HackrfIdentity;
   channelFrequencyHz: number;
@@ -278,13 +289,17 @@ export interface SourceConfiguration {
 
 export function validateSourceConfiguration(options: SourceConfiguration): void {
   const source = options.source ?? "rtl-sdr";
+  if (source !== "airspy" && options.airspySettings !== undefined) throw new Error("Airspy settings require the Airspy source.");
   if (options.rtlInput && source !== "rtl-sdr") throw new Error("RTL input settings require an RTL source.");
   if (source === "rtl-sdr") rtlDeviceFrequency(options.channelFrequencyHz, normalizeRtlInput(options.rtlInput));
   const caps = sourceCapabilities(source, options.hackrfIdentity);
   if (source !== "bladerf" && options.bladerfSettings !== undefined) throw new Error("bladeRF settings require the bladeRF source.");
   const mode = normalizeModeSettings(options.modeSettings ?? defaultModeSettings("WBFM"));
   validateSourceFrequency(source, options.channelFrequencyHz, options.hackrfIdentity ? mode.bandwidthHz : 0, options.hackrfIdentity);
-    if (source === "hackrf") {
+    if (source === "airspy") {
+    if (options.gainDb !== undefined || options.hardwareSettings !== undefined || options.bladerfSettings !== undefined || options.usrpSettings !== undefined) throw new Error("Airspy uses its own RX settings.");
+    validateAirspySettings(options.airspySettings ?? DEFAULT_AIRSPY_SETTINGS);
+    } else if (source === "hackrf") {
     if (options.gainDb !== undefined) throw new Error("HackRF uses RX stage settings, not RTL auto/manual gainDb.");
     if (options.usrpSettings !== undefined) throw new Error("USRP RX settings require the USRP B205-mini source.");
     validateHackrfRxSettings(options.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS, options.hackrfIdentity?.kind ?? "unknown");
@@ -310,7 +325,7 @@ export function validateSourceConfiguration(options: SourceConfiguration): void 
     // The demo ignores the legacy UI rate preference and always generates 1.024 MS/s.
     // Replay start reads mode/rate from the validated recording, not these UI
     // preferences. ReplayBackend validates that route before routing any block.
-    if (source !== "replay") validateSourceRoute(source, mode, source === "synthetic" ? 1_024_000 : rate, options.channelFrequencyHz);
+    if (source !== "replay") validateSourceRoute(source, mode, source === "synthetic" ? 1_024_000 : source === "airspy" ? rate / (options.airspySettings?.decimation ?? 1) : rate, options.channelFrequencyHz);
   } else if (!caps.modes.includes(mode.mode)) throw new Error(`${mode.mode} is unavailable with ${caps.label}.`);
 }
 
@@ -375,6 +390,7 @@ export function validateHackrfSessionDetails(details: HackrfSessionDetails): voi
 
 /** User-facing recording descriptions share one capability definition across Help. */
 export const SOURCE_RECORDING_DESCRIPTIONS = {
+  airspy: "12-bit real ADC converted/filtered to 16-bit complex I/Q; processed SigMF pairs",
   "rtl-sdr": "Native unsigned 8-bit CU8 I/Q; BrowserSDR and SigMF pairs",
   hackrf: "Native signed 8-bit CI8 I/Q; BrowserSDR and SigMF pairs",
   bladerf: "Native SC16 Q11 I/Q; SigMF ci16_le pairs with Q11 scale and model provenance",

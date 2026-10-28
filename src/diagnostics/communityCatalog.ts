@@ -7,6 +7,7 @@ export const COMMUNITY_HARDWARE = [
     label: "RTL-SDR",
     source: "rtl-sdr",
   },
+  { id: "airspy-unknown", label: "Airspy R2 / Mini", source: "airspy" },
   { id: "hackrf-one", label: "HackRF One · experimental", source: "hackrf" },
   { id: "hackrf-pro", label: "HackRF Pro", source: "hackrf" },
   { id: "bladerf-xa4", label: "bladeRF xA4", source: "bladerf" },

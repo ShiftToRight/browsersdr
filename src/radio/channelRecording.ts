@@ -265,6 +265,7 @@ export function validateChannelRecording(
     plan.bandwidthHz >= rate ||
     Math.abs(rate * plan.decimation - plan.inputSampleRateHz) > 1e-6 ||
     ![
+      "airspy",
       "rtl-sdr",
       "hackrf",
       "bladerf",

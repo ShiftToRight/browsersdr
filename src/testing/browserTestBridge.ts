@@ -4,6 +4,7 @@ import type { BladeRfBackendDependencies } from "../radio/bladerfBackend";
 import type { Usrpb205BackendDependencies } from "../radio/usrpB205Backend";
 
 export interface BrowserSdrTestConfig {
+  airspyDependencies?: import("../radio/airspyBackend").AirspyBackendDependencies;
   hackrfDependencies?: HackrfBackendDependencies;
   rtlDependencies?: RtlSdrBackendDependencies;
   bladerfDependencies?: BladeRfBackendDependencies;

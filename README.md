@@ -31,6 +31,8 @@ You'll need **desktop Google Chrome**, a supported USB SDR and an antenna suited
 
 RTL-SDR also offers **3.2 MS/s (experimental)** in Device details & settings. It provides a wider spectrum window and native I/Q captures, but some dongles or USB hosts lose samples at this rate. Select 2.4 MS/s if audio or decoding breaks up. Existing defaults are unchanged; ordinary RTL I/Q cannot prove loss-free reception.
 
+**Airspy R2 / Mini support is experimental.** Device details & settings offers the device's advertised sample rates, Linearity/Sensitivity presets, manual LNA/mixer/VGA gain, independent AGC, 12-bit USB packing, conversion filters, filtered decimation, frequency correction and explicit bias-tee power. Captures contain converted complex I/Q and export as 16-bit SigMF. Attached R2-profile hardware has received FM/RDS at 10 MS/s in Chrome; Mini and other reception modes need physical validation. Airspy HF+ uses a separate protocol and is not supported by this driver.
+
 ## Learn more and help improve BrowserSDR
 
 Browse the [wiki](https://github.com/cybearde/browsersdr/wiki), read [what's changed](CHANGELOG.md), or follow the [development guide](https://github.com/cybearde/browsersdr/wiki/Development). Found a problem? [Open an issue](https://github.com/cybearde/browsersdr/issues) with your receiver, browser and steps to reproduce it. You can also share results through **Compatibility & tests** in the app's help menu.

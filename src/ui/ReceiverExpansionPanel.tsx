@@ -111,7 +111,7 @@ export default function ReceiverExpansionPanel({
   const [events, setEvents] = useState<WatchEvent[]>([]);
   const busy = !active || Boolean(operation) || blocked,
     running = receiver.lifecycle === "running";
-  const local = ["rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(source);
+  const local = ["airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205"].includes(source);
   const rawSupported = ["rtl-sdr", "hackrf"].includes(source);
   useEffect(() => {
     const tracking =
@@ -774,7 +774,7 @@ export default function ReceiverExpansionPanel({
               </header>
               {!local && (
                 <p>
-                  Choose a local RTL-SDR, HackRF, bladeRF or USRP receiver to
+                  Choose a local RTL-SDR, HackRF, Airspy, bladeRF or USRP receiver to
                   start watching. Retained event captures remain available here.
                 </p>
               )}

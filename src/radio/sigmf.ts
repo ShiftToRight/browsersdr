@@ -1,5 +1,6 @@
 import type { PocsagSettings } from "../pocsag/settings";
 import { CHANNEL_RECORDING_FORMAT, type ChannelRecordingFormat } from "./channelRecording";
+import { AIRSPY_RECORDING_FORMAT } from "./airspyRecording";
 import { BLADERF_SC16_RECORDING_FORMAT, type BladeRfSc16RecordingFormat } from "./bladerfRecording";
 import type { UsrpB205Ci16RecordingFormat } from "./ci16Recording";
 import { sha512 } from "@noble/hashes/sha2.js";
@@ -25,7 +26,7 @@ export interface SigmfGlobal {
   "core:description": string;
   "core:hw"?: string;
   "core:extensions"?: { name: "browsersdr"; version: "1.0.0"; optional: true }[];
-  "browsersdr:sample_format"?: BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat;
+  "browsersdr:sample_format"?: import("./airspyRecording").AirspyRecordingFormat | BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat;
 }
 
 export interface SigmfCapture {
@@ -87,6 +88,7 @@ function consolidateGaps(gaps: readonly RecordingGap[]): ConsolidatedGap[] {
 
 function describeRecording(recording: IqRecording): string {
   const { metadata } = recording;
+  if (metadata.format === AIRSPY_RECORDING_FORMAT) return `BrowserSDR Airspy converted I/Q, int16/32768. DC removal, Fs/4 translation, FIR filtering and optional decimation applied; not unchanged ADC bytes. ${metadata.provenance ?? ""}`;
   if (metadata.format === CHANNEL_RECORDING_FORMAT) {
     return `BrowserSDR current-channel I/Q from ${metadata.provenanceDetails.originalSource}; frequency shifted, FIR filtered and decimated, then requantized. Amplitude is uncalibrated. Capture processing: ${JSON.stringify(metadata.channelCapture)}. ${metadata.provenance ?? ""}`;
   }
@@ -277,10 +279,11 @@ export async function buildSigmfMetadata(recording: IqRecording): Promise<SigmfM
       ...(metadata.format === BLADERF_SC16_RECORDING_FORMAT ? {
         "core:hw": `bladeRF 2.0 Micro ${metadata.hardware.identity.model} via WebUSB; firmware ${metadata.hardware.identity.firmware.major}.${metadata.hardware.identity.firmware.minor}; FPGA ${metadata.hardware.identity.fpga.major}.${metadata.hardware.identity.fpga.minor}.${metadata.hardware.identity.fpga.patch}; ${metadata.hardware.rxInput ?? "RX1"}; image SHA-256 ${metadata.hardware.identity.volatileImage?.sha256 ?? "unknown; preconfigured"}`,
       } : {}),
-      ...(metadata.format === CHANNEL_RECORDING_FORMAT || metadata.format === BLADERF_SC16_RECORDING_FORMAT || metadata.format === CI16_RECORDING_FORMAT ? {
+      ...(metadata.format === AIRSPY_RECORDING_FORMAT || metadata.format === CHANNEL_RECORDING_FORMAT || metadata.format === BLADERF_SC16_RECORDING_FORMAT || metadata.format === CI16_RECORDING_FORMAT ? {
         "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }],
-        "browsersdr:sample_format": recordingSampleFormat(metadata) as BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat,
+        "browsersdr:sample_format": recordingSampleFormat(metadata) as import("./airspyRecording").AirspyRecordingFormat | BladeRfSc16RecordingFormat | UsrpB205Ci16RecordingFormat | ChannelRecordingFormat,
       } : {}),
+      ...(metadata.format === AIRSPY_RECORDING_FORMAT ? { "core:hw": `Airspy ${metadata.airspy.identity.rateProfile.toUpperCase()} via WebUSB; firmware ${metadata.airspy.identity.firmware}` } : {}),
       ...(metadata.source === "rtl-sdr" ? { "core:hw": "RTL-SDR via WebUSB" } : {}),
       ...(metadata.receiverLocation ? { "core:extensions": [{ name: "browsersdr" as const, version: "1.0.0" as const, optional: true as const }] } : {}),
       ...(metadata.reception ? {

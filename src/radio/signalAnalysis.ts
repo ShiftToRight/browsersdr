@@ -231,7 +231,7 @@ export async function analyzeCandidates(
             validateSourceFrequency(
               initial.source,
               hz,
-              ["hackrf", "bladerf", "usrp-b205"].includes(initial.source)
+              ["airspy", "hackrf", "bladerf", "usrp-b205"].includes(initial.source)
                 ? rate
                 : 0,
               initial.hackrf?.capabilities.identity,

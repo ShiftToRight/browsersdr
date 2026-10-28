@@ -1,3 +1,4 @@
+import { DEFAULT_AIRSPY_SETTINGS, type AirspySettings } from "./airspySettings";
 import { normalizeRtlInput, type RtlInputSettings } from "./rtlInput";
 import { DEFAULT_BLADERF_RX_SETTINGS, type BladeRfRxSettings } from "./bladerfSettings";
 import { defaultModeSettings, normalizeModeSettings, validateModeSampleRate, type ReceiverMode, type ReceiverModeSettings } from "./receiverConfig";
@@ -7,6 +8,7 @@ import type { SourceKind } from "./types";
 
 type StorageAccess = Pick<Storage, "getItem" | "setItem">;
 export interface SourcePreferences {
+  airspySettings?: AirspySettings;
   frequencyHz: number;
   modeSettings: ReceiverModeSettings;
   sampleRateHz: number;
@@ -23,12 +25,13 @@ export function compatibleSourceRate(source: SourceKind, mode: ReceiverMode, pre
   const rates = caps.rates.kind === "choices" ? caps.rates.valuesHz : [preferred];
   return [preferred, ...rates].find((rate) => {
     if (!rates.includes(rate)) return false;
-    try { validateModeSampleRate(mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(rate) : rate); return true; } catch { return false; }
+    try { validateModeSampleRate(mode, source === "airspy" || source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(rate) : rate); return true; } catch { return false; }
   });
 }
 export function sourcePreferenceDefaults(source: SourceKind): SourcePreferences {
   const caps = sourceCapabilities(source);
   return { frequencyHz: 100_000_000, modeSettings: defaultModeSettings("WBFM"), sampleRateHz: caps.rates.kind === "choices" ? caps.rates.defaultHz : 1_024_000,
+    ...(source === "airspy" ? { airspySettings: { ...DEFAULT_AIRSPY_SETTINGS } } : {}),
     ...(source === "bladerf" ? { bladerfSettings: { ...DEFAULT_BLADERF_RX_SETTINGS } } : {}),
     ...(source === "rtl-sdr" ? { gainDb: null } : {}),
     ...(source === "hackrf" ? { hardwareSettings: { ...DEFAULT_HACKRF_RX_SETTINGS } } : {}),
@@ -36,9 +39,10 @@ export function sourcePreferenceDefaults(source: SourceKind): SourcePreferences 
 }
 function validate(source: SourceKind, value: SourcePreferences): SourcePreferences {
   if (!value || !value.modeSettings || typeof value.sampleRateHz !== "number") throw new Error("Invalid source preferences");
-  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, rtlInput: value.rtlInput, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings, bladerfSettings: value.bladerfSettings });
+  validateSourceConfiguration({ source, channelFrequencyHz: value.frequencyHz, modeSettings: value.modeSettings, sampleRateHz: value.sampleRateHz, gainDb: value.gainDb, rtlInput: value.rtlInput, hardwareSettings: value.hardwareSettings, usrpSettings: value.usrpSettings, bladerfSettings: value.bladerfSettings, airspySettings: value.airspySettings });
   if (compatibleSourceRate(source, value.modeSettings.mode, value.sampleRateHz) !== value.sampleRateHz) throw new Error("Incompatible saved rate");
   return { frequencyHz: value.frequencyHz, modeSettings: normalizeModeSettings(value.modeSettings), sampleRateHz: value.sampleRateHz,
+    ...(source === "airspy" ? { airspySettings: { ...(value.airspySettings ?? DEFAULT_AIRSPY_SETTINGS), biasTee: false } } : {}),
     ...(source === "bladerf" ? { bladerfSettings: { ...(value.bladerfSettings ?? DEFAULT_BLADERF_RX_SETTINGS) } } : {}),
     ...(source === "rtl-sdr" ? { gainDb: value.gainDb ?? null, rtlInput: {...normalizeRtlInput(value.rtlInput),biasTee:false} } : {}),
     ...(source === "hackrf" ? { hardwareSettings: { ...(value.hardwareSettings ?? DEFAULT_HACKRF_RX_SETTINGS), antennaPowerEnabled:false } } : {}),
@@ -72,14 +76,14 @@ export function sourceModeUnavailableReason(source: SourceKind, mode: ReceiverMo
   const caps = sourceCapabilities(source);
   if (!caps.modes.includes(mode)) return `Unavailable with ${caps.label}`;
   try {
-    if (fixedRate) validateModeSampleRate(mode, source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(rate) : rate);
+    if (fixedRate) validateModeSampleRate(mode, source === "airspy" || source === "hackrf" || source === "bladerf" || source === "usrp-b205" || source === "replay" ? channelSampleRate(rate) : rate);
     else if (compatibleSourceRate(source, mode, rate) === undefined) throw new Error("No compatible rate");
   } catch { return source === "replay" ? "Requires a recording with a compatible sample rate" : "Requires a compatible sample rate"; }
 }
 
 
 export function loadSourceSelection(storage: StorageAccess): SourceKind {
-  try { const value = storage.getItem("browsersdr.selectedSource"); if (value === "hackrf" || value === "bladerf" || value === "usrp-b205" || value === "synthetic") return value; } catch { /* Optional preference. */ }
+  try { const value = storage.getItem("browsersdr.selectedSource"); if (value === "airspy" || value === "hackrf" || value === "bladerf" || value === "usrp-b205" || value === "synthetic") return value; } catch { /* Optional preference. */ }
   // Replay needs a file chosen during this page session.
   return "rtl-sdr";
 }

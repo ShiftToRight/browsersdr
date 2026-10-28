@@ -1,3 +1,4 @@
+import { AIRSPY_RECORDING_FORMAT, validateAirspyRecording, type AirspyRecordingFormat } from "./airspyRecording";
 import { normalizeRtlInput } from "./rtlInput";
 import type { PocsagSettings } from "../pocsag/settings";
 import type { TextModemSettings } from "../textmodem/settings";
@@ -51,7 +52,7 @@ export interface Cu8RecordingFormat {
   bytesPerComplexSample: 2;
   normalization: Cu8Normalization;
 }
-export type RecordingSampleFormat = Cu8RecordingFormat | Ci8RecordingFormat | UsrpB205Ci16RecordingFormat | BladeRfSc16RecordingFormat | ChannelRecordingFormat;
+export type RecordingSampleFormat = AirspyRecordingFormat | Cu8RecordingFormat | Ci8RecordingFormat | UsrpB205Ci16RecordingFormat | BladeRfSc16RecordingFormat | ChannelRecordingFormat;
 export const CU8_FORMAT: Cu8RecordingFormat = { format: RECORDING_FORMAT, sampleEncoding: "unsigned-8-bit", sampleOrder: "interleaved-iq", bytesPerComplexSample: 2, normalization: CU8_NORMALIZATION };
 interface CommonRecordingMetadata {
   rtlInput?: import("./rtlInput").RtlInputSettings;
@@ -84,6 +85,7 @@ export type IqRecordingMetadata = CommonRecordingMetadata & (Cu8RecordingFormat 
   | UnknownCi8RecordingFormat & { source: "replay"; gainDb?: never }
   | UsrpB205Ci16RecordingFormat & { source: "usrp-b205" | "replay"; gainDb?: never }
   | BladeRfSc16RecordingFormat & { source: "bladerf" | "replay"; gainDb?: never }
+  | AirspyRecordingFormat & { source: "airspy" | "replay" }
   | ChannelRecordingFormat & { source: SourceSessionMetadata["source"] });
 /** Fixed DSP routing uses the nominal profile; capture timing retains RFIC readback. */
 export function recordingRoutingSampleRate(metadata: IqRecordingMetadata): number {
@@ -91,6 +93,7 @@ export function recordingRoutingSampleRate(metadata: IqRecordingMetadata): numbe
 }
 /** Explicitly copy format fields, excluding mutable reception metadata. */
 export function recordingSampleFormat(metadata: IqRecordingMetadata): RecordingSampleFormat {
+  if (metadata.format === AIRSPY_RECORDING_FORMAT) return structuredClone({ format: metadata.format, sampleEncoding: metadata.sampleEncoding, sampleOrder: metadata.sampleOrder, bytesPerComplexSample: metadata.bytesPerComplexSample, normalization: metadata.normalization, airspy: metadata.airspy, provenanceDetails: metadata.provenanceDetails });
   if (metadata.format === CHANNEL_RECORDING_FORMAT) {
     const { format, sampleEncoding, sampleOrder, bytesPerComplexSample, normalization, provenanceDetails, channelCapture } = metadata;
     return structuredClone({ format, sampleEncoding, sampleOrder, bytesPerComplexSample, normalization, provenanceDetails, channelCapture });
@@ -190,10 +193,10 @@ export function decodeRecordingSamples(data: Uint8Array, format: RecordingSample
   if (format.format === RECORDING_FORMAT) return decodeCu8(data);
   if (data.byteLength % format.bytesPerComplexSample) throw new Error("CI8 data must contain complete I/Q pairs.");
   const I = new Float32Array(data.byteLength / format.bytesPerComplexSample), Q = new Float32Array(I.length);
-  if (format.format === CI16_RECORDING_FORMAT || format.format === BLADERF_SC16_RECORDING_FORMAT || (format.format === CHANNEL_RECORDING_FORMAT && format.bytesPerComplexSample === 4)) {
+  if (format.format === AIRSPY_RECORDING_FORMAT || format.format === CI16_RECORDING_FORMAT || format.format === BLADERF_SC16_RECORDING_FORMAT || (format.format === CHANNEL_RECORDING_FORMAT && format.bytesPerComplexSample === 4)) {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     for (let n = 0; n < I.length; n++) {
-      const scale = format.format === CHANNEL_RECORDING_FORMAT ? 1 / 32768 : format.format === BLADERF_SC16_RECORDING_FORMAT ? 1 / 2048 : 0.9999997558594347 / 32767;
+      const scale = format.format === AIRSPY_RECORDING_FORMAT || format.format === CHANNEL_RECORDING_FORMAT ? 1 / 32768 : format.format === BLADERF_SC16_RECORDING_FORMAT ? 1 / 2048 : 0.9999997558594347 / 32767;
       I[n] = view.getInt16(n * 4, true) * scale;
       Q[n] = view.getInt16(n * 4 + 2, true) * scale;
     }
@@ -204,6 +207,7 @@ export function decodeRecordingSamples(data: Uint8Array, format: RecordingSample
 }
 export function validateSampleEncoding(format: RecordingSampleFormat): void {
   if (format.sampleOrder !== "interleaved-iq") throw new Error("Unsupported I/Q layout.");
+  if (format.format === AIRSPY_RECORDING_FORMAT && format.sampleEncoding === "signed-16-bit-little-endian" && format.bytesPerComplexSample === 4 && format.normalization === "float = int16 / 32768") return;
   if (format.format === RECORDING_FORMAT && format.sampleEncoding === "unsigned-8-bit" && format.normalization === CU8_NORMALIZATION) return;
   if (format.format === CI8_RECORDING_FORMAT && format.bytesPerComplexSample === 2 && format.sampleEncoding === "signed-8-bit" && format.normalization === "float = signedByte / 128") return;
   if (format.format === BLADERF_SC16_RECORDING_FORMAT && format.bytesPerComplexSample === 4 && format.sampleEncoding === "signed-16-bit-little-endian" && format.normalization === BLADERF_SC16_NORMALIZATION) return;
@@ -258,6 +262,7 @@ export class IqRecorder {
     this.session = structuredClone(session); this.encoding = structuredClone(encoding); this.survey = survey ? structuredClone(survey) : undefined;
     const maximum = storageMode === "opfs" ? STREAMING_RECORDING_MAX_BYTES : RECORDING_MAX_BYTES;
     if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < this.encoding.bytesPerComplexSample || this.maxBytes > maximum) throw new Error(`Recording capacity must be between one complex sample and ${maximum} bytes.`);
+    if (encoding.format === AIRSPY_RECORDING_FORMAT) validateAirspyRecording(encoding, session.source, session.actualSampleRateHz, session.hardwareCenterFrequencyHz);
     if (encoding.format === CI8_RECORDING_FORMAT) validateCi8Format(encoding, session.source, session.actualSampleRateHz, session.hardwareCenterFrequencyHz);
     if (encoding.format === BLADERF_SC16_RECORDING_FORMAT) validateBladeRfSc16Format(encoding, session.source, session.actualSampleRateHz, session.hardwareCenterFrequencyHz);
     if (encoding.format === CI16_RECORDING_FORMAT) validateUsrpB205Ci16Format(encoding, session.source, session.actualSampleRateHz, session.hardwareCenterFrequencyHz);
@@ -306,7 +311,7 @@ export class IqRecorder {
   }
 
   appendCi16(input: ArrayBuffer | Uint8Array): void {
-    if (this.inputEncoding.format !== CI16_RECORDING_FORMAT && this.inputEncoding.format !== BLADERF_SC16_RECORDING_FORMAT && !(this.inputEncoding.format === CHANNEL_RECORDING_FORMAT && this.inputEncoding.bytesPerComplexSample === 4)) throw new Error("Cannot append CI16 to a non-CI16 recording.");
+    if (this.inputEncoding.format !== AIRSPY_RECORDING_FORMAT && this.inputEncoding.format !== CI16_RECORDING_FORMAT && this.inputEncoding.format !== BLADERF_SC16_RECORDING_FORMAT && !(this.inputEncoding.format === CHANNEL_RECORDING_FORMAT && this.inputEncoding.bytesPerComplexSample === 4)) throw new Error("Cannot append CI16 to a non-CI16 recording.");
     if (this.channelFilter) { this.appendChannelBytes(input); return; }
     this.appendBytes(input);
   }
@@ -548,7 +553,7 @@ export function validateRecordingMetadata(
   assertFinitePositive(metadata.centerFrequencyHz, "center frequency");
   assertFinitePositive(metadata.selectedChannelFrequencyHz, "selected channel frequency");
   assertFinitePositive(metadata.channelBandwidthHz, "channel bandwidth");
-  const widebandFormat = ([CI8_RECORDING_FORMAT, CI16_RECORDING_FORMAT, BLADERF_SC16_RECORDING_FORMAT] as string[]).includes(metadata.format!);
+  const widebandFormat = ([AIRSPY_RECORDING_FORMAT, CI8_RECORDING_FORMAT, CI16_RECORDING_FORMAT, BLADERF_SC16_RECORDING_FORMAT] as string[]).includes(metadata.format!);
   const routingRate = recordingRoutingSampleRate(metadata as IqRecordingMetadata);
   if (metadata.sampleRateHz < REPLAY_MIN_SAMPLE_RATE_HZ || (metadata.sampleRateHz > REPLAY_MAX_SAMPLE_RATE_HZ
     && (!widebandFormat || !isWidebandRate(routingRate)))) {
@@ -562,8 +567,11 @@ export function validateRecordingMetadata(
   if (settings.bandwidthHz !== metadata.channelBandwidthHz || settings.squelch !== metadata.squelch || (metadata.beatToneHz !== undefined && settings.beatToneHz !== metadata.beatToneHz)) throw new Error("Recording has out-of-range mode settings.");
   if (metadata.format === CHANNEL_RECORDING_FORMAT) {
     validateChannelRecording(metadata as ChannelRecordingFormat, metadata.sampleRateHz, metadata.centerFrequencyHz, metadata.channelBandwidthHz);
-    if (!["rtl-sdr", "hackrf", "bladerf", "usrp-b205", "synthetic", "replay"].includes(metadata.source!)) throw new Error("Recording has an invalid source.");
+    if (!["airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205", "synthetic", "replay"].includes(metadata.source!)) throw new Error("Recording has an invalid source.");
     validateModeSampleRate(settings.mode, routingRate);
+  } else if (metadata.format === AIRSPY_RECORDING_FORMAT) {
+    validateAirspyRecording(metadata as AirspyRecordingFormat, metadata.source!, metadata.sampleRateHz, metadata.centerFrequencyHz);
+    validateSourceRoute("airspy", settings, metadata.sampleRateHz, metadata.selectedChannelFrequencyHz);
   } else if (metadata.format === CI8_RECORDING_FORMAT) {
     if ("gainDb" in metadata) throw new Error("CI8 metadata must not contain RTL gainDb.");
     validateCi8Format(metadata as Ci8RecordingFormat, metadata.source!, metadata.sampleRateHz, metadata.centerFrequencyHz);

@@ -275,3 +275,55 @@ The test-only Martin M2 audio and analytic derivative in `src/textmodem/fixtures
 ## Bundled user-interface fonts
 
 Manrope (Copyright 2018 The Manrope Project Authors) and IBM Plex Mono (Copyright © 2017 IBM Corp.; Reserved Font Name “Plex”) are distributed unmodified under the SIL Open Font License 1.1. The existing font families, weights and supplied Unicode subsets are hosted locally. Exact Google Fonts URLs, hashes and pinned license sources are retained in `src/assets/fonts/sources.json`; the source notices are `src/assets/fonts/manrope-OFL.txt` and `src/assets/fonts/ibmplexmono-OFL.txt`. Every static build supplies the full notices at `MANROPE-OFL.txt` and `IBM-PLEX-MONO-OFL.txt` alongside this file. Upstream: <https://github.com/google/fonts/tree/main/ofl/manrope> and <https://github.com/google/fonts/tree/main/ofl/ibmplexmono>.
+
+
+## Airspy receive adapter references
+
+The gain schedules in `src/radio/airspyGain.ts` derive from BSD-3-Clause libairspy `airspy.c`, revision `fc61ab6be57ed61f0e2bdd9c6dfae74cacef57d0`. The standard FIR coefficients in `src/radio/airspyConversion.ts` derive from MIT-licensed `filters.h`. The independent conversion oracle uses the MIT-licensed converter at revision `871fcdc6e841cae6e6b2a58fcd6596b7f7722ad2`. No later converter under the restricted Airspy ecosystem license is included. Source: https://github.com/airspy/airspyone_host.
+
+```text
+Copyright (c) 2013, Michael Ossmann <mike@ossmann.com>
+Copyright (c) 2012, Jared Boone <jared@sharebrained.com>
+Copyright (c) 2014, Youssef Touil <youssef@airspy.com>
+Copyright (c) 2014, Benjamin Vernoux <bvernoux@airspy.com>
+Copyright (c) 2015, Ian Gilmour <ian@sdrsharp.com>
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+		Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+		Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the
+		documentation and/or other materials provided with the distribution.
+		Neither the name of AirSpy nor the names of its contributors may be used to endorse or promote products derived from this software
+		without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+```text
+Copyright (C) 2014, Youssef Touil <youssef@airspy.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
