@@ -135,6 +135,15 @@ for (const size of [
     await panel.getByLabel("Latitude", { exact: true }).fill("48.1");
     await panel.getByLabel("Longitude", { exact: true }).fill("11.7");
     await panel.getByText("How this site is used", { exact: true }).click();
+    // ResizeObserver places expanded content after the current layout pass.
+    await panel.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    });
     const bounds = await panel.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
