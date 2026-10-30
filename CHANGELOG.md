@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.18.1 — 2026-10-30
+
+- Fix Airspy APRS and other digital channel recordings being rejected during library finalization and replay. Validate the filtered decoder clock while preserving the stored I/Q sample rate, bytes and timing.
+
 ## 1.18.0 — 2026-10-28
 
 - Add experimental Airspy R2 / Mini reception with firmware-advertised sample rates, full Linearity/Sensitivity gain presets, manual LNA/mixer/VGA stages, independent AGC, explicit bias-tee power, 12-bit USB packing and frequency correction.

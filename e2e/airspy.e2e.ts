@@ -7,8 +7,127 @@ import {
 } from "./device-settings-navigation";
 import { unzipSync } from "fflate";
 
+test("Airspy APRS channel recording survives library reload and SigMF replay", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const fixture = ts.transpileModule(
+    (await readFile("src/testing/airspyUsbFixture.ts", "utf8")).replace(
+      /^export /gm,
+      "",
+    ),
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.None,
+      },
+    },
+  ).outputText;
+  await page.addInitScript({
+    content: `${fixture}\nconst device = new FakeAirspyUsb(); Object.defineProperty(navigator, 'usb', {value: {requestDevice: async () => device, getDevices: async () => [], addEventListener() {}, removeEventListener() {}}});`,
+  });
+  await page.goto("/?browser-test=1");
+  await page
+    .getByRole("combobox", { name: "Signal source" })
+    .selectOption("airspy");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Start receiving", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "More modes…" }).click();
+  await page.getByRole("button", { name: "Select APRS", exact: true }).click();
+  await page.getByRole("button", { name: "Use mode", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Start receiving", exact: true })
+    .click();
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  await page
+    .getByLabel("Capture current channel only", { exact: true })
+    .check();
+  await page.getByLabel("Timed capture seconds", { exact: true }).fill("1");
+  await page
+    .getByRole("button", { name: "Start I/Q recording", exact: true })
+    .click();
+  await expect(page.locator(".recording-state")).toContainText(
+    "Recording ready",
+  );
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
+  const files = unzipSync(await readFile((await (await pending).path())!));
+  const [metaName, metaBytes] = Object.entries(files).find(([name]) =>
+    name.endsWith(".sigmf-meta"),
+  )!;
+  const [dataName, dataBytes] = Object.entries(files).find(([name]) =>
+    name.endsWith(".sigmf-data"),
+  )!;
+  const metadata = JSON.parse(new TextDecoder().decode(metaBytes));
+  expect(metadata.global["core:sample_rate"]).toBe(2_500_000);
+  expect(metadata.global["browsersdr:sample_format"].format).toBe(
+    "browsersdr-channel-iq-v1",
+  );
+  expect(metadata.annotations[0]["core:label"]).toBe("APRS");
+  expect(dataBytes.length).toBe(
+    metadata.annotations[0]["core:sample_count"] * 4,
+  );
+  await page
+    .getByRole("button", { name: "Stop receiving", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Discard prepared capture", exact: true })
+    .click();
+  await page.reload();
+  await page
+    .getByRole("tab", { name: "Capture & replay", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Local library", exact: true }).click();
+  await page.locator(".recording-library summary").click();
+  await expect(page.locator(".recording-library-entry")).toContainText("ready");
+  await page
+    .getByRole("button", { name: "Replay retained recording", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Start replay", exact: true }).click();
+  await expect(page.locator(".receiver-status-menu")).toContainText(
+    "Replay finished",
+  );
+  await page.getByRole("tab", { name: "Open recording", exact: true }).click();
+  await page
+    .getByLabel("Replay pair format", { exact: true })
+    .selectOption("sigmf");
+  await page.getByLabel("SigMF replay mode").selectOption("APRS");
+  await page.getByLabel("SigMF dataset").setInputFiles({
+    name: dataName,
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from(dataBytes),
+  });
+  await page.getByLabel("SigMF metadata").setInputFiles({
+    name: metaName,
+    mimeType: "application/json",
+    buffer: Buffer.from(metaBytes),
+  });
+  await page
+    .getByRole("button", { name: "Load SigMF pair", exact: true })
+    .click();
+  await expect(
+    page.getByText(/^Loaded SigMF replay: [\d,]+ samples/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Start replay", exact: true }).click();
+  await expect(page.locator(".receiver-status-menu")).toContainText(
+    "Replay finished",
+  );
+  expect(errors).toEqual([]);
+});
+
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
+  const chooser = page.getByRole("button", {
+    name: "Close decoder chooser",
+    exact: true,
+  });
+  if (await chooser.isVisible()) await chooser.click();
   const done = page.getByRole("button", { name: "Done", exact: true });
   if (await done.isVisible()) await done.click();
   await page.locator(".receiver-status-menu > summary").click();

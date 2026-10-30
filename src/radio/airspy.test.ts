@@ -1,5 +1,8 @@
 import { airspyGainStages } from "./airspyGain";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { fakeRecordingStorage } from "../testing/fakeRecordingStorage";
+import { listRecordings, openRecording } from "./recordingLibrary";
+import { CHANNEL_RECORDING_FORMAT } from "./channelRecording";
 import { AirspyConversion } from "./airspyConversion";
 import { AirspyChannelFilter } from "./airspyChannel";
 import { AirspyResampler } from "./airspyResampler";
@@ -14,6 +17,7 @@ import { defaultModeSettings } from "./receiverConfig";
 import {
   validateSourceConfiguration,
   validateSourceRoute,
+  channelSampleRate,
 } from "./sourceCapabilities";
 import { airspyRecordingFormat } from "./airspyRecording";
 import {
@@ -21,6 +25,7 @@ import {
   decodeRecordingSamples,
   recordingSampleFormat,
   validateRecordingMetadata,
+  recordingRoutingSampleRate,
 } from "./iqRecording";
 import { createSigmfExport } from "./sigmf";
 import { importSigmfRecording } from "./sigmfImport";
@@ -87,6 +92,92 @@ export function airspyTestSession(rate = 2_500_000): SourceSessionMetadata {
     },
   };
 }
+it.each([2_500_000, 10_000_000, 3_000_000, 6_000_000])(
+  "retains and reimports APRS channel I/Q with its actual clock from %i Hz Airspy input",
+  async (rate) => {
+    fakeRecordingStorage();
+    try {
+      const session = airspyTestSession(rate);
+      if (rate === 3_000_000 || rate === 6_000_000) {
+        session.airspy!.identity.sampleRates = [6_000_000, 3_000_000];
+        session.airspy!.identity.rateProfile = "mini";
+      }
+      session.mode = "APRS";
+      session.channelBandwidthHz = 20_000;
+      session.selectedChannelFrequencyHz += 100_000;
+      const recorder = new IqRecorder(
+        session,
+        undefined,
+        131_072,
+        undefined,
+        undefined,
+        airspyRecordingFormat(session.airspy!),
+        "opfs",
+        { captureCurrentChannel: true },
+      );
+      const bytes = new Uint8Array(32_768 * 4);
+      const view = new DataView(bytes.buffer);
+      for (let n = 0; n < 32_768; n++) {
+        const phase = (2 * Math.PI * 101_000 * n) / rate;
+        view.setInt16(n * 4, Math.round(8192 * Math.cos(phase)), true);
+        view.setInt16(n * 4 + 2, Math.round(8192 * Math.sin(phase)), true);
+      }
+      recorder.appendCi16(bytes.subarray(0, 12_004));
+      recorder.appendCi16(bytes.subarray(12_004));
+      const recording = recorder.finish();
+      const data = new Uint8Array(
+        await (await recording.dataBlob!).arrayBuffer(),
+      );
+      const outputRate =
+        rate === 3_000_000 || rate === 6_000_000 ? 3_000_000 : 2_500_000;
+      expect(recording.metadata.format).toBe(CHANNEL_RECORDING_FORMAT);
+      expect(recording.metadata.sampleRateHz).toBe(outputRate);
+      expect(recording.metadata.sampleCount).toBe(32_768 / (rate / outputRate));
+      expect(data.length).toBe(recording.metadata.sampleCount * 4);
+      expect(
+        channelSampleRate(recordingRoutingSampleRate(recording.metadata)),
+      ).toBe(2_400_000);
+      if (recording.metadata.format !== CHANNEL_RECORDING_FORMAT)
+        throw new Error("Expected channel recording");
+      const channelMetadata = recording.metadata;
+      expect(() =>
+        validateRecordingMetadata(
+          {
+            ...channelMetadata,
+            sampleRateHz: 2_600_000,
+            durationSeconds: recording.metadata.sampleCount / 2_600_000,
+            channelCapture: {
+              ...channelMetadata.channelCapture,
+              inputSampleRateHz:
+                2_600_000 * channelMetadata.channelCapture.decimation,
+              outputSampleRateHz: 2_600_000,
+              dspSampleRateHz: 2_600_000,
+            },
+          },
+          data.length,
+        ),
+      ).toThrow(/Digital channel input rate/);
+      const exported = await createSigmfExport(recording);
+      expect(exported.metadata.global["core:sample_rate"]).toBe(outputRate);
+      const imported = await importSigmfRecording(exported.metadataJson, data, {
+        modeSettings: defaultModeSettings("APRS"),
+      });
+      expect(imported.data).toEqual(data);
+      expect(imported.metadata.sampleRateHz).toBe(outputRate);
+      await recording.releaseData!();
+      expect((await listRecordings())[0]?.state).toBe("ready");
+      const retained = await openRecording(recording.libraryId!);
+      expect(retained.metadata.mode).toBe("APRS");
+      expect(
+        new Uint8Array(await (await retained.dataBlob!).arrayBuffer()),
+      ).toEqual(data);
+      await retained.releaseData!();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 describe("Airspy ADC and clock contract", () => {
   for (const rate of AIRSPY_OUTPUT_RATES)
     it(`matches the general rational FIR across split blocks at ${rate} Hz`, () => {

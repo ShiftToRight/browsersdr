@@ -568,7 +568,9 @@ export function validateRecordingMetadata(
   if (metadata.format === CHANNEL_RECORDING_FORMAT) {
     validateChannelRecording(metadata as ChannelRecordingFormat, metadata.sampleRateHz, metadata.centerFrequencyHz, metadata.channelBandwidthHz);
     if (!["airspy", "rtl-sdr", "hackrf", "bladerf", "usrp-b205", "synthetic", "replay"].includes(metadata.source!)) throw new Error("Recording has an invalid source.");
-    validateModeSampleRate(settings.mode, routingRate);
+    // The stored/routing clock can be an Airspy clock (e.g. 2.5 MS/s).
+    // Replay filters that clock before feeding the decoder, just as live RX does.
+    validateModeSampleRate(settings.mode, channelSampleRate(routingRate));
   } else if (metadata.format === AIRSPY_RECORDING_FORMAT) {
     validateAirspyRecording(metadata as AirspyRecordingFormat, metadata.source!, metadata.sampleRateHz, metadata.centerFrequencyHz);
     validateSourceRoute("airspy", settings, metadata.sampleRateHz, metadata.selectedChannelFrequencyHz);
