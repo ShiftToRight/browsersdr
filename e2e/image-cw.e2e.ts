@@ -43,6 +43,13 @@ for (const mode of ["WEFAX", "SSTV"] as const)
     page.on("pageerror", (error) => errors.push(error.message));
     await load(page, mode);
     await start(page);
+    // Keep spectrum animation separate from the complete image-worker fixture.
+    await page
+      .getByRole("button", { name: "Pause display", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Resume display", exact: true }),
+    ).toBeVisible();
     const panel = page.locator(".image-decode-panel");
     await expect(panel).toContainText("End of input · partial image", {
       timeout: 15000,
