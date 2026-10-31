@@ -1,5 +1,5 @@
 import { AppIcon } from "../ui/AppIcon";
-import type { BandGuidePreferences } from "./BandGuide";
+import type { BandGuidePreferences } from "./useBandGuide";
 import {
   BAND_GUIDE_GROUPS,
   BAND_GUIDE_PLANS,

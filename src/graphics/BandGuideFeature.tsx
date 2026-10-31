@@ -1,6 +1,6 @@
 import { useEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useBandGuide } from "./BandGuide";
+import { useBandGuide } from "./useBandGuide";
 import { BandGuideControls } from "./BandGuideControls";
 import { BandGuide } from "./BandGuideStrip";
 

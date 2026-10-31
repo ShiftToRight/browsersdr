@@ -8,7 +8,7 @@ import {
   type GuideSegment,
 } from "./bandGuide";
 import { formatFrequencyMHz } from "../ui/frequencyFormat";
-import type { BandGuidePreferences } from "./BandGuide";
+import type { BandGuidePreferences } from "./useBandGuide";
 const frequency = (hz: number) => `${formatFrequencyMHz(hz)} MHz`;
 export function BandGuide({
   startHz,
